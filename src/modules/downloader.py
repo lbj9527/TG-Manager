@@ -68,7 +68,8 @@ class Downloader:
             try:
                 # 解析频道ID
                 real_channel_id = await self.channel_resolver.get_channel_id(channel)
-                channel_info = await self.channel_resolver.format_channel_info(channel)
+                logger.info(f"real_channel_id: {real_channel_id}")
+                channel_info = await self.channel_resolver.format_channel_info(real_channel_id)
                 logger.info(f"解析频道: {channel_info}")
                 
                 # 创建频道目录（如果需要按频道组织）
@@ -153,30 +154,38 @@ class Downloader:
             stop_id = end_id
             reverse = True
         
-        offset_id = curr_id
-        remaining_limit = None  # None表示获取全部消息
+        offset = 0  # 使用offset_id而不是offset
         
         while True:
             try:
-                messages = await self.client.get_messages(
+                # 使用get_chat_history代替get_messages
+                logger.info(f"获取聊天记录: chat_id={chat_id}, start_id={curr_id}, end_id={stop_id}, limit=100")
+                
+                # 获取一批消息
+                messages = []
+                async for message in self.client.get_chat_history(
                     chat_id=chat_id,
-                    offset_id=offset_id,
-                    limit=100  # 每次获取100条消息
-                )
-                
-                if not messages:
-                    break
-                
-                for message in messages:
+                    limit=100,  # 每次获取100条消息
+                    offset_id=curr_id  # 使用消息索引作为offset
+                ):
+                    messages.append(message)
+                    
+                    # 检查消息ID是否在范围内
                     if reverse and message.id <= stop_id:
+                        yield message
                         return
                     elif not reverse and stop_id > 0 and message.id >= stop_id:
+                        yield message
                         return
                     
                     yield message
                 
-                # 更新offset_id用于下一次获取
-                offset_id = messages[-1].id
+                # 如果没有获取到消息，说明已经到达消息列表末尾
+                if not messages:
+                    break
+                
+                # 更新offset用于下一次获取
+                offset += len(messages)
                 
                 # 避免频繁请求
                 await asyncio.sleep(0.5)
@@ -186,6 +195,7 @@ class Downloader:
                 await asyncio.sleep(e.x)
             except Exception as e:
                 logger.error(f"获取消息失败: {e}")
+                logger.exception("详细错误信息")
                 break
     
     async def _download_message_media(self, message: Message, download_path: Path, chat_id: int) -> bool:

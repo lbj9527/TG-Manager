@@ -129,6 +129,7 @@ class ChannelResolver:
             _, chat = self._channel_cache[str_channel_id]
             if chat:
                 return chat
+        logger.warning(f"channel_id:{channel_id}")
         
         # 获取频道实体
         try:
