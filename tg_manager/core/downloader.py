@@ -62,7 +62,8 @@ class Downloader:
                                source_channel: str, 
                                start_id: int = 0, 
                                end_id: int = 0,
-                               limit: int = 0) -> Dict[str, Any]:
+                               limit: int = 0,
+                               stop_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
         """
         下载指定频道的消息媒体文件
         
@@ -71,106 +72,150 @@ class Downloader:
             start_id: 起始消息ID，0表示从最早的消息开始
             end_id: 结束消息ID，0表示一直下载到最新消息
             limit: 下载消息数量限制，0表示无限制
+            stop_event: 停止事件，用于中断下载过程
             
         Returns:
             下载结果统计信息
         """
         logger.info(f"开始从 {source_channel} 下载消息，范围: {start_id} - {end_id}, 限制: {limit}")
         
-        # 获取频道信息
-        channel_info = await self.channel_resolver.get_channel_info(source_channel)
-        if not channel_info:
-            logger.error(f"无法获取频道信息: {source_channel}")
-            return {"status": "failed", "error": "无法获取频道信息", "downloaded": 0}
-        
-        # 创建频道专属下载目录
-        chat_download_path = self._get_chat_download_path(channel_info.channel_id, channel_info.username or channel_info.title)
-        
-        # 获取已下载的消息ID列表
-        downloaded_messages = self.history_manager.get_downloaded_messages(source_channel)
-        
-        # 下载统计信息
-        stats = {
-            "total_messages": 0,
-            "downloaded": 0,
-            "skipped": 0,
-            "failed": 0,
-            "types": {}
-        }
-        
-        # 迭代消息
-        async for message in self.client.get_chat_history(
-            channel_info.channel_id,
-            offset_id=end_id if end_id > 0 else None,
-            limit=limit if limit > 0 else None
-        ):
-            stats["total_messages"] += 1
+        try:
+            # 获取频道信息
+            channel_info = await self.channel_resolver.get_channel_info(source_channel)
+            if not channel_info:
+                logger.error(f"无法获取频道信息: {source_channel}")
+                return {"status": "failed", "error": "无法获取频道信息", "downloaded": 0}
             
-            # 如果设置了起始ID，检查消息ID是否大于等于起始ID
-            if start_id > 0 and message.id < start_id:
-                stats["skipped"] += 1
-                continue
-                
-            # 如果设置了结束ID，检查消息ID是否小于等于结束ID
-            if end_id > 0 and message.id > end_id:
-                stats["skipped"] += 1
-                continue
+            # 创建频道专属下载目录
+            chat_download_path = self._get_chat_download_path(channel_info.channel_id, channel_info.username or channel_info.title)
+            # 获取已下载的消息ID列表
+            downloaded_messages = self.history_manager.get_downloaded_messages(source_channel)
             
-            # 检查是否已下载
-            if self.history_manager.is_message_downloaded(source_channel, message.id):
-                logger.debug(f"消息已下载，跳过: {message.id}")
-                stats["skipped"] += 1
-                continue
+            # 下载统计信息
+            stats = {
+                "total_messages": 0,
+                "downloaded": 0,
+                "skipped": 0,
+                "failed": 0,
+                "types": {}
+            }
             
-            # 下载消息媒体
+            # 准备get_chat_history参数
+            history_kwargs = {
+                "chat_id": channel_info.channel_id,
+                "limit": limit if limit > 0 else None
+            }
+            
+            # 只有当end_id大于0时才添加offset_id参数
+            if end_id > 0:
+                history_kwargs["offset_id"] = end_id
+            
+            logger.debug(f"调用get_chat_history，参数: {history_kwargs}")
+            message_count = 0
+            # 迭代消息
             try:
-                download_result = await self._download_message_media(message, chat_download_path)
-                
-                if download_result["status"] == "success":
-                    # 更新下载历史记录
-                    self.history_manager.add_downloaded_message(
-                        source_channel, 
-                        message.id, 
-                        real_channel_id=channel_info.channel_id
-                    )
-                    stats["downloaded"] += 1
+                async for message in self.client.get_chat_history(**history_kwargs):
+                    # 检查是否需要停止
+                    if stop_event and stop_event.is_set():
+                        logger.info("收到停止信号，中断下载过程")
+                        break
+                        
+                    message_count += 1
+                    logger.debug(f"处理第 {message_count} 条消息，ID: {message.id}")
+                    stats["total_messages"] += 1
                     
-                    # 更新媒体类型统计
-                    media_type = download_result.get("media_type", "unknown")
-                    if media_type in stats["types"]:
-                        stats["types"][media_type] += 1
-                    else:
-                        stats["types"][media_type] = 1
-                else:
-                    stats["failed"] += 1
+                    # 如果设置了起始ID，检查消息ID是否大于等于起始ID
+                    if start_id > 0 and message.id < start_id:
+                        stats["skipped"] += 1
+                        logger.debug(f"消息ID {message.id} 小于起始ID {start_id}，跳过")
+                        continue
+                        
+                    # 如果设置了结束ID，检查消息ID是否小于等于结束ID
+                    if end_id > 0 and message.id > end_id:
+                        stats["skipped"] += 1
+                        logger.debug(f"消息ID {message.id} 大于结束ID {end_id}，跳过")
+                        continue
+                    
+                    # 检查是否已下载
+                    if self.history_manager.is_message_downloaded(source_channel, message.id):
+                        logger.debug(f"消息已下载，跳过: {message.id}")
+                        stats["skipped"] += 1
+                        continue
+                    
+                    # 下载消息媒体
+                    try:
+                        # 再次检查停止事件
+                        if stop_event and stop_event.is_set():
+                            logger.info("收到停止信号，中断下载过程")
+                            break
+                            
+                        logger.debug(f"开始下载消息 {message.id} 的媒体")
+                        download_result = await self._download_message_media(message, chat_download_path, stop_event)
+                        logger.debug(f"媒体下载结果: {download_result}")
+                        
+                        if download_result["status"] == "success":
+                            # 更新下载历史记录
+                            self.history_manager.add_downloaded_message(
+                                source_channel, 
+                                message.id, 
+                                real_channel_id=channel_info.channel_id
+                            )
+                            stats["downloaded"] += 1
+                            logger.info(f"成功下载消息 {message.id}")
+                            
+                            # 更新媒体类型统计
+                            media_type = download_result.get("media_type", "unknown")
+                            if media_type in stats["types"]:
+                                stats["types"][media_type] += 1
+                            else:
+                                stats["types"][media_type] = 1
+                        else:
+                            stats["failed"] += 1
+                            logger.warning(f"下载消息 {message.id} 的媒体失败: {download_result.get('reason', '未知原因')}")
+                    except Exception as e:
+                        logger.error(f"下载消息 {message.id} 失败: {e}", exc_info=True)
+                        stats["failed"] += 1
+                
+                logger.debug(f"消息迭代完成，共处理 {message_count} 条消息")
             except Exception as e:
-                logger.error(f"下载消息 {message.id} 失败: {e}")
-                stats["failed"] += 1
-        
-        logger.info(f"下载完成，总计: {stats['total_messages']}, 下载: {stats['downloaded']}, "
-                   f"跳过: {stats['skipped']}, 失败: {stats['failed']}")
-        
-        return {
-            "status": "success",
-            "channel": source_channel,
-            "stats": stats
-        }
+                logger.error(f"迭代消息时出错: {e}", exc_info=True)
+                return {"status": "failed", "error": str(e), "downloaded": stats["downloaded"]}
+            
+            logger.info(f"下载完成，总计: {stats['total_messages']}, 下载: {stats['downloaded']}, "
+                       f"跳过: {stats['skipped']}, 失败: {stats['failed']}")
+            
+            result = {
+                "status": "success",
+                "channel": source_channel,
+                "stats": stats
+            }
+            logger.debug(f"返回结果: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"下载消息时发生未处理的异常: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e), "downloaded": 0}
     
     async def _download_message_media(self, 
                                      message: Message, 
-                                     download_path: str) -> Dict[str, Any]:
+                                     download_path: str,
+                                     stop_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
         """
         下载消息中的媒体文件
         
         Args:
             message: Pyrogram消息对象
             download_path: 下载文件保存路径
+            stop_event: 停止事件，用于中断下载过程
             
         Returns:
             下载结果信息
         """
         # 使用实例方法进行重试
         async def download_media_with_retry():
+            # 检查是否需要停止
+            if stop_event and stop_event.is_set():
+                return {"status": "cancelled", "reason": "user_interrupted"}
+            
             # 检查消息是否包含媒体
             if not hasattr(message, 'media') or not message.media:
                 return {"status": "skipped", "reason": "no_media"}
@@ -267,12 +312,15 @@ class Downloader:
                     return {"status": "skipped", "reason": "unsupported_media_type", "media_type": media_type}
             
             except Exception as e:
-                logger.error(f"下载媒体失败: {e}")
+                logger.error(f"下载媒体失败: {e}", exc_info=True)
                 return {"status": "failed", "error": str(e), "media_type": media_type}
                 
         # 使用重试管理器执行下载
         try:
-            return await self.retry_manager.retry_async(download_media_with_retry)
+            return await self.retry_manager.retry_async(download_media_with_retry, stop_event=stop_event)
+        except asyncio.CancelledError:
+            logger.info("下载操作被取消")
+            return {"status": "cancelled", "reason": "operation_cancelled"}
         except Exception as e:
             logger.error(f"重试下载媒体失败: {e}", exc_info=True)
             return {"status": "failed", "error": str(e)}

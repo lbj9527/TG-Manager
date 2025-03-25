@@ -67,9 +67,7 @@ class TGManager:
             proxy=self.config_manager.get_proxy_settings()
         )
         
-        # 设置信号处理器，处理程序终止
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, self._signal_handler)
+        # 设置信号处理器，这里不再直接注册，而是在主函数中注册
         
         # 启动客户端
         await self.client.start()
@@ -212,7 +210,7 @@ class TGManager:
                     # 暂停时间结束，重置计数器
                     total_forwarded = 0
     
-    async def start_download(self) -> None:
+    async def start_download(self, start_id: int, end_id: int) -> None:
         """启动下载功能"""
         logger.info("开始执行下载任务")
         
@@ -222,44 +220,60 @@ class TGManager:
             logger.error("配置中没有设置源频道，请检查配置文件")
             return
         
-        start_id = self.config_manager.get_int('DOWNLOAD', 'start_id', 0)
-        end_id = self.config_manager.get_int('DOWNLOAD', 'end_id', 0)
         limit = self.config_manager.get_int('GENERAL', 'limit', 50)
         pause_time = self.config_manager.get_int('GENERAL', 'pause_time', 60)
         
         # 计数器
         total_downloaded = 0
         
-        # 处理每个源频道
-        for source_channel in source_channels:
-            logger.info(f"下载: {source_channel}")
-            
-            # 调用下载器
-            result = await self.downloader.download_messages(
-                source_channel=source_channel,
-                start_id=start_id,
-                end_id=end_id,
-                limit=limit
-            )
-            
-            if result['status'] == 'success':
-                total_downloaded += result['stats']['downloaded']
-                logger.info(f"从 {source_channel} 成功下载了 {result['stats']['downloaded']} 个文件")
-            else:
-                logger.error(f"从 {source_channel} 下载失败: {result.get('error', '未知错误')}")
-            
-            # 检查是否达到限制
-            if limit > 0 and total_downloaded >= limit:
-                logger.info(f"已达到下载限制 {limit}，暂停 {pause_time} 秒")
+        try:
+            # 处理每个源频道
+            for source_channel in source_channels:
+                # 检查是否需要停止
+                if self.stop_event.is_set():
+                    logger.info("收到停止信号，终止下载任务")
+                    break
+                    
+                logger.info(f"下载: {source_channel}")
+                
                 try:
-                    # 等待暂停时间，或者收到停止信号
-                    await asyncio.wait_for(self.stop_event.wait(), timeout=pause_time)
-                    if self.stop_event.is_set():
-                        logger.info("收到停止信号，结束下载任务")
-                        break
-                except asyncio.TimeoutError:
-                    # 暂停时间结束，重置计数器
-                    total_downloaded = 0
+                    # 调用下载器
+                    logger.debug(f"准备调用downloader.download_messages，参数: source_channel={source_channel}, start_id={start_id}, end_id={end_id}, limit={limit}")
+                    result = await self.downloader.download_messages(
+                        source_channel=source_channel,
+                        start_id=start_id,
+                        end_id=end_id,
+                        limit=limit,
+                        stop_event=self.stop_event  # 传递停止事件
+                    )
+                    logger.debug(f"downloader.download_messages返回结果: {result}")
+                    
+                    if result['status'] == 'success':
+                        total_downloaded += result['stats']['downloaded']
+                        logger.info(f"从 {source_channel} 成功下载了 {result['stats']['downloaded']} 个文件")
+                    else:
+                        logger.error(f"从 {source_channel} 下载失败: {result.get('error', '未知错误')}")
+                except Exception as e:
+                    logger.error(f"处理频道 {source_channel} 时出错: {e}", exc_info=True)
+                
+                # 检查是否达到限制
+                if limit > 0 and total_downloaded >= limit:
+                    logger.info(f"已达到下载限制 {limit}，暂停 {pause_time} 秒")
+                    try:
+                        # 等待暂停时间，或者收到停止信号
+                        await asyncio.wait_for(self.stop_event.wait(), timeout=pause_time)
+                        if self.stop_event.is_set():
+                            logger.info("收到停止信号，结束下载任务")
+                            break
+                    except asyncio.TimeoutError:
+                        # 暂停时间结束，重置计数器
+                        total_downloaded = 0
+            
+            logger.info("所有频道下载完成")
+        except Exception as e:
+            logger.error(f"下载任务执行时发生未处理的异常: {e}", exc_info=True)
+        finally:
+            logger.info("下载任务执行完毕")
     
     async def start_upload(self) -> None:
         """启动上传功能"""
@@ -360,7 +374,7 @@ class TGManager:
             if args.command == 'forward':
                 await self.start_forward()
             elif args.command == 'download':
-                await self.start_download()
+                await self.start_download(0, 0)
             elif args.command == 'upload':
                 await self.start_upload()
             elif args.command == 'startmonitor':
@@ -386,13 +400,20 @@ class TGManager:
             start_id: 起始消息ID，为None时使用配置文件中的值
             end_id: 结束消息ID，为None时使用配置文件中的值
         """
-        # 如果未指定参数，使用配置中的值
-        if start_id is None:
-            start_id = self.config_manager.get_int('DOWNLOAD', 'start_id', 0)
-        if end_id is None:
-            end_id = self.config_manager.get_int('DOWNLOAD', 'end_id', 0)
-            
-        await self.start_download()
+        try:
+            # 如果未指定参数，使用配置中的值
+            if start_id is None:
+                start_id = self.config_manager.get_int('DOWNLOAD', 'start_id', 0)
+            if end_id is None:
+                end_id = self.config_manager.get_int('DOWNLOAD', 'end_id', 0)
+                
+            logger.info(f"开始运行下载任务，start_id={start_id}, end_id={end_id}")
+            await self.start_download(start_id, end_id)
+            logger.info("下载任务完成")
+        except Exception as e:
+            logger.error(f"下载任务执行时出错: {e}", exc_info=True)
+        finally:
+            logger.info("下载任务退出")
             
     async def run_upload(self) -> None:
         """执行上传任务"""
@@ -431,7 +452,35 @@ class TGManager:
 def main():
     """程序入口点"""
     tg_manager = TGManager()
-    asyncio.run(tg_manager.run())
+    
+    # 获取事件循环
+    loop = asyncio.get_event_loop()
+    
+    # 设置中断处理
+    def signal_handler():
+        logger.info("收到终止信号，正在关闭程序...")
+        # 设置停止事件
+        tg_manager.stop_event.set()
+        # 确保异步任务能够中断
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+    
+    # 添加信号处理器
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, signal_handler)
+    
+    try:
+        # 运行程序
+        loop.run_until_complete(tg_manager.run())
+    except asyncio.CancelledError:
+        # 捕获取消的异步任务异常
+        logger.info("程序已终止")
+    finally:
+        # 确保客户端关闭
+        if tg_manager.client and tg_manager.client.is_connected:
+            loop.run_until_complete(tg_manager.shutdown())
+        # 关闭事件循环
+        loop.close()
 
 
 if __name__ == "__main__":

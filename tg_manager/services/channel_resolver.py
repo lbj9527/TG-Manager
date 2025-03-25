@@ -12,6 +12,7 @@ import asyncio
 
 from pyrogram import Client
 from pyrogram.types import Chat
+from pyrogram.enums import ChatType
 
 from tg_manager.utils.logger import get_logger
 
@@ -137,6 +138,7 @@ class ChannelResolver:
         """
         # 先解析频道标识符
         channel_id_or_username, _ = self.parse_channel_link(str(channel_identifier))
+
         
         # 生成缓存键
         cache_key = str(channel_id_or_username)
@@ -146,7 +148,7 @@ class ChannelResolver:
             channel_info = self.channel_cache[cache_key]
             # 检查缓存是否过期
             if time.time() - channel_info.last_check < self.cache_timeout:
-                logger.debug(f"使用缓存的频道信息: {cache_key}")
+                logger.warning(f"使用缓存的频道信息: {cache_key}")
                 return channel_info
         
         # 尝试获取频道信息
@@ -154,8 +156,8 @@ class ChannelResolver:
             chat = await self.client.get_chat(channel_id_or_username)
             
             # 判断是否为频道或群组
-            if not (chat.type in ["channel", "supergroup", "group"]):
-                logger.warning(f"标识符 {channel_identifier} 不是频道或群组")
+            if not (chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP, ChatType.GROUP]):
+                logger.warning(f"标识符 {channel_identifier} 不是频道或群组，类型是: {chat.type}")
                 return None
             
             # 创建频道信息对象
