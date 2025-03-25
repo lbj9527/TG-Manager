@@ -127,76 +127,71 @@ class Downloader:
         Yields:
             Message: 消息对象
         """
-        # 确定消息ID的迭代方向和限制
-        if start_id == 0 and end_id == 0:
-            # 默认获取最新消息
-            curr_id = 0
-            stop_id = 0
-            reverse = False
-        elif end_id == 0:
-            # 从指定ID开始获取最新消息
-            curr_id = start_id
-            stop_id = 0
-            reverse = False
-        elif start_id == 0:
-            # 获取直到指定ID的所有消息
-            curr_id = 0
-            stop_id = end_id
-            reverse = False
-        elif start_id < end_id:
-            # 正向获取消息
-            curr_id = start_id
-            stop_id = end_id
-            reverse = False
-        else:
-            # 逆向获取消息
-            curr_id = start_id
-            stop_id = end_id
-            reverse = True
+        # 使用channel_resolver获取有效的消息ID范围
+        actual_start_id, actual_end_id = await self.channel_resolver.get_message_range(chat_id, start_id, end_id)
         
-        offset = 0  # 使用offset_id而不是offset
+        # 如果无法获取有效范围，则直接返回
+        if actual_start_id is None or actual_end_id is None:
+            logger.error(f"无法获取有效的消息ID范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+            return
+            
+        # 计算需要获取的消息数量
+        total_messages = actual_end_id - actual_start_id + 1
+        logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
-        while True:
-            try:
-                # 使用get_chat_history代替get_messages
-                logger.info(f"获取聊天记录: chat_id={chat_id}, start_id={curr_id}, end_id={stop_id}, limit=100")
+        # Telegram的get_chat_history按消息ID降序返回（从新到旧）
+        # 因此我们从最大ID开始请求，设置offset为0，让API本身帮我们筛选最新消息
+        
+        # 已获取的消息数量
+        fetched_count = 0
+        
+        try:
+            # 使用get_chat_history获取指定范围内的消息
+            # 我们可以通过设置offset_id参数为actual_end_id+1来获取比此ID小的消息
+            # 注意：Telegram offset_id是上限，不包含此ID
+            offset_id = actual_end_id + 1
+            
+            while fetched_count < total_messages:
+                limit = min(100, total_messages - fetched_count)  # 最多获取100条，但不超过剩余所需数量
+                logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
                 
-                # 获取一批消息
-                messages = []
+                batch_count = 0
                 async for message in self.client.get_chat_history(
                     chat_id=chat_id,
-                    limit=100,  # 每次获取100条消息
-                    offset_id=curr_id  # 使用消息索引作为offset
+                    limit=limit,  # 限制每批次的消息数量
+                    offset_id=offset_id  # 获取ID小于此值的消息
                 ):
-                    messages.append(message)
+                    batch_count += 1
                     
-                    # 检查消息ID是否在范围内
-                    if reverse and message.id <= stop_id:
+                    # 只处理在范围内的消息
+                    if message.id >= actual_start_id and message.id <= actual_end_id:
+                        fetched_count += 1
                         yield message
-                        return
-                    elif not reverse and stop_id > 0 and message.id >= stop_id:
-                        yield message
-                        return
                     
-                    yield message
+                    # 更新下一轮请求的offset_id
+                    offset_id = message.id
+                    
+                    # 如果已经达到或低于开始ID，则停止获取
+                    if message.id < actual_start_id:
+                        logger.info(f"已达到最小ID {actual_start_id}，停止获取")
+                        return
                 
-                # 如果没有获取到消息，说明已经到达消息列表末尾
-                if not messages:
+                # 如果这批次没有获取到任何消息，则退出循环
+                if batch_count == 0:
+                    logger.info("没有更多消息可获取")
                     break
-                
-                # 更新offset用于下一次获取
-                offset += len(messages)
                 
                 # 避免频繁请求
                 await asyncio.sleep(0.5)
             
-            except FloodWait as e:
-                logger.warning(f"获取消息时遇到限制，等待 {e.x} 秒")
-                await asyncio.sleep(e.x)
-            except Exception as e:
-                logger.error(f"获取消息失败: {e}")
-                logger.exception("详细错误信息")
-                break
+            logger.info(f"消息获取完成，共获取{fetched_count}条消息")
+        
+        except FloodWait as e:
+            logger.warning(f"获取消息时遇到限制，等待 {e.x} 秒")
+            await asyncio.sleep(e.x)
+        except Exception as e:
+            logger.error(f"获取消息失败: {e}")
+            logger.exception("详细错误信息")
     
     async def _download_message_media(self, message: Message, download_path: Path, chat_id: int) -> bool:
         """

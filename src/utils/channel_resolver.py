@@ -129,7 +129,6 @@ class ChannelResolver:
             _, chat = self._channel_cache[str_channel_id]
             if chat:
                 return chat
-        logger.warning(f"channel_id:{channel_id}")
         
         # 获取频道实体
         try:
@@ -260,4 +259,83 @@ class ChannelResolver:
                 return f"频道 (ID: {chat.id})"
         except Exception:
             # 如果无法获取频道信息，则返回原始ID
-            return str(channel_id) 
+            return str(channel_id)
+    
+    async def get_message_range(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0) -> Tuple[Optional[int], Optional[int]]:
+        """
+        获取有效的消息ID范围
+        
+        Args:
+            chat_id: 频道ID或用户名
+            start_id: 起始消息ID
+            end_id: 结束消息ID
+            
+        Returns:
+            Tuple[Optional[int], Optional[int]]: (实际起始消息ID, 实际结束消息ID)，如果参数无效则返回(None, None)
+        """
+        logger.info(f"获取消息范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+        
+        # 参数验证
+        if start_id < 0 or end_id < 0:
+            logger.error(f"消息ID范围无效: start_id={start_id}, end_id={end_id}, ID不能为负数")
+            return None, None
+            
+        # 查找实际的频道ID
+        try:
+            real_chat_id = chat_id
+            if isinstance(chat_id, str):
+                real_chat_id = await self.get_channel_id(chat_id)
+        except Exception as e:
+            logger.error(f"获取频道ID失败: {chat_id}, 错误: {str(e)}")
+            return None, None
+            
+        # 获取最新消息ID（如果需要）
+        latest_message_id = None
+        if end_id == 0 or (end_id > 0 and start_id < end_id):
+            try:
+                # 尝试获取最新消息
+                messages = []
+                async for message in self.client.get_chat_history(real_chat_id, limit=1):
+                    messages.append(message)
+                    
+                if messages:
+                    latest_message_id = messages[0].id
+                    logger.info(f"获取到最新消息ID: {latest_message_id}")
+                else:
+                    logger.warning(f"频道 {chat_id} 中没有找到消息")
+                    return None, None
+            except Exception as e:
+                logger.error(f"获取最新消息ID失败: {chat_id}, 错误: {str(e)}")
+                return None, None
+                
+        # 确定实际的开始和结束ID
+        actual_start_id = None
+        actual_end_id = None
+        
+        # 处理各种情况
+        if start_id == 0:
+            actual_start_id = 1
+        elif start_id > 0:
+            actual_start_id = start_id
+            
+        if end_id == 0:
+            # 如果end_id为0，使用最新消息ID
+            actual_end_id = latest_message_id
+        elif end_id > 0:
+            if start_id > end_id:
+                # 如果start_id > end_id，这是无效的范围
+                logger.error(f"消息ID范围无效: start_id={start_id} > end_id={end_id}")
+                return None, None
+            elif start_id < end_id:
+                # 正常情况，使用指定的end_id
+                # 但如果end_id不存在（超过最新消息ID），则使用最新消息ID
+                if latest_message_id and end_id > latest_message_id:
+                    actual_end_id = latest_message_id
+                    logger.warning(f"请求的end_id={end_id}超过最新消息ID={latest_message_id}，使用最新消息ID")
+                else:
+                    actual_end_id = end_id
+            else:  # start_id == end_id
+                actual_end_id = end_id
+        
+        logger.info(f"最终消息范围: actual_start_id={actual_start_id}, actual_end_id={actual_end_id}")
+        return actual_start_id, actual_end_id 

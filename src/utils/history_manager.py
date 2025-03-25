@@ -56,10 +56,74 @@ class HistoryManager:
             Dict[str, Any]: 历史记录数据
         """
         try:
+            # 检查文件是否存在且非空
+            if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+                logger.warning(f"历史记录文件不存在或为空: {file_path}，创建新文件")
+                # 根据文件类型创建默认结构
+                if file_path == self.download_history_path:
+                    default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+                elif file_path == self.upload_history_path:
+                    default_content = {"files": {}, "last_updated": datetime.now().isoformat()}
+                elif file_path == self.forward_history_path:
+                    default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+                else:
+                    default_content = {"last_updated": datetime.now().isoformat()}
+                
+                # 写入默认内容
+                self._write_history(file_path, default_content)
+                return default_content
+            
+            # 读取并解析文件
             with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            logger.error(f"读取历史记录文件失败：{file_path}, 错误：{e}")
+                content = f.read().strip()
+                if not content:  # 再次检查内容是否为空
+                    raise json.JSONDecodeError("Empty file", "", 0)
+                return json.loads(content)
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"读取历史记录文件失败（JSON格式错误）：{file_path}, 错误：{e}")
+            # 根据文件类型创建默认结构
+            if file_path == self.download_history_path:
+                default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+            elif file_path == self.upload_history_path:
+                default_content = {"files": {}, "last_updated": datetime.now().isoformat()}
+            elif file_path == self.forward_history_path:
+                default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+            else:
+                default_content = {"last_updated": datetime.now().isoformat()}
+            
+            # 创建备份并写入默认内容
+            if os.path.exists(file_path):
+                backup_path = f"{file_path}.bak.{int(time.time())}"
+                try:
+                    os.rename(file_path, backup_path)
+                    logger.warning(f"已将损坏的历史记录文件备份为: {backup_path}")
+                except Exception as rename_err:
+                    logger.error(f"备份损坏的历史记录文件失败: {rename_err}")
+            
+            # 写入默认内容
+            self._write_history(file_path, default_content)
+            return default_content
+            
+        except FileNotFoundError:
+            logger.warning(f"历史记录文件不存在: {file_path}，创建新文件")
+            # 根据文件类型创建默认结构
+            if file_path == self.download_history_path:
+                default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+            elif file_path == self.upload_history_path:
+                default_content = {"files": {}, "last_updated": datetime.now().isoformat()}
+            elif file_path == self.forward_history_path:
+                default_content = {"channels": {}, "last_updated": datetime.now().isoformat()}
+            else:
+                default_content = {"last_updated": datetime.now().isoformat()}
+            
+            # 写入默认内容
+            self._write_history(file_path, default_content)
+            return default_content
+            
+        except Exception as e:
+            logger.error(f"读取历史记录文件失败（未知错误）：{file_path}, 错误：{e}")
+            # 返回一个安全的默认值
             return {"channels": {}, "files": {}, "last_updated": datetime.now().isoformat()}
     
     def _write_history(self, file_path: str, data: Dict[str, Any]):
