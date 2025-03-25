@@ -16,21 +16,23 @@ TG Forwarder 是一个 Telegram 消息转发工具，用于在不同的 Telegram
 
 - 服务层：提供频道解析、历史记录管理、错误重试等公共服务。
 
-- 数据层：使用JSON文件进行历史记录，使用config.ini记录程序参数配置（记得添加SOCKS5代理设置）
+- 数据层：使用 JSON 文件进行历史记录，使用 config.jsons 记录程序参数配置（记得添加 SOCKS5 代理设置）
 
 ### 2.2 模块划分与分层
-模块	            职责	                                                                   依赖关系
-Main	           解析命令行参数，调用对应功能模块（forward/download/upload/startmonitor）。	 依赖所有功能模块和ConfigManager
-ConfigManager	   加载并解析配置文件，提供全局配置数据（如limit/timeout/频道映射关系等）。	     无
-ChannelResolver	 解析频道标识符（链接/用户名/ID），验证频道有效性，管理频道状态缓存。	          Telegram API、HistoryManager
-Downloader	     下载历史消息的媒体文件，按源频道分类存储，支持断点续传。	                     ChannelResolver、HistoryManager
-Uploader	       上传本地文件或下载的临时文件到目标频道，组织媒体组，处理多频道分发。	          ChannelResolver、HistoryManager
-Forwarder	       按顺序转发历史消息，处理禁止频道（下载后上传），维护转发记录。	          Downloader、Uploader、ChannelResolver
-Monitor	         监听源频道的新消息，实时触发转发逻辑。	                                Forwarder、异步事件框架（如Pyrogram）
-HistoryManager	 统一管理download_history.json/upload_history.json/forward_history.json，提供原子化读写接口。	  无
-RetryManager	   实现失败重试逻辑，根据配置的max_retries和timeout控制重试策略。	           所有功能模块
-Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输出。	                     所有模块
 
+模块 职责 依赖关系
+Main 解析命令行参数，调用对应功能模块（forward/download/upload/startmonitor）。 依赖所有功能模块和 ConfigManager
+ConfigManager 加载并解析配置文件，提供全局配置数据（如 limit/timeout/频道映射关系等）。 无
+ChannelResolver 解析频道标识符（链接/用户名/ID），验证频道有效性，管理频道状态缓存。 Telegram API、HistoryManager
+clientManger 客户端管理 依赖于 Telegram API，ConfigManager
+Downloader 下载历史消息的媒体文件，按源频道分类存储，支持断点续传。 ChannelResolver、HistoryManager
+Uploader 上传本地文件或下载的临时文件到目标频道，组织媒体组，处理多频道分发。 ChannelResolver、HistoryManager
+Forwarder 按顺序转发历史消息，处理禁止频道（下载后上传），维护转发记录。 Downloader、Uploader、ChannelResolver
+Monitor 监听源频道的新消息，实时触发转发逻辑。 Forwarder、异步事件框架（如 Pyrogram）
+HistoryManager 统一管理 download_history.json/upload_history.json/forward_history.json，提供原子化读写接口。 无
+Logger 记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输出。 所有模块
+FilterManger 文本过滤，链接过滤、文本替换（预留接口，暂不实现）
+MediaManger 媒体文件处理、视频中提取图片、视频打水印、图片打水印（预留接口，暂不实现）
 
 ## 3. 功能需求
 
@@ -38,24 +40,25 @@ Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输
 
 - **功能描述**：根据统一设置的消息范围，配置多组"一个源频道和多个目标频道"的消息映射，根据媒体组 ID 顺序串行转发
 - **实现方式**：
-(1). 加载配置，初始化频道映射关系，调用ChannelResolver频道解析获取每个频道的真实ID 。 
-(2). 遍历每个源频道： 
-   a. 根据start_id/end_id获取消息列表，按媒体组ID分类，过滤已转发记录（HistoryManager），
-   b. 调用ChannelResolver获取每个频道的状态（是否禁止转发）。  
+  (1). 加载配置，初始化频道映射关系，调用 ChannelResolver 频道解析获取每个频道的真实 ID 。
+  (2). 遍历每个源频道：
+  a. 根据 start_id/end_id 获取消息列表，按媒体组 ID 分类，过滤已转发记录（HistoryManager），
+  b. 调用 ChannelResolver 获取每个频道的状态（是否禁止转发）。  
    c. 若源频道非禁止转发：直接转发到目标频道，注意保持原消息格式
-      若源频道禁止转发：
-      对非禁止转发目标频道排序
-      调用Downloader下载媒体文件、文本等元数据到临时目录，并记录下载成功的历史记录。 
-      重组媒体组。 
-      调用Uploader上传到第一个非禁止目标频道，成功后通过copy转发到其他目标频道。
-      成功将一个媒体组消息，转发到配对的所有目标频道后，删除本地文件  
-      更新forward_history.json（标记消息ID和源频道、目标频道）。  
-   d. 按forward_delay控制速率，避免触发API限制。  
-   e. 达到limit后暂停pause_time秒，循环执行。  
-(3).
+  若源频道禁止转发：
+  对非禁止转发目标频道排序
+  调用 Downloader 下载媒体文件、文本等元数据到临时目录，并记录下载成功的历史记录。
+  重组媒体组。
+  调用 Uploader 上传到第一个非禁止目标频道，成功后通过 copy 转发到其他目标频道。
+  成功将一个媒体组消息，转发到配对的所有目标频道后，删除本地文件  
+   更新 forward_history.json（标记消息 ID 和源频道、目标频道）。  
+   d. 按 forward_delay 控制速率，避免触发 API 限制。  
+   e. 达到 limit 后暂停 pause_time 秒，循环执行。  
+  (3).
   - 可配置需转发的文件类型
   - 可设置消息过滤器，过滤特定的文字、链接、表情等（暂不实现，留好接口）
   - 水印功能，暂不实现，预留接口
+    (4)使用顺序下载，顺序上传。但使用生产者-消费者模式，下载和上传可以同时进行。具体要求：生产者负责顺序下载媒体组内的每个文件，下载完媒体组内所有图片、视频和文本后；消费者负责重组媒体组，然后使用 send_media_group 发送媒体组、使用 copy_media_group 复制媒体组。生产者和消息者可以同时工作，但消费者需等队列中有生产好的东西，才能工作。
 
 ### 3.2 历史消息媒体下载
 
@@ -64,13 +67,16 @@ Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输
   - 可按源频道用户名分类保存
   - 可设置下载类型和范围
   - 支持断点续传（跳过已下载文件）
+  - 使用顺序下载模式
+  - 流程是，第一步获取消息范围，剔除已下载过的消息；第二步，循环下载，循环中检测是否达到 Limit 限制的数量，若达到则暂停，等了等待时间再继续下载，下载完成，记入下载历史。
+  - 文件名以频道 ID-消息 ID-原文件名.后缀命名
 
 ### 3.3 本地文件上传
 
 - **功能描述**：上传本地文件到目标频道
 - **实现方式**：
   - 通过设置每个媒体组的文件数量及 caption
-  - 以媒体组形式多线程上传到多个目标频道
+  - 以媒体组形式 send_media_group，多线程并发上传到多个目标频道
   - 媒体组组织：在 uploads 文件夹中创建子文件夹，文件夹名作为媒体组的 caption，文件夹内文件组成媒体组（最多 10 个文件）
   - 水印功能，暂不实现，预留接口
 
@@ -117,7 +123,7 @@ Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输
 ### 5.2 下载配置
 
 - `download_history`：记录各源频道已下载成功的消息 ID，避免重复下载
-- `start_id`/`end_id`：下载消息的 ID 范围，end_id为0，表示最新消息
+- `start_id`/`end_id`：下载消息的 ID 范围，end_id 为 0，表示最新消息
 - `source_channels`：源频道列表
 - `organize_by_chat`：是否按源频道分类保存文件
 
@@ -289,7 +295,7 @@ Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输
 ### 8.3 核心功能
 
 - **链接解析**: 将各种格式的频道标识符解析为标准化的(频道 ID/用户名, 消息 ID)元组
-- **获取频道实例**：根据真实ID或用户名，返回频道实体
+- **获取频道实例**：根据真实 ID 或用户名，返回频道实体
 - **状态缓存**: 缓存频道转发状态，减少 API 请求
 
 ### 8.4 频道状态管理
@@ -310,4 +316,9 @@ Logger	         记录运行日志，支持不同级别（INFO/ERROR/DEBUG）输
 通过频道解析功能，应用能够统一处理各种格式的频道标识符，简化用户输入，并为转发、下载和上传操作提供必要的频道信息支持。
 
 ## 9. 单元测试
-为每个模块实现pytest单元测试和集成测试
+
+为每个模块实现在本目录下的 tests 文件夹内，添加独立运行的测试文件，客户端连接统一使用主程序的 session 文件
+
+## 10. 注意
+
+### 10.1 本程序不要使用异步的方式写代码
