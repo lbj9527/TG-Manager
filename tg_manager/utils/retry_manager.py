@@ -102,9 +102,22 @@ class RetryManager:
                 if attempt > 0:
                     wait_time = self._get_wait_time(attempt - 1)
                     logger.info(f"异步重试第{attempt}次，等待 {wait_time:.2f} 秒")
-                    await asyncio.sleep(wait_time)
+                    
+                    try:
+                        # 使用可中断的等待
+                        await asyncio.sleep(wait_time)
+                    except asyncio.CancelledError:
+                        logger.info("重试等待被取消")
+                        raise  # 重新抛出取消异常
                 
+                # 直接尝试执行函数
                 return await func(*args, **kwargs)
+            
+            except asyncio.CancelledError:
+                # 如果是取消异常，直接重新抛出，不进行重试
+                logger.info("操作被取消，中断重试")
+                raise
+            
             except Exception as e:
                 attempt += 1
                 last_exception = e
@@ -117,7 +130,7 @@ class RetryManager:
         
         if last_exception:
             raise last_exception
-            
+        
         raise RuntimeError("所有重试都失败，但没有捕获到异常")
         
     def _get_wait_time(self, attempt):

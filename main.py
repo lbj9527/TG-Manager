@@ -10,7 +10,9 @@ import os
 import sys
 import argparse
 import asyncio
+import signal
 from pathlib import Path
+import time
 
 # 设置Python路径确保能导入tg_manager包
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -18,7 +20,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 导入tg_manager模块
 from tg_manager.run import TGManager
 from tg_manager import __version__
-
 
 def parse_arguments():
     """解析命令行参数"""
@@ -48,6 +49,8 @@ def parse_arguments():
 
 async def main():
     """主函数"""
+    global manager
+    
     args = parse_arguments()
     
     # 确保至少选择了一种模式
@@ -58,45 +61,62 @@ async def main():
     
     # 初始化TG-Manager
     manager = TGManager(config_path=args.config)
-    await manager.initialize()
     
     try:
+        # 初始化和连接客户端
+        await manager.initialize()
+        print(f"已连接到Telegram账号") 
+      
         # 根据命令行参数选择运行模式
         if args.download:
             start_id = args.start_id if args.start_id is not None else None
             end_id = args.end_id if args.end_id is not None else None
-            await manager.run_download(start_id=start_id, end_id=end_id)
+            await asyncio.shield(manager.run_download(start_id=start_id, end_id=end_id))
         
         elif args.upload:
-            await manager.run_upload()
+            await asyncio.shield(manager.run_upload())
         
         elif args.forward:
             start_id = args.start_id if args.start_id is not None else None
             end_id = args.end_id if args.end_id is not None else None
-            await manager.run_forward(start_id=start_id, end_id=end_id)
+            await asyncio.shield(manager.run_forward(start_id=start_id, end_id=end_id))
         
         elif args.monitor:
             duration = args.duration if args.duration is not None else None
-            await manager.run_monitor(duration=duration)
+            await asyncio.shield(manager.run_monitor(duration=duration))
     
     except KeyboardInterrupt:
         print("\n程序被用户中断")
-        await manager.shutdown()
-        return 1
+    except asyncio.CancelledError:
+        print("\n异步任务被取消")
     except Exception as e:
         print(f"发生错误: {e}")
-        await manager.shutdown()
-        return 1
+        import traceback
+        traceback.print_exc()
     finally:
-        await manager.shutdown()
+        try:
+            print("\n正在关闭Telegram客户端...")
+            if hasattr(manager, "client") and manager.client:
+                try:
+                    # 设置超时，避免关闭客户端时卡住
+                    await asyncio.wait_for(manager.shutdown(), timeout=5)
+                except asyncio.TimeoutError:
+                    print("关闭客户端超时，强制退出...")
+                    return 1
+                except Exception as e:
+                    print(f"关闭客户端时出错: {e}")
+            print("程序已关闭")
+        except Exception as e:
+            print(f"关闭过程中发生错误: {e}")
     
     return 0
 
 
 if __name__ == "__main__":
     try:
-        exit_code = asyncio.run(main())
-        sys.exit(exit_code)
-    except KeyboardInterrupt:
-        print("\n程序被用户中断")
+        asyncio.run(main(), debug=True)
+    except Exception as e:
+        print(f"程序启动时发生错误: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1) 

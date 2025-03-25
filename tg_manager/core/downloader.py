@@ -112,11 +112,29 @@ class Downloader:
             
             logger.debug(f"调用get_chat_history，参数: {history_kwargs}")
             message_count = 0
-            # 迭代消息
+            
+            # 创建检查停止事件的任务
+            async def check_stop():
+                try:
+                    while True:
+                        if stop_event and stop_event.is_set():
+                            logger.info("接收到停止事件，中断下载过程")
+                            raise asyncio.CancelledError("下载操作被用户取消")
+                        await asyncio.sleep(0.5)  # 每0.5秒检查一次
+                except asyncio.CancelledError:
+                    logger.debug("停止检查任务被取消")
+                    raise
+                    
+            # 只有当提供了stop_event时才创建检查任务
+            check_task = None
+            if stop_event:
+                check_task = asyncio.create_task(check_stop())
+            
             try:
+                # 迭代消息
                 async for message in self.client.get_chat_history(**history_kwargs):
-                    # 检查是否需要停止
-                    if stop_event and stop_event.is_set():
+                    # 每10条消息检查一次是否需要停止
+                    if message_count % 10 == 0 and stop_event and stop_event.is_set():
                         logger.info("收到停止信号，中断下载过程")
                         break
                         
@@ -150,7 +168,18 @@ class Downloader:
                             break
                             
                         logger.debug(f"开始下载消息 {message.id} 的媒体")
-                        download_result = await self._download_message_media(message, chat_download_path, stop_event)
+                        
+                        # 添加超时保护，避免下载任务卡住
+                        try:
+                            download_result = await asyncio.wait_for(
+                                self._download_message_media(message, chat_download_path, stop_event),
+                                timeout=300  # 5分钟超时
+                            )
+                        except asyncio.TimeoutError:
+                            logger.error(f"下载消息 {message.id} 的媒体超时")
+                            stats["failed"] += 1
+                            continue
+                            
                         logger.debug(f"媒体下载结果: {download_result}")
                         
                         if download_result["status"] == "success":
@@ -177,10 +206,23 @@ class Downloader:
                         stats["failed"] += 1
                 
                 logger.debug(f"消息迭代完成，共处理 {message_count} 条消息")
-            except Exception as e:
-                logger.error(f"迭代消息时出错: {e}", exc_info=True)
-                return {"status": "failed", "error": str(e), "downloaded": stats["downloaded"]}
-            
+                
+            except asyncio.CancelledError:
+                logger.info("下载操作被取消")
+                return {
+                    "status": "cancelled", 
+                    "reason": "user_interrupted", 
+                    "downloaded": stats["downloaded"]
+                }
+            finally:
+                # 确保检查任务被取消
+                if check_task:
+                    check_task.cancel()
+                    try:
+                        await check_task
+                    except asyncio.CancelledError:
+                        pass
+                        
             logger.info(f"下载完成，总计: {stats['total_messages']}, 下载: {stats['downloaded']}, "
                        f"跳过: {stats['skipped']}, 失败: {stats['failed']}")
             
@@ -191,6 +233,13 @@ class Downloader:
             }
             logger.debug(f"返回结果: {result}")
             return result
+        except asyncio.CancelledError:
+            logger.info("下载消息被取消")
+            return {
+                "status": "cancelled", 
+                "reason": "user_interrupted", 
+                "downloaded": stats.get("downloaded", 0) if 'stats' in locals() else 0
+            }
         except Exception as e:
             logger.error(f"下载消息时发生未处理的异常: {e}", exc_info=True)
             return {"status": "failed", "error": str(e), "downloaded": 0}
@@ -211,7 +260,7 @@ class Downloader:
             下载结果信息
         """
         # 使用实例方法进行重试
-        async def download_media_with_retry():
+        async def download_media_with_retry(*args, **kwargs):
             # 检查是否需要停止
             if stop_event and stop_event.is_set():
                 return {"status": "cancelled", "reason": "user_interrupted"}
@@ -317,7 +366,7 @@ class Downloader:
                 
         # 使用重试管理器执行下载
         try:
-            return await self.retry_manager.retry_async(download_media_with_retry, stop_event=stop_event)
+            return await self.retry_manager.retry_async(download_media_with_retry)
         except asyncio.CancelledError:
             logger.info("下载操作被取消")
             return {"status": "cancelled", "reason": "operation_cancelled"}

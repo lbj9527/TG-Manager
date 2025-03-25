@@ -34,7 +34,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     
     # 创建新记录器
     logger = logging.getLogger(logger_name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     
     # 清除可能存在的旧处理器
     if logger.handlers:
