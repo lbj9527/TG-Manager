@@ -156,7 +156,6 @@ class Downloader:
             "stats": stats
         }
     
-    @retry_manager.retry
     async def _download_message_media(self, 
                                      message: Message, 
                                      download_path: str) -> Dict[str, Any]:
@@ -170,104 +169,113 @@ class Downloader:
         Returns:
             下载结果信息
         """
-        # 检查消息是否包含媒体
-        if not hasattr(message, 'media') or not message.media:
-            return {"status": "skipped", "reason": "no_media"}
-        
-        media_type = self._get_media_type(message)
-        
-        # 检查是否是需要下载的媒体类型
-        if media_type not in self.media_types:
-            return {"status": "skipped", "reason": "media_type_not_in_filter", "media_type": media_type}
-        
-        # 生成文件名前缀
-        prefix = f"{message.id}_"
-        
-        # 根据媒体类型处理下载
+        # 使用实例方法进行重试
+        async def download_media_with_retry():
+            # 检查消息是否包含媒体
+            if not hasattr(message, 'media') or not message.media:
+                return {"status": "skipped", "reason": "no_media"}
+            
+            media_type = self._get_media_type(message)
+            
+            # 检查是否是需要下载的媒体类型
+            if media_type not in self.media_types:
+                return {"status": "skipped", "reason": "media_type_not_in_filter", "media_type": media_type}
+            
+            # 生成文件名前缀
+            prefix = f"{message.id}_"
+            
+            # 根据媒体类型处理下载
+            try:
+                if media_type == "photo":
+                    # 下载照片
+                    file_path = await message.download(
+                        file_name=os.path.join(download_path, f"{prefix}photo.jpg")
+                    )
+                    return {
+                        "status": "success",
+                        "media_type": "photo",
+                        "file_path": file_path,
+                        "message_id": message.id
+                    }
+                
+                elif media_type == "video":
+                    # 下载视频
+                    file_path = await message.download(
+                        file_name=os.path.join(download_path, f"{prefix}video.mp4")
+                    )
+                    return {
+                        "status": "success",
+                        "media_type": "video",
+                        "file_path": file_path,
+                        "message_id": message.id
+                    }
+                
+                elif media_type == "document":
+                    # 获取原始文件名
+                    if hasattr(message.document, 'file_name') and message.document.file_name:
+                        filename = message.document.file_name
+                        # 确保文件名不包含非法字符
+                        filename = self._sanitize_filename(filename)
+                        file_path = await message.download(
+                            file_name=os.path.join(download_path, f"{prefix}{filename}")
+                        )
+                    else:
+                        file_path = await message.download(
+                            file_name=os.path.join(download_path, f"{prefix}document")
+                        )
+                    
+                    return {
+                        "status": "success",
+                        "media_type": "document",
+                        "file_path": file_path,
+                        "message_id": message.id
+                    }
+                
+                elif media_type == "audio":
+                    # 下载音频
+                    if hasattr(message.audio, 'file_name') and message.audio.file_name:
+                        filename = message.audio.file_name
+                        filename = self._sanitize_filename(filename)
+                        file_path = await message.download(
+                            file_name=os.path.join(download_path, f"{prefix}{filename}")
+                        )
+                    else:
+                        file_path = await message.download(
+                            file_name=os.path.join(download_path, f"{prefix}audio.mp3")
+                        )
+                    
+                    return {
+                        "status": "success",
+                        "media_type": "audio",
+                        "file_path": file_path,
+                        "message_id": message.id
+                    }
+                
+                elif media_type == "animation":
+                    # 下载GIF/动画
+                    file_path = await message.download(
+                        file_name=os.path.join(download_path, f"{prefix}animation.mp4")
+                    )
+                    return {
+                        "status": "success",
+                        "media_type": "animation",
+                        "file_path": file_path,
+                        "message_id": message.id
+                    }
+                
+                else:
+                    return {"status": "skipped", "reason": "unsupported_media_type", "media_type": media_type}
+            
+            except Exception as e:
+                logger.error(f"下载媒体失败: {e}")
+                return {"status": "failed", "error": str(e), "media_type": media_type}
+                
+        # 使用重试管理器执行下载
         try:
-            if media_type == "photo":
-                # 下载照片
-                file_path = await message.download(
-                    file_name=os.path.join(download_path, f"{prefix}photo.jpg")
-                )
-                return {
-                    "status": "success",
-                    "media_type": "photo",
-                    "file_path": file_path,
-                    "message_id": message.id
-                }
-            
-            elif media_type == "video":
-                # 下载视频
-                file_path = await message.download(
-                    file_name=os.path.join(download_path, f"{prefix}video.mp4")
-                )
-                return {
-                    "status": "success",
-                    "media_type": "video",
-                    "file_path": file_path,
-                    "message_id": message.id
-                }
-            
-            elif media_type == "document":
-                # 获取原始文件名
-                if hasattr(message.document, 'file_name') and message.document.file_name:
-                    filename = message.document.file_name
-                    # 确保文件名不包含非法字符
-                    filename = self._sanitize_filename(filename)
-                    file_path = await message.download(
-                        file_name=os.path.join(download_path, f"{prefix}{filename}")
-                    )
-                else:
-                    file_path = await message.download(
-                        file_name=os.path.join(download_path, f"{prefix}document")
-                    )
-                
-                return {
-                    "status": "success",
-                    "media_type": "document",
-                    "file_path": file_path,
-                    "message_id": message.id
-                }
-            
-            elif media_type == "audio":
-                # 下载音频
-                if hasattr(message.audio, 'file_name') and message.audio.file_name:
-                    filename = message.audio.file_name
-                    filename = self._sanitize_filename(filename)
-                    file_path = await message.download(
-                        file_name=os.path.join(download_path, f"{prefix}{filename}")
-                    )
-                else:
-                    file_path = await message.download(
-                        file_name=os.path.join(download_path, f"{prefix}audio.mp3")
-                    )
-                
-                return {
-                    "status": "success",
-                    "media_type": "audio",
-                    "file_path": file_path,
-                    "message_id": message.id
-                }
-            
-            elif media_type == "animation":
-                # 下载GIF/动画
-                file_path = await message.download(
-                    file_name=os.path.join(download_path, f"{prefix}animation.mp4")
-                )
-                return {
-                    "status": "success",
-                    "media_type": "animation",
-                    "file_path": file_path,
-                    "message_id": message.id
-                }
-            
-            else:
-                return {"status": "skipped", "reason": "unsupported_media_type", "media_type": media_type}
-        
+            return await self.retry_manager.retry_async(download_media_with_retry)
         except Exception as e:
-            logger.error(f"下载媒体失败: {e}")
-            return {"status": "failed", "error": str(e), "media_type": media_type}
+            logger.error(f"重试下载媒体失败: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e)}
     
     def _get_media_type(self, message: Message) -> str:
         """

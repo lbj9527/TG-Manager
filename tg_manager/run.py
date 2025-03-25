@@ -27,9 +27,14 @@ logger = get_logger()
 class TGManager:
     """TG-Manager主类，用于处理命令行参数并调用相应的功能模块"""
     
-    def __init__(self):
-        """初始化TG-Manager"""
-        self.config_manager = ConfigManager()
+    def __init__(self, config_path: str = 'config.json'):
+        """
+        初始化TG-Manager
+        
+        Args:
+            config_path: 配置文件路径
+        """
+        self.config_manager = ConfigManager(config_path)
         self.client = None
         self.channel_resolver = None
         self.history_manager = None
@@ -70,8 +75,22 @@ class TGManager:
         await self.client.start()
         logger.info("Telegram客户端已连接")
         
+        # 获取并打印当前账号信息
+        try:
+            me = await self.client.get_me()
+            if me:
+                logger.info(f"已登录账号: {me.first_name} {me.last_name or ''} (@{me.username or '无用户名'}) [ID: {me.id}]")
+            else:
+                logger.warning("无法获取当前账号信息")
+        except Exception as e:
+            logger.error(f"获取账号信息时出错: {e}")
+        
         # 初始化服务和核心组件
         self._init_components()
+    
+    async def initialize(self) -> None:
+        """初始化TG-Manager，包括连接Telegram客户端"""
+        await self._init_client()
     
     def _init_components(self) -> None:
         """初始化各个服务和核心组件"""
@@ -269,7 +288,7 @@ class TGManager:
         else:
             logger.error(f"上传失败: {result.get('error', '未知错误')}")
     
-    async def start_monitor(self) -> None:
+    async def start_monitor(self, duration: Optional[str] = None) -> None:
         """启动监听功能"""
         logger.info("开始执行监听任务")
         
@@ -279,7 +298,9 @@ class TGManager:
             logger.error("配置中没有设置监听频道配对，请检查配置文件")
             return
         
-        duration = self.config_manager.get_value('MONITOR', 'duration')
+        # 如果未指定参数，使用配置中的值
+        if duration is None:
+            duration = self.config_manager.get_value('MONITOR', 'duration', '')
         
         # 启动每个监听任务
         monitors = []
@@ -350,6 +371,61 @@ class TGManager:
             # 关闭客户端
             await self.client.stop()
             logger.info("程序已结束")
+
+    async def shutdown(self) -> None:
+        """关闭TG-Manager，断开Telegram客户端连接"""
+        if self.client:
+            await self.client.stop()
+            logger.info("Telegram客户端已断开连接")
+
+    async def run_download(self, start_id: Optional[int] = None, end_id: Optional[int] = None) -> None:
+        """
+        执行下载任务
+        
+        Args:
+            start_id: 起始消息ID，为None时使用配置文件中的值
+            end_id: 结束消息ID，为None时使用配置文件中的值
+        """
+        # 如果未指定参数，使用配置中的值
+        if start_id is None:
+            start_id = self.config_manager.get_int('DOWNLOAD', 'start_id', 0)
+        if end_id is None:
+            end_id = self.config_manager.get_int('DOWNLOAD', 'end_id', 0)
+            
+        await self.start_download()
+            
+    async def run_upload(self) -> None:
+        """执行上传任务"""
+        await self.start_upload()
+        
+    async def run_forward(self, start_id: Optional[int] = None, end_id: Optional[int] = None) -> None:
+        """
+        执行转发任务
+        
+        Args:
+            start_id: 起始消息ID，为None时使用配置文件中的值
+            end_id: 结束消息ID，为None时使用配置文件中的值
+        """
+        # 如果未指定参数，使用配置中的值
+        if start_id is None:
+            start_id = self.config_manager.get_int('FORWARD', 'start_id', 0)
+        if end_id is None:
+            end_id = self.config_manager.get_int('FORWARD', 'end_id', 0)
+            
+        await self.start_forward()
+        
+    async def run_monitor(self, duration: Optional[str] = None) -> None:
+        """
+        执行监控任务
+        
+        Args:
+            duration: 监控持续时间，为None时使用配置文件中的值
+        """
+        # 如果未指定参数，使用配置中的值
+        if duration is None:
+            duration = self.config_manager.get_value('MONITOR', 'duration', '')
+            
+        await self.start_monitor(duration)
 
 
 def main():

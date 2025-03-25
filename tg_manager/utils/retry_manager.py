@@ -78,47 +78,53 @@ class RetryManager:
         
         return wrapper
     
-    async def retry_async(self, func: Callable[..., Any]) -> Callable[..., Any]:
-        """
-        异步重试装饰器，用于自动重试失败的异步操作
-        
+    async def retry_async(self, func, *args, **kwargs):
+        """异步重试函数。
+
+        根据设置的重试策略，自动重试失败的异步操作。
+
         Args:
-            func: 要执行的异步函数
-            
+            func (callable): 要执行的异步函数
+            *args: 传递给函数的位置参数
+            **kwargs: 传递给函数的关键字参数
+
         Returns:
-            装饰后的异步函数
+            Any: 函数的返回值
+
+        Raises:
+            Exception: 如果所有重试都失败，则抛出最后一个异常
         """
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            last_exception = None
-            wait_time = 1.0
-            
-            for attempt in range(self.max_retries + 1):
-                try:
-                    if attempt > 0:
-                        logger.info(f"异步重试第{attempt}次 '{func.__name__}'，等待 {wait_time:.2f} 秒")
-                        await asyncio.sleep(wait_time)
-                        
-                        # 应用指数退避和随机抖动
-                        wait_time = wait_time * self.backoff_factor * (1 + random.uniform(-self.jitter, self.jitter))
-                    
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    logger.warning(f"异步函数 '{func.__name__}' 执行失败: {e}")
-                    last_exception = e
-                    
-                    # 检查是否是最后一次尝试
-                    if attempt >= self.max_retries:
-                        logger.error(f"已达到最大异步重试次数 ({self.max_retries})，放弃操作")
-                        break
-            
-            # 重试后仍然失败，抛出最后一个异常
-            if last_exception:
-                raise last_exception
-            
-            raise RuntimeError(f"异步函数 '{func.__name__}' 执行失败，已达到最大重试次数")
+        last_exception = None
+        attempt = 0
         
-        return wrapper
+        while attempt < self.max_retries + 1:
+            try:
+                if attempt > 0:
+                    wait_time = self._get_wait_time(attempt - 1)
+                    logger.info(f"异步重试第{attempt}次，等待 {wait_time:.2f} 秒")
+                    await asyncio.sleep(wait_time)
+                
+                return await func(*args, **kwargs)
+            except Exception as e:
+                attempt += 1
+                last_exception = e
+                
+                if attempt > self.max_retries:
+                    logger.error(f"已达到最大异步重试次数 ({self.max_retries})，放弃操作")
+                    break
+                    
+                logger.warning(f"操作失败 (尝试 {attempt}/{self.max_retries}): {e}")
+        
+        if last_exception:
+            raise last_exception
+            
+        raise RuntimeError("所有重试都失败，但没有捕获到异常")
+        
+    def _get_wait_time(self, attempt):
+        """计算重试等待时间，应用指数退避和随机抖动。"""
+        wait_time = 1.0 * (self.backoff_factor ** attempt)
+        jitter_amount = wait_time * self.jitter
+        return wait_time + random.uniform(-jitter_amount, jitter_amount)
 
 
 # 提供便捷函数用于创建带有默认参数的重试管理器

@@ -13,15 +13,16 @@ import logging
 class ConfigManager:
     """配置管理类，负责加载和解析配置文件"""
     
-    def __init__(self, config_path: str = "config.ini"):
+    def __init__(self, config_path: str = "config.json"):
         """
         初始化配置管理器
         
         Args:
-            config_path: 配置文件路径，默认为'config.ini'
+            config_path: 配置文件路径，默认为'config.json'
         """
         self.config_path = config_path
-        self.config = configparser.ConfigParser()
+        self.config = {}
+        self.config_parser = configparser.ConfigParser()
         self.download_history_path = "data/download_history.json"
         self.upload_history_path = "data/upload_history.json"
         self.forward_history_path = "data/forward_history.json"
@@ -39,64 +40,96 @@ class ConfigManager:
             self._create_default_config()
         
         try:
-            self.config.read(self.config_path, encoding='utf-8')
+            # 根据文件扩展名决定如何加载
+            if self.config_path.endswith('.json'):
+                self._load_json_config()
+            else:
+                self._load_ini_config()
+            
             logging.info(f"成功加载配置文件: {self.config_path}")
         except Exception as e:
             logging.error(f"加载配置文件失败: {e}")
             raise
     
+    def _load_json_config(self) -> None:
+        """加载JSON格式的配置文件"""
+        with open(self.config_path, 'r', encoding='utf-8') as f:
+            self.config = json.load(f)
+    
+    def _load_ini_config(self) -> None:
+        """加载INI格式的配置文件"""
+        self.config_parser.read(self.config_path, encoding='utf-8')
+        # 将INI配置转换为字典
+        self.config = {}
+        for section in self.config_parser.sections():
+            self.config[section] = {}
+            for key, value in self.config_parser[section].items():
+                self.config[section][key] = value
+    
     def _create_default_config(self) -> None:
         """创建默认配置文件"""
-        self.config['GENERAL'] = {
-            'api_id': '请在此填写您的Telegram API ID',
-            'api_hash': '请在此填写您的Telegram API Hash',
-            'limit': '50',
-            'pause_time': '60',
-            'timeout': '30',
-            'max_retries': '3',
-            'proxy_enabled': 'false',
-            'proxy_type': 'SOCKS5',
-            'proxy_addr': '127.0.0.1',
-            'proxy_port': '1080',
-            'proxy_username': '',
-            'proxy_password': ''
+        default_config = {
+            'GENERAL': {
+                'api_id': '请在此填写您的Telegram API ID',
+                'api_hash': '请在此填写您的Telegram API Hash',
+                'limit': 50,
+                'pause_time': 60,
+                'timeout': 30,
+                'max_retries': 3,
+                'proxy_enabled': False,
+                'proxy_type': 'SOCKS5',
+                'proxy_addr': '127.0.0.1',
+                'proxy_port': 1080,
+                'proxy_username': '',
+                'proxy_password': ''
+            },
+            'DOWNLOAD': {
+                'start_id': 0,
+                'end_id': 0,
+                'source_channels': ["https://t.me/telegram", "@durov"],
+                'organize_by_chat': True,
+                'download_path': 'downloads',
+                'media_types': ["photo", "video", "document", "audio", "animation"]
+            },
+            'UPLOAD': {
+                'target_channels': [],
+                'directory': 'uploads',
+                'caption_template': '{filename}'
+            },
+            'FORWARD': {
+                'forward_channel_pairs': [],
+                'remove_captions': False,
+                'media_types': ["photo", "video", "document", "audio", "animation"],
+                'forward_delay': 3,
+                'start_id': 0,
+                'end_id': 0,
+                'tmp_path': 'tmp'
+            },
+            'MONITOR': {
+                'monitor_channel_pairs': [],
+                'remove_captions': False,
+                'media_types': ["photo", "video", "document", "audio", "animation"],
+                'duration': '',
+                'forward_delay': 3
+            }
         }
         
-        self.config['DOWNLOAD'] = {
-            'start_id': '0',
-            'end_id': '0',
-            'source_channels': '[]',
-            'organize_by_chat': 'true',
-            'download_path': 'downloads',
-            'media_types': '["photo", "video", "document", "audio", "animation"]'
-        }
-        
-        self.config['UPLOAD'] = {
-            'target_channels': '[]',
-            'directory': 'uploads',
-            'caption_template': '{filename}'
-        }
-        
-        self.config['FORWARD'] = {
-            'forward_channel_pairs': '[]',
-            'remove_captions': 'false',
-            'media_types': '["photo", "video", "document", "audio", "animation"]',
-            'forward_delay': '3',
-            'start_id': '0',
-            'end_id': '0',
-            'tmp_path': 'tmp'
-        }
-        
-        self.config['MONITOR'] = {
-            'monitor_channel_pairs': '[]',
-            'remove_captions': 'false',
-            'media_types': '["photo", "video", "document", "audio", "animation"]',
-            'duration': '',
-            'forward_delay': '3'
-        }
-        
-        with open(self.config_path, 'w', encoding='utf-8') as f:
-            self.config.write(f)
+        # 根据文件扩展名决定保存格式
+        if self.config_path.endswith('.json'):
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, indent=4, ensure_ascii=False)
+            self.config = default_config
+        else:
+            self.config_parser = configparser.ConfigParser()
+            for section, values in default_config.items():
+                self.config_parser[section] = {}
+                for key, value in values.items():
+                    self.config_parser[section][key] = str(value)
+            
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                self.config_parser.write(f)
+            
+            self._load_ini_config()
         
         logging.info(f"已创建默认配置文件: {self.config_path}")
     
@@ -113,34 +146,49 @@ class ConfigManager:
             配置值
         """
         try:
-            value = self.config.get(section, key, fallback=fallback)
-            return value
-        except (configparser.NoSectionError, configparser.NoOptionError):
+            if section in self.config and key in self.config[section]:
+                return self.config[section][key]
+            return fallback
+        except Exception:
             logging.warning(f"配置项不存在: [{section}] {key}，使用默认值: {fallback}")
             return fallback
     
     def get_int(self, section: str, key: str, fallback: int = 0) -> int:
         """获取整型配置值"""
         try:
-            return self.config.getint(section, key, fallback=fallback)
-        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            value = self.get_value(section, key)
+            if value is not None:
+                return int(value)
+            return fallback
+        except (ValueError, TypeError):
             logging.warning(f"配置项不存在或非整数: [{section}] {key}，使用默认值: {fallback}")
             return fallback
     
     def get_bool(self, section: str, key: str, fallback: bool = False) -> bool:
         """获取布尔型配置值"""
         try:
-            return self.config.getboolean(section, key, fallback=fallback)
-        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            value = self.get_value(section, key)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in ('true', 'yes', '1', 'on')
+            return bool(value)
+        except (ValueError, TypeError):
             logging.warning(f"配置项不存在或非布尔值: [{section}] {key}，使用默认值: {fallback}")
             return fallback
     
     def get_json(self, section: str, key: str, fallback: Any = None) -> Any:
         """获取JSON格式的配置值"""
         try:
-            value = self.config.get(section, key)
-            return json.loads(value)
-        except (configparser.NoSectionError, configparser.NoOptionError, json.JSONDecodeError):
+            value = self.get_value(section, key)
+            # 如果已经是列表或字典，直接返回
+            if isinstance(value, (list, dict)):
+                return value
+            # 否则尝试解析JSON
+            if value is not None:
+                return json.loads(value)
+            return fallback if fallback is not None else []
+        except (json.JSONDecodeError, TypeError):
             logging.warning(f"配置项不存在或非有效JSON: [{section}] {key}，使用默认值")
             return fallback if fallback is not None else []
     
@@ -179,6 +227,6 @@ class ConfigManager:
         
         self.config[section][key] = str(value)
         with open(self.config_path, 'w', encoding='utf-8') as f:
-            self.config.write(f)
+            json.dump(self.config, f, indent=4, ensure_ascii=False)
         
         logging.info(f"已更新配置: [{section}] {key} = {value}") 

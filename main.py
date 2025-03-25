@@ -34,7 +34,7 @@ def parse_arguments():
     mode_group.add_argument('--monitor', action='store_true', help='监控模式：监控源频道新消息并转发')
     
     # 配置文件选项
-    parser.add_argument('--config', type=str, default='config.ini', help='配置文件路径')
+    parser.add_argument('--config', type=str, default='config.json', help='配置文件路径')
     
     # 可选的ID范围限制
     parser.add_argument('--start-id', type=int, help='起始消息ID')

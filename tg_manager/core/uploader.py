@@ -198,7 +198,6 @@ class Uploader:
             "stats": stats
         }
     
-    @retry_manager.retry
     async def _upload_media_group(self, 
                                  files: List[str], 
                                  chat_id: int, 
@@ -214,103 +213,111 @@ class Uploader:
         Returns:
             上传结果信息
         """
-        if not files:
-            return {"status": "failed", "error": "没有文件可上传"}
-        
-        # 限制媒体组大小
-        if len(files) > self.MAX_MEDIA_GROUP_SIZE:
-            logger.warning(f"媒体组文件数量超过限制 ({len(files)} > {self.MAX_MEDIA_GROUP_SIZE})，将被分割")
-            # 分割成多个媒体组
-            results = []
-            for i in range(0, len(files), self.MAX_MEDIA_GROUP_SIZE):
-                chunk = files[i:i + self.MAX_MEDIA_GROUP_SIZE]
-                result = await self._upload_media_group(chunk, chat_id, caption)
-                results.append(result)
+        # 使用实例方法进行重试
+        async def upload_media_group_with_retry():
+            if not files:
+                return {"status": "failed", "error": "没有文件可上传"}
             
-            # 合并结果
-            merged_result = {
-                "status": "success" if all(r["status"] == "success" for r in results) else "partial_success",
-                "files": []
-            }
-            for result in results:
-                if "files" in result:
-                    merged_result["files"].extend(result["files"])
+            # 限制媒体组大小
+            if len(files) > self.MAX_MEDIA_GROUP_SIZE:
+                logger.warning(f"媒体组文件数量超过限制 ({len(files)} > {self.MAX_MEDIA_GROUP_SIZE})，将被分割")
+                # 分割成多个媒体组
+                results = []
+                for i in range(0, len(files), self.MAX_MEDIA_GROUP_SIZE):
+                    chunk = files[i:i + self.MAX_MEDIA_GROUP_SIZE]
+                    result = await self._upload_media_group(chunk, chat_id, caption)
+                    results.append(result)
+                
+                # 合并结果
+                merged_result = {
+                    "status": "success" if all(r["status"] == "success" for r in results) else "partial_success",
+                    "files": []
+                }
+                for result in results:
+                    if "files" in result:
+                        merged_result["files"].extend(result["files"])
+                
+                return merged_result
             
-            return merged_result
-        
-        # 处理单个文件
-        if len(files) == 1:
-            return await self._upload_single_file(files[0], chat_id, caption)
-        
-        # 准备媒体组
-        media_group = []
-        file_infos = []
-        
-        for file_path in files:
-            media_type = self._get_media_type_from_file(file_path)
-            file_size = os.path.getsize(file_path)
+            # 处理单个文件
+            if len(files) == 1:
+                return await self._upload_single_file(files[0], chat_id, caption)
             
-            # 根据文件类型创建对应的InputMedia对象
-            if media_type == "photo":
-                media = InputMediaPhoto(file_path)
-            elif media_type == "video":
-                media = InputMediaVideo(file_path)
-            elif media_type == "audio":
-                media = InputMediaAudio(file_path)
-            else:
-                # 默认作为文档处理
-                media = InputMediaDocument(file_path)
+            # 准备媒体组
+            media_group = []
+            file_infos = []
             
-            # 为第一个媒体添加标题
-            if len(media_group) == 0 and caption:
-                media.caption = caption
+            for file_path in files:
+                media_type = self._get_media_type_from_file(file_path)
+                file_size = os.path.getsize(file_path)
+                
+                # 根据文件类型创建对应的InputMedia对象
+                if media_type == "photo":
+                    media = InputMediaPhoto(file_path)
+                elif media_type == "video":
+                    media = InputMediaVideo(file_path)
+                elif media_type == "audio":
+                    media = InputMediaAudio(file_path)
+                else:
+                    # 默认作为文档处理
+                    media = InputMediaDocument(file_path)
+                
+                # 为第一个媒体添加标题
+                if len(media_group) == 0 and caption:
+                    media.caption = caption
+                
+                media_group.append(media)
+                
+                file_infos.append({
+                    "file_path": file_path,
+                    "media_type": media_type,
+                    "file_size": file_size,
+                    "status": "pending"
+                })
             
-            media_group.append(media)
+            # 尝试上传媒体组
+            try:
+                # 处理FloodWait异常
+                while True:
+                    try:
+                        await self.client.send_media_group(chat_id, media_group)
+                        break
+                    except FloodWait as e:
+                        logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                        await asyncio.sleep(e.x)
+                
+                # 标记所有文件为成功
+                for file_info in file_infos:
+                    file_info["status"] = "success"
+                
+                logger.info(f"成功上传媒体组 ({len(files)} 个文件) 到频道 {chat_id}")
+                
+                return {
+                    "status": "success",
+                    "files": file_infos
+                }
             
-            file_infos.append({
-                "file_path": file_path,
-                "media_type": media_type,
-                "file_size": file_size,
-                "status": "pending"
-            })
-        
-        # 尝试上传媒体组
+            except Exception as e:
+                logger.error(f"上传媒体组失败: {e}")
+                
+                # 标记所有文件为失败
+                for file_info in file_infos:
+                    file_info["status"] = "failed"
+                    file_info["error"] = str(e)
+                
+                return {
+                    "status": "failed",
+                    "error": str(e),
+                    "files": file_infos
+                }
+                
+        # 使用重试管理器执行上传
         try:
-            # 处理FloodWait异常
-            while True:
-                try:
-                    await self.client.send_media_group(chat_id, media_group)
-                    break
-                except FloodWait as e:
-                    logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                    await asyncio.sleep(e.x)
-            
-            # 标记所有文件为成功
-            for file_info in file_infos:
-                file_info["status"] = "success"
-            
-            logger.info(f"成功上传媒体组 ({len(files)} 个文件) 到频道 {chat_id}")
-            
-            return {
-                "status": "success",
-                "files": file_infos
-            }
-        
+            return await self.retry_manager.retry_async(upload_media_group_with_retry)
         except Exception as e:
-            logger.error(f"上传媒体组失败: {e}")
-            
-            # 标记所有文件为失败
-            for file_info in file_infos:
-                file_info["status"] = "failed"
-                file_info["error"] = str(e)
-            
-            return {
-                "status": "failed",
-                "error": str(e),
-                "files": file_infos
-            }
+            logger.error(f"重试上传媒体组失败: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e)}
     
-    @retry_manager.retry
     async def _upload_single_file(self, 
                                  file_path: str, 
                                  chat_id: int, 
@@ -326,81 +333,90 @@ class Uploader:
         Returns:
             上传结果信息
         """
-        if not os.path.exists(file_path):
-            return {"status": "failed", "error": f"文件不存在: {file_path}"}
-        
-        media_type = self._get_media_type_from_file(file_path)
-        file_size = os.path.getsize(file_path)
-        
-        # 处理标题
-        if caption is None:
-            file_name = os.path.basename(file_path)
-            caption = self.caption_template.format(filename=file_name)
-        
-        file_info = {
-            "file_path": file_path,
-            "media_type": media_type,
-            "file_size": file_size,
-            "status": "pending"
-        }
-        
+        # 使用实例方法进行重试
+        async def upload_single_file_with_retry():
+            if not os.path.exists(file_path):
+                return {"status": "failed", "error": f"文件不存在: {file_path}"}
+            
+            media_type = self._get_media_type_from_file(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            # 处理标题
+            if caption is None:
+                file_name = os.path.basename(file_path)
+                caption = self.caption_template.format(filename=file_name)
+            
+            file_info = {
+                "file_path": file_path,
+                "media_type": media_type,
+                "file_size": file_size,
+                "status": "pending"
+            }
+            
+            try:
+                # 根据媒体类型上传文件
+                if media_type == "photo":
+                    while True:
+                        try:
+                            await self.client.send_photo(chat_id, file_path, caption=caption)
+                            break
+                        except FloodWait as e:
+                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                            await asyncio.sleep(e.x)
+                
+                elif media_type == "video":
+                    while True:
+                        try:
+                            await self.client.send_video(chat_id, file_path, caption=caption)
+                            break
+                        except FloodWait as e:
+                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                            await asyncio.sleep(e.x)
+                
+                elif media_type == "audio":
+                    while True:
+                        try:
+                            await self.client.send_audio(chat_id, file_path, caption=caption)
+                            break
+                        except FloodWait as e:
+                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                            await asyncio.sleep(e.x)
+                
+                else:
+                    # 默认作为文档处理
+                    while True:
+                        try:
+                            await self.client.send_document(chat_id, file_path, caption=caption)
+                            break
+                        except FloodWait as e:
+                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                            await asyncio.sleep(e.x)
+                
+                logger.info(f"成功上传文件 '{os.path.basename(file_path)}' 到频道 {chat_id}")
+                file_info["status"] = "success"
+                
+                return {
+                    "status": "success",
+                    "files": [file_info]
+                }
+            
+            except Exception as e:
+                logger.error(f"上传文件 '{os.path.basename(file_path)}' 失败: {e}")
+                file_info["status"] = "failed"
+                file_info["error"] = str(e)
+                
+                return {
+                    "status": "failed",
+                    "error": str(e),
+                    "files": [file_info]
+                }
+                
+        # 使用重试管理器执行上传
         try:
-            # 根据媒体类型上传文件
-            if media_type == "photo":
-                while True:
-                    try:
-                        await self.client.send_photo(chat_id, file_path, caption=caption)
-                        break
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                        await asyncio.sleep(e.x)
-            
-            elif media_type == "video":
-                while True:
-                    try:
-                        await self.client.send_video(chat_id, file_path, caption=caption)
-                        break
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                        await asyncio.sleep(e.x)
-            
-            elif media_type == "audio":
-                while True:
-                    try:
-                        await self.client.send_audio(chat_id, file_path, caption=caption)
-                        break
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                        await asyncio.sleep(e.x)
-            
-            else:
-                # 默认作为文档处理
-                while True:
-                    try:
-                        await self.client.send_document(chat_id, file_path, caption=caption)
-                        break
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                        await asyncio.sleep(e.x)
-            
-            logger.info(f"成功上传文件 '{os.path.basename(file_path)}' 到频道 {chat_id}")
-            file_info["status"] = "success"
-            
-            return {
-                "status": "success",
-                "files": [file_info]
-            }
-        
+            return await self.retry_manager.retry_async(upload_single_file_with_retry)
         except Exception as e:
-            logger.error(f"上传文件 '{os.path.basename(file_path)}' 失败: {e}")
-            file_info["status"] = "failed"
-            file_info["error"] = str(e)
-            
-            return {
-                "status": "failed",
-                "error": str(e),
-                "files": [file_info]
-            }
+            logger.error(f"重试上传文件失败: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e), "files": [{"file_path": file_path, "status": "failed", "error": str(e)}]}
     
     def _scan_media_groups(self, directory: str) -> List[Tuple[str, List[str]]]:
         """

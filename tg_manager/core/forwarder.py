@@ -246,7 +246,6 @@ class Forwarder:
             "stats": stats
         }
     
-    @retry_manager.retry
     async def _forward_message_directly(self, 
                                        message: Message, 
                                        target_infos: Dict[str, Any]) -> Dict[str, Any]:
@@ -260,76 +259,85 @@ class Forwarder:
         Returns:
             转发结果信息
         """
-        result = {
-            "status": "success",
-            "channel_stats": {}
-        }
-        
-        for target, info in target_infos.items():
-            # 检查是否已转发
-            if self.history_manager.is_message_forwarded(message.chat.id, message.id, target):
-                logger.debug(f"消息 {message.id} 已转发到 {target}")
-                result["channel_stats"][target] = {"skipped": 1}
-                continue
+        # 使用实例方法进行重试
+        async def forward_message_directly_with_retry():
+            result = {
+                "status": "success",
+                "channel_stats": {}
+            }
             
-            try:
-                # 处理标题移除选项
-                if self.remove_captions and hasattr(message, 'caption'):
-                    # 创建消息副本，移除标题
-                    await message.copy(info.channel_id, caption="")
-                else:
-                    # 直接转发，保留原标题
-                    while True:
-                        try:
-                            await message.forward(info.channel_id)
-                            break
-                        except FloodWait as e:
-                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                            await asyncio.sleep(e.x)
+            for target, info in target_infos.items():
+                # 检查是否已转发
+                if self.history_manager.is_message_forwarded(message.chat.id, message.id, target):
+                    logger.debug(f"消息 {message.id} 已转发到 {target}")
+                    result["channel_stats"][target] = {"skipped": 1}
+                    continue
                 
-                # 更新转发历史记录
-                self.history_manager.add_forwarded_message(
-                    message.chat.id, 
-                    message.id, 
-                    target, 
-                    real_channel_id=message.chat.id
-                )
-                
-                logger.info(f"成功转发消息 {message.id} 到 {target}")
-                result["channel_stats"][target] = {"forwarded": 1}
-            
-            except ChatForwardsRestricted:
-                logger.warning(f"频道 {target} 禁止转发，尝试下载后上传")
-                
-                # 更新频道信息缓存
-                info.can_forward = False
-                
-                # 尝试下载后上传
-                if hasattr(message, 'media_group_id') and message.media_group_id:
-                    media_group_messages = await self._get_media_group_messages(
+                try:
+                    # 处理标题移除选项
+                    if self.remove_captions and hasattr(message, 'caption'):
+                        # 创建消息副本，移除标题
+                        await message.copy(info.channel_id, caption="")
+                    else:
+                        # 直接转发，保留原标题
+                        while True:
+                            try:
+                                await message.forward(info.channel_id)
+                                break
+                            except FloodWait as e:
+                                logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                                await asyncio.sleep(e.x)
+                    
+                    # 更新转发历史记录
+                    self.history_manager.add_forwarded_message(
                         message.chat.id, 
-                        message.media_group_id
+                        message.id, 
+                        target, 
+                        real_channel_id=message.chat.id
                     )
-                    single_result = await self._download_and_upload_media_group(
-                        media_group_messages, 
-                        {target: info}
-                    )
-                else:
-                    single_result = await self._download_and_upload_single_message(
-                        message, 
-                        {target: info}
-                    )
+                    
+                    logger.info(f"成功转发消息 {message.id} 到 {target}")
+                    result["channel_stats"][target] = {"forwarded": 1}
                 
-                if target in single_result.get("channel_stats", {}):
-                    result["channel_stats"][target] = single_result["channel_stats"][target]
-                else:
+                except ChatForwardsRestricted:
+                    logger.warning(f"频道 {target} 禁止转发，尝试下载后上传")
+                    
+                    # 更新频道信息缓存
+                    info.can_forward = False
+                    
+                    # 尝试下载后上传
+                    if hasattr(message, 'media_group_id') and message.media_group_id:
+                        media_group_messages = await self._get_media_group_messages(
+                            message.chat.id, 
+                            message.media_group_id
+                        )
+                        single_result = await self._download_and_upload_media_group(
+                            media_group_messages, 
+                            {target: info}
+                        )
+                    else:
+                        single_result = await self._download_and_upload_single_message(
+                            message, 
+                            {target: info}
+                        )
+                    
+                    if target in single_result.get("channel_stats", {}):
+                        result["channel_stats"][target] = single_result["channel_stats"][target]
+                    else:
+                        result["channel_stats"][target] = {"failed": 1}
+                
+                except Exception as e:
+                    logger.error(f"转发消息 {message.id} 到 {target} 失败: {e}")
                     result["channel_stats"][target] = {"failed": 1}
             
-            except Exception as e:
-                logger.error(f"转发消息 {message.id} 到 {target} 失败: {e}")
-                result["channel_stats"][target] = {"failed": 1}
-        
-        return result
+            return result
+            
+        # 使用重试管理器执行转发
+        try:
+            return await self.retry_manager.retry_async(forward_message_directly_with_retry)
+        except Exception as e:
+            logger.error(f"重试转发消息失败: {e}", exc_info=True)
+            return {"status": "failed", "error": str(e), "channel_stats": {}}
     
     async def _get_media_group_messages(self, 
                                        chat_id: int, 
