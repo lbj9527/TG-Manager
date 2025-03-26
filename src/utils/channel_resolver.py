@@ -27,8 +27,8 @@ class ChannelResolver:
             client: Pyrogram客户端实例
         """
         self.client = client
-        # 缓存频道ID和实例，避免重复请求
-        self._channel_cache: Dict[str, Tuple[int, Union[Chat, None]]] = {}
+        # # 缓存频道ID和实例，避免重复请求
+        # self._channel_cache: Dict[str, Tuple[int, Union[Chat, None]]] = {}
         # 缓存频道转发状态，减少API请求
         self._forward_status_cache: Dict[str, Tuple[bool, datetime]] = {}
         # 缓存过期时间（分钟）
@@ -62,9 +62,9 @@ class ChannelResolver:
         channel_identifier = channel_identifier.strip()
         
         # 尝试从缓存中获取
-        if channel_identifier in self._channel_cache:
-            channel_id, _ = self._channel_cache[channel_identifier]
-            return channel_identifier, channel_id
+        # if channel_identifier in self._channel_cache:
+        #     channel_id, _ = self._channel_cache[channel_identifier]
+        #     return channel_identifier, channel_id
         
         # 消息ID默认为None
         message_id = None
@@ -123,19 +123,20 @@ class ChannelResolver:
             ChannelPrivate: 无法访问的私有频道
             ValueError: 无法获取频道实体
         """
-        # 尝试从缓存中获取
-        str_channel_id = str(channel_id)
-        if str_channel_id in self._channel_cache:
-            _, chat = self._channel_cache[str_channel_id]
-            if chat:
-                return chat
+        # # 尝试从缓存中获取
+        # str_channel_id = str(channel_id)
+        # if str_channel_id in self._channel_cache:
+        #     _, chat = self._channel_cache[str_channel_id]
+        #     if chat:
+        #         return chat
+        
         
         # 获取频道实体
         try:
-            logger.info(f"获取频道ID: {channel_id}")
+            # logger.info(f"获取频道ID: {channel_id}")
             chat = await self.client.get_chat(channel_id)
-            # 缓存频道实体
-            self._channel_cache[str_channel_id] = (chat.id, chat)
+            # # 缓存频道实体
+            # self._channel_cache[str_channel_id] = (chat.id, chat)
             
             # 返回实体
             return chat
@@ -158,22 +159,21 @@ class ChannelResolver:
             int: 频道的数字ID
         """
         channel_id, _ = await self.resolve_channel(channel_identifier)
-        
         # 如果已经是数字ID，直接返回
         if isinstance(channel_id, int):
             return channel_id
         
-        # 尝试从缓存中获取
-        str_channel_id = str(channel_id)
-        if str_channel_id in self._channel_cache:
-            numeric_id, _ = self._channel_cache[str_channel_id]
-            return numeric_id
+        # # 尝试从缓存中获取
+        # str_channel_id = str(channel_id)
+        # if str_channel_id in self._channel_cache:
+        #     numeric_id, _ = self._channel_cache[str_channel_id]
+        #     return numeric_id
         
         # 获取频道实体
         chat = await self.get_channel_entity(channel_id)
         
-        # 缓存并返回数字ID
-        self._channel_cache[str_channel_id] = (chat.id, chat)
+        # # 缓存并返回数字ID
+        # self._channel_cache[str_channel_id] = (chat.id, chat)
         return chat.id
     
     async def check_forward_permission(self, channel_id: Union[str, int]) -> bool:

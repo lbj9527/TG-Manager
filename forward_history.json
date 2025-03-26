@@ -1,4 +1,18 @@
 {
-  "channels": {},
-  "last_updated": "2025-03-25T22:57:16.199648"
+  "channels": {
+    "https://t.me/xxzq6": {
+      "channel_id": -1001642973779,
+      "forwarded_messages": {
+        "3597": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux"
+        ],
+        "3598": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux"
+        ]
+      }
+    }
+  },
+  "last_updated": "2025-03-26T18:13:20.534567"
 }
