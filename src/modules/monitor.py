@@ -95,7 +95,7 @@ class Monitor:
             try:
                 # 解析源频道ID
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
-                source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_channel)
+                source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_id)
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
