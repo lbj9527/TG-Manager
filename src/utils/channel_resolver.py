@@ -280,7 +280,7 @@ class ChannelResolver:
         Returns:
             Tuple[Optional[int], Optional[int]]: (实际起始消息ID, 实际结束消息ID)，如果参数无效则返回(None, None)
         """
-        logger.info(f"获取消息范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+        # logger.info(f"获取消息范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
         
         # 参数验证
         if start_id < 0 or end_id < 0:
@@ -307,7 +307,7 @@ class ChannelResolver:
                     
                 if messages:
                     latest_message_id = messages[0].id
-                    logger.info(f"获取到最新消息ID: {latest_message_id}")
+                    # logger.info(f"获取到最新消息ID: {latest_message_id}")
                 else:
                     logger.warning(f"频道 {chat_id} 中没有找到消息")
                     return None, None
@@ -344,5 +344,5 @@ class ChannelResolver:
             else:  # start_id == end_id
                 actual_end_id = end_id
         
-        logger.info(f"最终消息范围: actual_start_id={actual_start_id}, actual_end_id={actual_end_id}")
+        # logger.info(f"最终消息范围: actual_start_id={actual_start_id}, actual_end_id={actual_end_id}")
         return actual_start_id, actual_end_id 

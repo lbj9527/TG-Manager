@@ -68,7 +68,6 @@ class Downloader:
             try:
                 # 解析频道ID
                 real_channel_id = await self.channel_resolver.get_channel_id(channel)
-                logger.info(f"real_channel_id: {real_channel_id}")
                 
                 # 获取频道信息（现在返回字符串和(标题,ID)元组）
                 channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
@@ -103,7 +102,7 @@ class Downloader:
                     
                     # 检查消息ID是否已下载
                     if message.id in downloaded_messages:
-                        logger.debug(f"消息 {message.id} 已下载，跳过")
+                        logger.info(f"消息 {message.id} 已下载，跳过")
                         continue
                     
                     # 下载媒体文件
@@ -143,7 +142,7 @@ class Downloader:
             
         # 计算需要获取的消息数量
         total_messages = actual_end_id - actual_start_id + 1
-        logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
+        #logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
         # Telegram的get_chat_history按消息ID降序返回（从新到旧）
         # 我们需要先收集所有消息，然后按照ID升序排序，以便按照从旧到新的顺序处理
@@ -156,7 +155,7 @@ class Downloader:
             
             while fetched_count < total_messages:
                 limit = min(100, total_messages - fetched_count)  # 最多获取100条，但不超过剩余所需数量
-                logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
+                #logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
                 
                 batch_count = 0
                 batch_messages = []
