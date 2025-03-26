@@ -95,15 +95,15 @@ class Monitor:
             try:
                 # 解析源频道ID
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
-                source_info = await self.channel_resolver.format_channel_info(source_channel)
+                source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_channel)
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
                 for target in target_channels:
                     try:
                         target_id = await self.channel_resolver.get_channel_id(target)
-                        target_info = await self.channel_resolver.format_channel_info(target)
-                        valid_target_channels.append((target, target_id, target_info))
+                        target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target)
+                        valid_target_channels.append((target, target_id, target_info_str))
                     except Exception as e:
                         logger.error(f"解析目标频道 {target} 失败: {e}")
                 
@@ -114,14 +114,14 @@ class Monitor:
                 # 添加到映射
                 self.channel_mapping[source_id] = {
                     'source_channel': source_channel,
-                    'source_info': source_info,
+                    'source_info': source_info_str,
                     'target_channels': valid_target_channels
                 }
                 
                 # 记录源频道ID
                 self.source_channels.append(source_id)
                 
-                logger.info(f"添加监听: {source_info} -> {[t[2] for t in valid_target_channels]}")
+                logger.info(f"添加监听: {source_info_str} -> {[t[2] for t in valid_target_channels]}")
             
             except Exception as e:
                 logger.error(f"初始化频道 {source_channel} 失败: {e}")

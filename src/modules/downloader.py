@@ -69,12 +69,18 @@ class Downloader:
                 # 解析频道ID
                 real_channel_id = await self.channel_resolver.get_channel_id(channel)
                 logger.info(f"real_channel_id: {real_channel_id}")
-                channel_info = await self.channel_resolver.format_channel_info(real_channel_id)
+                
+                # 获取频道信息（现在返回字符串和(标题,ID)元组）
+                channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
                 logger.info(f"解析频道: {channel_info}")
                 
                 # 创建频道目录（如果需要按频道组织）
                 if self.download_config.organize_by_chat:
-                    channel_path = self.download_path / str(real_channel_id)
+                    # 使用"频道标题-频道ID"格式创建目录
+                    folder_name = f"{channel_title}-{real_channel_id}"
+                    # 确保文件夹名称有效（移除非法字符）
+                    folder_name = self._sanitize_filename(folder_name)
+                    channel_path = self.download_path / folder_name
                     channel_path.mkdir(exist_ok=True)
                 else:
                     channel_path = self.download_path
@@ -268,4 +274,20 @@ class Downloader:
         
         except Exception as e:
             logger.error(f"下载消息 {message.id} 的媒体文件失败: {e}")
-            return False 
+            return False
+
+    def _sanitize_filename(self, filename: str) -> str:
+        """
+        清理文件名，移除非法字符
+        
+        Args:
+            filename: 原始文件名
+            
+        Returns:
+            str: 清理后的文件名
+        """
+        # 替换Windows和UNIX系统中的非法字符
+        invalid_chars = r'<>:"/\|?*'
+        for char in invalid_chars:
+            filename = filename.replace(char, '_')
+        return filename 

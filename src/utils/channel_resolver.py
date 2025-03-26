@@ -239,7 +239,7 @@ class ChannelResolver:
                 result.append(channel_id)
         return result
     
-    async def format_channel_info(self, channel_id: Union[str, int]) -> str:
+    async def format_channel_info(self, channel_id: Union[str, int]) -> Union[str, Tuple[str, int]]:
         """
         获取频道的格式化信息，用于日志和显示
         
@@ -247,19 +247,26 @@ class ChannelResolver:
             channel_id: 频道ID或用户名
             
         Returns:
-            str: 格式化的频道信息
+            Union[str, Tuple[str, int]]: 
+                格式化的频道信息字符串，或者(频道标题, 频道ID)元组
         """
         try:
             chat = await self.get_channel_entity(channel_id)
-            if chat.username:
-                return f"@{chat.username} (ID: {chat.id})"
-            elif hasattr(chat, 'title') and chat.title:
-                return f"{chat.title} (ID: {chat.id})"
-            else:
-                return f"频道 (ID: {chat.id})"
+            # 获取频道标题
+            title = "未知频道"
+            if hasattr(chat, 'title') and chat.title:
+                title = chat.title
+            elif chat.username:
+                title = f"@{chat.username}"
+            
+            # 返回格式化字符串（向后兼容）
+            formatted_info = f"{title} (ID: {chat.id})"
+            
+            # 同时返回(标题, ID)元组，方便其他模块使用
+            return formatted_info, (title, chat.id)
         except Exception:
             # 如果无法获取频道信息，则返回原始ID
-            return str(channel_id)
+            return str(channel_id), ("未知频道", channel_id)
     
     async def get_message_range(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0) -> Tuple[Optional[int], Optional[int]]:
         """

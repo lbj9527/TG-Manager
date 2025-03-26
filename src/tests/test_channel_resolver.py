@@ -129,12 +129,16 @@ async def test_get_channel_id(channel_resolver):
 async def test_format_channel_info(channel_resolver):
     """测试格式化频道信息功能"""
     # 对于@username格式
-    info = await channel_resolver.format_channel_info("@durov")
+    info, (title, channel_id) = await channel_resolver.format_channel_info("@durov")
     assert "@durov" in info
+    assert isinstance(title, str)
+    assert isinstance(channel_id, int)
     
     # 对于数字ID格式
-    info = await channel_resolver.format_channel_info("1234567890")
+    info, (title, channel_id) = await channel_resolver.format_channel_info("1234567890")
     assert "1234567890" in info
+    assert isinstance(title, str)
+    assert channel_id == 1234567890
 
 @pytest.mark.asyncio
 async def test_check_forward_permission(channel_resolver):
