@@ -76,9 +76,9 @@ class ChannelResolver:
         elif channel_identifier.startswith('+') or channel_identifier.startswith('https://t.me/+'):
             # 邀请链接格式
             if channel_identifier.startswith('https://t.me/+'):
-                invite_code = channel_identifier.replace('https://t.me/+', '+')
-            else:
                 invite_code = channel_identifier
+            else:
+                invite_code = channel_identifier.replace('+', 'https://t.me/+')
             channel_id = invite_code
         elif channel_identifier.startswith('https://t.me/c/'):
             # 私有频道链接格式
@@ -132,6 +132,7 @@ class ChannelResolver:
         
         # 获取频道实体
         try:
+            logger.info(f"获取频道ID: {channel_id}")
             chat = await self.client.get_chat(channel_id)
             # 缓存频道实体
             self._channel_cache[str_channel_id] = (chat.id, chat)
