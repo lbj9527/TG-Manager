@@ -68,7 +68,6 @@ class Downloader:
             try:
                 # 解析频道ID
                 real_channel_id = await self.channel_resolver.get_channel_id(channel)
-                
                 # 获取频道信息（现在返回字符串和(标题,ID)元组）
                 channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
                 logger.info(f"解析频道: {channel_info}")

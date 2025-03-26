@@ -82,18 +82,18 @@ class Forwarder:
             try:
                 # 解析源频道ID
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
-                source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_channel)
+                source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_id)
                 logger.info(f"源频道: {source_info_str}")
                 
                 # 检查源频道转发权限
-                source_can_forward = await self.channel_resolver.check_forward_permission(source_channel)
+                source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
                 for target in target_channels:
                     try:
                         target_id = await self.channel_resolver.get_channel_id(target)
-                        target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target)
+                        target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                         valid_target_channels.append((target, target_id, target_info_str))
                     except Exception as e:
                         logger.error(f"解析目标频道 {target} 失败: {e}")

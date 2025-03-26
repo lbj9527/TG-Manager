@@ -97,10 +97,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    # 使用最新的asyncio API获取事件循环
     try:
-        loop.run_until_complete(main())
+        # Python 3.10+推荐的方法
+        asyncio.run(main())
     except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close() 
+        pass 

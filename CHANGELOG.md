@@ -4,6 +4,13 @@
 
 本项目遵循[语义化版本规范](https://semver.org/lang/zh-CN/)。
 
+## [0.3.2] - 2023-04-08
+
+### 修复
+
+- 修复了`check_forward_permission`方法中的 Pyrogram API 兼容性问题，将`get_messages`替换为`get_chat_history`
+- 更新了主程序中的 asyncio 事件循环处理方式，使用`asyncio.run()`替代旧的获取循环方法，消除 deprecation 警告
+
 ## [0.3.0] - 2023-04-05
 
 ### 改进
