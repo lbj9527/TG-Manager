@@ -18,9 +18,16 @@ class HistoryManager:
     
     def __init__(self):
         """初始化历史记录管理器"""
-        self.download_history_path = "download_history.json"
-        self.upload_history_path = "upload_history.json"
-        self.forward_history_path = "forward_history.json"
+        # 确保history文件夹存在
+        history_dir = "history"
+        if not os.path.exists(history_dir):
+            os.makedirs(history_dir)
+            logger.info(f"创建历史记录文件夹：{history_dir}")
+            
+        # 设置历史记录文件路径
+        self.download_history_path = os.path.join(history_dir, "download_history.json")
+        self.upload_history_path = os.path.join(history_dir, "upload_history.json")
+        self.forward_history_path = os.path.join(history_dir, "forward_history.json")
         
         # 初始化历史记录文件
         self._init_history_files()

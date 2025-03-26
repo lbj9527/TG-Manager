@@ -9,6 +9,24 @@ TG Forwarder 是一个功能强大的 Telegram 消息转发工具，用于在不
 - **本地文件上传**：将本地文件上传至目标频道，支持媒体组
 - **实时消息监听**：监听源频道的新消息并实时转发至目标频道
 
+## 项目结构
+
+项目主要目录结构：
+
+```
+TG-Manager/
+├── config.json         # 配置文件
+├── history/            # 历史记录文件目录
+│   ├── download_history.json    # 下载历史记录
+│   ├── upload_history.json      # 上传历史记录
+│   └── forward_history.json     # 转发历史记录
+├── downloads/          # 下载的媒体文件目录
+├── uploads/            # 待上传的媒体文件目录
+├── tmp/                # 临时文件目录
+├── logs/               # 日志文件目录
+└── src/                # 源代码目录
+```
+
 ## 安装方法
 
 1. 克隆仓库：
