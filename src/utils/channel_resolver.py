@@ -190,6 +190,7 @@ class ChannelResolver:
         # 尝试从缓存中获取
         str_channel_id = str(channel_id)
         if str_channel_id in self._forward_status_cache:
+            logger.info(f"1")
             status, cache_time = self._forward_status_cache[str_channel_id]
             # 检查缓存是否过期
             if datetime.now() - cache_time < timedelta(minutes=self._cache_expiry_minutes):
@@ -199,20 +200,16 @@ class ChannelResolver:
         try:
             chat = await self.get_channel_entity(channel_id)
             
-            # 检查权限（需要进一步实际测试）
-            if hasattr(chat, 'noforwards') and chat.noforwards:
-                # 明确标记为禁止转发
+            # 尝试获取一条消息并检查has_protected_content属性
+            messages = []
+            async for message in self.client.get_chat_history(chat.id, limit=1):
+                messages.append(message)
+            logger.info(f"messages: {messages[0].has_protected_content}")
+            
+            if messages and not messages[0].has_protected_content:
                 forward_allowed = False
             else:
-                # 尝试获取一条消息并检查has_protected_content属性
-                messages = []
-                async for message in self.client.get_chat_history(chat.id, limit=1):
-                    messages.append(message)
-                
-                if messages and hasattr(messages[0], 'has_protected_content') and messages[0].has_protected_content:
-                    forward_allowed = False
-                else:
-                    forward_allowed = True
+                forward_allowed = True
             
             # 缓存转发状态
             self._forward_status_cache[str_channel_id] = (forward_allowed, datetime.now())

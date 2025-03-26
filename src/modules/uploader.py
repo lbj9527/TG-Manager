@@ -245,7 +245,7 @@ class Uploader:
                         )
                     elif media_type == "video":
                         media_group.append(
-                            InputMediaVideo(str(file_path), caption=file_caption)
+                            InputMediaVideo(str(file_path), caption=file_caption, supports_streaming=True)
                         )
                     elif media_type == "document":
                         media_group.append(

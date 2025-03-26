@@ -87,6 +87,7 @@ class Forwarder:
                 
                 # 检查源频道转发权限
                 source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
+                logger.info(f"源频道转发权限: {source_can_forward}")
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
@@ -218,7 +219,6 @@ class Forwarder:
             
             while fetched_count < total_messages:
                 limit = min(100, total_messages - fetched_count)  # 最多获取100条，但不超过剩余所需数量
-                logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
                 
                 batch_count = 0
                 async for message in self.client.get_chat_history(
@@ -240,6 +240,7 @@ class Forwarder:
                     if message.id < actual_start_id:
                         logger.info(f"已达到最小ID {actual_start_id}，停止获取")
                         return
+                logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
                 
                 # 如果这批次没有获取到任何消息，则退出循环
                 if batch_count == 0:
@@ -393,10 +394,6 @@ class Forwarder:
                 # 转发延迟
                 await asyncio.sleep(1)
             
-            except ChatForwardsRestricted:
-                logger.warning(f"频道 {target_info} 禁止转发，尝试使用下载后上传的方式")
-                await self._forward_media_group_via_download(messages, source_channel, source_id, [(target_channel, target_id, target_info)])
-            
             except FloodWait as e:
                 logger.warning(f"转发消息时遇到限制，等待 {e.x} 秒")
                 await asyncio.sleep(e.x)
@@ -448,7 +445,7 @@ class Forwarder:
                 if media_type == "photo":
                     media_group.append(InputMediaPhoto(str(file_path), caption=file_caption))
                 elif media_type == "video":
-                    media_group.append(InputMediaVideo(str(file_path), caption=file_caption))
+                    media_group.append(InputMediaVideo(str(file_path), caption=file_caption, supports_streaming=True))
                 elif media_type == "document":
                     media_group.append(InputMediaDocument(str(file_path), caption=file_caption))
                 elif media_type == "audio":
@@ -466,7 +463,7 @@ class Forwarder:
                         break
                 
                 if all_forwarded:
-                    logger.debug(f"消息已转发到频道 {target_info}，跳过")
+                    logger.info(f"消息已转发到频道 {target_info}，跳过")
                     continue
                 
                 try:
