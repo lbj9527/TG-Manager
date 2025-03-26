@@ -51,6 +51,7 @@ class ForwardConfig(BaseModel):
     """转发配置模型"""
     forward_channel_pairs: List[ChannelPair]
     remove_captions: bool = False
+    hide_author: bool = False
     media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
     forward_delay: int = 3
     start_id: int = 0

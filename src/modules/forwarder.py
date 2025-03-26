@@ -298,6 +298,9 @@ class Forwarder:
         # 检查是否是单条消息
         is_single = len(messages) == 1
         
+        # 获取是否隐藏作者配置
+        hide_author = self.forward_config.hide_author
+        
         for target_channel, target_id, target_info in target_channels:
             # 检查是否已转发到此频道
             all_forwarded = True
@@ -316,42 +319,76 @@ class Forwarder:
                 if is_single:
                     # 单条消息转发
                     message = messages[0]
-                    forwarded = await self.client.forward_messages(
-                        chat_id=target_id,
-                        from_chat_id=source_id,
-                        message_ids=message.id,
-                        disable_notification=True
-                    )
                     
-                    # 记录转发历史
-                    self.history_manager.add_forward_record(
-                        source_channel,
-                        message.id,
-                        target_channel,
-                        source_id
-                    )
-                    
-                    logger.info(f"消息 {message.id} 转发到 {target_info} 成功")
-                else:
-                    # 媒体组转发
-                    message_ids = [msg.id for msg in messages]
-                    forwarded = await self.client.forward_messages(
-                        chat_id=target_id,
-                        from_chat_id=source_id,
-                        message_ids=message_ids,
-                        disable_notification=True
-                    )
-                    
-                    # 记录转发历史
-                    for message in messages:
+                    try:
+                        if hide_author:
+                            # 使用copy_message隐藏作者
+                            logger.debug(f"使用copy_message方法隐藏作者转发消息 {message.id}")
+                            forwarded = await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_id=message.id
+                            )
+                        else:
+                            # 使用forward_messages保留作者信息
+                            logger.debug(f"使用forward_messages方法保留作者转发消息 {message.id}")
+                            forwarded = await self.client.forward_messages(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_ids=message.id,
+                                disable_notification=True
+                            )
+                        
+                        # 转发成功后才记录历史
                         self.history_manager.add_forward_record(
                             source_channel,
                             message.id,
                             target_channel,
                             source_id
                         )
+                        
+                        logger.info(f"消息 {message.id} 转发到 {target_info} 成功")
+                    except Exception as e:
+                        logger.error(f"转发单条消息 {message.id} 到 {target_info} 失败: {e}，跳过")
+                        continue
+                else:
+                    # 媒体组转发
+                    message_ids = [msg.id for msg in messages]
                     
-                    logger.info(f"媒体组 {message_ids} 转发到 {target_info} 成功")
+                    try:
+                        if hide_author:
+                            # 使用copy_media_group方法一次性转发整个媒体组
+                            logger.debug(f"使用copy_media_group方法隐藏作者转发媒体组消息")
+                            # 只需要第一条消息的ID，因为copy_media_group会自动获取同一组的所有消息
+                            first_message_id = message_ids[0]
+                            forwarded = await self.client.copy_media_group(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_id=first_message_id
+                            )
+                        else:
+                            # 使用forward_messages批量转发
+                            logger.debug(f"使用forward_messages方法保留作者批量转发媒体组消息")
+                            forwarded = await self.client.forward_messages(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_ids=message_ids,
+                                disable_notification=True
+                            )
+                        
+                        # 转发成功后才记录历史
+                        for message in messages:
+                            self.history_manager.add_forward_record(
+                                source_channel,
+                                message.id,
+                                target_channel,
+                                source_id
+                            )
+                        
+                        logger.info(f"媒体组 {message_ids} 转发到 {target_info} 成功")
+                    except Exception as e:
+                        logger.error(f"转发媒体组 {message_ids} 到 {target_info} 失败: {e}，跳过")
+                        continue
                 
                 # 转发延迟
                 await asyncio.sleep(1)
