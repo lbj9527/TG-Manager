@@ -186,7 +186,7 @@ class Forwarder:
     
     async def _iter_messages(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0):
         """
-        迭代获取频道消息
+        迭代获取频道消息，按从旧到新的顺序返回
         
         Args:
             chat_id: 频道ID
@@ -194,7 +194,7 @@ class Forwarder:
             end_id: 结束消息ID
         
         Yields:
-            Message: 消息对象
+            Message: 消息对象，按照从旧到新的顺序
         """
         # 使用channel_resolver获取有效的消息ID范围
         actual_start_id, actual_end_id = await self.channel_resolver.get_message_range(chat_id, start_id, end_id)
@@ -208,19 +208,22 @@ class Forwarder:
         total_messages = actual_end_id - actual_start_id + 1
         logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
-        # 已获取的消息数量
-        fetched_count = 0
+        # Telegram的get_chat_history按消息ID降序返回（从新到旧）
+        # 我们需要先收集所有消息，然后按照ID升序排序，以便按照从旧到新的顺序处理
         
         try:
-            # 使用get_chat_history获取指定范围内的消息
-            # 我们可以通过设置offset_id参数为actual_end_id+1来获取比此ID小的消息
-            # 注意：Telegram offset_id是上限，不包含此ID
+            # 收集指定范围内的所有消息
+            all_messages = []
             offset_id = actual_end_id + 1
+            fetched_count = 0
             
             while fetched_count < total_messages:
                 limit = min(100, total_messages - fetched_count)  # 最多获取100条，但不超过剩余所需数量
                 
                 batch_count = 0
+                batch_messages = []
+                
+                # 获取一批消息
                 async for message in self.client.get_chat_history(
                     chat_id=chat_id,
                     limit=limit,  # 限制每批次的消息数量
@@ -231,7 +234,7 @@ class Forwarder:
                     # 只处理在范围内的消息
                     if message.id >= actual_start_id and message.id <= actual_end_id:
                         fetched_count += 1
-                        yield message
+                        batch_messages.append(message)
                     
                     # 更新下一轮请求的offset_id
                     offset_id = message.id
@@ -239,7 +242,10 @@ class Forwarder:
                     # 如果已经达到或低于开始ID，则停止获取
                     if message.id < actual_start_id:
                         logger.info(f"已达到最小ID {actual_start_id}，停止获取")
-                        return
+                        break
+                
+                # 将这批消息添加到总消息列表
+                all_messages.extend(batch_messages)
                 logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
                 
                 # 如果这批次没有获取到任何消息，则退出循环
@@ -250,7 +256,13 @@ class Forwarder:
                 # 避免频繁请求
                 await asyncio.sleep(0.5)
             
-            logger.info(f"消息获取完成，共获取{fetched_count}条消息")
+            # 按消息ID升序排序（从旧到新）
+            all_messages.sort(key=lambda x: x.id)
+            logger.info(f"消息获取完成，共获取{len(all_messages)}条消息，已按ID升序排序（从旧到新）")
+            
+            # 逐个返回排序后的消息
+            for message in all_messages:
+                yield message
         
         except FloodWait as e:
             logger.warning(f"获取消息时遇到限制，等待 {e.x} 秒")
