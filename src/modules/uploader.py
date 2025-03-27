@@ -18,6 +18,7 @@ from src.utils.config_manager import ConfigManager
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
+from src.utils.video_processor import VideoProcessor
 
 logger = get_logger()
 
@@ -47,6 +48,9 @@ class Uploader:
         
         # 初始化MIME类型
         mimetypes.init()
+        
+        # 初始化视频处理器
+        self.video_processor = VideoProcessor()
     
     async def upload_local_files(self):
         """
@@ -150,6 +154,14 @@ class Uploader:
                 date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             )
             
+            # 确定媒体类型
+            media_type = self._get_media_type(file_path)
+            
+            # 为视频文件生成缩略图
+            thumbnail_path = None
+            if media_type == "video":
+                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+            
             # 上传文件到每个目标频道
             for channel in target_channels:
                 # 检查是否已上传到此频道
@@ -161,11 +173,18 @@ class Uploader:
                     # 解析频道ID
                     channel_id = await self.channel_resolver.get_channel_id(channel)
                     
-                    # 确定媒体类型
-                    media_type = self._get_media_type(file_path)
-                    
-                    # 上传文件
-                    message = await self._upload_file(file_path, caption, channel_id, media_type)
+                    # 上传文件，对于视频类型，传入缩略图
+                    if media_type == "video":
+                        message = await self.client.send_video(
+                            chat_id=channel_id,
+                            video=str(file_path),
+                            caption=caption,
+                            supports_streaming=True,
+                            thumb=thumbnail_path
+                        )
+                    else:
+                        # 其他类型使用通用的上传方法
+                        message = await self._upload_file(file_path, caption, channel_id, media_type)
                     
                     if message:
                         # 记录上传历史
@@ -184,6 +203,10 @@ class Uploader:
                 except Exception as e:
                     logger.error(f"上传文件 {file_path.name} 到频道 {channel} 失败: {e}")
                     continue
+            
+            # 清理当前文件的缩略图
+            if thumbnail_path:
+                self.video_processor.delete_thumbnail(thumbnail_path)
     
     async def _upload_media_group(self, files: List[Path], group_name: str, target_channels: List[str]) -> bool:
         """
@@ -216,6 +239,15 @@ class Uploader:
         # 生成媒体组标题
         caption = group_name
         
+        # 为媒体组中的视频生成缩略图
+        thumbnails = {}
+        for file_path, media_type in valid_files:
+            if media_type == "video":
+                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+                if thumbnail_path:
+                    thumbnails[str(file_path)] = thumbnail_path
+        
+        success = True
         # 上传到每个目标频道
         for channel in target_channels:
             # 检查是否已上传到此频道
@@ -244,8 +276,15 @@ class Uploader:
                             InputMediaPhoto(str(file_path), caption=file_caption)
                         )
                     elif media_type == "video":
+                        # 检查是否有缩略图
+                        thumb = thumbnails.get(str(file_path))
                         media_group.append(
-                            InputMediaVideo(str(file_path), caption=file_caption, supports_streaming=True)
+                            InputMediaVideo(
+                                str(file_path), 
+                                caption=file_caption, 
+                                supports_streaming=True,
+                                thumb=thumb
+                            )
                         )
                     elif media_type == "document":
                         media_group.append(
@@ -287,14 +326,22 @@ class Uploader:
             except FloodWait as e:
                 logger.warning(f"上传媒体组时遇到限制，等待 {e.x} 秒")
                 await asyncio.sleep(e.x)
-                # 重试上传
-                return await self._upload_media_group(files, group_name, [channel])
+                # 重试上传 - 但不清理缩略图，因为还会使用
+                channel_success = await self._upload_media_group(files, group_name, [channel])
+                if not channel_success:
+                    success = False
+                return success  # 返回此批次的成功状态
             
             except Exception as e:
                 logger.error(f"上传媒体组 {group_name} 到频道 {channel} 失败: {e}")
-                return False
+                success = False
         
-        return True
+        # 上传完成后清理缩略图（无论成功失败）
+        logger.debug(f"媒体组 {group_name} 已处理完所有目标频道，清理缩略图")
+        for thumbnail_path in thumbnails.values():
+            self.video_processor.delete_thumbnail(thumbnail_path)
+        
+        return success
     
     async def _upload_file(self, file_path: Path, caption: str, chat_id: int, media_type: str) -> Optional[Message]:
         """
@@ -317,11 +364,22 @@ class Uploader:
                     caption=caption
                 )
             elif media_type == "video":
-                return await self.client.send_video(
+                # 为视频生成缩略图
+                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+                
+                result = await self.client.send_video(
                     chat_id=chat_id,
                     video=str(file_path),
-                    caption=caption
+                    caption=caption,
+                    supports_streaming=True,
+                    thumb=thumbnail_path
                 )
+                
+                # 清理缩略图
+                if thumbnail_path:
+                    self.video_processor.delete_thumbnail(thumbnail_path)
+                    
+                return result
             elif media_type == "document":
                 return await self.client.send_document(
                     chat_id=chat_id,

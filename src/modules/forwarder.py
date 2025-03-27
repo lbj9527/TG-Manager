@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Dict, Union, Any, Optional, Tuple, Set, NamedTuple
 from queue import Queue
 from dataclasses import dataclass
+import re
 
 from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
@@ -22,6 +23,7 @@ from src.utils.history_manager import HistoryManager
 from src.modules.downloader import Downloader
 from src.modules.uploader import Uploader
 from src.utils.logger import get_logger
+from src.utils.video_processor import VideoProcessor
 
 logger = get_logger()
 
@@ -75,6 +77,9 @@ class Forwarder:
         self.upload_running = False
         self.producer_task = None
         self.consumer_task = None
+        
+        # 初始化视频处理器
+        self.video_processor = VideoProcessor()
     
     async def forward_messages(self):
         """
@@ -740,6 +745,14 @@ class Forwarder:
                         self.media_group_queue.task_done()
                         continue
                     
+                    # 为视频文件生成缩略图
+                    thumbnails = {}
+                    for file_path, media_type in media_group_download.downloaded_files:
+                        if media_type == "video":
+                            thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+                            if thumbnail_path:
+                                thumbnails[str(file_path)] = thumbnail_path
+                    
                     # 创建媒体组
                     media_group = []
                     for file_path, media_type in media_group_download.downloaded_files:
@@ -757,7 +770,14 @@ class Forwarder:
                         if media_type == "photo":
                             media_group.append(InputMediaPhoto(file_path_str, caption=file_caption))
                         elif media_type == "video":
-                            media_group.append(InputMediaVideo(file_path_str, caption=file_caption, supports_streaming=True))
+                            # 获取缩略图路径
+                            thumb = thumbnails.get(file_path_str)
+                            media_group.append(InputMediaVideo(
+                                file_path_str, 
+                                caption=file_caption, 
+                                supports_streaming=True,
+                                thumb=thumb
+                            ))
                         elif media_type == "document":
                             media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
                         elif media_type == "audio":
@@ -808,11 +828,16 @@ class Forwarder:
                                             caption=media_item.caption
                                         )
                                     elif isinstance(media_item, InputMediaVideo):
+                                        # 使用缩略图
+                                        thumb = None
+                                        if thumbnails:
+                                            thumb = thumbnails.get(media_item.media)
                                         sent_message = await self.client.send_video(
                                             chat_id=target_id,
                                             video=media_item.media,
                                             caption=media_item.caption,
-                                            supports_streaming=True
+                                            supports_streaming=True,
+                                            thumb=thumb
                                         )
                                     elif isinstance(media_item, InputMediaDocument):
                                         sent_message = await self.client.send_document(
@@ -887,7 +912,8 @@ class Forwarder:
                                 media_group_download, 
                                 target_channel, 
                                 target_id, 
-                                target_info
+                                target_info,
+                                thumbnails
                             )
                             if not success:
                                 all_targets_uploaded = False
@@ -898,6 +924,11 @@ class Forwarder:
                             logger.error(f"上传媒体到频道 {target_info} 失败: {str(e)}")
                             all_targets_uploaded = False
                             continue
+                    
+                    # 媒体组上传完成后（无论成功失败），都清理缩略图
+                    logger.debug(f"{group_id} {message_ids} 已处理完所有目标频道，清理缩略图")
+                    for thumbnail_path in thumbnails.values():
+                        self.video_processor.delete_thumbnail(thumbnail_path)
                     
                     # 媒体组上传完成后，清理媒体组的本地文件
                     if all_targets_uploaded:
@@ -926,7 +957,7 @@ class Forwarder:
             self.upload_running = False
             logger.info("消费者(上传)任务结束")
     
-    async def _upload_media_group_to_channel(self, media_group, media_group_download, target_channel, target_id, target_info):
+    async def _upload_media_group_to_channel(self, media_group, media_group_download, target_channel, target_id, target_info, thumbnails=None):
         """
         上传媒体组到指定频道，处理重试逻辑
         
@@ -936,6 +967,7 @@ class Forwarder:
             target_channel: 目标频道标识符
             target_id: 目标频道ID
             target_info: 目标频道信息
+            thumbnails: 缩略图字典，键为文件路径，值为缩略图路径
         """
         retry_count = 0
         max_retries = self.general_config.max_retries
@@ -952,11 +984,16 @@ class Forwarder:
                             caption=media_item.caption
                         )
                     elif isinstance(media_item, InputMediaVideo):
+                        # 使用缩略图
+                        thumb = None
+                        if thumbnails:
+                            thumb = thumbnails.get(media_item.media)
                         sent_message = await self.client.send_video(
                             chat_id=target_id,
                             video=media_item.media,
                             caption=media_item.caption,
-                            supports_streaming=True
+                            supports_streaming=True,
+                            thumb=thumb
                         )
                     elif isinstance(media_item, InputMediaDocument):
                         sent_message = await self.client.send_document(
