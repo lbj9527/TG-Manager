@@ -1,73 +1,68 @@
 {
   "channels": {
-    "https://t.me/zbzwx/35767": {
-      "channel_id": -1001671776821,
-      "forwarded_messages": {
-        "35756": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35757": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35758": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35759": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35760": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35761": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35762": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35763": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35764": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ],
-        "35765": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "https://t.me/gsbsbt",
-          "https://t.me/cuyfcopu"
-        ]
-      }
-    },
     "https://t.me/csdkl1/108115": {
       "channel_id": -1001474990982,
       "forwarded_messages": {
+        "108105": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108106": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108107": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108108": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108109": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108110": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108111": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108112": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108113": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
+        "108114": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "https://t.me/gsbsbt",
+          "https://t.me/cuyfcopu"
+        ],
         "108115": [
           "@xgyvcu",
           "+JvLn20QQesE4M2Ux",
@@ -191,5 +186,5 @@
       }
     }
   },
-  "last_updated": "2025-03-27T11:46:47.153093"
+  "last_updated": "2025-03-27T19:12:11.343749"
 }
