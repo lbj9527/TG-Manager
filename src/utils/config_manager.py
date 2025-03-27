@@ -35,6 +35,8 @@ class DownloadConfig(BaseModel):
     organize_by_chat: bool = True
     download_path: str = "downloads"
     media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
+    parallel_download: bool = False
+    max_concurrent_downloads: int = 10
 
 class UploadConfig(BaseModel):
     """上传配置模型"""

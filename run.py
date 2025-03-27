@@ -16,6 +16,7 @@ from src.utils.history_manager import HistoryManager
 from src.utils.client_manager import ClientManager
 
 from src.modules.downloader import Downloader
+from src.modules.downloader_serial import DownloaderSerial
 from src.modules.uploader import Uploader
 from src.modules.forwarder import Forwarder
 from src.modules.monitor import Monitor
@@ -48,8 +49,16 @@ async def main():
         # 初始化频道解析器
         channel_resolver = ChannelResolver(client)
         
-        # 初始化下载模块
-        downloader = Downloader(client, config_manager, channel_resolver, history_manager)
+        # 初始化下载模块 - 根据配置选择并行或顺序下载
+        download_config = config_manager.get_download_config()
+        if download_config.parallel_download:
+            logger.info("使用并行下载模式")
+            # 设置并行下载器实例，并传入最大并发下载数
+            downloader = Downloader(client, config_manager, channel_resolver, history_manager)
+            downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
+        else:
+            logger.info("使用顺序下载模式")
+            downloader = DownloaderSerial(client, config_manager, channel_resolver, history_manager)
         
         # 初始化上传模块
         uploader = Uploader(client, config_manager, channel_resolver, history_manager)
