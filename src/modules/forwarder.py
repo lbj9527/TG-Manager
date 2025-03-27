@@ -319,17 +319,27 @@ class Forwarder:
                 try:
                     # 检查是否已全部转发
                     all_forwarded = True
-                    for message_id in message_ids:
-                        for target_channel, _, _ in target_channels:
+                    forwarded_targets = []
+                    not_forwarded_targets = []
+                    
+                    for target_channel, target_id, target_info in target_channels:
+                        target_all_forwarded = True
+                        for message_id in message_ids:
                             if not self.history_manager.is_message_forwarded(source_channel, message_id, target_channel):
+                                target_all_forwarded = False
                                 all_forwarded = False
                                 break
-                        if not all_forwarded:
-                            break
+                        
+                        if target_all_forwarded:
+                            forwarded_targets.append(target_info)
+                        else:
+                            not_forwarded_targets.append(target_info)
                     
                     if all_forwarded:
-                        logger.debug(f"媒体组 {group_id} 已转发到所有目标频道，跳过")
+                        logger.info(f"媒体组 {group_id} (消息IDs: {message_ids}) 已转发到所有目标频道，跳过")
                         continue
+                    elif forwarded_targets:
+                        logger.info(f"媒体组 {group_id} (消息IDs: {message_ids}) 已部分转发: 已转发到 {forwarded_targets}, 未转发到 {not_forwarded_targets}")
                     
                     # 检查是否达到限制
                     if self.general_config.limit > 0 and forward_count >= self.general_config.limit:
@@ -692,6 +702,43 @@ class Forwarder:
                 try:
                     # 记录媒体组的目录，以便上传后删除
                     media_group_dir = media_group_download.download_dir
+                    message_ids = [m.id for m in media_group_download.messages]
+                    source_channel = media_group_download.source_channel
+                    
+                    # 记录媒体组信息
+                    group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
+                    logger.info(f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}")
+                    
+                    # 提前检查哪些频道已经转发过
+                    forwarded_targets = []
+                    not_forwarded_targets = []
+                    
+                    for target_channel, _, target_info in target_channels:
+                        all_forwarded = True
+                        for message in media_group_download.messages:
+                            if not self.history_manager.is_message_forwarded(media_group_download.source_channel, message.id, target_channel):
+                                all_forwarded = False
+                                break
+                        
+                        if all_forwarded:
+                            forwarded_targets.append(target_info)
+                        else:
+                            not_forwarded_targets.append(target_info)
+                    
+                    if forwarded_targets:
+                        logger.info(f"{group_id} {message_ids} 已转发到: {forwarded_targets}")
+                    
+                    if not not_forwarded_targets:
+                        logger.info(f"{group_id} {message_ids} 已转发到所有目标频道，跳过上传")
+                        # 清理已全部转发的媒体组目录
+                        if media_group_dir.exists():
+                            try:
+                                shutil.rmtree(media_group_dir)
+                                logger.debug(f"删除已全部转发的媒体组目录: {media_group_dir}")
+                            except Exception as e:
+                                logger.error(f"删除媒体组目录失败: {str(e)}")
+                        self.media_group_queue.task_done()
+                        continue
                     
                     # 创建媒体组
                     media_group = []
@@ -730,8 +777,9 @@ class Forwarder:
                     
                     # 标记是否所有目标频道都已上传成功
                     all_targets_uploaded = True
+                    remaining_targets = not_forwarded_targets.copy()
                         
-                    # 依次上传到每个目标频道
+                    # 依次上传到需要转发的目标频道
                     first_success_message = None
                     
                     for target_channel, target_id, target_info in target_channels:
@@ -743,11 +791,11 @@ class Forwarder:
                                 break
                         
                         if all_forwarded:
-                            logger.info(f"消息已转发到频道 {target_info}，跳过")
+                            logger.debug(f"{group_id} {message_ids} 已转发到频道 {target_info}，跳过")
                             continue
                         
                         try:
-                            logger.info(f"上传媒体到频道 {target_info}")
+                            logger.info(f"上传{group_id} {message_ids} 到频道 {target_info}")
                             
                             if len(media_group) == 1:
                                 # 单个媒体
@@ -823,7 +871,9 @@ class Forwarder:
                                     media_group_download.source_id
                                 )
                             
-                            logger.info(f"媒体上传到 {target_info} 成功")
+                            logger.info(f"{group_id} {message_ids} 上传到 {target_info} 成功")
+                            if target_info in remaining_targets:
+                                remaining_targets.remove(target_info)
                             
                             # 上传延迟
                             await asyncio.sleep(1)
@@ -841,6 +891,8 @@ class Forwarder:
                             )
                             if not success:
                                 all_targets_uploaded = False
+                            elif target_info in remaining_targets:
+                                remaining_targets.remove(target_info)
                         
                         except Exception as e:
                             logger.error(f"上传媒体到频道 {target_info} 失败: {str(e)}")
@@ -849,7 +901,7 @@ class Forwarder:
                     
                     # 媒体组上传完成后，清理媒体组的本地文件
                     if all_targets_uploaded:
-                        logger.info(f"媒体组已成功上传到所有目标频道，清理本地文件: {media_group_dir}")
+                        logger.info(f"{group_id} {message_ids} 已成功上传到所有目标频道，清理本地文件: {media_group_dir}")
                         try:
                             # 删除媒体组目录及其所有文件
                             if media_group_dir.exists():
@@ -858,7 +910,7 @@ class Forwarder:
                         except Exception as e:
                             logger.error(f"删除媒体组目录失败: {str(e)}")
                     else:
-                        logger.warning(f"媒体组未能成功上传到所有目标频道，保留本地文件: {media_group_dir}")
+                        logger.warning(f"{group_id} {message_ids} 未能成功上传到所有目标频道，仍有 {remaining_targets} 未转发完成，保留本地文件: {media_group_dir}")
                 
                 except Exception as e:
                     logger.error(f"处理媒体组上传失败: {str(e)}")

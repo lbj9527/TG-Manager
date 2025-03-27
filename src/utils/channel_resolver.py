@@ -204,7 +204,7 @@ class ChannelResolver:
             # messages = []
             # async for message in self.client.get_chat_history(chat.id, limit=1):
             #     messages.append(message)
-            logger.info(f"messages_has_protected_content: {chat.has_protected_content}")
+            #logger.info(f"messages_has_protected_content: {chat.has_protected_content}")
             
             if chat.has_protected_content:
                 forward_allowed = False
