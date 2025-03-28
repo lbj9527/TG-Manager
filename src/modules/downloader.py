@@ -420,6 +420,24 @@ class Downloader:
         max_retries = 5  # 最大重试次数
         retry_count = 0
         
+        # 创建媒体组目录
+        media_group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
+        media_group_folder = self._sanitize_filename(media_group_id)
+        media_group_path = download_path / media_group_folder
+        media_group_path.mkdir(exist_ok=True)
+        
+        # 保存消息文本到txt文件（只在并行下载时）
+        text_content = message.text or message.caption or ""
+        if text_content:
+            text_file_path = media_group_path / f"{media_group_id}_text.txt"
+            if not text_file_path.exists():
+                try:
+                    with open(text_file_path, "w", encoding="utf-8") as f:
+                        f.write(text_content)
+                    logger.info(f"保存媒体组 {media_group_id} 的文本内容到 {text_file_path}")
+                except Exception as e:
+                    logger.error(f"保存媒体组 {media_group_id} 的文本内容失败: {e}")
+        
         while retry_count <= max_retries:
             try:
                 file_data = None
@@ -436,7 +454,7 @@ class Downloader:
                 
                 # 检查媒体类型并获取估计大小
                 if message.photo and "photo" in media_types:
-                    file_path = download_path / f"{chat_id}-{message.id}-photo.jpg"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-photo.jpg"
                     media_type = "照片"
                     # 选择最大尺寸的照片
                     photo = message.photo
@@ -450,7 +468,7 @@ class Downloader:
                     file_name = message.video.file_name
                     if not file_name:
                         file_name = f"{chat_id}-{message.id}-video.mp4"
-                    file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                     media_type = "视频"
                     media_size = message.video.file_size if hasattr(message.video, 'file_size') and message.video.file_size else 0
                     logger.info(f"工作协程-{worker_id} 开始下载 {media_type} {message.id} | 预计大小: {media_size/1024:.1f}KB | 尝试 #{retry_count+1}")
@@ -460,7 +478,7 @@ class Downloader:
                     file_name = message.document.file_name
                     if not file_name:
                         file_name = f"{chat_id}-{message.id}-document"
-                    file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                     media_type = "文档"
                     media_size = message.document.file_size if hasattr(message.document, 'file_size') and message.document.file_size else 0
                     logger.info(f"工作协程-{worker_id} 开始下载 {media_type} {message.id} | 预计大小: {media_size/1024:.1f}KB | 尝试 #{retry_count+1}")
@@ -470,21 +488,21 @@ class Downloader:
                     file_name = message.audio.file_name
                     if not file_name:
                         file_name = f"{chat_id}-{message.id}-audio.mp3"
-                    file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                     media_type = "音频"
                     media_size = message.audio.file_size if hasattr(message.audio, 'file_size') and message.audio.file_size else 0
                     logger.info(f"工作协程-{worker_id} 开始下载 {media_type} {message.id} | 预计大小: {media_size/1024:.1f}KB | 尝试 #{retry_count+1}")
                     file_data = await self.client.download_media(message, in_memory=True, file_name=str(file_path.name))
                 
                 elif message.animation and "animation" in media_types:
-                    file_path = download_path / f"{chat_id}-{message.id}-animation.mp4"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-animation.mp4"
                     media_type = "动画"
                     media_size = message.animation.file_size if hasattr(message.animation, 'file_size') and message.animation.file_size else 0
                     logger.info(f"工作协程-{worker_id} 开始下载 {media_type} {message.id} | 预计大小: {media_size/1024:.1f}KB | 尝试 #{retry_count+1}")
                     file_data = await self.client.download_media(message, in_memory=True, file_name=str(file_path.name))
                 
                 elif message.sticker and "sticker" in media_types:
-                    file_path = download_path / f"{chat_id}-{message.id}-sticker.webp"
+                    file_path = media_group_path / f"{chat_id}-{message.id}-sticker.webp"
                     media_type = "贴纸"
                     media_size = message.sticker.file_size if hasattr(message.sticker, 'file_size') and message.sticker.file_size else 0
                     logger.info(f"工作协程-{worker_id} 开始下载 {media_type} {message.id} | 预计大小: {media_size/1024:.1f}KB | 尝试 #{retry_count+1}")

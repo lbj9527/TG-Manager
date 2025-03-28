@@ -398,9 +398,24 @@ class DownloaderSerial:
             bool: 是否成功下载
         """
         try:
+            # 创建媒体组目录
+            media_group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
+            media_group_path = download_path / self._sanitize_filename(media_group_id)
+            media_group_path.mkdir(exist_ok=True)
+            
+            # 保存消息文本到txt文件
+            text_content = message.text or message.caption or ""
+            if text_content:
+                text_file_path = media_group_path / f"{media_group_id}_text.txt"
+                # 只有当文件不存在时才写入，避免重复写入相同内容
+                if not text_file_path.exists():
+                    with open(text_file_path, "w", encoding="utf-8") as f:
+                        f.write(text_content)
+                    logger.info(f"保存媒体组 {media_group_id} 的文本内容到 {text_file_path}")
+            
             if message.photo and "photo" in media_types:
                 # 下载照片
-                file_path = download_path / f"{chat_id}-{message.id}-photo.jpg"
+                file_path = media_group_path / f"{chat_id}-{message.id}-photo.jpg"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载照片成功: {file_path}")
                 return True
@@ -410,7 +425,7 @@ class DownloaderSerial:
                 file_name = message.video.file_name
                 if not file_name:
                     file_name = f"{chat_id}-{message.id}-video.mp4"
-                file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载视频成功: {file_path}")
                 return True
@@ -420,7 +435,7 @@ class DownloaderSerial:
                 file_name = message.document.file_name
                 if not file_name:
                     file_name = f"{chat_id}-{message.id}-document"
-                file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载文档成功: {file_path}")
                 return True
@@ -430,21 +445,21 @@ class DownloaderSerial:
                 file_name = message.audio.file_name
                 if not file_name:
                     file_name = f"{chat_id}-{message.id}-audio.mp3"
-                file_path = download_path / f"{chat_id}-{message.id}-{file_name}"
+                file_path = media_group_path / f"{chat_id}-{message.id}-{file_name}"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载音频成功: {file_path}")
                 return True
             
             elif message.animation and "animation" in media_types:
                 # 下载动画(GIF)
-                file_path = download_path / f"{chat_id}-{message.id}-animation.mp4"
+                file_path = media_group_path / f"{chat_id}-{message.id}-animation.mp4"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载动画成功: {file_path}")
                 return True
             
             elif message.sticker and "sticker" in media_types:
                 # 下载贴纸
-                file_path = download_path / f"{chat_id}-{message.id}-sticker.webp"
+                file_path = media_group_path / f"{chat_id}-{message.id}-sticker.webp"
                 await self.client.download_media(message, file_name=str(file_path))
                 logger.info(f"下载贴纸成功: {file_path}")
                 return True
