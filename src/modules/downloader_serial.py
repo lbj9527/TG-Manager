@@ -405,12 +405,15 @@ class DownloaderSerial:
             # 保存消息文本到txt文件
             text_content = message.text or message.caption or ""
             if text_content:
-                text_file_path = media_group_path / f"{media_group_id}_text.txt"
+                text_file_path = media_group_path / "title.txt"
                 # 只有当文件不存在时才写入，避免重复写入相同内容
                 if not text_file_path.exists():
-                    with open(text_file_path, "w", encoding="utf-8") as f:
-                        f.write(text_content)
-                    logger.info(f"保存媒体组 {media_group_id} 的文本内容到 {text_file_path}")
+                    try:
+                        with open(text_file_path, "w", encoding="utf-8") as f:
+                            f.write(text_content)
+                        logger.info(f"保存媒体组 {media_group_id} 的文本内容到 {text_file_path}")
+                    except Exception as e:
+                        logger.error(f"保存文本文件失败: {e}")
             
             if message.photo and "photo" in media_types:
                 # 下载照片

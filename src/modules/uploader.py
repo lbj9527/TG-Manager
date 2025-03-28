@@ -124,11 +124,27 @@ class Uploader:
         
         logger.info(f"在 {directory} 中找到 {len(files)} 个文件待上传")
         
+        # 尝试读取title.txt文件作为默认标题
+        default_caption = ""
+        title_file_path = directory / "title.txt"
+        if title_file_path.exists() and title_file_path.is_file():
+            try:
+                with open(title_file_path, "r", encoding="utf-8") as f:
+                    default_caption = f.read().strip()
+                logger.info(f"从 {title_file_path} 读取默认标题成功")
+            except Exception as e:
+                logger.error(f"读取标题文件 {title_file_path} 失败: {e}")
+                # 如果读取失败，使用默认的caption模板
+        
         # 上传计数
         upload_count = 0
         
         # 上传每个文件
         for file_path in files:
+            # 跳过title.txt文件本身
+            if file_path.name == "title.txt":
+                continue
+                
             # 检查是否已上传
             already_uploaded = True
             for channel in target_channels:
@@ -146,13 +162,16 @@ class Uploader:
                 await asyncio.sleep(self.general_config.pause_time)
                 upload_count = 0
             
-            # 生成文件标题
-            caption = self.upload_config.caption_template.format(
-                filename=file_path.stem,
-                extension=file_path.suffix.lstrip('.'),
-                full_name=file_path.name,
-                date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
+            # 生成文件标题，优先使用从title.txt读取的内容
+            if default_caption:
+                caption = default_caption
+            else:
+                caption = self.upload_config.caption_template.format(
+                    filename=file_path.stem,
+                    extension=file_path.suffix.lstrip('.'),
+                    full_name=file_path.name,
+                    date=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
             
             # 确定媒体类型
             media_type = self._get_media_type(file_path)
@@ -214,7 +233,7 @@ class Uploader:
         
         Args:
             files: 文件列表
-            group_name: 媒体组名称（用作标题）
+            group_name: 媒体组名称
             target_channels: 目标频道列表
             
         Returns:
@@ -236,8 +255,28 @@ class Uploader:
             logger.warning(f"媒体组 {group_name} 中没有有效的媒体文件，跳过")
             return False
         
-        # 生成媒体组标题
-        caption = group_name
+        # 获取媒体组目录路径（第一个文件的父目录）
+        if valid_files:
+            group_dir = valid_files[0][0].parent
+            
+            # 尝试读取title.txt文件作为caption
+            caption = ""
+            title_file_path = group_dir / "title.txt"
+            if title_file_path.exists() and title_file_path.is_file():
+                try:
+                    with open(title_file_path, "r", encoding="utf-8") as f:
+                        caption = f.read().strip()
+                    logger.info(f"从 {title_file_path} 读取媒体组标题成功")
+                except Exception as e:
+                    logger.error(f"读取标题文件 {title_file_path} 失败: {e}")
+                    # 如果读取失败，默认使用文件夹名作为标题
+                    caption = group_name
+            else:
+                # 如果标题文件不存在，使用文件夹名作为默认标题
+                logger.info(f"标题文件 {title_file_path} 不存在，使用文件夹名 {group_name} 作为标题")
+                caption = group_name
+        else:
+            caption = group_name
         
         # 为媒体组中的视频生成缩略图
         thumbnails = {}

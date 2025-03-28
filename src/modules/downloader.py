@@ -428,14 +428,15 @@ class Downloader:
         # 保存消息文本到txt文件（只在并行下载时）
         text_content = message.text or message.caption or ""
         if text_content:
-            text_file_path = media_group_path / f"{media_group_id}_text.txt"
+            text_file_path = media_group_path / "title.txt"
+            # 只有当文件不存在时才写入，避免重复写入相同内容
             if not text_file_path.exists():
                 try:
                     with open(text_file_path, "w", encoding="utf-8") as f:
                         f.write(text_content)
                     logger.info(f"保存媒体组 {media_group_id} 的文本内容到 {text_file_path}")
                 except Exception as e:
-                    logger.error(f"保存媒体组 {media_group_id} 的文本内容失败: {e}")
+                    logger.error(f"保存文本文件失败: {e}")
         
         while retry_count <= max_retries:
             try:
