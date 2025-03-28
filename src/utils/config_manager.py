@@ -27,12 +27,21 @@ class GeneralConfig(BaseModel):
     proxy_username: Optional[str] = None
     proxy_password: Optional[str] = None
 
-class DownloadConfig(BaseModel):
-    """下载配置模型"""
+class DownloadSettingItem(BaseModel):
+    """下载设置项模型"""
+    source_channels: str
     start_id: int = 0
     end_id: int = 0
-    source_channels: List[str]
-    organize_by_chat: bool = True
+    media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
+    keywords: List[str] = []
+
+class DownloadConfig(BaseModel):
+    """下载配置模型"""
+    downloadSetting: List[DownloadSettingItem] = []
+    source_channels: List[str] = []  # 保留旧参数，向后兼容
+    start_id: int = 0  # 保留旧参数，向后兼容
+    end_id: int = 0  # 保留旧参数，向后兼容
+    organize_by_chat: bool = True  # 保留旧参数，向后兼容
     download_path: str = "downloads"
     media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
     parallel_download: bool = False

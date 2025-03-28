@@ -28,8 +28,8 @@ async def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="TG Forwarder - Telegram消息转发工具")
-    parser.add_argument('command', choices=['forward', 'download', 'upload', 'startmonitor'],
-                        help="执行的命令：forward(转发历史消息), download(下载媒体文件), upload(上传本地文件), startmonitor(监听新消息)")
+    parser.add_argument('command', choices=['forward', 'download', 'downloadKeywords', 'upload', 'startmonitor'],
+                        help="执行的命令：forward(转发历史消息), download(下载媒体文件), downloadKeywords(根据关键字下载媒体文件), upload(上传本地文件), startmonitor(监听新消息)")
     
     args = parser.parse_args()
     
@@ -73,6 +73,12 @@ async def main():
             
         elif args.command == 'download':
             logger.info("执行媒体文件下载")
+            downloader.use_keywords = False
+            await downloader.download_media_from_channels()
+            
+        elif args.command == 'downloadKeywords':
+            logger.info("执行根据关键字下载媒体文件")
+            downloader.use_keywords = True
             await downloader.download_media_from_channels()
             
         elif args.command == 'upload':

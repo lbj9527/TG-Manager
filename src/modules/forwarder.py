@@ -282,7 +282,7 @@ class Forwarder:
                 continue
             
             # 获取媒体组ID
-            group_id = message.media_group_id if message.media_group_id else f"single_{message.id}"
+            group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
             # 添加到媒体组信息
             if group_id not in media_groups:
@@ -442,7 +442,7 @@ class Forwarder:
                 continue
             
             # 获取媒体组ID
-            group_id = message.media_group_id if message.media_group_id else f"single_{message.id}"
+            group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
             # 添加到媒体组
             if group_id not in media_groups:
