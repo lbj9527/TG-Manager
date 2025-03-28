@@ -480,57 +480,85 @@ class Forwarder:
         total_messages = actual_end_id - actual_start_id + 1
         logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
-        # Telegram的get_chat_history按消息ID降序返回（从新到旧）
-        # 我们需要先收集所有消息，然后按照ID升序排序，以便按照从旧到新的顺序处理
-        
         try:
             # 收集指定范围内的所有消息
             all_messages = []
-            offset_id = actual_end_id + 1
-            fetched_count = 0
             
-            while fetched_count < total_messages:
-                limit = min(100, total_messages - fetched_count)  # 最多获取100条，但不超过剩余所需数量
+            # 优化策略：使用更高效的方式获取消息
+            # 1. 从较大的批次开始，逐步减小批次大小
+            # 2. 跟踪已尝试获取的消息ID，避免重复尝试
+            # 3. 设置最大尝试次数，防止无限循环
+            
+            # 创建要获取的消息ID列表，按从旧到新的顺序排序
+            message_ids_to_fetch = list(range(actual_start_id, actual_end_id + 1))
+            fetched_messages_map = {}  # 用于存储已获取的消息，键为消息ID
+            
+            # 每次批量获取的最大消息数量
+            max_batch_size = 100
+            
+            # 获取消息的最大尝试次数，避免无限循环
+            max_attempts = 5
+            attempt_count = 0
+            
+            while message_ids_to_fetch and attempt_count < max_attempts:
+                attempt_count += 1
                 
-                batch_count = 0
-                batch_messages = []
+                # 根据剩余消息数量确定当前批次大小
+                batch_size = min(max_batch_size, len(message_ids_to_fetch))
+                
+                # 计算当前批次的offset_id，以获取小于此ID的消息
+                # 由于Telegram API是获取"小于offset_id"的消息，需要加1
+                current_offset_id = max(message_ids_to_fetch) + 1
+                
+                logger.info(f"尝试获取消息批次 (第{attempt_count}次): chat_id={chat_id}, offset_id={current_offset_id}, 剩余未获取消息数={len(message_ids_to_fetch)}")
+                
+                # 记录此批次成功获取的消息数
+                batch_success_count = 0
                 
                 # 获取一批消息
                 async for message in self.client.get_chat_history(
                     chat_id=chat_id,
-                    limit=limit,  # 限制每批次的消息数量
-                    offset_id=offset_id  # 获取ID小于此值的消息
+                    limit=batch_size,
+                    offset_id=current_offset_id
                 ):
-                    batch_count += 1
+                    # 检查消息ID是否在我们需要的范围内
+                    if message.id in message_ids_to_fetch:
+                        fetched_messages_map[message.id] = message
+                        message_ids_to_fetch.remove(message.id)
+                        batch_success_count += 1
                     
-                    # 只处理在范围内的消息
-                    if message.id >= actual_start_id and message.id <= actual_end_id:
-                        fetched_count += 1
-                        batch_messages.append(message)
-                    
-                    # 更新下一轮请求的offset_id
-                    offset_id = message.id
-                    
-                    # 如果已经达到或低于开始ID，则停止获取
-                    if message.id < actual_start_id:
-                        logger.info(f"已达到最小ID {actual_start_id}，停止获取")
+                    # 如果消息ID小于我们要获取的最小ID，可以停止这一批次的获取
+                    if message.id < min(message_ids_to_fetch, default=actual_start_id):
+                        logger.debug(f"消息ID {message.id} 小于当前需要获取的最小ID {min(message_ids_to_fetch, default=actual_start_id)}，停止当前批次获取")
                         break
                 
-                # 将这批消息添加到总消息列表
-                all_messages.extend(batch_messages)
-                logger.info(f"获取消息批次: chat_id={chat_id}, offset_id={offset_id}, limit={limit}, 已获取={fetched_count}/{total_messages}")
+                logger.info(f"已获取 {batch_success_count} 条消息，剩余 {len(message_ids_to_fetch)} 条消息待获取")
                 
-                # 如果这批次没有获取到任何消息，则退出循环
-                if batch_count == 0:
-                    logger.info("没有更多消息可获取")
-                    break
+                # 如果此批次没有获取到任何消息，说明可能有些消息不存在或已被删除
+                if batch_success_count == 0:
+                    # 检查是否需要缩小获取范围，尝试一条一条地获取
+                    if batch_size > 1:
+                        logger.info(f"未获取到任何消息，尝试减小批次大小")
+                        max_batch_size = max(1, max_batch_size // 2)
+                    else:
+                        # 如果已经是最小批次大小，且仍未获取到消息，记录并移除前一部分消息ID
+                        # 这些可能是不存在或已删除的消息
+                        if message_ids_to_fetch:
+                            ids_to_skip = message_ids_to_fetch[:min(10, len(message_ids_to_fetch))]
+                            logger.warning(f"无法获取以下消息ID，可能不存在或已被删除：{ids_to_skip}")
+                            for id_to_skip in ids_to_skip:
+                                message_ids_to_fetch.remove(id_to_skip)
                 
-                # 避免频繁请求
+                # 避免频繁请求，休眠一小段时间
                 await asyncio.sleep(0.5)
             
-            # 按消息ID升序排序（从旧到新）
-            all_messages.sort(key=lambda x: x.id)
-            logger.info(f"消息获取完成，共获取{len(all_messages)}条消息，已按ID升序排序（从旧到新）")
+            # 检查是否还有未获取的消息
+            if message_ids_to_fetch:
+                logger.warning(f"以下消息ID无法获取，将被跳过：{message_ids_to_fetch}")
+            
+            # 将获取到的消息按ID升序排序（从旧到新）
+            all_messages = [fetched_messages_map[msg_id] for msg_id in sorted(fetched_messages_map.keys())]
+            logger.info(f"消息获取完成，共获取{len(all_messages)}/{total_messages}条消息，已按ID升序排序（从旧到新）")
             
             # 逐个返回排序后的消息
             for message in all_messages:
@@ -541,6 +569,7 @@ class Forwarder:
             await asyncio.sleep(e.x)
         except Exception as e:
             logger.error(f"获取消息失败: {e}")
+            logger.exception("详细错误信息：")
     
     def _is_media_allowed(self, message: Message) -> bool:
         """
