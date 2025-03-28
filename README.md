@@ -143,6 +143,34 @@ python run.py startmonitor
 - **并行下载**：通过设置`parallel_download`为`true`启用，可同时下载多个文件，显著提高下载速度。可通过`max_concurrent_downloads`参数控制最大并行下载数量（默认为 10）。
 - **关键词下载**：通过命令`python run.py downloadKeywords`启用，仅下载包含指定关键词的消息中的媒体文件，同时将下载的文件按关键词组织存放。
 
+> 自 0.7.2 版本起，普通下载和关键词下载均使用相同的配置结构（`downloadSetting`数组），唯一区别是在关键词下载模式下会使用`keywords`字段进行筛选，而在普通下载模式下则忽略该字段。不再使用顶层的`source_channels`、`start_id`和`end_id`字段。
+
+#### 统一的下载配置示例
+
+```json
+"DOWNLOAD": {
+  "downloadSetting": [
+    {
+      "source_channels": "https://t.me/channel1",
+      "start_id": 1000,
+      "end_id": 2000,
+      "media_types": ["photo", "video", "document"],
+      "keywords": ["重要", "公告"]  // 普通下载模式忽略此字段，关键词下载模式使用此字段
+    },
+    {
+      "source_channels": "https://t.me/channel2",
+      "start_id": 5000,
+      "end_id": 0,  // 0表示下载到最新消息
+      "media_types": ["photo", "video", "document", "audio", "animation"],
+      "keywords": ["测试", "预览"]
+    }
+  ],
+  "download_path": "downloads",
+  "parallel_download": true,
+  "max_concurrent_downloads": 10
+}
+```
+
 #### 关键词下载功能
 
 从 0.7.0 版本开始，TG Forwarder 添加了关键词下载功能，支持根据消息文本内容筛选需下载的媒体：

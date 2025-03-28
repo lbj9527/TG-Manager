@@ -61,30 +61,29 @@ class DownloaderSerial:
         # 下载计数
         download_count = 0
         
-        if self.use_keywords:
-            # 使用downloadSetting配置进行关键词下载
-            download_settings = self.download_config.downloadSetting
-            logger.info(f"配置的下载设置数量: {len(download_settings)}")
+        # 获取下载设置列表
+        download_settings = self.download_config.downloadSetting
+        
+        if len(download_settings) == 0:
+            logger.warning("未配置任何下载设置，请在config.json的DOWNLOAD.downloadSetting数组中添加配置")
+            return
             
-            # 遍历每个下载设置
-            for setting in download_settings:
-                source_channel = setting.source_channels
-                start_id = setting.start_id
-                end_id = setting.end_id
-                media_types = setting.media_types
-                keywords = setting.keywords
-                
+        logger.info(f"配置的下载设置数量: {len(download_settings)}")
+        
+        # 遍历每个下载设置
+        for setting in download_settings:
+            source_channel = setting.source_channels
+            start_id = setting.start_id
+            end_id = setting.end_id
+            media_types = setting.media_types
+            keywords = setting.keywords if self.use_keywords else []
+            
+            if self.use_keywords:
                 logger.info(f"准备从频道 {source_channel} 下载媒体文件，关键词: {keywords}")
-                download_count = await self._process_channel_for_download(source_channel, start_id, end_id, media_types, keywords, download_count)
-        else:
-            # 使用传统模式下载
-            source_channels = self.download_config.source_channels
-            logger.info(f"配置的源频道数量: {len(source_channels)}")
+            else:
+                logger.info(f"准备从频道 {source_channel} 下载媒体文件")
             
-            # 遍历每个源频道
-            for channel in source_channels:
-                logger.info(f"准备从频道 {channel} 下载媒体文件")
-                download_count = await self._process_channel_for_download(channel, self.download_config.start_id, self.download_config.end_id, self.download_config.media_types, [], download_count)
+            download_count = await self._process_channel_for_download(source_channel, start_id, end_id, media_types, keywords, download_count)
         
         logger.info("所有频道的媒体文件下载完成")
     
