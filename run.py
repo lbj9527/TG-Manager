@@ -87,8 +87,8 @@ async def main():
             
         elif args.command == 'startmonitor':
             logger.info("启动消息监听转发")
-            # 初始化监听模块
-            monitor = Monitor(client, config_manager, channel_resolver, history_manager)
+            # 初始化监听模块，不再传递history_manager参数
+            monitor = Monitor(client, config_manager, channel_resolver)
             # 开始监听
             await monitor.start_monitoring()
             

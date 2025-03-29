@@ -14,9 +14,8 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, ChatForwardsRestricted, ChannelPrivate
 from pyrogram.handlers import MessageHandler
 
-from src.utils.config_manager import ConfigManager
+from src.utils.config_manager import ConfigManager, MonitorChannelPair
 from src.utils.channel_resolver import ChannelResolver
-from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
 
 logger = get_logger()
@@ -27,7 +26,7 @@ class Monitor:
     监听模块，监听源频道的新消息，并实时转发到目标频道
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
+    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver):
         """
         初始化监听模块
         
@@ -35,12 +34,10 @@ class Monitor:
             client: Pyrogram客户端实例
             config_manager: 配置管理器实例
             channel_resolver: 频道解析器实例
-            history_manager: 历史记录管理器实例
         """
         self.client = client
         self.config_manager = config_manager
         self.channel_resolver = channel_resolver
-        # 不使用历史记录管理器，根据需求移除历史记录功能
         
         # 获取监听配置
         self.monitor_config = self.config_manager.get_monitor_config()
@@ -61,15 +58,33 @@ class Monitor:
             except ValueError:
                 logger.error(f"监听时间格式错误: {self.monitor_config.duration}，应为 'yyyy-mm-dd'")
         
-        # 文本替换映射
-        self.text_replacements = {}
-        # 检查配置中是否有文本替换设置
-        if hasattr(self.monitor_config, 'text_filter') and self.monitor_config.text_filter:
-            for item in self.monitor_config.text_filter:
-                if hasattr(item, 'original_text') and hasattr(item, 'target_text'):
-                    self.text_replacements[item.original_text] = item.target_text
-            logger.info(f"已加载 {len(self.text_replacements)} 条文本替换规则")
-            logger.debug(f"文本替换规则: {self.text_replacements}")
+        # 每个频道对的文本替换映射
+        self.channel_text_replacements = {}
+        # 每个频道对的移除标题设置
+        self.channel_remove_captions = {}
+        
+        # 加载每个频道对的配置
+        total_text_filter_rules = 0
+        for pair in self.monitor_config.monitor_channel_pairs:
+            source_channel = pair.source_channel
+            
+            # 加载文本替换规则
+            text_replacements = {}
+            if pair.text_filter:
+                for item in pair.text_filter:
+                    # 只有当original_text不为空时才添加替换规则
+                    if item.original_text:
+                        text_replacements[item.original_text] = item.target_text
+                        total_text_filter_rules += 1
+            
+            # 存储每个源频道的配置
+            self.channel_text_replacements[source_channel] = text_replacements
+            self.channel_remove_captions[source_channel] = pair.remove_captions
+            
+            if text_replacements:
+                logger.debug(f"频道 {source_channel} 已加载 {len(text_replacements)} 条文本替换规则")
+        
+        logger.info(f"总共加载 {total_text_filter_rules} 条文本替换规则")
         
         # 消息处理器字典，用于跟踪每个源频道的消息处理器
         self.message_handlers = {}
@@ -108,7 +123,7 @@ class Monitor:
             
             # 启动监听任务
             task = asyncio.create_task(
-                self._monitor_channel(source_channel, target_channels)
+                self._monitor_channel(pair)
             )
             self.monitor_tasks.append(task)
             
@@ -180,14 +195,16 @@ class Monitor:
         except Exception as e:
             logger.error(f"消息清理任务异常: {e}")
     
-    async def _monitor_channel(self, source_channel: str, target_channels: List[str]):
+    async def _monitor_channel(self, channel_pair: MonitorChannelPair):
         """
         监听单个源频道的新消息
         
         Args:
-            source_channel: 源频道
-            target_channels: 目标频道列表
+            channel_pair: 监听频道对配置
         """
+        source_channel = channel_pair.source_channel
+        target_channels = channel_pair.target_channels
+        
         try:
             # 解析源频道ID
             source_id = await self.channel_resolver.get_channel_id(source_channel)
@@ -222,6 +239,11 @@ class Monitor:
             if not source_can_forward:
                 logger.error(f"源频道 {source_title} 禁止转发消息，跳过此频道的监听")
                 return
+            
+            # 获取这个源频道的文本替换规则
+            text_replacements = self.channel_text_replacements.get(source_channel, {})
+            # 获取这个源频道的移除标题设置
+            remove_captions = self.channel_remove_captions.get(source_channel, False)
             
             # 创建 handler 处理函数来监听新消息
             async def new_message_handler(client, message):
@@ -263,11 +285,11 @@ class Monitor:
                     # 等待一段时间收集媒体组中的所有消息
                     await asyncio.sleep(2)
                     # 处理媒体组消息
-                    await self._handle_media_group(message, source_channel, source_id, valid_target_channels)
+                    await self._handle_media_group(message, source_channel, source_id, valid_target_channels, text_replacements, remove_captions)
                     return
                 
-                # 处理单条消息（无论是否需要文本替换，统一使用copy_message方法）
-                await self._copy_message(message, source_channel, source_id, valid_target_channels)
+                # 处理单条消息
+                await self._copy_message(message, source_channel, source_id, valid_target_channels, text_replacements, remove_captions)
             
             # 注册消息处理器
             handler = MessageHandler(new_message_handler, filters.chat(source_id))
@@ -294,7 +316,7 @@ class Monitor:
                 self.client.remove_handler(self.message_handlers[source_id])
                 del self.message_handlers[source_id]
     
-    async def _handle_media_group(self, message: Message, source_channel: str, source_id: int, target_channels: List[Tuple[str, int, str]]):
+    async def _handle_media_group(self, message: Message, source_channel: str, source_id: int, target_channels: List[Tuple[str, int, str]], text_replacements: Dict[str, str], remove_captions: bool):
         """
         处理媒体组消息
         
@@ -303,6 +325,8 @@ class Monitor:
             source_channel: 源频道
             source_id: 源频道ID
             target_channels: 目标频道列表 (channel_str, channel_id, channel_info)
+            text_replacements: 该频道的文本替换规则
+            remove_captions: 该频道的移除标题设置
         """
         try:
             # 获取媒体组ID
@@ -310,12 +334,12 @@ class Monitor:
             if not media_group_id:
                 return
             
-            # 获取标题，无论是否需要替换，都先进行处理
+            # 获取标题，应用文本替换规则
             caption = message.caption or ""
-            modified_caption = self._apply_text_replacements(caption)
+            modified_caption = self._apply_text_replacements(caption, text_replacements)
             
             # 根据配置决定是否保留标题
-            if self.monitor_config.remove_captions:
+            if remove_captions:
                 captions = ""
             else:
                 captions = modified_caption
@@ -326,23 +350,24 @@ class Monitor:
         except Exception as e:
             logger.error(f"处理媒体组 {message.media_group_id} 失败: {e}")
     
-    def _apply_text_replacements(self, text: str) -> str:
+    def _apply_text_replacements(self, text: str, text_replacements: Dict[str, str]) -> str:
         """
         应用文本替换规则
         
         Args:
             text: 需要替换的文本
+            text_replacements: 文本替换规则字典
             
         Returns:
             str: 替换后的文本
         """
-        if not text or not self.text_replacements:
+        if not text or not text_replacements:
             return text
         
         modified_text = text
         replacement_made = False
         
-        for original, replacement in self.text_replacements.items():
+        for original, replacement in text_replacements.items():
             if original in modified_text:
                 old_text = modified_text
                 modified_text = modified_text.replace(original, replacement)
@@ -408,7 +433,7 @@ class Monitor:
         except Exception as e:
             logger.error(f"复制媒体组消息 {message_id} 失败: {e}")
     
-    async def _copy_message(self, message: Message, source_channel: str, source_id: int, target_channels: List[Tuple[str, int, str]]):
+    async def _copy_message(self, message: Message, source_channel: str, source_id: int, target_channels: List[Tuple[str, int, str]], text_replacements: Dict[str, str], remove_captions: bool):
         """
         复制消息到目标频道
         
@@ -417,6 +442,8 @@ class Monitor:
             source_channel: 源频道
             source_id: 源频道ID
             target_channels: 目标频道列表 (channel_str, channel_id, channel_info)
+            text_replacements: 该频道的文本替换规则
+            remove_captions: 该频道的移除标题设置
         """
         for target, target_id, target_info in target_channels:
             try:
@@ -427,7 +454,7 @@ class Monitor:
                 if message.text:
                     # 处理纯文本消息
                     original_text = message.text
-                    modified_text = self._apply_text_replacements(original_text)
+                    modified_text = self._apply_text_replacements(original_text, text_replacements)
                     
                     # 使用client.send_message发送文本消息
                     sent = await self.client.send_message(
@@ -444,10 +471,10 @@ class Monitor:
                     # 处理媒体消息（带标题）
                     if message.caption:
                         original_caption = message.caption
-                        modified_caption = self._apply_text_replacements(original_caption)
+                        modified_caption = self._apply_text_replacements(original_caption, text_replacements)
                         
                         # 根据配置决定是否保留标题
-                        if not self.monitor_config.remove_captions:
+                        if not remove_captions:
                             caption = modified_caption
                         else:
                             caption = ""  # 空字符串移除标题

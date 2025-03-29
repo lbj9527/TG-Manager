@@ -53,15 +53,20 @@ class UploadConfig(BaseModel):
     directory: str = "uploads"
     caption_template: str = "{filename}"
 
+class TextFilterItem(BaseModel):
+    """文本替换项模型"""
+    original_text: str
+    target_text: str = ""  # 默认为空字符串，表示替换为空
+
 class ChannelPair(BaseModel):
     """频道对配置模型"""
     source_channel: str
     target_channels: List[str]
 
-class TextFilterItem(BaseModel):
-    """文本替换项模型"""
-    original_text: str
-    target_text: str
+class MonitorChannelPair(ChannelPair):
+    """监听频道对配置模型，扩展ChannelPair添加更多配置项"""
+    remove_captions: bool = False
+    text_filter: List[TextFilterItem] = []
 
 class ForwardConfig(BaseModel):
     """转发配置模型"""
@@ -76,12 +81,10 @@ class ForwardConfig(BaseModel):
 
 class MonitorConfig(BaseModel):
     """监听配置模型"""
-    monitor_channel_pairs: List[ChannelPair]
-    remove_captions: bool = False
+    monitor_channel_pairs: List[MonitorChannelPair]
     media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
     duration: Optional[str] = None
     forward_delay: int = 3
-    text_filter: Optional[List[TextFilterItem]] = None
 
 class Config(BaseModel):
     """完整配置模型"""
