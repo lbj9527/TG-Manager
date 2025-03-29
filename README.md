@@ -8,6 +8,8 @@ TG Forwarder 是一个功能强大的 Telegram 消息转发工具，用于在不
 - **媒体文件下载**：下载源频道的图片、视频、文件等媒体内容
 - **本地文件上传**：将本地文件上传至目标频道，支持媒体组
 - **实时消息监听**：监听源频道的新消息并实时转发至目标频道
+- **事件通知系统**：提供完善的事件通知机制，支持界面实时更新
+- **任务控制**：支持暂停、恢复和取消任务，增强用户交互体验
 
 ## 项目结构
 
@@ -25,6 +27,9 @@ TG-Manager/
 ├── tmp/                # 临时文件目录
 ├── logs/               # 日志文件目录
 └── src/                # 源代码目录
+    ├── modules/        # 核心功能模块
+    ├── utils/          # 工具类和辅助函数
+    └── ui/             # 用户界面相关代码
 ```
 
 ## 安装方法
@@ -415,3 +420,201 @@ python run.py startmonitor
      - 如果 `original_text` 为空，则不进行替换
      - 如果 `original_text` 不为空但 `target_text` 为空，则替换为空字符串
      - 支持对消息标题和文本内容进行替换
+
+## 事件系统使用
+
+TG-Forwarder 实现了完善的事件系统，可以监听各种操作的进度和状态：
+
+```python
+from src.modules.forwarder import Forwarder
+from src.utils.controls import TaskContext
+
+# 创建一个 Forwarder 实例
+forwarder = Forwarder(client, config_manager, channel_resolver, history_manager, downloader, uploader)
+
+# 注册事件监听器
+forwarder.on("status", lambda status: print(f"状态更新: {status}"))
+forwarder.on("progress", lambda percent, current, total, task_type: print(f"进度: {percent:.2f}%, {current}/{total} ({task_type})"))
+forwarder.on("error", lambda msg, error_type, recoverable, **kwargs: print(f"错误: {msg} (类型: {error_type}, 可恢复: {recoverable})"))
+forwarder.on("complete", lambda total_forwarded: print(f"转发完成，共转发 {total_forwarded} 个媒体组/消息"))
+
+# 创建任务上下文
+task_context = TaskContext()
+
+# 开始转发任务
+await forwarder.forward_messages(task_context)
+
+# 在其他线程或异步函数中控制任务
+def pause_task():
+    # 暂停任务
+    task_context.pause_token.pause()
+    
+def resume_task():
+    # 恢复任务
+    task_context.pause_token.resume()
+
+def cancel_task():
+    # 取消任务
+    task_context.cancel_token.cancel()
+```
+
+### Monitor 模块事件系统
+
+Monitor 模块（消息监听器）也实现了完整的事件系统，可以实时监控消息监听状态：
+
+```python
+from src.modules.monitor import Monitor
+from src.utils.controls import TaskContext
+
+# 创建一个 Monitor 实例
+monitor = Monitor(client, config_manager, channel_resolver)
+
+# 注册事件监听器
+monitor.on("status", lambda status: print(f"监听状态: {status}"))
+monitor.on("message_received", lambda message_id, channel_info: print(f"收到新消息: {message_id} 从 {channel_info}"))
+monitor.on("media_group_received", lambda group_id, channel_info: print(f"收到新媒体组: {group_id} 从 {channel_info}"))
+monitor.on("text_replaced", lambda old_text, new_text, replacements: print(f"文本已替换: '{old_text}' -> '{new_text}'"))
+monitor.on("progress", lambda current, total, message: print(f"进度: {current}/{total}, {message}"))
+monitor.on("error", lambda msg, error_type, recoverable, **kwargs: print(f"错误: {msg} (类型: {error_type}, 可恢复: {recoverable})"))
+
+# 创建任务上下文
+task_context = TaskContext()
+
+# 开始监听
+await monitor.start_monitoring(task_context)
+
+# 停止监听
+await monitor.stop_monitoring()
+```
+
+### Monitor 特有事件类型
+
+| 事件名称 | 参数 | 说明 |
+|---------|------|-----|
+| message_received | message_id, channel_info | 收到新消息事件 |
+| media_group_received | group_id, channel_info | 收到新媒体组事件 |
+| text_replaced | old_text, new_text, replacements | 文本替换事件，包含原文本、新文本和替换规则列表 |
+
+### 使用任务控制实现定时监听
+
+Monitor 模块支持通过任务控制机制实现定时监听功能：
+
+```python
+import asyncio
+from datetime import datetime, timedelta
+from src.modules.monitor import Monitor
+from src.utils.controls import TaskContext
+
+async def scheduled_monitoring(duration_hours=1):
+    # 创建 Monitor 实例
+    monitor = Monitor(client, config_manager, channel_resolver)
+    
+    # 创建任务上下文
+    task_context = TaskContext()
+    
+    # 设置监听结束时间
+    end_time = datetime.now() + timedelta(hours=duration_hours)
+    print(f"开始监听，将在 {end_time} 结束")
+    
+    # 启动监听任务
+    monitor_task = asyncio.create_task(monitor.start_monitoring(task_context))
+    
+    try:
+        # 等待直到结束时间
+        while datetime.now() < end_time:
+            if task_context.cancel_token.is_cancelled:
+                break
+            await asyncio.sleep(10)  # 每10秒检查一次
+        
+        # 时间到，取消任务
+        task_context.cancel_token.cancel()
+        await monitor.stop_monitoring()
+        
+    except asyncio.CancelledError:
+        # 手动取消
+        await monitor.stop_monitoring()
+    
+    await monitor_task
+    print("监听任务已结束")
+```
+
+### 支持的事件类型
+
+| 事件名称 | 参数 | 说明 |
+|---------|------|-----|
+| status | message | 状态更新消息 |
+| info | message | 信息性消息 |
+| warning | message | 警告消息 |
+| error | message, error_type, recoverable, details? | 错误信息，包含错误类型和是否可恢复 |
+| debug | message | 调试消息 |
+| progress | percentage, current, total, task_type | 进度更新，包含百分比、当前进度、总数量和任务类型 |
+| complete | total_forwarded | 任务完成事件，包含总转发数量 |
+| media_found | media_type, media_id, channel_info | 发现媒体文件事件 |
+| media_download_started | media_id, media_type, size | 开始下载媒体文件事件 |
+| media_download_success | media_id, file_path, size | 媒体下载成功事件 |
+| media_download_failed | media_id, error | 媒体下载失败事件 |
+| media_group_downloaded | group_id, message_count, file_count | 媒体组下载完成事件 |
+| media_group_forwarded | message_ids, channel_info, count | 媒体组转发成功事件 |
+| message_forwarded | message_id, channel_info | 消息转发成功事件 |
+| media_group_uploaded | group_id, message_ids, success_targets, failed_targets | 媒体组上传完成事件 |
+| message_received | message_id, channel_info | 收到新消息事件 |
+| media_group_received | group_id, channel_info | 收到新媒体组事件 |
+| text_replaced | old_text, new_text, replacements | 文本替换事件，包含原文本、新文本和替换规则列表 |
+
+## 任务控制使用
+
+TG-Forwarder 支持对长时间运行的任务进行控制，实现暂停、恢复和取消功能：
+
+```python
+from src.utils.controls import TaskContext, CancelToken, PauseToken
+
+# 创建任务控制对象
+cancel_token = CancelToken()
+pause_token = PauseToken()
+task_context = TaskContext(cancel_token, pause_token)
+
+# 传递给任务执行函数
+await downloader.download_message_media(message, download_dir, task_context)
+
+# 在其他地方控制任务
+# 暂停任务
+pause_token.pause()
+
+# 恢复任务
+pause_token.resume()
+
+# 取消任务
+cancel_token.cancel()
+```
+
+### 在异步代码中使用
+
+```python
+async def some_function():
+    # 等待任务如果被暂停
+    if task_context:
+        await task_context.wait_if_paused()
+        
+    # 检查是否已取消
+    if task_context and task_context.cancel_token.is_cancelled:
+        return
+```
+
+## 错误处理
+
+TG-Forwarder 提供了详细的错误类型和恢复信息，可以通过监听 error 事件获取：
+
+```python
+def handle_error(error_message, error_type, recoverable, details=None):
+    print(f"错误: {error_message}")
+    print(f"错误类型: {error_type}")
+    print(f"是否可恢复: {recoverable}")
+    if details:
+        print(f"详细信息: {details}")
+
+forwarder.on("error", handle_error)
+```
+
+## 贡献
+
+欢迎提交问题和功能请求！如果您想贡献代码，请先提交一个 issue 描述您的更改。

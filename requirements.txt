@@ -1,10 +1,12 @@
 pyrogram>=2.0.0
 TgCrypto>=1.2.5
-aiohttp>=3.8.4
+aiohttp>=3.11.0
 loguru>=0.6.0
-python-dotenv>=0.20.0
+python-dotenv>=1.0.0
 pydantic>=1.9.0,<2.0.0
-pytest>=7.3.1
-pytest-asyncio>=0.18.0
+pytest>=8.0.0
+pytest-asyncio>=0.21.1
 mypy>=0.991 
 moviepy>=2.0.0
+colorama>=0.4.6
+tqdm>=4.67.0
