@@ -4,6 +4,24 @@
 
 本项目遵循[语义化版本规范](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2024-04-02
+
+### 改进
+
+- 优化监听模块的配置结构，将 text_filter 和 remove_captions 移入每个 channel_pair
+- 删除历史记录跟踪功能，减少系统资源占用
+- 统一使用 copy_message 和 copy_media_group 方法处理消息，保持一致的消息来源隐藏
+- 更新媒体组处理逻辑文档，明确说明 media_types 的筛选机制
+- 添加详细文档说明媒体组作为整体处理的特性及最佳实践建议
+
+### 变更
+
+- 调整文本替换功能的处理逻辑：
+  - 若 original_text 为空，则不进行替换
+  - 若 original_text 不为空但 target_text 为空，则替换为空字符串
+- 优化 media_types 参数的使用说明，清晰列出所有支持的消息类型
+- 完善 forward_delay 参数的使用说明，明确其在消息转发间隔中的作用
+
 ## [1.0.0] - 2024-03-31
 
 ### 新增
