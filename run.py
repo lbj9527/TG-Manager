@@ -88,11 +88,18 @@ async def main():
         elif args.command == 'startmonitor':
             logger.info("启动消息监听转发")
             # 初始化监听模块
-            monitor = Monitor(client, config_manager, channel_resolver, history_manager, forwarder)
-            # 初始化频道映射
-            await monitor.initialize_channels()
+            monitor = Monitor(client, config_manager, channel_resolver, history_manager)
             # 开始监听
             await monitor.start_monitoring()
+            
+            # 添加键盘中断处理
+            try:
+                # 持续运行直到用户中断
+                while True:
+                    await asyncio.sleep(1)
+            except KeyboardInterrupt:
+                logger.info("用户中断监听，正在停止...")
+                await monitor.stop_monitoring()
         
         else:
             logger.error(f"未知命令: {args.command}")

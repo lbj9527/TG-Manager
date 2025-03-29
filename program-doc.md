@@ -86,8 +86,12 @@ MediaManger 媒体文件处理、视频中提取图片、视频打水印、图�
 - **实现方式**：
   - 配置多组"一个源频道和多个目标频道"的消息映射
   - 每组采用多线程监听转发
+  - 只转发非禁止转发频道的消息，对于禁止转发频道的消息，报错提示，然后跳过
   - 保持源频道消息格式
-  - 可设置消息过滤器，过滤特定的文字、链接、表情等
+  - 可配置是否去掉媒体组 caption
+  - 可隐藏消息来源
+  - 可配置消息类型，只转发配置文件中指定的消息类型
+  - 可设置消息替换器，用配置文件中的文本或空值，替换特定的文字、链接等
   - 设置监听时间（duration），格式为年-月-日-时，到期自动停止监听
   - 如何实现参考 pyrogram 的文档
 
@@ -175,14 +179,11 @@ MediaManger 媒体文件处理、视频中提取图片、视频打水印、图�
       }
     ]
     ```
-- `remove_captions`：是否移除原始消息的标题
-- `media_types`：需转发的媒体类型，如 ["photo", "video", "document", "audio", "animation"]
+- `remove_captions`：是否移除媒体组的文本
+- `hide_author`：隐藏消息来源
+- `media_types`：需转发的媒体类型，如 ["photo", "video", "document", "audio", "animation", "sticker", "voice", "video_note", "text"]
 - `duration`：监听时长，格式为"年-月-日-时"，如"2025-3-28-1"（表示监听截止到 2025 年 3 月 28 日 1 点）
-- `forward_delay`：转发延迟（秒）
-- `max_retries`：转发失败后的最大重试次数
-- `message_filter`：消息过滤器（预留接口，暂不实现）
-- `add_watermark`：是否添加水印（预留接口，暂不实现）
-- `watermark_text`：水印文本（预留接口，暂不实现）
+- `text_filter`：消息过滤器（预留接口，暂不实现）
 
 ### 5.6 存储配置
 

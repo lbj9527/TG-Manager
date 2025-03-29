@@ -402,3 +402,76 @@ python run.py startmonitor
 ### 实时消息监听
 
 监听指定频道的新消息，并实时转发到目标频道，支持设置消息过滤条件和监听时长。
+
+#### 智能消息监听与转发
+
+从 1.0.0 版本开始，TG Forwarder 实现了强大的实时消息监听功能，支持多频道并行监听和转发：
+
+1. **多频道映射配置**：
+
+   - 支持配置多组"一个源频道对多个目标频道"的映射关系
+   - 每个映射关系独立运行，互不干扰
+   - 为不同类型的内容创建专属的转发通道
+
+2. **实时转发策略**：
+
+   - 自动检测源频道转发权限，对允许转发的频道使用直接转发
+   - 对禁止转发的频道自动切换为复制转发模式
+   - 智能处理媒体组消息，确保完整转发
+   - 自动跳过已转发的消息，避免重复内容
+
+3. **内容定制功能**：
+
+   - 支持隐藏消息来源（hide_author）
+   - 可选择是否保留媒体说明文字（remove_captions）
+   - 内置文本替换器，自动将特定文字替换为配置的内容
+   - 可设置消息类型过滤，只监听和转发指定类型的消息
+
+4. **自动化运行控制**：
+
+   - 设置监听截止时间（duration），到期自动停止监听
+   - 支持日期格式的时间配置（YYYY-MM-DD）
+   - 在达到截止时间后优雅退出，确保所有任务完成
+
+5. **错误处理与容错**：
+
+   - 完善的 FloodWait 处理，自动等待后继续
+   - 监听任务独立运行，单个频道错误不影响其他频道
+   - 详细的日志记录，清晰展示每个监听通道的状态
+
+6. **配置示例**：
+
+   ```json
+   "MONITOR": {
+     "monitor_channel_pairs": [
+       {
+         "source_channel": "https://t.me/channel1",
+         "target_channels": ["https://t.me/target1", "https://t.me/target2"]
+       },
+       {
+         "source_channel": "https://t.me/channel2",
+         "target_channels": ["https://t.me/target3"]
+       }
+     ],
+     "remove_captions": false,
+     "hide_author": true,
+     "media_types": ["photo", "video", "document", "audio", "animation", "text"],
+     "duration": "2023-12-31",
+     "forward_delay": 3,
+     "text_filter": [
+       {
+         "original_text": "敏感词",
+         "target_text": "和谐词"
+       },
+       {
+         "original_text": "旧内容",
+         "target_text": "新内容"
+       }
+     ]
+   }
+   ```
+
+7. **使用方式**：
+   - 命令行执行：`python run.py startmonitor`
+   - 监听将按照配置的参数持续运行，直到达到设定的截止时间或手动中断
+   - 可以通过命令行中断（Ctrl+C）随时停止监听

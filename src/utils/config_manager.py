@@ -58,6 +58,11 @@ class ChannelPair(BaseModel):
     source_channel: str
     target_channels: List[str]
 
+class TextFilterItem(BaseModel):
+    """文本替换项模型"""
+    original_text: str
+    target_text: str
+
 class ForwardConfig(BaseModel):
     """转发配置模型"""
     forward_channel_pairs: List[ChannelPair]
@@ -76,6 +81,7 @@ class MonitorConfig(BaseModel):
     media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
     duration: Optional[str] = None
     forward_delay: int = 3
+    text_filter: Optional[List[TextFilterItem]] = None
 
 class Config(BaseModel):
     """完整配置模型"""
