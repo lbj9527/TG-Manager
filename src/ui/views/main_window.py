@@ -5,17 +5,23 @@ TG-Manager 主窗口
 
 import logging
 from loguru import logger
-from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QDockWidget, 
-    QMessageBox, QStackedLayout, QStyle, QSizePolicy,
-    QSplitter, QFileDialog, QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QLabel, QCheckBox
-)
-from PySide6.QtCore import Qt, Slot, Signal, QByteArray, QSize
-from PySide6.QtGui import QAction, QIcon, QResizeEvent
 import os.path
 import datetime
 import json
 from copy import deepcopy
+import psutil
+import aiohttp
+import asyncio
+
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QDockWidget, 
+    QMessageBox, QStackedLayout, QStyle, QSizePolicy,
+    QSplitter, QFileDialog, QDialog, QFormLayout, QLineEdit, 
+    QDialogButtonBox, QLabel, QCheckBox, QToolBar, QStatusBar,
+    QHBoxLayout, QStackedWidget, QScrollArea, QMenu
+)
+from PySide6.QtCore import Qt, Slot, Signal, QByteArray, QSize, QTimer
+from PySide6.QtGui import QAction, QIcon, QResizeEvent, QPixmap
 
 
 class MainWindow(QMainWindow):
@@ -316,7 +322,44 @@ class MainWindow(QMainWindow):
     
     def _create_status_bar(self):
         """创建状态栏"""
-        self.statusBar().showMessage("就绪")
+        # 获取状态栏对象
+        status_bar = self.statusBar()
+        
+        # 创建状态栏各部分组件
+        # 1. 功能提示区域 - 使用默认的临时消息区域
+        status_bar.showMessage("就绪")
+        
+        # 2. 客户端状态
+        self.client_status_label = QLabel("客户端: 未连接")
+        self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
+        self.client_status_label.setToolTip("Telegram客户端连接状态")
+        status_bar.addPermanentWidget(self.client_status_label)
+        
+        # 3. 网络状态
+        self.network_status_label = QLabel("网络: 未知")
+        self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
+        self.network_status_label.setToolTip("网络连接状态")
+        status_bar.addPermanentWidget(self.network_status_label)
+        
+        # 4. CPU/内存使用率
+        self.resource_usage_label = QLabel("CPU: 0% | 内存: 0MB")
+        self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #757575;")
+        self.resource_usage_label.setToolTip("系统资源使用情况")
+        status_bar.addPermanentWidget(self.resource_usage_label)
+        
+        # 设置定时器，定期更新资源使用率
+        self.resource_timer = QTimer(self)
+        self.resource_timer.timeout.connect(self._update_resource_usage)
+        self.resource_timer.start(2000)  # 每2秒更新一次
+        
+        # 设置网络状态检查定时器
+        self.network_timer = QTimer(self)
+        self.network_timer.timeout.connect(self._check_network_status)
+        self.network_timer.start(5000)  # 每5秒检查一次
+        
+        # 立即更新一次状态
+        self._update_resource_usage()
+        self._check_network_status()
     
     def _create_navigation_tree(self):
         """创建导航树组件"""
@@ -673,6 +716,13 @@ class MainWindow(QMainWindow):
                 # 拒绝关闭事件
                 event.ignore()
                 return
+        
+        # 停止所有计时器
+        if hasattr(self, 'resource_timer') and self.resource_timer.isActive():
+            self.resource_timer.stop()
+            
+        if hasattr(self, 'network_timer') and self.network_timer.isActive():
+            self.network_timer.stop()
         
         # 保存窗口状态
         window_state = {
@@ -1210,4 +1260,124 @@ class MainWindow(QMainWindow):
         if "task_manager" in self.opened_views:
             task_view = self.opened_views["task_manager"]
             if hasattr(task_view, 'remove_task'):
-                task_view.remove_task(task_id) 
+                task_view.remove_task(task_id)
+    
+    def _update_resource_usage(self):
+        """更新资源使用情况"""
+        try:
+            # 使用psutil库获取系统资源使用情况
+            cpu_usage = round(psutil.cpu_percent(interval=0.1), 1)
+            
+            # 获取内存使用情况
+            memory = psutil.virtual_memory()
+            memory_usage = round(memory.used / (1024 * 1024), 1)  # 转换为MB
+            memory_total = round(memory.total / (1024 * 1024), 1)  # 转换为MB
+            memory_percent = round(memory.percent, 1)
+            
+            # 格式化显示
+            if memory_usage > 1024:
+                # 如果超过1GB则显示为GB
+                memory_text = f"{memory_usage / 1024:.1f}GB/{memory_total / 1024:.1f}GB ({memory_percent}%)"
+            else:
+                memory_text = f"{memory_usage:.0f}MB/{memory_total / 1024:.1f}GB ({memory_percent}%)"
+            
+            # 更新资源使用标签
+            self.resource_usage_label.setText(f"CPU: {cpu_usage}% | 内存: {memory_text}")
+            
+            # 根据使用率设置不同的颜色
+            if cpu_usage > 90 or memory_percent > 90:
+                self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+            elif cpu_usage > 70 or memory_percent > 70:
+                self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #FF9800;")  # 橙色
+            else:
+                self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
+                
+        except ImportError:
+            # 如果没有psutil库，使用占位符数据
+            self.resource_usage_label.setText("CPU: -- | 内存: --")
+            logger.warning("未找到psutil库，无法获取系统资源使用情况")
+            
+        except Exception as e:
+            # 其他错误情况
+            self.resource_usage_label.setText("资源监控错误")
+            logger.error(f"资源监控错误: {e}")
+    
+    def _update_client_status(self, connected=False, client_info=None):
+        """更新客户端连接状态
+        
+        Args:
+            connected: 是否已连接
+            client_info: 客户端信息，如用户ID、名称等
+        """
+        if connected and client_info:
+            # 如果已连接且有客户端信息，显示详细信息
+            text = f"客户端: 已连接 ({client_info})"
+            self.client_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
+        elif connected:
+            # 如果已连接但没有详细信息
+            text = "客户端: 已连接"
+            self.client_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
+        else:
+            # 未连接状态
+            text = "客户端: 未连接"
+            self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
+        
+        self.client_status_label.setText(text)
+    
+    def _update_network_status(self, status="未知", details=None):
+        """更新网络连接状态
+        
+        Args:
+            status: 网络状态，如"已连接"、"受限"、"断开"等
+            details: 网络详情，如"Wi-Fi"、"以太网"、"4G"等
+        """
+        # 根据状态设置不同的颜色和文本
+        if status == "已连接":
+            text = f"网络: {status}" + (f" ({details})" if details else "")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
+        elif status == "受限":
+            text = f"网络: {status}" + (f" ({details})" if details else "")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #FF9800;")  # 橙色
+        elif status == "断开":
+            text = f"网络: {status}"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+        else:
+            text = f"网络: {status}"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
+        
+        self.network_status_label.setText(text)
+        
+    def _check_network_status(self):
+        """检查网络连接状态"""
+        # 创建异步任务来执行网络检查
+        asyncio.ensure_future(self._check_network_status_async())
+    
+    async def _check_network_status_async(self):
+        """异步检查网络连接状态"""
+        try:
+            # 使用aiohttp尝试连接到Telegram API服务器
+            async with aiohttp.ClientSession() as session:
+                # 设置超时时间为2秒
+                timeout = aiohttp.ClientTimeout(total=2)
+                async with session.get('https://api.telegram.org', timeout=timeout) as response:
+                    if response.status == 200:
+                        # 连接正常
+                        self._update_network_status("已连接", "连接良好")
+                    else:
+                        # 服务器返回了非200状态码
+                        self._update_network_status("已连接", f"状态码: {response.status}")
+        
+        except asyncio.TimeoutError:
+            # 连接超时
+            self._update_network_status("超时", "连接缓慢")
+            logger.warning("网络连接检查超时")
+            
+        except aiohttp.ClientConnectorError:
+            # 无法连接到服务器
+            self._update_network_status("断开", "无法连接")
+            logger.error("无法连接到Telegram服务器")
+            
+        except Exception as e:
+            # 其他异常
+            self._update_network_status("异常", str(e)[:20])
+            logger.error(f"网络连接检查失败: {e}") 
