@@ -1,6 +1,6 @@
 # TG-Manager
 
-TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道监听、消息转发、媒体下载与上传等功能。
+TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道监听、消息转发、媒体下载与上传等功能。提供命令行和图形用户界面两种使用方式。
 
 ## 主要功能
 
@@ -10,7 +10,47 @@ TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道�
 - **任务管理**：支持任务暂停、继续和取消，提供进度追踪
 - **消息转发**：在不同频道间智能转发消息和媒体，自动处理权限限制
 - **资源管理**：高效管理文件资源，支持锁定和自动清理机制
+- **图形界面**：提供基于 PySide6 的图形用户界面，支持所有核心功能
 - **用户界面**：清晰的状态更新、进度显示和错误提示，完全分离的业务逻辑和 UI 交互
+
+## 使用方式
+
+### 图形用户界面
+
+TG-Manager 提供直观易用的图形界面，可通过以下命令启动：
+
+```bash
+python run_ui.py
+```
+
+图形界面提供以下功能模块：
+
+1. **下载界面**：配置频道和媒体类型，从Telegram频道下载媒体
+2. **上传界面**：浏览本地文件，上传到指定Telegram频道
+3. **转发界面**：设置转发规则，在不同频道之间转发消息
+4. **监听界面**：实时监听频道消息，支持条件过滤
+5. **任务管理**：查看和管理所有任务，支持暂停/继续操作
+6. **设置界面**：配置API凭据、代理设置和全局选项
+
+界面特点：
+- 所有配置自动保存和加载
+- 实时任务状态和进度显示
+- 多任务并行处理
+- 统一的错误处理和通知
+
+### 命令行界面
+
+对于高级用户或自动化脚本，TG-Manager 也提供命令行界面：
+
+```bash
+# 下载示例
+python -m src.modules.downloader --channel <channel_id> --output ./downloads
+
+# 上传示例
+python -m src.modules.uploader --files ./media/* --channel <channel_id>
+
+# 更多命令行选项请参考文档
+```
 
 ## 项目结构
 
@@ -18,12 +58,42 @@ TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道�
 TG-Manager/
 ├── src/                  # 源代码目录
 │   ├── modules/          # 核心功能模块
+│   │   ├── components/   # UI组件
+│   │   ├── views/        # 功能视图
+│   │   └── app.py        # 应用程序主类
 │   ├── utils/            # 工具类和辅助函数
 │   ├── examples/         # 使用示例
 │   └── tests/            # 测试代码
 ├── config/               # 配置文件目录
 ├── docs/                 # 文档
+├── run_ui.py             # 图形界面启动文件
 └── README.md             # 项目说明
+```
+
+## 安装
+
+1. 克隆项目并进入目录：
+```bash
+git clone https://github.com/yourusername/TG-Manager.git
+cd TG-Manager
+```
+
+2. 安装依赖（推荐使用虚拟环境）：
+```bash
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+3. 配置Telegram API：
+   - 访问 https://my.telegram.org/apps 获取API ID和API Hash
+   - 将获取的凭据填入配置文件或通过设置界面配置
+
+4. 运行应用：
+```bash
+# 启动图形界面
+python run_ui.py
+
+# 或使用命令行模式
+python -m src.modules.downloader --help
 ```
 
 ## 核心组件
@@ -178,11 +248,12 @@ async def upload_example():
 
 ### 6. 转发管理器 (Forwarder)
 
-转发管理器负责在不同频道间转发消息和媒体。
+转发管理器负责在不同的Telegram频道之间转发消息。
 
-- 智能处理权限限制
-- 支持媒体组转发
-- 提供转发历史记录
+- 支持多种消息类型转发
+- 提供访问权限校验
+- 处理媒体文件的无损转发
+- 支持定制转发规则
 
 **使用示例**:
 
@@ -190,348 +261,129 @@ async def upload_example():
 from src.modules.forwarder import Forwarder
 
 # 创建转发管理器
-forwarder = Forwarder(
-    client, config_manager, channel_resolver,
-    history_manager, downloader, uploader
-)
+forwarder = Forwarder(client, config_manager, channel_resolver)
 
 # 设置回调函数
 forwarder.on("status", lambda status: print(f"状态: {status}"))
-forwarder.on("message_forwarded", lambda msg_id, target: print(f"消息已转发: {msg_id} -> {target}"))
+forwarder.on("forward_complete", lambda msg_id: print(f"转发完成: {msg_id}"))
 
 # 开始转发（异步方法）
 async def forward_example():
-    # 开始转发
-    await forwarder.forward_messages()
+    # 设置源频道和目标频道
+    source_channel = "source_channel_username"
+    target_channel = "target_channel_username"
+    
+    # 转发最近的50条消息
+    await forwarder.forward_messages(source_channel, target_channel, limit=50)
 ```
 
-### 7. 消息监听系统 (Monitor)
+### 7. 监听器 (Monitor)
 
-消息监听系统负责监听指定频道和群组的新消息。
+监听器用于实时监听Telegram频道和群组的新消息。
 
-- 实时消息监听和处理
-- 消息过滤（关键词、类型等）
-- 自动响应和转发
-- 基于事件的架构
-- 媒体处理和下载
-- 消息统计和分析
+- 支持多频道并行监听
+- 提供消息过滤和关键词匹配
+- 事件驱动架构，支持自定义处理函数
 
 **使用示例**:
 
 ```python
 from src.modules.monitor import Monitor
 
-# 创建监听管理器
+# 创建监听器
 monitor = Monitor(client, config_manager, channel_resolver)
 
-# 添加消息处理器
+# 自定义消息处理函数
 async def handle_new_message(message):
-    print(f"收到新消息，ID: {message.id}")
-    if "测试" in (message.text or ""):
-        print("检测到测试关键词!")
+    print(f"收到新消息: {message.text}")
+    # 执行自定义处理逻辑
 
-monitor.add_message_handler(handle_new_message)
+# 设置回调函数
+monitor.on("new_message", handle_new_message)
+monitor.on("status", lambda status: print(f"状态: {status}"))
 
 # 开始监听（异步方法）
 async def monitor_example():
+    # 设置要监听的频道列表
+    channels = ["channel1", "channel2", "group3"]
+    
     # 开始监听
-    await monitor.start_monitoring()
-
+    await monitor.start_monitoring(channels)
+    
     # 停止监听
-    # monitor.stop_monitoring()
+    # await monitor.stop_monitoring()
 ```
 
-### 8. UI 状态管理系统 (UIStateManager)
+### 8. UI状态管理器 (UIStateManager)
 
-UI 状态管理系统负责处理用户界面状态和更新，完全分离业务逻辑和界面交互。
+UI状态管理器用于在业务逻辑和UI之间传递状态。
 
-- 基于事件的状态更新机制
-- 统一的回调参数结构
-- 支持进度、状态和错误处理
-- 适配多种界面类型（控制台、GUI）
+- 提供状态订阅和更新机制
+- 支持进度追踪和错误处理
+- 确保UI和业务逻辑的完全分离
 
 **使用示例**:
 
 ```python
-from src.utils.ui_state import UICallback, StatusLevel
+from src.utils.ui_state_manager import UIStateManager
 
-# 创建UI回调处理器
-class MyUIHandler:
-    def handle_update(self, data):
-        # 根据状态级别处理不同类型的更新
-        if data.level == StatusLevel.INFO:
-            print(f"信息: {data.message}")
-        elif data.level == StatusLevel.PROGRESS:
-            print(f"进度: {data.progress:.1f}% - {data.message}")
-        elif data.level == StatusLevel.ERROR:
-            print(f"错误: {data.message} (类型: {data.error_type})")
+# 创建UI状态管理器
+ui_state_manager = UIStateManager()
 
-# 创建回调实例
-ui_callback = UICallback(MyUIHandler().handle_update)
+# 订阅状态更新
+def on_download_progress(progress, total):
+    percentage = (progress / total) * 100 if total > 0 else 0
+    print(f"下载进度: {percentage:.1f}%")
 
-# 在业务逻辑中使用
-def process_task():
-    # 发送状态更新
-    ui_callback.info("开始处理任务")
+# 注册回调
+ui_state_manager.register("download_progress", on_download_progress)
 
-    # 发送进度更新
-    for i in range(10):
-        ui_callback.progress(i * 10, f"处理第 {i+1} 步")
+# 更新状态
+ui_state_manager.update("download_progress", 50, 100)  # 触发回调
 
-    # 发送完成或错误通知
-    if success:
-        ui_callback.success("任务完成")
-    else:
-        ui_callback.error("处理失败", error_type="PROCESS_ERROR")
+# 取消订阅
+ui_state_manager.unregister("download_progress", on_download_progress)
 ```
 
-### 9. 任务管理系统 (TaskManager)
+### 9. 图形界面组件
 
-任务管理系统提供对长时间运行任务的控制机制。
+TG-Manager的图形界面基于PySide6开发，主要组件包括：
 
-- 任务暂停/继续/取消
-- 任务上下文和状态追踪
-- 并发任务管理
-- 与 UI 状态系统集成
+#### 主窗口 (MainWindow)
 
-**使用示例**:
+- 提供统一的应用程序窗口框架
+- 集成导航树和任务概览
+- 管理所有功能视图的切换
 
-```python
-from src.utils.controls import TaskContext, PauseToken, CancelToken
+#### 导航树 (NavigationTree)
 
-# 创建任务上下文
-task_context = TaskContext()
+- 提供功能模块的层次化导航
+- 支持自定义图标和分组
+- 处理导航项的选择和激活
 
-# 在异步函数中使用
-async def long_running_task():
-    # 执行任务的主循环
-    for i in range(100):
-        # 检查取消请求
-        if task_context.cancel_token.is_cancelled:
-            print("任务已取消")
-            return
+#### 功能视图
 
-        # 处理暂停请求
-        await task_context.wait_if_paused()
+- **下载视图 (DownloadView)**: 配置和执行媒体下载任务
+- **上传视图 (UploadView)**: 浏览和上传本地媒体文件
+- **转发视图 (ForwardView)**: 设置和执行消息转发规则
+- **监听视图 (ListenView)**: 配置实时频道监听
+- **任务视图 (TaskView)**: 查看和管理当前任务
+- **设置视图 (SettingsView)**: 配置应用程序设置
 
-        # 执行实际工作
-        print(f"步骤 {i}")
-        await asyncio.sleep(0.1)
+## 贡献
 
-# 控制任务执行
-async def control_task():
-    # 启动任务
-    task = asyncio.create_task(long_running_task())
+欢迎贡献代码或提出问题！请遵循以下步骤：
 
-    # 暂停任务
-    task_context.pause_token.pause()
-    print("任务已暂停")
-    await asyncio.sleep(2)
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
 
-    # 继续任务
-    task_context.pause_token.resume()
-    print("任务已继续")
-    await asyncio.sleep(1)
+## 许可证
 
-    # 取消任务
-    task_context.cancel_token.cancel()
-    print("已请求取消任务")
+该项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
 
-    # 等待任务结束
-    await task
-```
+## 联系方式
 
-### 10. 日志事件适配器 (LoggerEventAdapter)
-
-日志事件适配器统一连接日志系统和事件系统，实现业务逻辑与界面输出的完全分离。
-
-- 支持不同日志级别的事件发射
-- 保留内部调试日志而不影响用户界面
-- 统一的错误处理和报告机制
-- 为 GUI 和 CLI 提供一致的接口
-
-**使用示例**:
-
-```python
-from src.utils.events import EventEmitter
-from src.utils.logger_event_adapter import LoggerEventAdapter
-
-# 创建一个模块类，继承EventEmitter
-class MyModule(EventEmitter):
-    def __init__(self):
-        super().__init__()
-        # 创建日志事件适配器
-        self.log = LoggerEventAdapter(self)
-
-    async def process_task(self):
-        # 发送状态更新（会同时记录日志并发射事件）
-        self.log.status("开始处理任务")
-
-        try:
-            # 处理过程中的信息日志
-            self.log.info("处理中间步骤")
-
-            # 调试信息（只记录日志，不发送UI事件）
-            self.log.debug("这是调试信息，不会显示在界面上")
-
-            # 完成处理
-            self.log.status("任务处理完成")
-
-        except Exception as e:
-            # 错误处理（带有错误类型和可恢复性信息）
-            self.log.error(f"处理失败: {str(e)}",
-                          error_type="PROCESS_ERROR",
-                          recoverable=True)
-
-# 使用模块
-async def example():
-    module = MyModule()
-
-    # 注册事件监听器
-    module.on("status", lambda msg: print(f"状态: {msg}"))
-    module.on("info", lambda msg: print(f"信息: {msg}"))
-    module.on("error", lambda msg, **kwargs: print(f"错误: {msg} (类型: {kwargs['error_type']})"))
-
-    # 运行处理任务
-    await module.process_task()
-```
-
-## 系统架构特点
-
-### 业务逻辑与界面分离
-
-TG-Manager 采用了严格的业务逻辑与界面分离设计，这使得系统既可以作为命令行工具使用，也可以轻松集成到各种图形界面中。这种分离是通过以下几个关键组件实现的：
-
-#### 1. 事件驱动架构
-
-- **EventEmitter 基类**：所有核心模块都继承自 `EventEmitter`，通过事件机制而非直接输出与外界交互
-- **统一事件类型**：标准化的事件类型如 `status`、`progress`、`error`、`complete` 等，确保一致的通信方式
-- **事件监听和处理**：任何组件都可以监听和响应事件，无需直接依赖
-
-#### 2. 日志与界面消息分离
-
-- **LoggerEventAdapter**：连接日志系统和事件系统的适配器，实现同一消息的双重处理
-- **消息分级处理**：
-  - `debug` 级别消息仅用于内部调试，不发送到界面
-  - `info`、`status`、`warning`、`error` 等消息同时发送到日志系统和事件系统
-- **统一的错误报告**：详细的错误类型、可恢复性指示和上下文信息
-
-#### 3. UI 回调系统
-
-- **UICallback 接口**：提供标准化的界面更新方法，无论前端是什么类型
-- **UIState 管理**：集中式状态管理，支持组件间的状态共享和变化通知
-- **EventToUIAdapter**：自动将事件系统的消息转发到 UI 回调系统
-
-#### 4. 任务控制机制
-
-- **TaskContext**：封装任务执行上下文，包括取消和暂停控制
-- **CancelToken 与 PauseToken**：提供细粒度的任务控制，支持外部中断
-- **TaskManager 与 TaskScheduler**：高级任务管理系统，支持优先级和资源控制
-
-#### 5. 实现示例
-
-下图展示了系统中业务逻辑与界面交互的分离流程：
-
-```
-┌────────────────┐    事件发射     ┌────────────────┐
-│                │───────────────> │                │
-│  业务逻辑模块   │                 │   EventEmitter  │
-│ (Downloader等) │ <───────────────│                │
-└────────────────┘    状态更新     └────────────────┘
-         │                                   │
-         │ 发出事件                          │ 传递事件
-         ▼                                   ▼
-┌────────────────┐                 ┌────────────────┐
-│                │                 │                │
-│LoggerEventAdapter│───────────────> │ EventToUIAdapter │
-│                │                 │                │
-└────────────────┘                 └────────────────┘
-         │                                   │
-         │ 记录日志                          │ 更新UI
-         ▼                                   ▼
-┌────────────────┐                 ┌────────────────┐
-│                │                 │                │
-│   日志系统      │                 │  UI回调系统    │
-│                │                 │                │
-└────────────────┘                 └────────────────┘
-                                            │
-                                            │
-                                            ▼
-                                   ┌────────────────┐
-                                   │                │
-                                   │ 用户界面(CLI/GUI)│
-                                   │                │
-                                   └────────────────┘
-```
-
-#### 6. 迁移到图形界面的路径
-
-基于当前架构，开发图形界面只需以下几个步骤：
-
-1. 选择合适的 UI 框架（PyQt、PySide 等）
-2. 实现 `UICallback` 接口，连接 UI 控件
-3. 连接事件系统到 UI 更新逻辑
-4. 设计并实现各功能模块对应的界面组件
-5. 构建任务控制界面，连接到任务管理系统
-
-这种架构确保无论界面如何变化，核心业务逻辑保持稳定，同时提供了高度的灵活性和可扩展性。
-
-## 安装和配置
-
-1. 克隆项目仓库
-
-```bash
-git clone https://github.com/yourusername/TG-Manager.git
-cd TG-Manager
-```
-
-2. 安装依赖
-
-```bash
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-3. 配置应用
-
-创建 `config/config.json` 文件，填入必要配置：
-
-```json
-{
-  "GENERAL": {
-    "api_id": "YOUR_API_ID",
-    "api_hash": "YOUR_API_HASH",
-    "limit": 20,
-    "pause_time": 5
-  },
-  "DOWNLOAD": {
-    "download_path": "downloads",
-    "limit": 100,
-    "download_delay": 1,
-    "max_file_size": 100,
-    "exclude_types": ["voice"]
-  },
-  "UPLOAD": {
-    "target_channels": ["channel_username"],
-    "caption_template": "{filename}"
-  },
-  "FORWARD": {
-    "source_channels": ["source_channel"],
-    "target_channels": ["target_channel"],
-    "tmp_path": "temp"
-  },
-  "MONITOR": {
-    "channels": ["channel_to_monitor"],
-    "keywords": ["关键词1", "关键词2"]
-  }
-}
-```
-
-4. 运行示例
-
-```bash
-python -m src.examples.download_example
-```
-
-## 高级用法
-
-请参阅 `docs/` 目录下的详细文档。
+如有问题或建议，请通过 [Issues](https://github.com/yourusername/TG-Manager/issues) 或电子邮件联系我们。
