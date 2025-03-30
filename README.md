@@ -448,7 +448,7 @@ await forwarder.forward_messages(task_context)
 def pause_task():
     # 暂停任务
     task_context.pause_token.pause()
-    
+
 def resume_task():
     # 恢复任务
     task_context.pause_token.resume()
@@ -489,11 +489,11 @@ await monitor.stop_monitoring()
 
 ### Monitor 特有事件类型
 
-| 事件名称 | 参数 | 说明 |
-|---------|------|-----|
-| message_received | message_id, channel_info | 收到新消息事件 |
-| media_group_received | group_id, channel_info | 收到新媒体组事件 |
-| text_replaced | old_text, new_text, replacements | 文本替换事件，包含原文本、新文本和替换规则列表 |
+| 事件名称             | 参数                             | 说明                                           |
+| -------------------- | -------------------------------- | ---------------------------------------------- |
+| message_received     | message_id, channel_info         | 收到新消息事件                                 |
+| media_group_received | group_id, channel_info           | 收到新媒体组事件                               |
+| text_replaced        | old_text, new_text, replacements | 文本替换事件，包含原文本、新文本和替换规则列表 |
 
 ### 使用任务控制实现定时监听
 
@@ -508,58 +508,58 @@ from src.utils.controls import TaskContext
 async def scheduled_monitoring(duration_hours=1):
     # 创建 Monitor 实例
     monitor = Monitor(client, config_manager, channel_resolver)
-    
+
     # 创建任务上下文
     task_context = TaskContext()
-    
+
     # 设置监听结束时间
     end_time = datetime.now() + timedelta(hours=duration_hours)
     print(f"开始监听，将在 {end_time} 结束")
-    
+
     # 启动监听任务
     monitor_task = asyncio.create_task(monitor.start_monitoring(task_context))
-    
+
     try:
         # 等待直到结束时间
         while datetime.now() < end_time:
             if task_context.cancel_token.is_cancelled:
                 break
             await asyncio.sleep(10)  # 每10秒检查一次
-        
+
         # 时间到，取消任务
         task_context.cancel_token.cancel()
         await monitor.stop_monitoring()
-        
+
     except asyncio.CancelledError:
         # 手动取消
         await monitor.stop_monitoring()
-    
+
     await monitor_task
     print("监听任务已结束")
 ```
 
 ### 支持的事件类型
 
-| 事件名称 | 参数 | 说明 |
-|---------|------|-----|
-| status | message | 状态更新消息 |
-| info | message | 信息性消息 |
-| warning | message | 警告消息 |
-| error | message, error_type, recoverable, details? | 错误信息，包含错误类型和是否可恢复 |
-| debug | message | 调试消息 |
-| progress | percentage, current, total, task_type | 进度更新，包含百分比、当前进度、总数量和任务类型 |
-| complete | total_forwarded | 任务完成事件，包含总转发数量 |
-| media_found | media_type, media_id, channel_info | 发现媒体文件事件 |
-| media_download_started | media_id, media_type, size | 开始下载媒体文件事件 |
-| media_download_success | media_id, file_path, size | 媒体下载成功事件 |
-| media_download_failed | media_id, error | 媒体下载失败事件 |
-| media_group_downloaded | group_id, message_count, file_count | 媒体组下载完成事件 |
-| media_group_forwarded | message_ids, channel_info, count | 媒体组转发成功事件 |
-| message_forwarded | message_id, channel_info | 消息转发成功事件 |
-| media_group_uploaded | group_id, message_ids, success_targets, failed_targets | 媒体组上传完成事件 |
-| message_received | message_id, channel_info | 收到新消息事件 |
-| media_group_received | group_id, channel_info | 收到新媒体组事件 |
-| text_replaced | old_text, new_text, replacements | 文本替换事件，包含原文本、新文本和替换规则列表 |
+| 事件名称               | 参数                                                   | 说明                                             |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------------ |
+| status                 | message                                                | 状态更新消息                                     |
+| info                   | message                                                | 信息性消息                                       |
+| warning                | message                                                | 警告消息                                         |
+| error                  | message, error_type, recoverable, details?             | 错误信息，包含错误类型和是否可恢复               |
+| debug                  | message                                                | 调试消息                                         |
+| progress               | percentage, current, total, task_type                  | 进度更新，包含百分比、当前进度、总数量和任务类型 |
+| complete               | total_forwarded                                        | 任务完成事件，包含总转发数量                     |
+| media_found            | media_type, media_id, channel_info                     | 发现媒体文件事件                                 |
+| media_download_started | media_id, media_type, size                             | 开始下载媒体文件事件                             |
+| media_download_success | media_id, file_path, size                              | 媒体下载成功事件                                 |
+| media_download_failed  | media_id, error                                        | 媒体下载失败事件                                 |
+| media_group_downloaded | group_id, message_count, file_count                    | 媒体组下载完成事件                               |
+| media_group_forwarded  | message_ids, channel_info, count                       | 媒体组转发成功事件                               |
+| message_forwarded      | message_id, channel_info                               | 消息转发成功事件                                 |
+| media_group_uploaded   | group_id, message_ids, success_targets, failed_targets | 媒体组上传完成事件                               |
+| message_received       | message_id, channel_info                               | 收到新消息事件                                   |
+| media_group_received   | group_id, channel_info                                 | 收到新媒体组事件                                 |
+| text_replaced          | old_text, new_text, replacements                       | 文本替换事件，包含原文本、新文本和替换规则列表   |
 
 ## 任务控制使用
 
@@ -594,7 +594,7 @@ async def some_function():
     # 等待任务如果被暂停
     if task_context:
         await task_context.wait_if_paused()
-        
+
     # 检查是否已取消
     if task_context and task_context.cancel_token.is_cancelled:
         return

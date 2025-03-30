@@ -737,12 +737,12 @@ class Uploader(EventEmitter):
                             except Exception as e:
                                 error_msg = f"重试复制转发文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
                                 logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="FORWARD_RETRY", recoverable=True)
+                                self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP_RETRY", recoverable=True)
                                 continue
                         except Exception as e:
-                            error_msg = f"复制转发文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
+                            error_msg = f"使用copy_media_group复制文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
                             logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="FORWARD", recoverable=True)
+                            self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP", recoverable=True)
                             continue
                     else:
                         # 首次上传，直接发送文件
@@ -1038,11 +1038,11 @@ class Uploader(EventEmitter):
                                     message_id=first_success_message_ids[0]
                                 )
                             else:
-                                # 媒体组使用forward_messages
-                                forwarded = await self.client.forward_messages(
+                                # 媒体组使用copy_media_group
+                                forwarded = await self.client.copy_media_group(
                                     chat_id=channel_id,
                                     from_chat_id=first_success_channel_id,
-                                    message_ids=first_success_message_ids
+                                    message_id=first_success_message_ids[0]
                                 )
                             
                             # 记录上传历史
@@ -1054,9 +1054,16 @@ class Uploader(EventEmitter):
                                     media_type
                                 )
                             
-                            success_msg = f"媒体组 {group_name} 复制转发到频道 {channel_info} 成功"
+                            success_msg = f"媒体组 {group_name} 使用copy_media_group复制到频道 {channel_info} 成功"
                             logger.info(success_msg)
                             self.emit("info", success_msg)
+                            
+                            # 添加上传延迟
+                            delay_time = self.upload_config.delay_between_uploads if hasattr(self.upload_config, 'delay_between_uploads') else 2
+                            delay_msg = f"等待 {delay_time} 秒后继续下一个上传"
+                            logger.debug(delay_msg)
+                            self.emit("debug", delay_msg)
+                            await asyncio.sleep(delay_time)
                         except FloodWait as e:
                             wait_msg = f"复制转发遇到限制，等待 {e.x} 秒后重试"
                             logger.warning(wait_msg)
@@ -1072,11 +1079,11 @@ class Uploader(EventEmitter):
                                         message_id=first_success_message_ids[0]
                                     )
                                 else:
-                                    # 媒体组使用forward_messages
-                                    forwarded = await self.client.forward_messages(
+                                    # 媒体组使用copy_media_group
+                                    forwarded = await self.client.copy_media_group(
                                         chat_id=channel_id,
                                         from_chat_id=first_success_channel_id,
-                                        message_ids=first_success_message_ids
+                                        message_id=first_success_message_ids[0]
                                     )
                                 
                                 # 记录上传历史
@@ -1088,18 +1095,25 @@ class Uploader(EventEmitter):
                                         media_type
                                     )
                                 
-                                success_msg = f"媒体组 {group_name} 重试复制转发到频道 {channel_info} 成功"
+                                success_msg = f"媒体组 {group_name} 重试使用copy_media_group复制到频道 {channel_info} 成功"
                                 logger.info(success_msg)
                                 self.emit("info", success_msg)
+                                
+                                # 添加上传延迟
+                                delay_time = self.upload_config.delay_between_uploads if hasattr(self.upload_config, 'delay_between_uploads') else 2
+                                delay_msg = f"等待 {delay_time} 秒后继续下一个上传"
+                                logger.debug(delay_msg)
+                                self.emit("debug", delay_msg)
+                                await asyncio.sleep(delay_time)
                             except Exception as e:
-                                error_msg = f"重试复制转发媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
+                                error_msg = f"重试使用copy_media_group复制媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
                                 logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="FORWARD_RETRY", recoverable=True)
+                                self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP_RETRY", recoverable=True)
                                 continue
                         except Exception as e:
-                            error_msg = f"复制转发媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
+                            error_msg = f"使用copy_media_group复制媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
                             logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="FORWARD", recoverable=True)
+                            self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP", recoverable=True)
                             continue
                     else:
                         # 首次上传，直接发送媒体组
