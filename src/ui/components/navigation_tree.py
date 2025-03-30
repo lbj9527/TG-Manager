@@ -110,10 +110,25 @@ class NavigationTree(QWidget):
                 "description": "管理所有任务"
             }),
             
+            # 系统工具分类
+            NavigationItem("系统工具", "system_tools", None, "category"),
+            
+            # 日志查看器
+            NavigationItem("日志查看器", "log_viewer", "system_tools", "function", {
+                "function": "logs",
+                "description": "查看和分析系统日志"
+            }),
+            
             # 系统设置
-            NavigationItem("系统设置", "system_settings", None, "function", {
+            NavigationItem("系统设置", "system_settings", "system_tools", "function", {
                 "function": "settings",
                 "description": "配置系统参数"
+            }),
+            
+            # 帮助文档
+            NavigationItem("帮助文档", "help_doc", "system_tools", "function", {
+                "function": "help",
+                "description": "查看应用帮助文档"
             }),
         ]
         
@@ -243,6 +258,8 @@ class NavigationTree(QWidget):
         function_mappings = {
             "tasks": "task_manager",  # 任务菜单项对应task_manager功能
             "listen": "monitor",      # 监听菜单项对应monitor功能
+            "log": "logs",            # 处理日志查看器的可能缩写
+            "log_viewer": "logs"      # 另一种可能的日志查看器名称
         }
         
         if function_name in function_mappings:

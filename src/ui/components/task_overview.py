@@ -318,6 +318,47 @@ class TaskOverview(QWidget):
             
             task['progress_bar'].setStyleSheet(style)
     
+    def update_task_status(self, task_id, status):
+        """更新任务状态
+        
+        Args:
+            task_id: 任务ID
+            status: 新状态，如"运行中"、"已暂停"、"已完成"、"已取消"、"失败"
+        """
+        if task_id in self.task_widgets:
+            task_widget = self.task_widgets[task_id]
+            
+            # 更新任务状态标签
+            if hasattr(task_widget, 'status_label'):
+                task_widget.status_label.setText(status)
+                
+                # 根据状态设置不同颜色
+                status_colors = {
+                    "运行中": "#4CAF50",    # 绿色
+                    "已暂停": "#FF9800",    # 橙色
+                    "等待中": "#2196F3",    # 蓝色
+                    "已完成": "#9E9E9E",    # 灰色
+                    "已取消": "#757575",    # 深灰色
+                    "失败": "#F44336"      # 红色
+                }
+                
+                color = status_colors.get(status, "#000000")
+                task_widget.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+    
+    def update_task_progress(self, task_id, progress):
+        """更新任务进度
+        
+        Args:
+            task_id: 任务ID
+            progress: 进度值，0-100的整数
+        """
+        if task_id in self.task_widgets:
+            task_widget = self.task_widgets[task_id]
+            
+            # 更新进度条
+            if hasattr(task_widget, 'progress_bar'):
+                task_widget.progress_bar.setValue(progress)
+    
     def remove_task(self, task_id):
         """从概览中移除任务
         
@@ -325,12 +366,20 @@ class TaskOverview(QWidget):
             task_id: 要移除的任务ID
         """
         if task_id in self.task_widgets:
-            # 从布局中移除小部件
-            self.tasks_layout.removeWidget(self.task_widgets[task_id]['widget'])
-            # 删除小部件
-            self.task_widgets[task_id]['widget'].deleteLater()
+            # 获取任务部件
+            task_widget = self.task_widgets[task_id]
+            
+            # 从布局中移除
+            self.tasks_layout.removeWidget(task_widget)
+            
+            # 隐藏并删除部件
+            task_widget.hide()
+            task_widget.deleteLater()
+            
             # 从字典中移除
             del self.task_widgets[task_id]
+            
+            logger.debug(f"从任务概览中移除任务: {task_id}")
     
     def clear_tasks(self):
         """清除所有任务"""
