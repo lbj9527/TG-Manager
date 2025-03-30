@@ -1,6 +1,6 @@
 """
-TG-Manager 图形界面模块
-提供基于 PySide6 的图形用户界面实现
+TG-Manager UI模块
+提供图形用户界面相关的功能
 """
 
-__version__ = "0.1.0" 
+__version__ = "1.7.1" 

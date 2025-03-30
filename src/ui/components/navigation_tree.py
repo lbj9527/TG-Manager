@@ -223,4 +223,32 @@ class NavigationTree(QWidget):
                 
                 return True
         
+        return False
+        
+    def select_item_by_function(self, function_name):
+        """根据功能名称选择导航项
+        
+        Args:
+            function_name: 要选择的功能名称，如"download"、"upload"、"settings"等
+            
+        Returns:
+            bool: 是否成功选择
+        """
+        # 查找包含指定功能名称的导航项
+        for item_id, nav_item in self._nav_items.items():
+            if nav_item.type == 'function' and nav_item.data.get('function') == function_name:
+                return self.select_item(item_id)
+                
+        # 根据部分名称匹配处理特殊情况
+        function_mappings = {
+            "tasks": "task_manager",  # 任务菜单项对应task_manager功能
+            "listen": "monitor",      # 监听菜单项对应monitor功能
+        }
+        
+        if function_name in function_mappings:
+            mapped_function = function_mappings[function_name]
+            for item_id, nav_item in self._nav_items.items():
+                if nav_item.type == 'function' and nav_item.data.get('function') == mapped_function:
+                    return self.select_item(item_id)
+        
         return False 

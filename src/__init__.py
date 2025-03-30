@@ -1,5 +1,5 @@
 """
-TG Forwarder - Telegram消息转发工具
+TG-Manager 核心模块
 """
 
-__version__ = "0.6.1" 
+__version__ = "1.7.1" 

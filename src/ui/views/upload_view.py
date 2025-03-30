@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QFileSystemModel, QTreeView, QSplitter, QTextEdit
+    QFileSystemModel, QTreeView, QSplitter, QTextEdit, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QModelIndex
 from PySide6.QtGui import QIcon
@@ -64,8 +64,11 @@ class UploadView(QWidget):
         # 创建左侧容器
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_panel.setMinimumWidth(400)
-        left_panel.setMaximumWidth(500)
+        left_panel.setMinimumWidth(300)  # 减小最小宽度
+        left_panel.setMaximumWidth(450)  # 适当减小最大宽度
+        
+        # 设置尺寸策略，允许更灵活的缩放
+        left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         
         # ===== 频道配置组 =====
         channel_group = QGroupBox("目标频道配置")

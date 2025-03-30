@@ -5,9 +5,11 @@ TG-Manager 任务概览组件
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QGridLayout, 
-    QProgressBar, QPushButton, QScrollArea
+    QProgressBar, QPushButton, QScrollArea, QHBoxLayout,
+    QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 
 from src.utils.logger import get_logger
 
@@ -30,63 +32,158 @@ class TaskOverview(QWidget):
         """
         super().__init__(parent)
         
+        # 设置尺寸策略，允许组件在较小空间中工作
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
         # 创建布局
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(5, 5, 5, 5)
+        self.main_layout.setContentsMargins(3, 3, 3, 3)  # 减小边距
+        self.main_layout.setSpacing(4)  # 减小间距
         
-        # 创建概览标签
+        # 创建标题和概览部分
+        self._create_header()
+        self._create_counters()
+        self._create_task_list()
+        self._create_view_all_button()
+        
+        # 当前活跃任务ID到任务项小部件的映射
+        self.task_widgets = {}
+    
+    def _create_header(self):
+        """创建标题部分"""
+        # 创建标题标签，使用较大字体并居中
         self.summary_label = QLabel("当前任务概览")
         self.summary_label.setAlignment(Qt.AlignCenter)
-        self.summary_label.setStyleSheet("font-weight: bold;")
         
-        # 创建计数器标签
-        self.counters_layout = QGridLayout()
+        # 设置字体和样式
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(9)  # 减小字体大小
+        self.summary_label.setFont(font)
+        self.summary_label.setStyleSheet("color: #2196F3; margin-bottom: 2px;")
         
-        self.active_label = QLabel("活跃任务:")
-        self.active_count = QLabel("0")
-        self.counters_layout.addWidget(self.active_label, 0, 0)
-        self.counters_layout.addWidget(self.active_count, 0, 1)
+        # 添加标题下的分隔线
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("background-color: #E0E0E0;")
         
-        self.completed_label = QLabel("已完成:")
-        self.completed_count = QLabel("0")
-        self.counters_layout.addWidget(self.completed_label, 1, 0)
-        self.counters_layout.addWidget(self.completed_count, 1, 1)
+        # 添加到主布局
+        self.main_layout.addWidget(self.summary_label)
+        self.main_layout.addWidget(separator)
+    
+    def _create_counters(self):
+        """创建计数器部分"""
+        # 使用水平布局，平均分配空间
+        counters_container = QWidget()
+        counters_layout = QHBoxLayout(counters_container)
+        counters_layout.setContentsMargins(0, 2, 0, 2)  # 减小边距
         
-        self.waiting_label = QLabel("等待中:")
-        self.waiting_count = QLabel("0")
-        self.counters_layout.addWidget(self.waiting_label, 2, 0)
-        self.counters_layout.addWidget(self.waiting_count, 2, 1)
+        # 创建各类型任务的计数显示
+        count_items = [
+            {"label": "活跃任务", "count_attr": "active_count", "color": "#4CAF50"},
+            {"label": "已完成", "count_attr": "completed_count", "color": "#2196F3"},
+            {"label": "等待中", "count_attr": "waiting_count", "color": "#FF9800"},
+            {"label": "失败", "count_attr": "failed_count", "color": "#F44336"}
+        ]
         
-        self.failed_label = QLabel("失败:")
-        self.failed_count = QLabel("0")
-        self.counters_layout.addWidget(self.failed_label, 3, 0)
-        self.counters_layout.addWidget(self.failed_count, 3, 1)
+        for item in count_items:
+            # 创建计数组件容器
+            counter_widget = QWidget()
+            counter_layout = QVBoxLayout(counter_widget)
+            counter_layout.setContentsMargins(2, 2, 2, 2)  # 减小边距
+            counter_layout.setAlignment(Qt.AlignCenter)
+            counter_layout.setSpacing(1)  # 减小间距
+            
+            # 添加数字标签（大字体）
+            count_label = QLabel("0")
+            count_label.setAlignment(Qt.AlignCenter)
+            count_font = QFont()
+            count_font.setBold(True)
+            count_font.setPointSize(14)  # 减小字体大小
+            count_label.setFont(count_font)
+            count_label.setStyleSheet(f"color: {item['color']};")
+            
+            # 添加描述标签（小字体）
+            desc_label = QLabel(item["label"])
+            desc_label.setAlignment(Qt.AlignCenter)
+            desc_label.setStyleSheet("color: #757575; font-size: 8pt;")  # 减小字体大小
+            
+            # 将标签添加到计数组件布局
+            counter_layout.addWidget(count_label)
+            counter_layout.addWidget(desc_label)
+            
+            # 保存对计数标签的引用
+            setattr(self, item["count_attr"], count_label)
+            
+            # 添加到水平布局
+            counters_layout.addWidget(counter_widget)
         
+        # 添加计数器容器到主布局
+        self.main_layout.addWidget(counters_container)
+        
+        # 添加任务列表标题和分隔线
+        task_list_header = QLabel("活跃任务列表")
+        task_list_header.setStyleSheet("font-weight: bold; color: #424242; margin-top: 2px; font-size: 8pt;")  # 减小字体大小
+        
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("background-color: #E0E0E0;")
+        
+        self.main_layout.addWidget(task_list_header)
+        self.main_layout.addWidget(separator)
+    
+    def _create_task_list(self):
+        """创建任务列表部分"""
         # 创建任务列表滚动区域
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                background-color: #F5F5F5;
+            }
+        """)
         
+        # 创建任务列表容器
         self.tasks_widget = QWidget()
         self.tasks_layout = QVBoxLayout(self.tasks_widget)
         self.tasks_layout.setAlignment(Qt.AlignTop)
-        self.tasks_layout.setSpacing(5)
+        self.tasks_layout.setSpacing(8)
+        self.tasks_layout.setContentsMargins(5, 5, 5, 5)
         
         self.scroll_area.setWidget(self.tasks_widget)
         
-        # 创建查看所有任务按钮
+        # 添加到主布局，并设置为可伸展
+        self.main_layout.addWidget(self.scroll_area, 1)  # 添加伸展因子
+    
+    def _create_view_all_button(self):
+        """创建查看所有任务按钮"""
         self.view_all_button = QPushButton("查看所有任务")
+        self.view_all_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border-radius: 3px;
+                padding: 4px;
+                font-weight: bold;
+                font-size: 8pt;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
         self.view_all_button.clicked.connect(self._on_view_all_clicked)
+        self.view_all_button.setMaximumHeight(25)  # 减小按钮高度
         
-        # 添加组件到主布局
-        self.main_layout.addWidget(self.summary_label)
-        self.main_layout.addLayout(self.counters_layout)
-        self.main_layout.addWidget(QLabel("活跃任务列表:"))
-        self.main_layout.addWidget(self.scroll_area)
+        # 添加到主布局
         self.main_layout.addWidget(self.view_all_button)
-        
-        # 当前活跃任务ID到任务项小部件的映射
-        self.task_widgets = {}
     
     def _on_view_all_clicked(self):
         """查看所有任务按钮点击处理"""
@@ -123,12 +220,33 @@ class TaskOverview(QWidget):
         
         # 创建任务项小部件
         task_widget = QWidget()
+        task_widget.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+            }
+            QWidget:hover {
+                background-color: #F5F5F5;
+                border: 1px solid #BDBDBD;
+            }
+        """)
+        
         task_layout = QVBoxLayout(task_widget)
-        task_layout.setContentsMargins(3, 3, 3, 3)
+        task_layout.setContentsMargins(8, 8, 8, 8)
+        task_layout.setSpacing(6)
         
         # 任务信息标签
-        info_label = QLabel(f"{task_type}: {task_name}")
-        info_label.setToolTip(f"任务ID: {task_id}\n类型: {task_type}\n名称: {task_name}")
+        header_layout = QHBoxLayout()
+        type_label = QLabel(task_type)
+        type_label.setStyleSheet(f"font-weight: bold; color: #2196F3; background: transparent;")
+        
+        name_label = QLabel(task_name)
+        name_label.setStyleSheet("color: #424242; background: transparent;")
+        
+        header_layout.addWidget(type_label)
+        header_layout.addWidget(QLabel(":"))
+        header_layout.addWidget(name_label, 1)  # 让名称标签占据剩余空间
         
         # 状态进度条
         progress_bar = QProgressBar()
@@ -136,15 +254,28 @@ class TaskOverview(QWidget):
         progress_bar.setValue(progress)
         progress_bar.setFormat(f"{status} %p%")
         progress_bar.setTextVisible(True)
+        progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #E0E0E0;
+                border-radius: 3px;
+                text-align: center;
+                background-color: #F5F5F5;
+            }
+            QProgressBar::chunk {
+                background-color: #4CAF50;
+                border-radius: 2px;
+            }
+        """)
         
         # 将组件添加到布局
-        task_layout.addWidget(info_label)
+        task_layout.addLayout(header_layout)
         task_layout.addWidget(progress_bar)
         
         # 存储小部件引用
         self.task_widgets[task_id] = {
             'widget': task_widget,
-            'info_label': info_label,
+            'type_label': type_label,
+            'name_label': name_label,
             'progress_bar': progress_bar
         }
         
@@ -166,6 +297,26 @@ class TaskOverview(QWidget):
             task = self.task_widgets[task_id]
             task['progress_bar'].setValue(progress)
             task['progress_bar'].setFormat(f"{status} %p%")
+            
+            # 根据状态设置进度条颜色
+            style = task['progress_bar'].styleSheet()
+            if "运行中" in status or "处理中" in status:
+                color = "#4CAF50"  # 绿色
+            elif "等待" in status:
+                color = "#FF9800"  # 橙色
+            elif "暂停" in status:
+                color = "#2196F3"  # 蓝色
+            elif "失败" in status or "错误" in status:
+                color = "#F44336"  # 红色
+            else:
+                color = "#4CAF50"  # 默认绿色
+                
+            style = style.replace("background-color: #4CAF50;", f"background-color: {color};")
+            style = style.replace("background-color: #FF9800;", f"background-color: {color};")
+            style = style.replace("background-color: #2196F3;", f"background-color: {color};")
+            style = style.replace("background-color: #F44336;", f"background-color: {color};")
+            
+            task['progress_bar'].setStyleSheet(style)
     
     def remove_task(self, task_id):
         """从概览中移除任务
