@@ -21,8 +21,10 @@ from src.utils.logger import get_logger
 from src.utils.video_processor import VideoProcessor
 from src.utils.events import EventEmitter
 from src.utils.controls import CancelToken, PauseToken, TaskContext
+from src.utils.logger_event_adapter import LoggerEventAdapter
 
-logger = get_logger()
+# 仅用于内部调试，不再用于UI输出
+_logger = get_logger()
 
 class Uploader(EventEmitter):
     """
@@ -46,6 +48,9 @@ class Uploader(EventEmitter):
         self.config_manager = config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
+        
+        # 创建日志事件适配器
+        self.log = LoggerEventAdapter(self)
         
         # 获取上传配置
         self.upload_config = self.config_manager.get_upload_config()
@@ -71,26 +76,20 @@ class Uploader(EventEmitter):
         self.task_context = task_context or TaskContext()
         
         status_message = "开始上传本地文件到目标频道"
-        logger.info(status_message)
-        self.emit("status", status_message)
+        self.log.status(status_message)
         
         # 获取目标频道列表
         target_channels = self.upload_config.target_channels
         if not target_channels:
-            error_msg = "未配置目标频道，无法上传文件"
-            logger.warning(error_msg)
-            self.emit("error", error_msg, error_type="CONFIG", recoverable=False)
+            self.log.error("未配置目标频道，无法上传文件", error_type="CONFIG", recoverable=False)
             return
         
-        logger.info(f"配置的目标频道数量: {len(target_channels)}")
-        self.emit("info", f"配置的目标频道数量: {len(target_channels)}")
+        self.log.info(f"配置的目标频道数量: {len(target_channels)}")
         
         # 获取上传目录
         upload_dir = Path(self.upload_config.directory)
         if not upload_dir.exists() or not upload_dir.is_dir():
-            error_msg = f"上传目录不存在或不是目录: {upload_dir}"
-            logger.error(error_msg)
-            self.emit("error", error_msg, error_type="DIRECTORY", recoverable=False)
+            self.log.error(f"上传目录不存在或不是目录: {upload_dir}", error_type="DIRECTORY", recoverable=False)
             return
         
         # 上传计数
@@ -100,1205 +99,552 @@ class Uploader(EventEmitter):
         # 获取媒体组列表（每个子文件夹作为一个媒体组）
         media_groups = [d for d in upload_dir.iterdir() if d.is_dir()]
         
-        # 发出开始事件
         if not media_groups:
-            logger.info(f"在 {upload_dir} 中未找到媒体组文件夹，将作为单个文件上传")
-            self.emit("info", f"在 {upload_dir} 中未找到媒体组文件夹，将作为单个文件上传")
+            self.log.warning(f"上传目录中没有子文件夹: {upload_dir}")
+            self.log.info("将上传目录下的所有文件作为单独的消息")
             
-            # 获取单个文件数量，用于进度计算
-            single_files = [f for f in upload_dir.iterdir() if f.is_file() and f.name != "title.txt"]
-            total_files = len(single_files)
-            self.emit("total_files", total_files)
+            # 如果没有子文件夹，将上传目录下的文件直接上传
+            files = [f for f in upload_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
+            if not files:
+                self.log.warning(f"上传目录中没有有效的媒体文件: {upload_dir}")
+                return
             
-            # 将当前目录下的文件作为单独文件上传
-            success_count = await self._upload_single_files(upload_dir, target_channels)
-            total_uploaded += success_count
+            self.log.info(f"找到 {len(files)} 个文件准备上传")
             
-        else:
-            # 发送媒体组总数
-            total_groups = len(media_groups)
-            logger.info(f"找到 {total_groups} 个媒体组文件夹")
-            self.emit("info", f"找到 {total_groups} 个媒体组文件夹", total_groups=total_groups)
-            self.emit("total_media_groups", total_groups)
-            
-            # 上传每个媒体组
-            for idx, group_dir in enumerate(media_groups, 1):
-                # 检查是否已取消
-                if not await self.task_context.check_continue():
-                    logger.info("上传任务已取消")
-                    self.emit("status", "上传任务已取消")
-                    return
-                
-                group_info = f"处理媒体组 [{idx}/{total_groups}]: {group_dir.name}"
-                logger.info(group_info)
-                self.emit("status", group_info)
-                
-                # 获取媒体组文件
-                files = [f for f in group_dir.iterdir() if f.is_file()]
-                
-                if not files:
-                    logger.warning(f"媒体组 {group_dir.name} 中没有文件，跳过")
-                    self.emit("warning", f"媒体组 {group_dir.name} 中没有文件，跳过")
-                    continue
-                
-                # 检查是否达到限制
-                if self.general_config.limit > 0 and upload_count >= self.general_config.limit:
-                    pause_msg = f"已达到上传限制 {self.general_config.limit}，暂停 {self.general_config.pause_time} 秒"
-                    logger.info(pause_msg)
-                    self.emit("status", pause_msg)
-                    
-                    # 等待暂停时间
-                    for i in range(self.general_config.pause_time):
-                        # 检查是否已取消
-                        if self.task_context.cancel_token.is_cancelled:
-                            logger.info("上传任务已取消")
-                            self.emit("status", "上传任务已取消")
-                            return
-                            
-                        # 检查是否被暂停
-                        if self.task_context.pause_token.is_paused:
-                            await self.task_context.wait_if_paused()
-                            
-                        await asyncio.sleep(1)
-                        remaining = self.general_config.pause_time - i - 1
-                        if remaining > 0 and remaining % 5 == 0:  # 每5秒更新一次状态
-                            self.emit("status", f"暂停中，还剩 {remaining} 秒...")
-                    
-                    upload_count = 0
-                
-                # 上传媒体组
-                success = await self._upload_media_group(files, group_dir.name, target_channels)
-                if success:
-                    upload_count += 1
-                    total_uploaded += 1
-                    # 发送进度事件
-                    self.emit("progress", (idx / total_groups) * 100, idx, total_groups)
-        
-        complete_msg = f"本地文件上传完成，共上传 {total_uploaded} 个文件/媒体组"
-        logger.info(complete_msg)
-        self.emit("status", complete_msg)
-        self.emit("complete", True, {"total_uploaded": total_uploaded})
-    
-    async def _upload_single_files(self, directory: Path, target_channels: List[str]):
-        """
-        将目录中的单个文件上传到目标频道
-        
-        Args:
-            directory: 文件目录
-            target_channels: 目标频道列表
-            
-        Returns:
-            int: 成功上传的文件数量
-        """
-        # 获取所有文件
-        files = [f for f in directory.iterdir() if f.is_file()]
-        
-        if not files:
-            warning_msg = f"目录 {directory} 中没有文件，无法上传"
-            logger.warning(warning_msg)
-            self.emit("warning", warning_msg)
-            return 0
-        
-        info_msg = f"在 {directory} 中找到 {len(files)} 个文件待上传"
-        logger.info(info_msg)
-        self.emit("info", info_msg)
-        
-        # 尝试读取title.txt文件作为默认标题
-        default_caption = ""
-        title_file_path = directory / "title.txt"
-        if title_file_path.exists() and title_file_path.is_file():
-            try:
-                with open(title_file_path, "r", encoding="utf-8") as f:
-                    default_caption = f.read().strip()
-                logger.info(f"从 {title_file_path} 读取默认标题成功")
-                self.emit("info", f"从 {title_file_path} 读取默认标题成功")
-            except Exception as e:
-                error_msg = f"读取标题文件 {title_file_path} 失败: {e}"
-                logger.error(error_msg)
-                self.emit("error", error_msg, error_type="FILE_READ", recoverable=True)
-                # 如果读取失败，使用默认的caption模板
-        
-        # 上传计数
-        upload_count = 0
-        
-        # 检查每个目标频道的转发权限，将非禁止转发的频道排在前面
-        sorted_target_channels = []
-        try:
-            non_restricted_channels = []
-            restricted_channels = []
-            
-            for channel in target_channels:
+            # 验证目标频道
+            valid_targets = []
+            for target in target_channels:
                 try:
-                    # 检查是否已取消
-                    if self.task_context and self.task_context.cancel_token.is_cancelled:
-                        logger.info("上传任务已取消")
-                        self.emit("status", "上传任务已取消")
-                        return upload_count
-                    
-                    # 解析频道ID
-                    channel_id = await self.channel_resolver.get_channel_id(channel)
-                    # 获取频道信息
-                    channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(channel_id)
-                    
-                    # 检查频道转发权限
-                    status_msg = f"检查频道权限: {channel_info}"
-                    logger.info(status_msg)
-                    self.emit("status", status_msg)
-                    
-                    if await self.channel_resolver.check_forward_permission(channel_id):
-                        non_restricted_channels.append((channel, channel_id, channel_info))
-                        logger.info(f"频道 {channel_info} 允许转发")
-                        self.emit("info", f"频道 {channel_info} 允许转发")
-                    else:
-                        restricted_channels.append((channel, channel_id, channel_info))
-                        logger.info(f"频道 {channel_info} 禁止转发")
-                        self.emit("info", f"频道 {channel_info} 禁止转发")
+                    target_id = await self.channel_resolver.get_channel_id(target)
+                    channel_info, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
+                    valid_targets.append((target, target_id, channel_info))
+                    self.log.info(f"目标频道: {channel_info}")
                 except Exception as e:
-                    error_msg = f"检查频道 {channel} 权限失败: {e}"
-                    logger.error(error_msg)
-                    self.emit("error", error_msg, error_type="CHANNEL_CHECK", recoverable=True)
-                    continue
-                    
-            # 合并频道列表，非禁止转发的频道排在前面
-            sorted_target_channels = non_restricted_channels + restricted_channels
+                    self.log.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
             
-            info_msg = f"非禁止转发频道: {len(non_restricted_channels)}个, 禁止转发频道: {len(restricted_channels)}个"
-            logger.info(info_msg)
-            self.emit("info", info_msg)
-        except Exception as e:
-            error_msg = f"排序目标频道失败: {e}"
-            logger.error(error_msg)
-            self.emit("error", error_msg, error_type="CHANNEL_SORT", recoverable=True)
-            # 如果排序失败，使用原始列表
-            sorted_target_channels = [(channel, None, channel) for channel in target_channels]
+            if not valid_targets:
+                self.log.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
+                return
+            
+            # 开始上传
+            self.log.status(f"开始上传 {len(files)} 个文件...")
+            
+            # 使用批量上传
+            start_time = time.time()
+            uploaded_count = await self._upload_files_to_channels(files, valid_targets)
+            end_time = time.time()
+            
+            if uploaded_count > 0:
+                upload_time = end_time - start_time
+                self.log.info(f"上传完成: 成功上传 {uploaded_count} 个文件，耗时 {upload_time:.2f} 秒")
+                self.emit("complete", True, {
+                    "total_files": uploaded_count,
+                    "total_time": upload_time
+                })
+            else:
+                self.log.warning("没有文件被成功上传")
+            
+            return
+            
+        # 处理子文件夹作为媒体组的情况
+        self.log.info(f"找到 {len(media_groups)} 个媒体组文件夹")
         
-        # 有效文件数量（不包括title.txt）
-        valid_files = [f for f in files if f.name != "title.txt"]
-        total_files = len(valid_files)
-        self.emit("total_files", total_files)
+        # 验证目标频道
+        valid_targets = []
+        for target in target_channels:
+            try:
+                target_id = await self.channel_resolver.get_channel_id(target)
+                channel_info, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
+                valid_targets.append((target, target_id, channel_info))
+                self.log.info(f"目标频道: {channel_info}")
+            except Exception as e:
+                self.log.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
         
-        # 上传每个文件
-        for idx, file_path in enumerate(valid_files, 1):
-            # 检查是否已取消任务
+        if not valid_targets:
+            self.log.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
+            return
+        
+        # 开始上传
+        start_time = time.time()
+        total_files = 0
+        total_media_groups = len(media_groups)
+        
+        for idx, group_dir in enumerate(media_groups):
+            # 检查任务是否已取消
             if self.task_context and self.task_context.cancel_token.is_cancelled:
-                logger.info("上传任务已取消")
-                self.emit("status", "上传任务已取消")
-                return upload_count
-            
+                self.log.status("上传任务已取消")
+                break
+                
             # 等待暂停恢复
             if self.task_context:
                 await self.task_context.wait_if_paused()
             
-            # 跳过title.txt文件本身
-            if file_path.name == "title.txt":
-                continue
-                
-            # 检查是否已上传
-            already_uploaded = True
-            for channel, _, _ in sorted_target_channels:
-                if not self.history_manager.is_file_uploaded(str(file_path), channel):
-                    already_uploaded = False
-                    break
+            # 更新进度
+            progress = (idx / total_media_groups) * 100
+            self.emit("progress", progress, idx, total_media_groups)
             
-            if already_uploaded:
-                logger.debug(f"文件 {file_path.name} 已上传到所有目标频道，跳过")
-                self.emit("file_skipped", str(file_path), "already_uploaded")
-                continue
+            group_name = group_dir.name
+            self.log.status(f"处理媒体组 [{group_name}] ({idx+1}/{total_media_groups})")
             
-            # 检查是否达到限制
-            if self.general_config.limit > 0 and upload_count >= self.general_config.limit:
-                pause_msg = f"已达到上传限制 {self.general_config.limit}，暂停 {self.general_config.pause_time} 秒"
-                logger.info(pause_msg)
-                self.emit("status", pause_msg)
-                
-                # 等待暂停时间
-                for i in range(self.general_config.pause_time):
-                    # 检查是否已取消
-                    if self.task_context and self.task_context.cancel_token.is_cancelled:
-                        logger.info("上传任务已取消")
-                        self.emit("status", "上传任务已取消")
-                        return upload_count
-                        
-                    # 检查是否被暂停
-                    if self.task_context and self.task_context.pause_token.is_paused:
-                        await self.task_context.wait_if_paused()
-                        
-                    await asyncio.sleep(1)
-                    remaining = self.general_config.pause_time - i - 1
-                    if remaining > 0 and remaining % 5 == 0:  # 每5秒更新一次状态
-                        self.emit("status", f"暂停中，还剩 {remaining} 秒...")
-                
-                upload_count = 0
-            
-            # 生成文件标题，优先使用从title.txt读取的内容
-            if default_caption:
-                caption = default_caption
-            else:
-                caption = self.upload_config.caption_template.format(
-                    filename=file_path.stem,
-                    extension=file_path.suffix.lstrip('.'),
-                    datetime=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                )
-            
-            # 使用智能上传策略：首先尝试上传到一个非禁止转发的频道，然后复制转发到其他频道
-            success = await self._upload_and_forward_file(file_path, caption, sorted_target_channels)
-            
-            if success:
-                upload_count += 1
-                # 发送进度事件
-                progress_pct = (idx / total_files) * 100
-                self.emit("progress", progress_pct, idx, total_files)
-                self.emit("file_uploaded", str(file_path), success)
-            else:
-                self.emit("file_upload_failed", str(file_path))
-                
-            # 等待一小段时间，避免频繁请求
-            await asyncio.sleep(1)
-            
-        return upload_count
-    
-    async def _upload_media_group(self, files: List[Path], group_name: str, target_channels: List[str]) -> bool:
-        """
-        将媒体组上传到目标频道
-        
-        Args:
-            files: 媒体组文件列表
-            group_name: 媒体组名称
-            target_channels: 目标频道列表
-            
-        Returns:
-            bool: 是否成功上传
-        """
-        # 检查是否已取消
-        if self.task_context and self.task_context.cancel_token.is_cancelled:
-            logger.info("上传任务已取消")
-            self.emit("status", "上传任务已取消")
-            return False
-        
-        # 等待暂停恢复
-        if self.task_context:
-            await self.task_context.wait_if_paused()
-        
-        try:
-            # 检查每个目标频道的转发权限，将非禁止转发的频道排在前面
-            sorted_target_channels = []
-            non_restricted_channels = []
-            restricted_channels = []
-            
-            for channel in target_channels:
-                try:
-                    # 解析频道ID
-                    channel_id = await self.channel_resolver.get_channel_id(channel)
-                    # 获取频道信息
-                    channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(channel_id)
-                    
-                    # 检查频道转发权限
-                    status_msg = f"检查频道权限: {channel_info}"
-                    logger.info(status_msg)
-                    self.emit("status", status_msg)
-                    
-                    if await self.channel_resolver.check_forward_permission(channel_id):
-                        non_restricted_channels.append((channel, channel_id, channel_info))
-                        logger.info(f"频道 {channel_info} 允许转发")
-                        self.emit("info", f"频道 {channel_info} 允许转发")
-                    else:
-                        restricted_channels.append((channel, channel_id, channel_info))
-                        logger.info(f"频道 {channel_info} 禁止转发")
-                        self.emit("info", f"频道 {channel_info} 禁止转发")
-                except Exception as e:
-                    error_msg = f"检查频道 {channel} 权限失败: {e}"
-                    logger.error(error_msg)
-                    self.emit("error", error_msg, error_type="CHANNEL_CHECK", recoverable=True)
-                    continue
-            
-            # 合并频道列表，非禁止转发的频道排在前面
-            sorted_target_channels = non_restricted_channels + restricted_channels
-            
-            info_msg = f"非禁止转发频道: {len(non_restricted_channels)}个, 禁止转发频道: {len(restricted_channels)}个"
-            logger.info(info_msg)
-            self.emit("info", info_msg)
-            
-            if not sorted_target_channels:
-                error_msg = f"没有有效的目标频道，媒体组 {group_name} 上传失败"
-                logger.error(error_msg)
-                self.emit("error", error_msg, error_type="NO_CHANNELS", recoverable=False)
-                return False
-            
-            # 获取媒体文件
-            media_files = []
-            for f in files:
-                # 跳过title.txt文件
-                if f.name.lower() == "title.txt":
-                    continue
-                # 判断文件类型
-                media_type = self._get_media_type(f)
-                if media_type in ["photo", "video", "document", "audio"]:
-                    media_files.append((f, media_type))
+            # 获取媒体组中的文件
+            media_files = [f for f in group_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
             
             if not media_files:
-                warning_msg = f"媒体组 {group_name} 中没有有效的媒体文件，跳过"
-                logger.warning(warning_msg)
-                self.emit("warning", warning_msg)
-                return False
+                self.log.warning(f"媒体组文件夹 {group_name} 中没有有效的媒体文件")
+                continue
             
-            # 对媒体文件按名称排序，确保顺序稳定
-            media_files.sort(key=lambda x: x[0].name)
+            self.log.info(f"媒体组 {group_name} 包含 {len(media_files)} 个文件")
             
-            # 尝试读取标题文件
-            caption = ""
-            title_file_path = next((f for f in files if f.name.lower() == "title.txt"), None)
-            if title_file_path:
+            # 检查是否有caption.txt文件
+            caption_file = group_dir / "caption.txt"
+            caption = None
+            if caption_file.exists():
                 try:
-                    with open(title_file_path, "r", encoding="utf-8") as f:
+                    with open(caption_file, 'r', encoding='utf-8') as f:
                         caption = f.read().strip()
-                    logger.info(f"从 {title_file_path} 读取媒体组标题成功")
-                    self.emit("info", f"从 {title_file_path} 读取媒体组标题成功")
+                    self.log.info(f"已读取媒体组 {group_name} 的说明文本，长度：{len(caption)} 字符")
                 except Exception as e:
-                    error_msg = f"读取媒体组标题文件失败: {e}"
-                    logger.error(error_msg)
-                    self.emit("error", error_msg, error_type="FILE_READ", recoverable=True)
-                    # 如果读取失败，使用默认的caption
-                    caption = self.upload_config.caption_template.format(
-                        filename=group_name,
-                        extension="",
-                        datetime=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    )
-            else:
-                # 使用默认的caption模板
-                caption = self.upload_config.caption_template.format(
-                    filename=group_name,
-                    extension="",
-                    datetime=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                )
+                    self.log.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
             
-            # 准备媒体组
-            status_msg = f"准备上传媒体组 {group_name}，共 {len(media_files)} 个文件"
-            logger.info(status_msg)
-            self.emit("status", status_msg)
-            
-            # 使用智能上传策略：首先尝试上传到一个非禁止转发的频道，然后复制转发到其他频道
-            success = await self._upload_and_forward_media_group(media_files, caption, sorted_target_channels, group_name)
-            
-            if success:
-                self.emit("media_group_uploaded", group_name, len(media_files))
-                return True
-            else:
-                self.emit("media_group_upload_failed", group_name)
-                return False
-            
-        except Exception as e:
-            error_msg = f"上传媒体组 {group_name} 失败: {e}"
-            logger.error(error_msg)
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(error_details)
-            self.emit("error", error_msg, error_type="MEDIA_GROUP_UPLOAD", recoverable=True, details=error_details)
-            return False
+            # 上传到所有目标频道
+            for target, target_id, target_info in valid_targets:
+                # 检查任务是否已取消
+                if self.task_context and self.task_context.cancel_token.is_cancelled:
+                    self.log.status("上传任务已取消")
+                    break
+                    
+                # 等待暂停恢复
+                if self.task_context:
+                    await self.task_context.wait_if_paused()
+                
+                self.log.status(f"上传媒体组 [{group_name}] 到 {target_info}")
+                
+                # 上传媒体组
+                if len(media_files) == 1:
+                    # 单个文件，直接上传
+                    uploaded = await self._upload_single_file(media_files[0], target_id, caption)
+                    if uploaded:
+                        total_files += 1
+                        upload_count += 1
+                else:
+                    # 多个文件，作为媒体组上传
+                    uploaded = await self._upload_media_group(media_files, target_id, caption)
+                    if uploaded:
+                        total_files += len(media_files)
+                        upload_count += 1
+                
+                # 简单的速率限制，防止过快发送请求
+                await asyncio.sleep(2)
+        
+        # 上传完成统计
+        end_time = time.time()
+        upload_time = end_time - start_time
+        
+        if upload_count > 0:
+            self.log.info(f"上传完成: 成功上传 {upload_count} 个媒体组，共 {total_files} 个文件，耗时 {upload_time:.2f} 秒")
+            self.emit("complete", True, {
+                "total_groups": upload_count,
+                "total_files": total_files,
+                "total_time": upload_time
+            })
+        else:
+            self.log.warning("没有媒体组被成功上传")
+        
+        self.log.status("所有媒体文件上传完成")
     
-    async def _upload_file(self, file_path: Path, caption: str, chat_id: int, media_type: str) -> Optional[Message]:
+    def _is_valid_media_file(self, file_path: Path) -> bool:
         """
-        上传单个文件到频道
+        检查文件是否为有效的媒体文件
         
         Args:
             file_path: 文件路径
-            caption: 文件标题
-            chat_id: 频道ID
-            media_type: 媒体类型
             
         Returns:
-            Optional[Message]: 上传成功返回的消息对象，失败返回None
+            bool: 是否为有效的媒体文件
         """
+        if not file_path.is_file():
+            return False
+        
+        # 忽略.DS_Store等隐藏文件
+        if file_path.name.startswith('.'):
+            return False
+        
+        # 忽略caption.txt文件
+        if file_path.name.lower() == 'caption.txt':
+            return False
+        
+        # 获取文件类型
+        mime_type, _ = mimetypes.guess_type(file_path)
+        
+        if mime_type is None:
+            # 尝试通过扩展名判断
+            ext = file_path.suffix.lower()
+            if ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.mov', '.avi', '.mkv', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.mp3', '.m4a', '.ogg', '.wav']:
+                return True
+            return False
+        
+        # 检查是否为支持的媒体类型
+        if mime_type.startswith(('image/', 'video/', 'audio/')):
+            return True
+        if mime_type.startswith(('application/pdf', 'application/msword', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument')):
+            return True
+        
+        return False
+    
+    async def _upload_media_group(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> bool:
+        """
+        将多个文件作为媒体组上传
+        
+        Args:
+            files: 文件路径列表
+            chat_id: 目标聊天ID
+            caption: 说明文本，仅会应用到第一个媒体
+            
+        Returns:
+            bool: 上传是否成功
+        """
+        # 最多支持10个媒体文件作为一个组
+        if len(files) > 10:
+            # 分组上传
+            self.log.warning(f"媒体组包含 {len(files)} 个文件，超过最大限制(10)，将分批上传")
+            chunks = [files[i:i+10] for i in range(0, len(files), 10)]
+            success = True
+            for i, chunk in enumerate(chunks):
+                chunk_success = await self._upload_media_group_chunk(chunk, chat_id, caption if i == 0 else None)
+                if not chunk_success:
+                    success = False
+                # 批次间隔
+                await asyncio.sleep(3)
+            return success
+        else:
+            # 直接上传这组文件
+            return await self._upload_media_group_chunk(files, chat_id, caption)
+    
+    async def _upload_media_group_chunk(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> bool:
+        """
+        上传一个媒体组块（最多10个文件）
+        """
+        if not files:
+            return False
+        
+        # 准备媒体组
+        media_group = []
+        thumbnails = []  # 记录生成的缩略图文件以便清理
+        
         try:
-            if media_type == "photo":
-                return await self.client.send_photo(
-                    chat_id=chat_id,
-                    photo=str(file_path),
-                    caption=caption
-                )
-            elif media_type == "video":
-                # 为视频生成缩略图
-                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+            for i, file in enumerate(files):
+                file_caption = caption if i == 0 else None
+                media_type = self._get_media_type(file)
                 
-                result = await self.client.send_video(
-                    chat_id=chat_id,
-                    video=str(file_path),
-                    caption=caption,
-                    supports_streaming=True,
-                    thumb=thumbnail_path
-                )
+                if media_type == "photo":
+                    media = InputMediaPhoto(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
                 
-                # 清理缩略图
-                if thumbnail_path:
-                    self.video_processor.delete_thumbnail(thumbnail_path)
+                elif media_type == "video":
+                    # 生成缩略图
+                    thumbnail = None
+                    try:
+                        thumbnail = await self.video_processor.extract_thumbnail(str(file))
+                        if thumbnail:
+                            thumbnails.append(thumbnail)
+                            self.log.debug(f"已生成视频缩略图: {thumbnail}")
+                    except Exception as e:
+                        self.log.warning(f"生成视频缩略图失败: {e}")
                     
-                return result
-            elif media_type == "document":
-                return await self.client.send_document(
-                    chat_id=chat_id,
-                    document=str(file_path),
-                    caption=caption
-                )
-            elif media_type == "audio":
-                return await self.client.send_audio(
-                    chat_id=chat_id,
-                    audio=str(file_path),
-                    caption=caption
-                )
-            elif media_type == "animation":
-                return await self.client.send_animation(
-                    chat_id=chat_id,
-                    animation=str(file_path),
-                    caption=caption
-                )
-            else:
-                # 默认作为文档发送
-                return await self.client.send_document(
-                    chat_id=chat_id,
-                    document=str(file_path),
-                    caption=caption
-                )
+                    media = InputMediaVideo(
+                        media=str(file),
+                        caption=file_caption,
+                        thumb=thumbnail,
+                        supports_streaming=True
+                    )
+                    media_group.append(media)
+                
+                elif media_type == "document":
+                    media = InputMediaDocument(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
+                
+                elif media_type == "audio":
+                    media = InputMediaAudio(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
+                
+                else:
+                    self.log.warning(f"不支持的媒体类型: {file}")
+                    continue
+            
+            if not media_group:
+                self.log.warning("没有有效的媒体文件可以上传")
+                return False
+            
+            # 上传媒体组
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    # 捕获任何上传问题
+                    self.log.status(f"上传媒体组 ({len(media_group)} 个文件)...")
+                    
+                    start_time = time.time()
+                    result = await self.client.send_media_group(
+                        chat_id=chat_id,
+                        media=media_group
+                    )
+                    end_time = time.time()
+                    
+                    upload_time = end_time - start_time
+                    self.log.info(f"媒体组上传成功，耗时 {upload_time:.2f} 秒")
+                    
+                    # 保存上传历史记录
+                    for msg in result:
+                        self.history_manager.add_upload_record(chat_id, msg.id, chat_id)
+                    
+                    # 发送上传成功事件
+                    self.emit("media_upload", {
+                        "chat_id": chat_id,
+                        "media_count": len(media_group),
+                        "upload_time": upload_time
+                    })
+                    
+                    return True
+                    
+                except FloodWait as e:
+                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    await asyncio.sleep(e.x)
+                except (MediaEmpty, MediaInvalid) as e:
+                    self.log.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    return False
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        self.log.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        await asyncio.sleep((retry + 1) * 2)
+                    else:
+                        self.log.error(f"上传媒体组失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
+                        return False
+            
+            return False
+            
+        finally:
+            # 清理缩略图
+            for thumb in thumbnails:
+                try:
+                    if os.path.exists(thumb):
+                        os.remove(thumb)
+                        self.log.debug(f"已删除缩略图: {thumb}")
+                except Exception as e:
+                    self.log.warning(f"删除缩略图失败: {e}")
+    
+    async def _upload_single_file(self, file: Path, chat_id: int, caption: Optional[str] = None) -> bool:
+        """
+        上传单个文件
         
-        except FloodWait as e:
-            logger.warning(f"上传文件时遇到限制，等待 {e.x} 秒")
-            await asyncio.sleep(e.x)
-            return await self._upload_file(file_path, caption, chat_id, media_type)
+        Args:
+            file: 文件路径
+            chat_id: 目标聊天ID
+            caption: 说明文本
+            
+        Returns:
+            bool: 上传是否成功
+        """
+        media_type = self._get_media_type(file)
         
-        except (MediaEmpty, MediaInvalid) as e:
-            logger.error(f"媒体文件无效: {file_path}, 错误: {e}")
-            return None
+        if not media_type:
+            self.log.warning(f"不支持的媒体类型: {file}")
+            return False
         
-        except Exception as e:
-            logger.error(f"上传文件失败: {file_path}, 错误: {e}")
-            return None
+        # 缩略图文件路径
+        thumbnail = None
+        
+        try:
+            # 处理视频缩略图
+            if media_type == "video":
+                try:
+                    thumbnail = await self.video_processor.extract_thumbnail(str(file))
+                    if thumbnail:
+                        self.log.debug(f"已生成视频缩略图: {thumbnail}")
+                except Exception as e:
+                    self.log.warning(f"生成视频缩略图失败: {e}")
+            
+            # 上传文件
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    self.log.status(f"上传文件: {file.name}...")
+                    
+                    start_time = time.time()
+                    
+                    if media_type == "photo":
+                        result = await self.client.send_photo(
+                            chat_id=chat_id,
+                            photo=str(file),
+                            caption=caption
+                        )
+                    elif media_type == "video":
+                        result = await self.client.send_video(
+                            chat_id=chat_id,
+                            video=str(file),
+                            caption=caption,
+                            thumb=thumbnail,
+                            supports_streaming=True
+                        )
+                    elif media_type == "document":
+                        result = await self.client.send_document(
+                            chat_id=chat_id,
+                            document=str(file),
+                            caption=caption
+                        )
+                    elif media_type == "audio":
+                        result = await self.client.send_audio(
+                            chat_id=chat_id,
+                            audio=str(file),
+                            caption=caption
+                        )
+                    else:
+                        self.log.warning(f"不支持的媒体类型: {media_type}")
+                        return False
+                    
+                    end_time = time.time()
+                    upload_time = end_time - start_time
+                    
+                    self.log.info(f"文件 {file.name} 上传成功，耗时 {upload_time:.2f} 秒")
+                    
+                    # 保存上传历史记录
+                    if result:
+                        self.history_manager.add_upload_record(chat_id, result.id, chat_id)
+                    
+                    # 发送上传成功事件
+                    self.emit("media_upload", {
+                        "chat_id": chat_id,
+                        "file_name": file.name,
+                        "media_type": media_type,
+                        "upload_time": upload_time
+                    })
+                    
+                    return True
+                    
+                except FloodWait as e:
+                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    await asyncio.sleep(e.x)
+                except (MediaEmpty, MediaInvalid) as e:
+                    self.log.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    return False
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        self.log.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        await asyncio.sleep((retry + 1) * 2)
+                    else:
+                        self.log.error(f"上传 {file.name} 失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
+                        return False
+            
+            return False
+            
+        finally:
+            # 清理缩略图
+            if thumbnail and os.path.exists(thumbnail):
+                try:
+                    os.remove(thumbnail)
+                    self.log.debug(f"已删除缩略图: {thumbnail}")
+                except Exception as e:
+                    self.log.warning(f"删除缩略图失败: {e}")
     
     def _get_media_type(self, file_path: Path) -> Optional[str]:
         """
-        根据文件扩展名确定媒体类型
+        根据文件确定媒体类型
         
         Args:
             file_path: 文件路径
             
         Returns:
-            str: 媒体类型 ('photo', 'video', 'document', 'audio') 或 None
+            Optional[str]: 媒体类型（photo, video, document, audio）
         """
-        # 获取小写扩展名（不含点）
-        ext = file_path.suffix.lower().lstrip('.')
+        # 获取MIME类型
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        ext = file_path.suffix.lower()
         
-        # 预定义的媒体类型扩展名映射
-        photo_extensions = {"jpg", "jpeg", "png", "webp", "heif", "heic"}
-        video_extensions = {"mp4", "mkv", "mov", "avi", "wmv", "flv", "webm", "m4v", "3gp"}
-        audio_extensions = {"mp3", "m4a", "ogg", "wav", "flac", "aac"}
-        document_extensions = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "7z", "tar", "gz"}
-        
-        # 照片类型
-        if ext in photo_extensions:
-            return "photo"
-        
-        # 视频类型
-        elif ext in video_extensions:
-            return "video"
-        
-        # 音频类型
-        elif ext in audio_extensions:
-            return "audio"
-        
-        # 文档类型（所有其他类型都作为文档处理）
-        elif ext in document_extensions:
-            return "document"
-        
-        # 不支持的类型
+        # 根据MIME类型确定媒体类型
+        if mime_type:
+            if mime_type.startswith('image/'):
+                return "photo"
+            elif mime_type.startswith('video/'):
+                return "video"
+            elif mime_type.startswith('audio/'):
+                return "audio"
+            else:
+                return "document"
         else:
-            logger.warning(f"文件扩展名 '{ext}' 不在配置的支持类型列表中")
-            return None
-    
-    async def _upload_and_forward_file(self, file_path: Path, caption: str, sorted_target_channels: List[Tuple[str, Optional[int], str]]) -> bool:
-        """
-        智能上传单个文件并转发到其他频道
+            # 通过扩展名确定类型
+            if ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                return "photo"
+            elif ext in ['.mp4', '.mov', '.avi', '.mkv']:
+                return "video"
+            elif ext in ['.mp3', '.m4a', '.ogg', '.wav']:
+                return "audio"
+            elif ext:  # 只要有扩展名的，都当作文档处理
+                return "document"
         
-        首先尝试上传到一个非禁止转发的频道，然后复制转发到其他频道
+        return None
+    
+    async def _upload_files_to_channels(self, files: List[Path], targets: List[Tuple[str, int, str]]) -> int:
+        """
+        将文件上传到多个目标频道
         
         Args:
-            file_path: 文件路径
-            caption: 文件标题
-            sorted_target_channels: 已排序的目标频道列表，格式为 (channel_id_or_username, resolved_id, display_name)
+            files: 文件路径列表
+            targets: 目标频道列表，元组(channel_id, channel_name, channel_info)
             
         Returns:
-            bool: 是否成功上传和转发
+            int: 成功上传的文件数量
         """
-        # 确定媒体类型
-        media_type = self._get_media_type(file_path)
-        if not media_type:
-            error_msg = f"文件 {file_path.name} 类型不受支持，跳过"
-            logger.error(error_msg)
-            self.emit("error", error_msg, error_type="UNSUPPORTED_MEDIA", recoverable=True)
-            return False
+        upload_count = 0
+        total_files = len(files)
         
-        # 为视频文件生成缩略图
-        thumbnail_path = None
-        if media_type == "video":
-            try:
-                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
-                if thumbnail_path:
-                    logger.info(f"为视频 {file_path.name} 生成缩略图成功")
-                    self.emit("info", f"为视频 {file_path.name} 生成缩略图成功")
-            except Exception as e:
-                error_msg = f"为视频 {file_path.name} 生成缩略图失败: {e}"
-                logger.error(error_msg)
-                self.emit("error", error_msg, error_type="THUMBNAIL_GENERATION", recoverable=True)
-                # 继续上传，但没有缩略图
-        
-        try:
-            # 记录是否已经成功上传到某个非禁止转发频道
-            first_upload_success = False
-            first_success_channel_id = None
-            first_success_message_id = None
-            
-            # 上传文件到每个目标频道
-            for channel, channel_id, channel_info in sorted_target_channels:
-                # 检查是否已取消
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    logger.info("上传任务已取消")
-                    self.emit("status", "上传任务已取消")
-                    # 清理缩略图
-                    if thumbnail_path:
-                        self.video_processor.delete_thumbnail(thumbnail_path)
-                    return False
-                
-                # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
-                
-                # 检查是否已上传到此频道
-                if self.history_manager.is_file_uploaded(str(file_path), channel):
-                    logger.debug(f"文件 {file_path.name} 已上传到频道 {channel_info}，跳过")
-                    self.emit("info", f"文件 {file_path.name} 已上传到频道 {channel_info}，跳过")
-                    continue
-                
-                try:
-                    # 如果尚未解析频道ID，现在解析
-                    if channel_id is None:
-                        channel_id = await self.channel_resolver.get_channel_id(channel)
-                        channel_info, _ = await self.channel_resolver.format_channel_info(channel_id)
-                    
-                    # 发送状态更新
-                    status_msg = f"正在上传文件 {file_path.name} 到频道 {channel_info}"
-                    logger.info(status_msg)
-                    self.emit("status", status_msg)
-                    
-                    # 如果已经成功上传到非禁止转发频道，使用复制转发方式
-                    if first_upload_success and first_success_channel_id and first_success_message_id:
-                        info_msg = f"使用复制转发方式将文件 {file_path.name} 从已上传频道转发到 {channel_info}"
-                        logger.info(info_msg)
-                        self.emit("info", info_msg)
-                        
-                        try:
-                            # 使用copy_message复制消息
-                            forwarded = await self.client.copy_message(
-                                chat_id=channel_id,
-                                from_chat_id=first_success_channel_id,
-                                message_id=first_success_message_id
-                            )
-                            
-                            # 记录上传历史
-                            self.history_manager.add_upload_record(
-                                str(file_path),
-                                channel,
-                                os.path.getsize(file_path),
-                                media_type
-                            )
-                            
-                            success_msg = f"文件 {file_path.name} 复制转发到频道 {channel_info} 成功"
-                            logger.info(success_msg)
-                            self.emit("info", success_msg)
-                        except FloodWait as e:
-                            wait_msg = f"复制转发遇到限制，等待 {e.x} 秒后重试"
-                            logger.warning(wait_msg)
-                            self.emit("warning", wait_msg)
-                            await asyncio.sleep(e.x)
-                            # 重试复制转发
-                            try:
-                                forwarded = await self.client.copy_message(
-                                    chat_id=channel_id,
-                                    from_chat_id=first_success_channel_id,
-                                    message_id=first_success_message_id
-                                )
-                                
-                                # 记录上传历史
-                                self.history_manager.add_upload_record(
-                                    str(file_path),
-                                    channel,
-                                    os.path.getsize(file_path),
-                                    media_type
-                                )
-                                
-                                success_msg = f"文件 {file_path.name} 复制转发到频道 {channel_info} 成功"
-                                logger.info(success_msg)
-                                self.emit("info", success_msg)
-                            except Exception as e:
-                                error_msg = f"重试复制转发文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
-                                logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP_RETRY", recoverable=True)
-                                continue
-                        except Exception as e:
-                            error_msg = f"使用copy_media_group复制文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
-                            logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP", recoverable=True)
-                            continue
-                    else:
-                        # 首次上传，直接发送文件
-                        info_msg = f"直接上传文件 {file_path.name} 到频道 {channel_info}"
-                        logger.info(info_msg)
-                        self.emit("info", info_msg)
-                        
-                        try:
-                            # 上传文件，对于视频类型，传入缩略图
-                            if media_type == "video":
-                                message = await self.client.send_video(
-                                    chat_id=channel_id,
-                                    video=str(file_path),
-                                    caption=caption,
-                                    supports_streaming=True,
-                                    thumb=thumbnail_path
-                                )
-                            else:
-                                # 其他类型使用通用的上传方法
-                                message = await self._upload_file(file_path, caption, channel_id, media_type)
-                            
-                            if message:
-                                # 记录上传历史
-                                self.history_manager.add_upload_record(
-                                    str(file_path),
-                                    channel,
-                                    os.path.getsize(file_path),
-                                    media_type
-                                )
-                                success_msg = f"文件 {file_path.name} 上传到频道 {channel_info} 成功"
-                                logger.info(success_msg)
-                                self.emit("info", success_msg)
-                                
-                                # 记录第一次成功上传的信息，用于后续复制转发
-                                if not first_upload_success:
-                                    first_upload_success = True
-                                    first_success_channel_id = channel_id
-                                    first_success_message_id = message.id
-                        except FloodWait as e:
-                            wait_msg = f"上传文件遇到限制，等待 {e.x} 秒后重试"
-                            logger.warning(wait_msg)
-                            self.emit("warning", wait_msg)
-                            await asyncio.sleep(e.x)
-                            # 重试上传
-                            try:
-                                if media_type == "video":
-                                    message = await self.client.send_video(
-                                        chat_id=channel_id,
-                                        video=str(file_path),
-                                        caption=caption,
-                                        supports_streaming=True,
-                                        thumb=thumbnail_path
-                                    )
-                                else:
-                                    message = await self._upload_file(file_path, caption, channel_id, media_type)
-                                
-                                if message:
-                                    # 记录上传历史
-                                    self.history_manager.add_upload_record(
-                                        str(file_path),
-                                        channel,
-                                        os.path.getsize(file_path),
-                                        media_type
-                                    )
-                                    success_msg = f"文件 {file_path.name} 重试上传到频道 {channel_info} 成功"
-                                    logger.info(success_msg)
-                                    self.emit("info", success_msg)
-                                    
-                                    # 记录第一次成功上传的信息，用于后续复制转发
-                                    if not first_upload_success:
-                                        first_upload_success = True
-                                        first_success_channel_id = channel_id
-                                        first_success_message_id = message.id
-                            except Exception as e:
-                                error_msg = f"重试上传文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
-                                logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="UPLOAD_RETRY", recoverable=True)
-                                continue
-                        except Exception as e:
-                            error_msg = f"上传文件 {file_path.name} 到频道 {channel_info} 失败: {e}"
-                            logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="UPLOAD", recoverable=True)
-                            continue
-                    
-                    # 上传延迟
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    error_msg = f"处理文件 {file_path.name} 上传到频道 {channel_info} 时出错: {e}"
-                    logger.error(error_msg)
-                    import traceback
-                    error_details = traceback.format_exc()
-                    logger.error(error_details)
-                    self.emit("error", error_msg, error_type="PROCESS", recoverable=True, details=error_details)
-                    continue
-            
-            # 清理缩略图
-            if thumbnail_path:
-                self.video_processor.delete_thumbnail(thumbnail_path)
-            
-            # 如果没有成功上传到任何一个频道，提示错误
-            if not first_upload_success:
-                error_msg = f"文件 {file_path.name} 无法上传到任何目标频道"
-                logger.error(error_msg)
-                self.emit("error", error_msg, error_type="ALL_FAILED", recoverable=True)
-                return False
-            
-            return True
-            
-        except Exception as e:
-            error_msg = f"上传文件 {file_path.name} 失败: {e}"
-            logger.error(error_msg)
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(error_details)
-            self.emit("error", error_msg, error_type="UPLOAD_PROCESS", recoverable=True, details=error_details)
-            
-            # 清理缩略图
-            if thumbnail_path:
-                self.video_processor.delete_thumbnail(thumbnail_path)
-                
-            return False
-    
-    async def _upload_and_forward_media_group(self, media_files: List[Tuple[Path, str]], caption: str, 
-                                     sorted_target_channels: List[Tuple[str, Optional[int], str]], 
-                                     group_name: str) -> bool:
-        """
-        智能上传媒体组并转发到其他频道
-        
-        首先尝试上传到一个非禁止转发的频道，然后复制转发到其他频道
-        
-        Args:
-            media_files: 媒体文件列表，格式为 [(file_path, media_type), ...]
-            caption: 媒体组标题
-            sorted_target_channels: 已排序的目标频道列表，格式为 (channel_id_or_username, resolved_id, display_name)
-            group_name: 媒体组名称
-            
-        Returns:
-            bool: 是否成功上传和转发
-        """
-        # 限制每个媒体组最多10个文件（Telegram API限制）
-        if len(media_files) > 10:
-            warning_msg = f"媒体组 {group_name} 文件数量超过10个，将只上传前10个文件"
-            logger.warning(warning_msg)
-            self.emit("warning", warning_msg)
-            media_files = media_files[:10]
-        
-        # 确保媒体文件列表不为空
-        if not media_files:
-            warning_msg = f"媒体组 {group_name} 中没有有效媒体文件"
-            logger.warning(warning_msg)
-            self.emit("warning", warning_msg)
-            return False
-        
-        # 为媒体组中的视频生成缩略图
-        thumbnails = {}
-        for file_path, media_type in media_files:
-            # 检查是否已取消
+        for idx, file in enumerate(files):
+            # 检查任务是否已取消
             if self.task_context and self.task_context.cancel_token.is_cancelled:
-                logger.info("上传任务已取消")
-                self.emit("status", "上传任务已取消")
-                # 清理已生成的缩略图
-                for thumb_path in thumbnails.values():
-                    self.video_processor.delete_thumbnail(thumb_path)
-                return False
+                self.log.status("上传任务已取消")
+                break
+                
+            # 等待暂停恢复
+            if self.task_context:
+                await self.task_context.wait_if_paused()
             
-            if media_type == "video":
-                try:
-                    thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
-                    if thumbnail_path:
-                        thumbnails[str(file_path)] = thumbnail_path
-                        logger.info(f"为视频 {file_path.name} 生成缩略图成功")
-                        self.emit("info", f"为视频 {file_path.name} 生成缩略图成功")
-                except Exception as e:
-                    error_msg = f"为视频 {file_path.name} 生成缩略图失败: {e}"
-                    logger.error(error_msg)
-                    self.emit("error", error_msg, error_type="THUMBNAIL_GENERATION", recoverable=True)
-                    # 继续上传，但没有缩略图
+            # 更新进度
+            progress = (idx / total_files) * 100
+            self.emit("progress", progress, idx, total_files)
+            
+            self.log.status(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
+            
+            # 上传到所有目标频道
+            file_uploaded = False
+            for target, target_id, target_info in targets:
+                # 检查任务是否已取消
+                if self.task_context and self.task_context.cancel_token.is_cancelled:
+                    self.log.status("上传任务已取消")
+                    break
+                    
+                # 等待暂停恢复
+                if self.task_context:
+                    await self.task_context.wait_if_paused()
+                
+                self.log.status(f"上传文件 [{file.name}] 到 {target_info}")
+                
+                # 上传文件
+                if await self._upload_single_file(file, target_id):
+                    file_uploaded = True
+                
+                # 简单的速率限制，防止过快发送请求
+                await asyncio.sleep(1)
+            
+            if file_uploaded:
+                upload_count += 1
+            
+            # 间隔时间
+            await asyncio.sleep(0.5)
         
-        try:
-            # 检查所有频道是否都已上传所有文件
-            for channel, _, channel_info in sorted_target_channels:
-                # 检查是否已取消
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    logger.info("上传任务已取消")
-                    self.emit("status", "上传任务已取消")
-                    # 清理缩略图
-                    for thumb_path in thumbnails.values():
-                        self.video_processor.delete_thumbnail(thumb_path)
-                    return False
-                
-                # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
-                
-                # 检查是否已上传到此频道
-                all_uploaded = True
-                for file_path, _ in media_files:
-                    if not self.history_manager.is_file_uploaded(str(file_path), channel):
-                        all_uploaded = False
-                        break
-                
-                if all_uploaded:
-                    logger.debug(f"媒体组 {group_name} 已上传到频道 {channel_info}，跳过")
-                    self.emit("info", f"媒体组 {group_name} 已上传到频道 {channel_info}，跳过")
-                    continue
-            
-            # 创建媒体组
-            media_group = []
-            for i, (file_path, media_type) in enumerate(media_files):
-                # 只在第一个媒体上添加标题
-                file_caption = caption if i == 0 else ""
-                
-                if media_type == "photo":
-                    media_group.append(
-                        InputMediaPhoto(str(file_path), caption=file_caption)
-                    )
-                elif media_type == "video":
-                    # 检查是否有缩略图
-                    thumb = thumbnails.get(str(file_path))
-                    media_group.append(
-                        InputMediaVideo(
-                            str(file_path), 
-                            caption=file_caption, 
-                            supports_streaming=True,
-                            thumb=thumb
-                        )
-                    )
-                elif media_type == "document":
-                    media_group.append(
-                        InputMediaDocument(str(file_path), caption=file_caption)
-                    )
-                elif media_type == "audio":
-                    media_group.append(
-                        InputMediaAudio(str(file_path), caption=file_caption)
-                    )
-            
-            # 记录是否已经成功上传到某个非禁止转发频道
-            first_upload_success = False
-            first_success_channel_id = None
-            first_success_message_ids = None  # 对于媒体组，可能有多个消息ID
-            
-            # 上传媒体组到每个目标频道
-            for channel, channel_id, channel_info in sorted_target_channels:
-                # 检查是否已取消
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    logger.info("上传任务已取消")
-                    self.emit("status", "上传任务已取消")
-                    # 清理缩略图
-                    for thumb_path in thumbnails.values():
-                        self.video_processor.delete_thumbnail(thumb_path)
-                    return False
-                
-                # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
-                
-                # 检查是否已上传到此频道
-                all_uploaded = True
-                for file_path, _ in media_files:
-                    if not self.history_manager.is_file_uploaded(str(file_path), channel):
-                        all_uploaded = False
-                        break
-                
-                if all_uploaded:
-                    logger.debug(f"媒体组 {group_name} 已上传到频道 {channel_info}，跳过")
-                    self.emit("info", f"媒体组 {group_name} 已上传到频道 {channel_info}，跳过")
-                    continue
-                
-                try:
-                    # 如果尚未解析频道ID，现在解析
-                    if channel_id is None:
-                        channel_id = await self.channel_resolver.get_channel_id(channel)
-                        channel_info, _ = await self.channel_resolver.format_channel_info(channel_id)
-                    
-                    # 发送状态更新
-                    status_msg = f"正在上传媒体组 {group_name} 到频道 {channel_info}"
-                    logger.info(status_msg)
-                    self.emit("status", status_msg)
-                    
-                    # 如果已经成功上传到非禁止转发频道，使用复制转发方式
-                    if first_upload_success and first_success_channel_id and first_success_message_ids:
-                        info_msg = f"使用复制转发方式将媒体组 {group_name} 从已上传频道转发到 {channel_info}"
-                        logger.info(info_msg)
-                        self.emit("info", info_msg)
-                        
-                        try:
-                            if len(media_group) == 1:
-                                # 单个媒体使用copy_message
-                                forwarded = await self.client.copy_message(
-                                    chat_id=channel_id,
-                                    from_chat_id=first_success_channel_id,
-                                    message_id=first_success_message_ids[0]
-                                )
-                            else:
-                                # 媒体组使用copy_media_group
-                                forwarded = await self.client.copy_media_group(
-                                    chat_id=channel_id,
-                                    from_chat_id=first_success_channel_id,
-                                    message_id=first_success_message_ids[0]
-                                )
-                            
-                            # 记录上传历史
-                            for file_path, media_type in media_files:
-                                self.history_manager.add_upload_record(
-                                    str(file_path),
-                                    channel,
-                                    os.path.getsize(file_path),
-                                    media_type
-                                )
-                            
-                            success_msg = f"媒体组 {group_name} 使用copy_media_group复制到频道 {channel_info} 成功"
-                            logger.info(success_msg)
-                            self.emit("info", success_msg)
-                            
-                            # 添加上传延迟
-                            delay_time = self.upload_config.delay_between_uploads if hasattr(self.upload_config, 'delay_between_uploads') else 2
-                            delay_msg = f"等待 {delay_time} 秒后继续下一个上传"
-                            logger.debug(delay_msg)
-                            self.emit("debug", delay_msg)
-                            await asyncio.sleep(delay_time)
-                        except FloodWait as e:
-                            wait_msg = f"复制转发遇到限制，等待 {e.x} 秒后重试"
-                            logger.warning(wait_msg)
-                            self.emit("warning", wait_msg)
-                            await asyncio.sleep(e.x)
-                            # 重试复制转发
-                            try:
-                                if len(media_group) == 1:
-                                    # 单个媒体使用copy_message
-                                    forwarded = await self.client.copy_message(
-                                        chat_id=channel_id,
-                                        from_chat_id=first_success_channel_id,
-                                        message_id=first_success_message_ids[0]
-                                    )
-                                else:
-                                    # 媒体组使用copy_media_group
-                                    forwarded = await self.client.copy_media_group(
-                                        chat_id=channel_id,
-                                        from_chat_id=first_success_channel_id,
-                                        message_id=first_success_message_ids[0]
-                                    )
-                                
-                                # 记录上传历史
-                                for file_path, media_type in media_files:
-                                    self.history_manager.add_upload_record(
-                                        str(file_path),
-                                        channel,
-                                        os.path.getsize(file_path),
-                                        media_type
-                                    )
-                                
-                                success_msg = f"媒体组 {group_name} 重试使用copy_media_group复制到频道 {channel_info} 成功"
-                                logger.info(success_msg)
-                                self.emit("info", success_msg)
-                                
-                                # 添加上传延迟
-                                delay_time = self.upload_config.delay_between_uploads if hasattr(self.upload_config, 'delay_between_uploads') else 2
-                                delay_msg = f"等待 {delay_time} 秒后继续下一个上传"
-                                logger.debug(delay_msg)
-                                self.emit("debug", delay_msg)
-                                await asyncio.sleep(delay_time)
-                            except Exception as e:
-                                error_msg = f"重试使用copy_media_group复制媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
-                                logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP_RETRY", recoverable=True)
-                                continue
-                        except Exception as e:
-                            error_msg = f"使用copy_media_group复制媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
-                            logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="COPY_MEDIA_GROUP", recoverable=True)
-                            continue
-                    else:
-                        # 首次上传，直接发送媒体组
-                        info_msg = f"直接上传媒体组 {group_name} 到频道 {channel_info}"
-                        logger.info(info_msg)
-                        self.emit("info", info_msg)
-                        
-                        try:
-                            if len(media_group) == 1:
-                                # 单个媒体
-                                if isinstance(media_group[0], InputMediaPhoto):
-                                    message = await self.client.send_photo(
-                                        chat_id=channel_id,
-                                        photo=media_group[0].media,
-                                        caption=media_group[0].caption
-                                    )
-                                    messages = [message]
-                                elif isinstance(media_group[0], InputMediaVideo):
-                                    message = await self.client.send_video(
-                                        chat_id=channel_id,
-                                        video=media_group[0].media,
-                                        caption=media_group[0].caption,
-                                        supports_streaming=True,
-                                        thumb=thumbnails.get(media_group[0].media)
-                                    )
-                                    messages = [message]
-                                elif isinstance(media_group[0], InputMediaDocument):
-                                    message = await self.client.send_document(
-                                        chat_id=channel_id,
-                                        document=media_group[0].media,
-                                        caption=media_group[0].caption
-                                    )
-                                    messages = [message]
-                                elif isinstance(media_group[0], InputMediaAudio):
-                                    message = await self.client.send_audio(
-                                        chat_id=channel_id,
-                                        audio=media_group[0].media,
-                                        caption=media_group[0].caption
-                                    )
-                                    messages = [message]
-                                else:
-                                    error_msg = f"不支持的媒体类型: {type(media_group[0])}"
-                                    logger.error(error_msg)
-                                    self.emit("error", error_msg, error_type="UNSUPPORTED_MEDIA", recoverable=True)
-                                    continue
-                            else:
-                                # 多个媒体组成的媒体组
-                                messages = await self.client.send_media_group(
-                                    chat_id=channel_id,
-                                    media=media_group
-                                )
-                            
-                            # 记录上传历史
-                            for file_path, media_type in media_files:
-                                self.history_manager.add_upload_record(
-                                    str(file_path),
-                                    channel,
-                                    os.path.getsize(file_path),
-                                    media_type
-                                )
-                            
-                            success_msg = f"媒体组 {group_name} 上传到频道 {channel_info} 成功"
-                            logger.info(success_msg)
-                            self.emit("info", success_msg)
-                            
-                            # 记录第一次成功上传的信息，用于后续复制转发
-                            if not first_upload_success and messages:
-                                first_upload_success = True
-                                first_success_channel_id = channel_id
-                                first_success_message_ids = [msg.id for msg in messages]
-                        except FloodWait as e:
-                            wait_msg = f"上传媒体组遇到限制，等待 {e.x} 秒后重试"
-                            logger.warning(wait_msg)
-                            self.emit("warning", wait_msg)
-                            await asyncio.sleep(e.x)
-                            # 重试上传
-                            try:
-                                if len(media_group) == 1:
-                                    # 单个媒体
-                                    if isinstance(media_group[0], InputMediaPhoto):
-                                        message = await self.client.send_photo(
-                                            chat_id=channel_id,
-                                            photo=media_group[0].media,
-                                            caption=media_group[0].caption
-                                        )
-                                        messages = [message]
-                                    elif isinstance(media_group[0], InputMediaVideo):
-                                        message = await self.client.send_video(
-                                            chat_id=channel_id,
-                                            video=media_group[0].media,
-                                            caption=media_group[0].caption,
-                                            supports_streaming=True,
-                                            thumb=thumbnails.get(media_group[0].media)
-                                        )
-                                        messages = [message]
-                                    elif isinstance(media_group[0], InputMediaDocument):
-                                        message = await self.client.send_document(
-                                            chat_id=channel_id,
-                                            document=media_group[0].media,
-                                            caption=media_group[0].caption
-                                        )
-                                        messages = [message]
-                                    elif isinstance(media_group[0], InputMediaAudio):
-                                        message = await self.client.send_audio(
-                                            chat_id=channel_id,
-                                            audio=media_group[0].media,
-                                            caption=media_group[0].caption
-                                        )
-                                        messages = [message]
-                                    else:
-                                        error_msg = f"不支持的媒体类型: {type(media_group[0])}"
-                                        logger.error(error_msg)
-                                        self.emit("error", error_msg, error_type="UNSUPPORTED_MEDIA", recoverable=True)
-                                        continue
-                                else:
-                                    # 多个媒体组成的媒体组
-                                    messages = await self.client.send_media_group(
-                                        chat_id=channel_id,
-                                        media=media_group
-                                    )
-                                
-                                # 记录上传历史
-                                for file_path, media_type in media_files:
-                                    self.history_manager.add_upload_record(
-                                        str(file_path),
-                                        channel,
-                                        os.path.getsize(file_path),
-                                        media_type
-                                    )
-                                
-                                success_msg = f"媒体组 {group_name} 重试上传到频道 {channel_info} 成功"
-                                logger.info(success_msg)
-                                self.emit("info", success_msg)
-                                
-                                # 记录第一次成功上传的信息，用于后续复制转发
-                                if not first_upload_success and messages:
-                                    first_upload_success = True
-                                    first_success_channel_id = channel_id
-                                    first_success_message_ids = [msg.id for msg in messages]
-                            except Exception as e:
-                                error_msg = f"重试上传媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
-                                logger.error(error_msg)
-                                self.emit("error", error_msg, error_type="UPLOAD_RETRY", recoverable=True)
-                                continue
-                        except Exception as e:
-                            error_msg = f"上传媒体组 {group_name} 到频道 {channel_info} 失败: {e}"
-                            logger.error(error_msg)
-                            self.emit("error", error_msg, error_type="UPLOAD", recoverable=True)
-                            continue
-                    
-                    # 上传延迟
-                    await asyncio.sleep(2)
-                
-                except Exception as e:
-                    error_msg = f"处理媒体组 {group_name} 上传到频道 {channel_info} 时出错: {e}"
-                    logger.error(error_msg)
-                    import traceback
-                    error_details = traceback.format_exc()
-                    logger.error(error_details)
-                    self.emit("error", error_msg, error_type="PROCESS", recoverable=True, details=error_details)
-                    continue
-            
-            # 清理缩略图
-            for thumbnail_path in thumbnails.values():
-                self.video_processor.delete_thumbnail(thumbnail_path)
-            
-            # 如果没有成功上传到任何一个频道，提示错误
-            if not first_upload_success:
-                error_msg = f"媒体组 {group_name} 无法上传到任何目标频道"
-                logger.error(error_msg)
-                self.emit("error", error_msg, error_type="ALL_FAILED", recoverable=True)
-                return False
-            
-            return True
-            
-        except Exception as e:
-            error_msg = f"上传媒体组 {group_name} 失败: {e}"
-            logger.error(error_msg)
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(error_details)
-            self.emit("error", error_msg, error_type="UPLOAD_PROCESS", recoverable=True, details=error_details)
-            
-            # 清理缩略图
-            for thumbnail_path in thumbnails.values():
-                self.video_processor.delete_thumbnail(thumbnail_path)
-                
-            return False 
+        return upload_count 
