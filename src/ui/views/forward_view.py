@@ -222,9 +222,14 @@ class ForwardView(QWidget):
     
     def _create_forward_panel(self):
         """创建转发规则和状态面板"""
-        # 转发规则列表
-        rules_group = QGroupBox("转发规则列表")
-        rules_layout = QVBoxLayout(rules_group)
+        # 创建底部标签页容器
+        self.bottom_tabs = QTabWidget()
+        self.bottom_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # 创建转发规则标签页
+        rules_tab = QWidget()
+        rules_layout = QVBoxLayout(rules_tab)
+        rules_layout.setContentsMargins(6, 6, 6, 6)
         
         # 创建规则表格
         self.rules_table = QTableWidget()
@@ -237,12 +242,10 @@ class ForwardView(QWidget):
         
         rules_layout.addWidget(self.rules_table)
         
-        # 添加到主布局
-        self.main_layout.addWidget(rules_group, 2)  # 给规则表格更多空间
-        
-        # 转发状态面板
-        self.status_group = QGroupBox("转发状态")
-        status_layout = QVBoxLayout(self.status_group)
+        # 创建转发状态标签页
+        status_tab = QWidget()
+        status_layout = QVBoxLayout(status_tab)
+        status_layout.setContentsMargins(6, 6, 6, 6)
         
         # 状态表格
         self.status_table = QTableWidget()
@@ -279,8 +282,12 @@ class ForwardView(QWidget):
         
         status_layout.addLayout(progress_layout)
         
-        # 添加到主布局
-        self.main_layout.addWidget(self.status_group, 1)
+        # 将标签页添加到标签容器
+        self.bottom_tabs.addTab(rules_tab, "转发规则")
+        self.bottom_tabs.addTab(status_tab, "转发状态")
+        
+        # 添加标签容器到主布局
+        self.main_layout.addWidget(self.bottom_tabs, 1)
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
