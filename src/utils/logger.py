@@ -14,7 +14,9 @@ log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
 # 生成日志文件名（按日期）
-log_file = log_dir / f"tg_forwarder_{datetime.now().strftime('%Y%m%d')}.log"
+today = datetime.now().strftime('%Y%m%d')
+daily_log_file = log_dir / f"tg_forwarder_{today}.log"
+fixed_log_file = log_dir / "tg_manager.log"
 
 # 清除默认处理器
 logger.remove()
@@ -26,13 +28,23 @@ logger.add(
     level="INFO"
 )
 
-# 添加文件处理器
+# 添加按日期的文件处理器
 logger.add(
-    log_file,
+    daily_log_file,
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {function}:{line} - {message}",
     level="DEBUG",
     rotation="00:00",  # 每天零点创建新日志文件
     retention="30 days",  # 保留30天的日志文件
+    encoding="utf-8"
+)
+
+# 添加固定名称的日志文件处理器
+logger.add(
+    fixed_log_file,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {function}:{line} - {message}",
+    level="DEBUG",
+    rotation="10 MB",  # 每10MB轮换
+    retention=3,  # 保留3个备份
     encoding="utf-8"
 )
 

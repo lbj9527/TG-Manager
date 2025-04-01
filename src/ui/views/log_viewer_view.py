@@ -85,107 +85,126 @@ class LogViewerView(QWidget):
             if log_file and os.path.exists(log_file):
                 return log_file
         
-        # 默认位置
-        default_paths = [
-            "logs/tg_manager.log",
+        # 使用当前日期获取日志文件
+        today = datetime.datetime.now().strftime('%Y-%m-%d')
+        today_simple = datetime.datetime.now().strftime('%Y%m%d')
+        
+        # 检查不同格式的日志文件
+        log_paths = [
+            f"logs/app_{today}.log",  # UI应用日志
+            f"logs/tg_forwarder_{today_simple}.log",  # 转发器日志
+            "logs/tg_manager.log",  # 默认名称
             "./tg_manager.log",
             "../logs/tg_manager.log"
         ]
         
-        for path in default_paths:
+        # 尝试查找logs目录下的所有日志文件
+        logs_dir = Path("logs")
+        if logs_dir.exists() and logs_dir.is_dir():
+            # 列出logs目录下的所有日志文件并按修改时间排序
+            log_files = sorted(
+                [f for f in logs_dir.glob("*.log") if f.is_file()],
+                key=lambda x: os.path.getmtime(x),
+                reverse=True  # 最新的文件排在前面
+            )
+            
+            if log_files:
+                # 如果找到日志文件，返回最新的一个
+                logger.debug(f"找到最新的日志文件: {log_files[0]}")
+                return str(log_files[0])
+        
+        # 检查指定路径
+        for path in log_paths:
             if os.path.exists(path):
+                logger.debug(f"找到日志文件: {path}")
                 return path
         
-        # 如果找不到，返回默认路径
-        return "logs/tg_manager.log"
+        # 如果找不到，返回默认路径并记录警告
+        logger.warning(f"未找到有效的日志文件，将使用默认路径: logs/app_{today}.log")
+        return f"logs/app_{today}.log"
     
     def _create_control_panel(self):
         """创建控制面板"""
-        control_panel = QGroupBox("日志控制")
-        control_layout = QVBoxLayout(control_panel)
+        # 创建控制面板分组框
+        control_group = QGroupBox("日志控制")
+        control_layout = QVBoxLayout(control_group)
         
-        # 第一行：日志级别筛选和路径
-        filter_layout = QHBoxLayout()
+        # 文件路径面板
+        path_panel = QHBoxLayout()
+        path_panel.addWidget(QLabel("日志文件:"))
         
-        # 日志级别选择
-        level_layout = QHBoxLayout()
-        level_layout.addWidget(QLabel("日志级别:"))
+        self.path_input = QLineEdit(self.log_file_path)
+        self.path_input.setReadOnly(True)
+        path_panel.addWidget(self.path_input, 1)
+        
+        browse_button = QPushButton("浏览...")
+        browse_button.clicked.connect(self._browse_log_file)
+        path_panel.addWidget(browse_button)
+        
+        refresh_button = QPushButton("刷新")
+        refresh_button.clicked.connect(self._refresh_logs)
+        path_panel.addWidget(refresh_button)
+        
+        control_layout.addLayout(path_panel)
+        
+        # 文件路径状态标签
+        self.file_path_label = QLabel(f"当前日志文件: {self.log_file_path}")
+        control_layout.addWidget(self.file_path_label)
+        
+        # 筛选面板
+        filter_panel = QHBoxLayout()
+        
+        # 关键字筛选
+        filter_panel.addWidget(QLabel("关键字:"))
+        
+        self.filter_input = QLineEdit()
+        self.filter_input.setPlaceholderText("输入关键字筛选日志")
+        self.filter_input.textChanged.connect(self._filter_changed)
+        filter_panel.addWidget(self.filter_input, 1)
+        
+        # 日志级别筛选
+        filter_panel.addWidget(QLabel("级别:"))
         
         self.level_combo = QComboBox()
-        self.level_combo.addItem("全部", "ALL")
+        self.level_combo.addItem("所有级别", "ALL")
         self.level_combo.addItem("调试", "DEBUG")
         self.level_combo.addItem("信息", "INFO")
         self.level_combo.addItem("警告", "WARNING")
         self.level_combo.addItem("错误", "ERROR")
         self.level_combo.addItem("严重", "CRITICAL")
-        self.level_combo.setCurrentIndex(0)
-        self.level_combo.currentIndexChanged.connect(self._apply_filters)
+        self.level_combo.currentIndexChanged.connect(self._filter_changed)
+        filter_panel.addWidget(self.level_combo)
         
-        level_layout.addWidget(self.level_combo)
-        filter_layout.addLayout(level_layout)
-        
-        filter_layout.addStretch()
-        
-        # 日志文件路径
-        path_layout = QHBoxLayout()
-        path_layout.addWidget(QLabel("日志文件:"))
-        
-        self.path_input = QLineEdit()
-        self.path_input.setText(self.log_file_path)
-        self.path_input.setReadOnly(True)
-        
-        self.browse_button = QPushButton("浏览...")
-        self.browse_button.clicked.connect(self._browse_log_file)
-        
-        path_layout.addWidget(self.path_input)
-        path_layout.addWidget(self.browse_button)
-        
-        filter_layout.addLayout(path_layout)
-        
-        control_layout.addLayout(filter_layout)
-        
-        # 第二行：关键词搜索和控制按钮
-        search_layout = QHBoxLayout()
-        
-        # 关键词搜索
-        search_layout.addWidget(QLabel("搜索:"))
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("输入关键词进行搜索...")
-        self.search_input.textChanged.connect(self._apply_filters)
-        
-        search_layout.addWidget(self.search_input)
-        
-        # 大小写敏感
-        self.case_sensitive = QCheckBox("区分大小写")
-        self.case_sensitive.setChecked(False)
-        self.case_sensitive.stateChanged.connect(self._apply_filters)
-        
-        search_layout.addWidget(self.case_sensitive)
-        
-        # 控制按钮
-        self.refresh_button = QPushButton("刷新")
-        self.refresh_button.clicked.connect(self._refresh_logs)
+        # 自动刷新和滚动
+        self.auto_refresh_check = QCheckBox("自动刷新")
+        self.auto_refresh_check.setChecked(True)
+        self.auto_refresh_check.toggled.connect(self._toggle_auto_refresh)
+        filter_panel.addWidget(self.auto_refresh_check)
         
         self.auto_scroll_check = QCheckBox("自动滚动")
-        self.auto_scroll_check.setChecked(self.auto_scroll)
-        self.auto_scroll_check.stateChanged.connect(self._toggle_auto_scroll)
+        self.auto_scroll_check.setChecked(True)
+        self.auto_scroll_check.toggled.connect(self._toggle_auto_scroll)
+        filter_panel.addWidget(self.auto_scroll_check)
         
-        self.clear_button = QPushButton("清空显示")
-        self.clear_button.clicked.connect(self._clear_display)
+        control_layout.addLayout(filter_panel)
         
-        self.export_button = QPushButton("导出日志")
-        self.export_button.clicked.connect(self._export_logs)
+        # 导出和清空按钮
+        button_panel = QHBoxLayout()
         
-        search_layout.addWidget(self.refresh_button)
-        search_layout.addWidget(self.auto_scroll_check)
-        search_layout.addWidget(self.clear_button)
-        search_layout.addWidget(self.export_button)
+        clear_button = QPushButton("清空过滤器")
+        clear_button.clicked.connect(self._clear_filters)
+        button_panel.addWidget(clear_button)
         
-        control_layout.addLayout(search_layout)
+        button_panel.addStretch(1)
+        
+        export_button = QPushButton("导出日志")
+        export_button.clicked.connect(self._export_logs)
+        button_panel.addWidget(export_button)
+        
+        control_layout.addLayout(button_panel)
         
         # 添加到主布局
-        self.main_layout.addWidget(control_panel)
+        self.main_layout.addWidget(control_group)
     
     def _create_log_display(self):
         """创建日志显示区域"""
@@ -225,6 +244,19 @@ class LogViewerView(QWidget):
             # 检查日志文件是否存在
             if not os.path.exists(self.log_file_path):
                 logger.warning(f"日志文件不存在: {self.log_file_path}")
+                # 更新UI显示空消息
+                self.log_table.setRowCount(0)
+                if hasattr(self, 'file_path_label'):
+                    self.file_path_label.setText(f"日志文件不存在: {self.log_file_path}")
+                return
+            
+            # 检查日志文件大小
+            if os.path.getsize(self.log_file_path) == 0:
+                logger.warning(f"日志文件为空: {self.log_file_path}")
+                # 清空表格
+                self.log_table.setRowCount(0)
+                if hasattr(self, 'file_path_label'):
+                    self.file_path_label.setText(f"日志文件为空: {self.log_file_path}")
                 return
             
             # 清空现有日志条目
@@ -236,125 +268,152 @@ class LogViewerView(QWidget):
             
             # 解析日志条目
             # 使用正则表达式解析日志格式
-            # 假设格式为: [YYYY-MM-DD HH:MM:SS] [LEVEL] [SOURCE:LINE] Message
-            pattern = r'\[(.*?)\]\s*\[(.*?)\]\s*\[(.*?):(.*?)\]\s*(.*?)$'
+            # 支持两种日志格式:
+            # 1. [YYYY-MM-DD HH:MM:SS] [LEVEL] [SOURCE:LINE] Message
+            # 2. YYYY-MM-DD HH:MM:SS | LEVEL    | SOURCE:FUNCTION:LINE - Message
             
-            for line in log_text.splitlines():
-                if not line.strip():
-                    continue
-                    
-                match = re.match(pattern, line, re.MULTILINE)
-                if match:
-                    timestamp, level, source, line_num, message = match.groups()
+            # 尝试匹配第一种格式
+            pattern1 = r'\[(.*?)\]\s*\[(.*?)\]\s*\[(.*?):(.*?)\]\s*(.*?)$'
+            matches1 = re.findall(pattern1, log_text, re.MULTILINE)
+            
+            # 尝试匹配第二种格式
+            pattern2 = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*?):(.*?):(.*?)\s*-\s*(.*?)$'
+            matches2 = re.findall(pattern2, log_text, re.MULTILINE)
+            
+            # 根据匹配结果选择解析方式
+            if matches1:
+                # 解析第一种格式的日志
+                for match in matches1:
+                    timestamp, level, source, line, message = match
                     entry = {
                         'timestamp': timestamp.strip(),
                         'level': level.strip(),
                         'source': source.strip(),
-                        'line': line_num.strip(),
+                        'line': line.strip(),
                         'message': message.strip()
                     }
                     self.log_entries.append(entry)
-                else:
-                    # 如果无法解析，将整行作为消息添加
-                    # 尝试提取时间戳和级别
-                    simple_pattern = r'\[(.*?)\]\s*\[(.*?)\]'
-                    simple_match = re.match(simple_pattern, line)
-                    
-                    if simple_match:
-                        timestamp, level = simple_match.groups()
-                        remaining = re.sub(simple_pattern, '', line).strip()
-                        entry = {
-                            'timestamp': timestamp.strip(),
-                            'level': level.strip(),
-                            'source': '-',
-                            'line': '-',
-                            'message': remaining
-                        }
-                    else:
-                        # 如果连时间戳和级别都无法提取，将整行作为消息
-                        entry = {
-                            'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'level': 'INFO',
-                            'source': '-',
-                            'line': '-',
-                            'message': line.strip()
-                        }
-                    
+            elif matches2:
+                # 解析第二种格式的日志
+                for match in matches2:
+                    timestamp, level, source, function, line, message = match
+                    entry = {
+                        'timestamp': timestamp.strip(),
+                        'level': level.strip(),
+                        'source': f"{source.strip()}:{function.strip()}",
+                        'line': line.strip(),
+                        'message': message.strip()
+                    }
                     self.log_entries.append(entry)
+            else:
+                # 无法匹配已知日志格式
+                logger.warning(f"无法解析日志文件格式: {self.log_file_path}")
+                # 清空表格
+                self.log_table.setRowCount(0)
+                if hasattr(self, 'file_path_label'):
+                    self.file_path_label.setText(f"无法解析日志文件格式: {self.log_file_path}")
+                return
             
-            # 应用过滤器并显示
+            # 根据过滤条件显示日志
             self._apply_filters()
             
+            # 如果启用了自动滚动，滚动到最新日志
+            if self.auto_scroll and self.log_table.rowCount() > 0:
+                self.log_table.scrollToBottom()
+            
+            # 更新文件路径标签
+            if hasattr(self, 'file_path_label'):
+                self.file_path_label.setText(f"当前日志文件: {self.log_file_path}")
+            
         except Exception as e:
-            logger.error(f"加载日志文件失败: {e}")
-            QMessageBox.critical(
-                self,
-                "错误",
-                f"加载日志文件失败: {e}",
-                QMessageBox.Ok
-            )
+            logger.error(f"加载日志失败: {e}")
+            # 清空表格
+            self.log_table.setRowCount(0)
+            if hasattr(self, 'file_path_label'):
+                self.file_path_label.setText(f"加载日志失败: {e}")
+    
+    def _filter_changed(self):
+        """当过滤条件变化时调用"""
+        self._apply_filters()
+        
+    def _toggle_auto_refresh(self, enabled):
+        """切换自动刷新功能
+        
+        Args:
+            enabled: 是否启用自动刷新
+        """
+        if enabled:
+            self.refresh_timer.start(2000)  # 每2秒刷新一次
+        else:
+            self.refresh_timer.stop()
+            
+    def _clear_filters(self):
+        """清空所有过滤条件"""
+        self.filter_input.clear()
+        self.level_combo.setCurrentIndex(0)  # 设置为"所有级别"
+        self._apply_filters()
     
     def _apply_filters(self):
-        """应用过滤器并更新显示"""
-        # 获取筛选条件
-        selected_level = self.level_combo.currentData()
-        search_text = self.search_input.text()
-        case_sensitive = self.case_sensitive.isChecked()
-        
-        # 构建正则表达式对象
-        if search_text:
-            if case_sensitive:
-                pattern = re.compile(re.escape(search_text))
-            else:
-                pattern = re.compile(re.escape(search_text), re.IGNORECASE)
-        else:
-            pattern = None
-        
-        # 清空表格
-        self.log_table.setRowCount(0)
-        
-        # 记录匹配的条目数
-        matched_count = 0
-        
-        # 过滤并显示日志
-        for entry in self.log_entries:
-            # 检查日志级别筛选
-            if selected_level != "ALL" and entry['level'] != selected_level:
-                continue
+        """根据筛选条件显示日志"""
+        try:
+            self.log_table.setRowCount(0)  # 清空表格
             
-            # 检查搜索文本
-            if pattern and not (
-                pattern.search(entry['message']) or 
-                pattern.search(entry['source']) or
-                pattern.search(entry['level'])
-            ):
-                continue
+            if not self.log_entries:
+                return
             
-            # 添加到表格
-            row = self.log_table.rowCount()
-            self.log_table.insertRow(row)
+            # 获取筛选条件
+            selected_level = self.level_combo.currentData()
+            search_text = self.filter_input.text()
+            case_sensitive = False  # 默认不区分大小写
             
-            # 设置单元格内容
-            self.log_table.setItem(row, 0, QTableWidgetItem(entry['timestamp']))
+            # 筛选日志条目
+            filtered_entries = []
+            for entry in self.log_entries:
+                # 级别筛选
+                if selected_level != "ALL" and entry['level'] != selected_level:
+                    continue
+                
+                # 关键字筛选
+                if search_text:
+                    message = entry['message']
+                    if not case_sensitive:
+                        message = message.lower()
+                        search_text = search_text.lower()
+                    
+                    if search_text not in message:
+                        continue
+                
+                filtered_entries.append(entry)
             
-            level_item = QTableWidgetItem(entry['level'])
-            level_color = self.LOG_COLORS.get(entry['level'], QColor("#000000"))
-            level_item.setForeground(QBrush(level_color))
-            level_item.setFont(QFont("", -1, QFont.Bold))
-            self.log_table.setItem(row, 1, level_item)
+            # 显示筛选后的日志
+            for row, entry in enumerate(filtered_entries):
+                self.log_table.insertRow(row)
+                
+                # 设置单元格项
+                timestamp_item = QTableWidgetItem(entry['timestamp'])
+                level_item = QTableWidgetItem(entry['level'])
+                source_item = QTableWidgetItem(entry['source'])
+                line_item = QTableWidgetItem(entry['line'])
+                message_item = QTableWidgetItem(entry['message'])
+                
+                # 设置日志级别颜色
+                if entry['level'] in self.LOG_COLORS:
+                    level_color = self.LOG_COLORS[entry['level']]
+                    level_item.setForeground(QBrush(level_color))
+                
+                # 添加到表格
+                self.log_table.setItem(row, 0, timestamp_item)
+                self.log_table.setItem(row, 1, level_item)
+                self.log_table.setItem(row, 2, source_item)
+                self.log_table.setItem(row, 3, line_item)
+                self.log_table.setItem(row, 4, message_item)
             
-            self.log_table.setItem(row, 2, QTableWidgetItem(entry['source']))
-            self.log_table.setItem(row, 3, QTableWidgetItem(entry['line']))
-            self.log_table.setItem(row, 4, QTableWidgetItem(entry['message']))
+            # 如果启用了自动滚动，滚动到最新日志
+            if self.auto_scroll and self.log_table.rowCount() > 0:
+                self.log_table.scrollToBottom()
             
-            matched_count += 1
-        
-        # 如果启用了自动滚动，滚动到最后一行
-        if self.auto_scroll and matched_count > 0:
-            self.log_table.scrollToBottom()
-        
-        # 更新状态栏信息
-        self._update_status_message(f"显示 {matched_count} / {len(self.log_entries)} 条日志记录")
+        except Exception as e:
+            logger.error(f"应用过滤器失败: {e}")
     
     def _refresh_logs(self):
         """刷新日志"""
