@@ -38,12 +38,37 @@ class ListenView(QWidget):
         
         # 设置布局
         self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(2)  # 进一步减小主布局的垂直间距
+        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 进一步减小主布局边距
         self.setLayout(self.main_layout)
         
-        # 创建顶部配置面板（使用滚动区域）
+        # 统一设置群组框样式，减小标题高度
+        self.setStyleSheet("""
+            QGroupBox { 
+                font-weight: bold; 
+                padding-top: 2px; 
+                margin-top: 0.4em; 
+            }
+            QTabWidget::pane {
+                border: 1px solid #444;
+                padding: 1px;
+            }
+            QTabBar::tab {
+                padding: 3px 8px;
+            }
+        """)
+        
+        # 创建配置标签页
+        self.config_tabs = QTabWidget()
+        # 设置配置区域的最大高度，确保消息区域有足够空间
+        self.config_tabs.setMaximumHeight(320)  # 再增加最大高度
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.main_layout.addWidget(self.config_tabs)
+        
+        # 创建配置标签页
         self._create_config_panel()
         
-        # 创建中间消息显示面板
+        # 创建中间消息显示面板（直接添加到主布局）
         self._create_message_panel()
         
         # 创建底部操作按钮
@@ -62,20 +87,12 @@ class ListenView(QWidget):
         logger.info("监听界面初始化完成")
     
     def _create_config_panel(self):
-        """创建顶部配置面板（添加滚动区域）"""
-        # 创建滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QScrollArea.NoFrame)
-        
-        # 创建内容部件
-        config_widget = QWidget()
-        config_layout = QVBoxLayout(config_widget)
-        config_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 监听配置组
-        config_group = QGroupBox("监听配置")
-        config_inner_layout = QVBoxLayout()
+        """创建配置标签页"""
+        # 监听配置标签页
+        self.config_tab = QWidget()
+        config_layout = QVBoxLayout(self.config_tab)
+        config_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
+        config_layout.setSpacing(4)  # 减小间距
         
         # 创建顶部表单面板
         form_layout = QFormLayout()
@@ -104,21 +121,21 @@ class ListenView(QWidget):
         
         self.channel_list = QListWidget()
         self.channel_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        self.channel_list.setMinimumHeight(80)
+        self.channel_list.setMinimumHeight(240)  # 进一步增加频道列表高度
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
         
         # 添加表单、按钮和列表到布局
-        config_inner_layout.addLayout(form_layout)
-        config_inner_layout.addLayout(channel_action_layout)
-        config_inner_layout.addWidget(channel_list_label)
-        config_inner_layout.addWidget(self.channel_list)
+        config_layout.addLayout(form_layout)
+        config_layout.addLayout(channel_action_layout)
+        config_layout.addWidget(channel_list_label)
+        # 给频道列表更大的空间比例
+        config_layout.addWidget(self.channel_list, 1)  # 添加伸展系数
         
-        config_group.setLayout(config_inner_layout)
-        config_layout.addWidget(config_group)
-        
-        # 过滤选项组
-        filter_group = QGroupBox("消息过滤")
-        filter_layout = QVBoxLayout()
+        # 消息过滤标签页
+        self.filter_tab = QWidget()
+        filter_layout = QVBoxLayout(self.filter_tab)
+        filter_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
+        filter_layout.setSpacing(4)  # 减小间距
         
         # 过滤选项表单
         filter_form = QFormLayout()
@@ -196,12 +213,11 @@ class ListenView(QWidget):
         
         filter_layout.addLayout(time_filter_layout)
         
-        filter_group.setLayout(filter_layout)
-        config_layout.addWidget(filter_group)
-        
-        # 通知选项
-        notify_group = QGroupBox("通知配置")
-        notify_layout = QVBoxLayout()
+        # 通知配置标签页
+        self.notify_tab = QWidget()
+        notify_layout = QVBoxLayout(self.notify_tab)
+        notify_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
+        notify_layout.setSpacing(4)  # 减小间距
         
         # 第一行复选框
         notify_row1 = QHBoxLayout()
@@ -241,21 +257,14 @@ class ListenView(QWidget):
         
         notify_layout.addLayout(max_messages_layout)
         
-        notify_group.setLayout(notify_layout)
-        config_layout.addWidget(notify_group)
-        
-        # 添加弹性空间使配置面板向上对齐
-        config_layout.addStretch(1)
-        
-        # 设置滚动区域的内容
-        scroll_area.setWidget(config_widget)
-        
-        # 添加滚动区域到主布局
-        self.main_layout.addWidget(scroll_area)
+        # 将标签页添加到配置标签页部件
+        self.config_tabs.addTab(self.config_tab, "监听配置")
+        self.config_tabs.addTab(self.filter_tab, "消息过滤")
+        self.config_tabs.addTab(self.notify_tab, "通知配置")
     
     def _create_message_panel(self):
         """创建中间消息显示面板"""
-        # 创建标签页容器
+        # 直接创建消息标签页容器，不使用GroupBox
         self.message_tabs = QTabWidget()
         
         # 主消息面板
@@ -272,8 +281,8 @@ class ListenView(QWidget):
         # 设置消息面板的尺寸策略，让它能够占据大部分空间
         self.message_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
-        # 以更大的比例添加消息面板到主布局
-        self.main_layout.addWidget(self.message_tabs, 3)  # 增加伸展系数，使消息面板占用更多空间
+        # 将消息标签页直接添加到主布局，占据更多空间
+        self.main_layout.addWidget(self.message_tabs, 5)  # 增加伸展系数，使消息面板占用更多空间
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""

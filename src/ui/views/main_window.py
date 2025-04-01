@@ -1132,16 +1132,30 @@ class MainWindow(QMainWindow):
         # 调用父类的处理函数
         super().resizeEvent(event)
         
-        # 保存新的窗口尺寸
+        # 使用非立即触发的状态保存，减少资源消耗
+        if hasattr(self, '_resize_timer'):
+            # 如果已经有定时器，则重置它
+            self._resize_timer.stop()
+        else:
+            # 创建延迟执行的定时器
+            self._resize_timer = QTimer(self)
+            self._resize_timer.setSingleShot(True)
+            self._resize_timer.timeout.connect(self._handle_resize_completed)
+        
+        # 500毫秒后执行（只有当调整大小停止时才会触发）
+        self._resize_timer.start(500)
+    
+    def _handle_resize_completed(self):
+        """窗口大小调整完成后的处理"""
         if hasattr(self, 'sidebar_splitter'):
-            # 获取新的窗口高度
-            new_height = event.size().height()
+            # 获取当前窗口高度
+            current_height = self.height()
             
             # 调整分割器中导航树和任务概览的比例
             # 只有当窗口高度大于阈值时才调整，防止在极小的窗口尺寸下产生问题
-            if new_height > 400:
+            if current_height > 400:
                 # 大约保持 40% 导航树, 60% 任务概览
-                self.sidebar_splitter.setSizes([int(new_height * 0.4), int(new_height * 0.6)])
+                self.sidebar_splitter.setSizes([int(current_height * 0.4), int(current_height * 0.6)])
         
         # 发出窗口状态变化信号
         window_state = {
@@ -1267,8 +1281,8 @@ class MainWindow(QMainWindow):
     def _update_resource_usage(self):
         """更新资源使用情况"""
         try:
-            # 使用psutil库获取系统资源使用情况
-            cpu_usage = round(psutil.cpu_percent(interval=0.1), 1)
+            # 使用psutil库获取系统资源使用情况，不使用阻塞的interval参数
+            cpu_usage = round(psutil.cpu_percent(interval=None), 1)
             
             # 获取内存使用情况
             memory = psutil.virtual_memory()
@@ -1358,9 +1372,10 @@ class MainWindow(QMainWindow):
         """异步检查网络连接状态"""
         try:
             # 使用aiohttp尝试连接到Telegram API服务器
-            async with aiohttp.ClientSession() as session:
-                # 设置超时时间为2秒
-                timeout = aiohttp.ClientTimeout(total=2)
+            connector = aiohttp.TCPConnector(ssl=False)  # 关闭SSL验证以加快连接速度
+            async with aiohttp.ClientSession(connector=connector) as session:
+                # 减少超时时间为1秒，避免等待时间过长
+                timeout = aiohttp.ClientTimeout(total=1)
                 async with session.get('https://api.telegram.org', timeout=timeout) as response:
                     if response.status == 200:
                         # 连接正常
@@ -1377,13 +1392,13 @@ class MainWindow(QMainWindow):
         except aiohttp.ClientConnectorError:
             # 无法连接到服务器
             self._update_network_status("断开", "无法连接")
-            logger.error("无法连接到Telegram服务器")
+            logger.warning("无法连接到Telegram服务器")  # 降级为warning，避免频繁error日志
             
         except Exception as e:
             # 其他异常
             self._update_network_status("异常", str(e)[:20])
-            logger.error(f"网络连接检查失败: {e}") 
-
+            logger.warning(f"网络连接检查失败: {e}")  # 降级为warning，避免频繁error日志
+    
     def _close_settings_view(self):
         """关闭设置视图并返回到之前的视图"""
         # 找到设置视图并移除
