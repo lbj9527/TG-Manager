@@ -10,10 +10,10 @@ import signal
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QSettings
-from qt_material import apply_stylesheet
 
 from src.utils.logger import get_logger
 from src.utils.config_manager import ConfigManager
+from src.utils.theme_manager import get_theme_manager
 
 # 导入主窗口
 from src.ui.views.main_window import MainWindow
@@ -29,6 +29,7 @@ class TGManagerApp(QObject):
     config_loaded = Signal(dict)
     config_saved = Signal()
     app_closing = Signal()
+    theme_changed = Signal(str)  # 新增：主题变更信号
     
     def __init__(self, verbose=False):
         super().__init__()
@@ -41,32 +42,9 @@ class TGManagerApp(QObject):
         if self.verbose:
             logger.debug("初始化应用程序，应用样式...")
         
-        # 设置应用样式
-        apply_stylesheet(self.app, theme='dark_teal.xml')
-        
-        if self.verbose:
-            logger.debug("已应用基础样式表: dark_teal.xml")
-        
-        # 修复深色主题下文本框文字颜色问题
-        extra_styles = """
-        QLineEdit {
-            color: #FFFFFF;
-        }
-        QSpinBox, QDoubleSpinBox {
-            color: #FFFFFF;
-        }
-        QComboBox {
-            color: #FFFFFF;
-        }
-        QTextEdit, QPlainTextEdit {
-            color: #FFFFFF;
-        }
-        """
-        self.app.setStyleSheet(self.app.styleSheet() + extra_styles)
-        
-        if self.verbose:
-            logger.debug("已应用额外的样式表修复：输入控件文本颜色")
-            logger.debug(f"额外样式内容：\n{extra_styles}")
+        # 初始化主题管理器
+        self.theme_manager = get_theme_manager()
+        self.theme_manager.initialize(self.app)
         
         # 初始化配置管理器
         self.config_manager = ConfigManager()
@@ -79,6 +57,9 @@ class TGManagerApp(QObject):
         # 加载配置
         self.load_config()
         
+        # 应用主题
+        self._apply_theme_from_config()
+        
         # 初始化主窗口
         self.main_window = MainWindow(self.config)
         self.main_window.config_saved.connect(self._on_config_saved)
@@ -87,62 +68,139 @@ class TGManagerApp(QObject):
         # 设置退出处理
         self.app.aboutToQuit.connect(self.cleanup)
         signal.signal(signal.SIGINT, lambda sig, frame: self.cleanup())
+        
+        # 连接主题变更信号
+        self.theme_changed.connect(self._on_theme_changed)
+    
+    def _apply_theme_from_config(self):
+        """从配置中应用主题设置"""
+        if not self.config:
+            return
+        
+        ui_config = self.config.get('UI', {})
+        
+        # 获取主题名称
+        theme_name = ui_config.get('theme', '深色主题')
+        logger.debug(f"从配置中加载主题: {theme_name}")
+        
+        # 应用主题
+        theme_manager = self.theme_manager
+        if theme_manager.apply_theme(theme_name):
+            logger.debug(f"成功应用主题 '{theme_name}' 及其自定义属性")
+        else:
+            logger.warning(f"应用主题 '{theme_name}' 失败")
     
     def load_config(self):
-        """加载应用程序配置"""
+        """读取配置文件"""
         try:
-            # 从配置管理器获取各配置部分，组合成完整配置
-            config = {
-                "GENERAL": vars(self.config_manager.get_general_config()),
-                "DOWNLOAD": vars(self.config_manager.get_download_config()),
-                "UPLOAD": vars(self.config_manager.get_upload_config()),
-                "FORWARD": vars(self.config_manager.get_forward_config()),
-                "MONITOR": vars(self.config_manager.get_monitor_config())
-            }
-            
-            # 处理嵌套模型
-            # 处理下载配置中的嵌套列表
-            download_settings = []
-            for item in self.config_manager.get_download_config().downloadSetting:
-                download_settings.append(vars(item))
-            config["DOWNLOAD"]["downloadSetting"] = download_settings
-            
-            # 处理转发配置中的嵌套列表
-            forward_pairs = []
-            for pair in self.config_manager.get_forward_config().forward_channel_pairs:
-                forward_pairs.append(vars(pair))
-            config["FORWARD"]["forward_channel_pairs"] = forward_pairs
-            
-            # 处理监听配置中的嵌套列表
-            monitor_pairs = []
-            for pair in self.config_manager.get_monitor_config().monitor_channel_pairs:
-                pair_dict = vars(pair)
-                # 处理文本过滤器
-                text_filters = []
-                for filter_item in pair.text_filter:
-                    text_filters.append(vars(filter_item))
-                pair_dict["text_filter"] = text_filters
-                monitor_pairs.append(pair_dict)
-            config["MONITOR"]["monitor_channel_pairs"] = monitor_pairs
-            
-            self.config = config
-            logger.info("已加载配置文件")
-            self.config_loaded.emit(self.config)
+            # 通过配置管理器加载各组件配置
+            if self.config_manager:
+                # 创建一个空配置字典
+                self.config = {}
+                
+                # 加载各部分配置
+                self.config['GENERAL'] = self.config_manager.get_general_config().dict()
+                self.config['DOWNLOAD'] = self.config_manager.get_download_config().dict()
+                self.config['UPLOAD'] = self.config_manager.get_upload_config().dict()
+                self.config['FORWARD'] = self.config_manager.get_forward_config().dict()
+                self.config['MONITOR'] = self.config_manager.get_monitor_config().dict()
+                
+                # 处理下载配置中的嵌套对象
+                download_settings = []
+                for item in self.config_manager.get_download_config().downloadSetting:
+                    download_settings.append(item.dict())
+                self.config["DOWNLOAD"]["downloadSetting"] = download_settings
+                
+                # 处理转发配置中的嵌套对象
+                forward_pairs = []
+                for pair in self.config_manager.get_forward_config().forward_channel_pairs:
+                    forward_pairs.append(pair.dict())
+                self.config["FORWARD"]["forward_channel_pairs"] = forward_pairs
+                
+                # 处理监听配置中的嵌套对象
+                monitor_pairs = []
+                for pair in self.config_manager.get_monitor_config().monitor_channel_pairs:
+                    pair_dict = pair.dict()
+                    # 处理文本过滤器
+                    text_filters = []
+                    for filter_item in pair.text_filter:
+                        text_filters.append(filter_item.dict())
+                    pair_dict["text_filter"] = text_filters
+                    monitor_pairs.append(pair_dict)
+                self.config["MONITOR"]["monitor_channel_pairs"] = monitor_pairs
+                
+                # 加载UI配置，这部分直接从配置文件读取
+                try:
+                    with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                        file_config = json.load(f)
+                        if 'UI' in file_config:
+                            self.config['UI'] = file_config['UI']
+                        else:
+                            # 创建默认UI配置
+                            self.config['UI'] = {
+                                'theme': "深色主题",
+                                'confirm_exit': True,
+                                'minimize_to_tray': True,
+                                'start_minimized': False,
+                                'enable_notifications': True,
+                                'notification_sound': True
+                            }
+                except Exception as e:
+                    logger.warning(f"加载UI配置失败: {e}，使用默认配置")
+                    self.config['UI'] = {
+                        'theme': "深色主题",
+                        'confirm_exit': True,
+                        'minimize_to_tray': True,
+                        'start_minimized': False,
+                        'enable_notifications': True,
+                        'notification_sound': True
+                    }
+                
+                logger.info("已加载配置文件")
+                
+                # 应用主题设置
+                self._apply_theme_from_config()
         except Exception as e:
             logger.error(f"加载配置失败: {e}")
+            self.config = {}  # 设置为空字典作为默认配置
     
     def save_config(self):
-        """保存应用程序配置"""
+        """
+        保存应用程序配置到文件
+        """
         try:
-            # 将当前配置保存到文件
-            config_path = Path("config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, ensure_ascii=False, indent=2)
+            # 读取配置文件
+            with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
             
-            logger.info("已保存配置文件")
-            self.config_saved.emit()
+            # 确保UI部分和主题设置存在
+            if 'UI' not in config:
+                config['UI'] = {
+                    'theme': self.theme_manager.get_current_theme_name(),
+                    'confirm_exit': True,
+                    'minimize_to_tray': True,
+                    'start_minimized': False,
+                    'enable_notifications': True,
+                    'notification_sound': True
+                }
+                logger.warning("配置中缺少UI部分，已创建默认UI配置")
+            
+            # 如果主题设置缺失，添加当前主题
+            if 'theme' not in config['UI']:
+                config['UI']['theme'] = self.theme_manager.get_current_theme_name()
+                logger.warning("配置中缺少theme属性，已添加当前主题")
+            
+            # 保存配置到文件
+            with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            
+            current_theme = config['UI'].get('theme', "深色主题")
+            logger.info(f"已保存配置文件，主题: {current_theme}")
+            
+            return config
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
+            return {}
     
     def update_config(self, section, key, value):
         """更新配置项
@@ -203,14 +261,31 @@ class TGManagerApp(QObject):
         if self.event_loop and self.event_loop.is_running():
             self.event_loop.stop()
 
-    def _on_config_saved(self, config):
-        """配置保存处理
+    def _on_config_saved(self):
+        """配置保存后的处理"""
+        # 重新加载配置
+        self.load_config()
+        
+        # 应用配置中的主题设置
+        theme_name = self.config.get('UI', {}).get('theme', '深色主题')
+        
+        # 应用主题
+        success = self.theme_manager.apply_theme(theme_name)
+        if success:
+            logger.info(f"已保存配置，主题: {theme_name}")
+        else:
+            logger.warning(f"应用主题 '{theme_name}' 失败")
+    
+    def _on_theme_changed(self, theme_name):
+        """主题变更处理
         
         Args:
-            config: 更新后的配置
+            theme_name: 新主题名称
         """
-        self.config = config
-        self.save_config()
+        logger.info(f"正在切换主题: {theme_name}")
+        
+        # 应用主题
+        self.theme_manager.apply_theme(theme_name)
 
 
 def main():

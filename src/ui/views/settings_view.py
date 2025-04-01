@@ -7,11 +7,15 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QTabWidget,
-    QComboBox, QFileDialog, QMessageBox
+    QComboBox, QFileDialog, QMessageBox, QColorDialog,
+    QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QColor
+import json
 
 from src.utils.logger import get_logger
+from src.utils.theme_manager import get_theme_manager
 
 logger = get_logger()
 
@@ -20,8 +24,8 @@ class SettingsView(QWidget):
     """设置界面，提供应用程序配置管理"""
     
     # 设置保存信号
-    settings_saved = Signal(dict)  # 配置字典
-    settings_cancelled = Signal()  # 新增：设置取消信号
+    settings_saved = Signal()  # 没有参数的信号
+    settings_cancelled = Signal()  # 设置取消信号
     
     def __init__(self, config=None, parent=None):
         """初始化设置界面
@@ -33,6 +37,9 @@ class SettingsView(QWidget):
         super().__init__(parent)
         
         self.config = config or {}
+        
+        # 获取主题管理器
+        self.theme_manager = get_theme_manager()
         
         # 设置布局
         self.main_layout = QVBoxLayout(self)
@@ -274,8 +281,15 @@ class SettingsView(QWidget):
         theme_group = QGroupBox("主题设置")
         theme_layout = QFormLayout()
         
+        # 主题选择部分
         self.theme = QComboBox()
-        self.theme.addItems(["浅色主题", "深色主题", "跟随系统"])
+        # 从主题管理器获取可用主题列表
+        self.theme.addItems(self.theme_manager.get_available_themes())
+        self.theme.setCurrentText(self.theme_manager.get_current_theme_name())
+        self.theme.setToolTip("选择应用程序主题，更改后立即生效")
+        # 连接主题变更信号
+        self.theme.currentTextChanged.connect(self._on_theme_changed)
+        
         theme_layout.addRow("应用主题:", self.theme)
         
         theme_group.setLayout(theme_layout)
@@ -356,15 +370,46 @@ class SettingsView(QWidget):
             self.download_path.setText(directory)
     
     def _save_settings(self):
-        """保存设置"""
-        # 收集设置
-        settings = self._collect_settings()
-        
-        # 发出设置保存信号
-        self.settings_saved.emit(settings)
-        
-        # 显示保存成功消息
-        QMessageBox.information(self, "设置保存", "设置已成功保存")
+        """保存设置到配置"""
+        try:
+            # 从配置文件直接读取配置
+            with open("config.json", 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            
+            # 从UI收集设置
+            collected_settings = self._collect_settings()
+            
+            # 更新顶层节点设置
+            for section in ['GENERAL', 'API', 'PROXY']:
+                if section not in settings:
+                    settings[section] = {}
+                if section in collected_settings:
+                    settings[section].update(collected_settings[section])
+            
+            # 更新UI设置
+            if 'UI' not in settings:
+                settings['UI'] = {}
+            
+            if 'UI' in collected_settings:
+                settings['UI'].update(collected_settings['UI'])
+            
+            # 保存设置到文件
+            with open("config.json", 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=2)
+            
+            # 获取日志记录器
+            logger = get_logger()
+            logger.info(f"设置已保存，主题: {self.theme.currentText()}")
+            
+            # 发送设置保存信号，不带参数
+            self.settings_saved.emit()
+            
+            # 显示成功信息
+            QMessageBox.information(self, "设置", "设置已成功保存")
+        except Exception as e:
+            logger = get_logger()
+            logger.error(f"保存设置失败: {e}")
+            QMessageBox.critical(self, "错误", f"保存设置失败: {e}")
     
     def _cancel_settings(self):
         """取消设置"""
@@ -413,7 +458,7 @@ class SettingsView(QWidget):
         self.proxy_password.setText("")
         
         # 重置界面设置
-        self.theme.setCurrentIndex(2)
+        self.theme.setCurrentText("深色主题")
         self.confirm_exit.setChecked(True)
         self.minimize_to_tray.setChecked(True)
         self.start_minimized.setChecked(False)
@@ -477,7 +522,7 @@ class SettingsView(QWidget):
             
         logger.debug("加载设置配置")
         
-        # API 设置
+        # API 设置 - 直接从顶层API节点加载
         if 'API' in config:
             api_config = config.get('API', {})
             self.api_id.setText(str(api_config.get('api_id', '')))
@@ -485,38 +530,149 @@ class SettingsView(QWidget):
             self.phone_number.setText(api_config.get('phone_number', ''))
             self.use_bot.setChecked(api_config.get('use_bot', False))
             self.bot_token.setText(api_config.get('bot_token', ''))
-            self.session_name.setText(api_config.get('session_name', 'tg_manager'))
+            self.session_name.setText(api_config.get('session_name', 'tg_manager_session'))
+            self.auto_restart_session.setChecked(api_config.get('auto_restart_session', True))
             
-        # 代理设置
-        if 'Proxy' in config:
-            proxy_config = config.get('Proxy', {})
-            self.use_proxy.setChecked(proxy_config.get('enabled', False))
-            self.proxy_type.setCurrentText(proxy_config.get('type', 'SOCKS5'))
-            self.proxy_host.setText(proxy_config.get('host', ''))
-            self.proxy_port.setValue(proxy_config.get('port', 1080))
-            self.proxy_username.setText(proxy_config.get('username', ''))
-            self.proxy_password.setText(proxy_config.get('password', ''))
+        # 代理设置 - 直接从顶层PROXY节点加载
+        if 'PROXY' in config:
+            proxy_config = config.get('PROXY', {})
+            self.use_proxy.setChecked(proxy_config.get('use_proxy', False))
+            self.proxy_type.setCurrentText(proxy_config.get('proxy_type', 'SOCKS5'))
+            self.proxy_host.setText(proxy_config.get('proxy_host', ''))
+            self.proxy_port.setValue(proxy_config.get('proxy_port', 1080))
+            self.proxy_username.setText(proxy_config.get('proxy_username', ''))
+            self.proxy_password.setText(proxy_config.get('proxy_password', ''))
             
-        # 下载设置
-        if 'Download' in config:
+        # 通用设置 - 从顶层GENERAL节点加载
+        if 'GENERAL' in config:
+            general_config = config.get('GENERAL', {})
+            # 下载相关设置
+            self.download_path.setText(general_config.get('download_path', 'downloads'))
+            self.max_concurrent_downloads.setValue(general_config.get('max_concurrent_downloads', 3))
+            self.auto_retry_downloads.setChecked(general_config.get('auto_retry_downloads', True))
+            self.retry_count.setValue(general_config.get('retry_count', 3))
+            # 上传相关设置
+            self.max_concurrent_uploads.setValue(general_config.get('max_concurrent_uploads', 2))
+            self.default_caption_template.setText(general_config.get('default_caption_template', '{filename}'))
+            # 转发相关设置
+            self.default_forward_delay.setValue(general_config.get('default_forward_delay', 3))
+            self.preserve_date_default.setChecked(general_config.get('preserve_date_default', False))
+            
+        # 下载设置 - 兼容旧版本配置结构
+        if 'Download' in config and 'download_path' not in config.get('GENERAL', {}):
             download_config = config.get('Download', {})
-            self.download_path.setText(download_config.get('default_path', 'downloads'))
-            self.max_concurrent_downloads.setValue(download_config.get('concurrent_downloads', 3))
-            self.auto_retry_downloads.setChecked(download_config.get('auto_retry_downloads', True))
-            self.retry_count.setValue(download_config.get('retry_count', 3))
+            # 只在GENERAL中找不到相应设置时才从旧的Download节点加载
+            if not self.download_path.text():
+                self.download_path.setText(download_config.get('default_path', 'downloads'))
+            if self.max_concurrent_downloads.value() == 3:  # 检查是否为默认值
+                self.max_concurrent_downloads.setValue(download_config.get('concurrent_downloads', 3))
             
-        # 上传设置
-        if 'Upload' in config:
+        # 上传设置 - 兼容旧版本配置结构
+        if 'Upload' in config and 'default_caption_template' not in config.get('GENERAL', {}):
             upload_config = config.get('Upload', {})
-            self.max_concurrent_uploads.setValue(upload_config.get('concurrent_uploads', 2))
-            self.default_caption_template.setText(upload_config.get('default_caption_template', '{filename}'))
+            # 只在GENERAL中找不到相应设置时才从旧的Upload节点加载
+            if not self.default_caption_template.text():
+                self.default_caption_template.setText(upload_config.get('caption_template', '{filename}'))
             
-        # UI设置
+        # UI设置 - 从UI节点加载
         if 'UI' in config:
             ui_config = config.get('UI', {})
-            self.theme.setCurrentText(ui_config.get('theme', '跟随系统'))
+            self.theme.setCurrentText(ui_config.get('theme', '深色主题'))
             self.confirm_exit.setChecked(ui_config.get('confirm_exit', True))
             self.minimize_to_tray.setChecked(ui_config.get('minimize_to_tray', True))
             self.start_minimized.setChecked(ui_config.get('start_minimized', False))
             self.enable_notifications.setChecked(ui_config.get('enable_notifications', True))
-            self.notification_sound.setChecked(ui_config.get('notification_sound', True)) 
+            self.notification_sound.setChecked(ui_config.get('notification_sound', True))
+    
+    def _on_theme_changed(self, theme_name):
+        """主题变更处理
+        
+        Args:
+            theme_name: 新主题名称
+        """
+        # 实时应用主题变更
+        logger.debug(f"设置界面中选择了新主题: {theme_name}")
+        
+        # 应用主题
+        success = self.theme_manager.apply_theme(theme_name)
+        
+        if success:
+            # 强制重绘整个界面
+            self.repaint()
+            
+            # 通知父窗口也需要刷新
+            if self.parent():
+                self.parent().repaint()
+        
+        # 更新界面上的颜色显示
+        for property_name in ["primary", "secondary", "warning", "danger", "success"]:
+            color_value = self.theme_manager.get_custom_property(property_name)
+            button_name = f"{property_name}_color_button"
+            if hasattr(self, button_name):
+                button = getattr(self, button_name)
+                # 根据浅色/深色调整文本颜色
+                color = QColor(color_value)
+                text_color = "#ffffff" if color.lightness() < 128 else "#000000"
+                button.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {color_value}; 
+                        color: {text_color};
+                        padding: 5px;
+                        min-width: 80px;
+                    }}
+                    QPushButton:hover {{
+                        border: 1px solid #CCCCCC;
+                    }}
+                """)
+            
+            # 更新颜色标签
+            label_name = f"{property_name}_color_label"
+            if hasattr(self, label_name):
+                label = getattr(self, label_name)
+                label.setText(color_value)
+    
+    def _collect_settings(self):
+        """收集设置
+        
+        Returns:
+            dict: 设置字典
+        """
+        settings = {
+            'GENERAL': {
+                'download_path': self.download_path.text(),
+                'max_concurrent_downloads': self.max_concurrent_downloads.value(),
+                'auto_retry_downloads': self.auto_retry_downloads.isChecked(),
+                'retry_count': self.retry_count.value(),
+                'max_concurrent_uploads': self.max_concurrent_uploads.value(),
+                'default_caption_template': self.default_caption_template.text(),
+                'default_forward_delay': self.default_forward_delay.value(),
+                'preserve_date_default': self.preserve_date_default.isChecked()
+            },
+            'API': {
+                'api_id': self.api_id.text(),
+                'api_hash': self.api_hash.text(),
+                'phone_number': self.phone_number.text(),
+                'use_bot': self.use_bot.isChecked(),
+                'bot_token': self.bot_token.text() if self.use_bot.isChecked() else '',
+                'session_name': self.session_name.text(),
+                'auto_restart_session': self.auto_restart_session.isChecked()
+            },
+            'PROXY': {
+                'use_proxy': self.use_proxy.isChecked(),
+                'proxy_type': self.proxy_type.currentText() if self.use_proxy.isChecked() else '',
+                'proxy_host': self.proxy_host.text() if self.use_proxy.isChecked() else '',
+                'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 0,
+                'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
+                'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
+            },
+            'UI': {
+                'theme': self.theme.currentText(),
+                'confirm_exit': self.confirm_exit.isChecked(),
+                'minimize_to_tray': self.minimize_to_tray.isChecked(),
+                'start_minimized': self.start_minimized.isChecked(),
+                'enable_notifications': self.enable_notifications.isChecked(),
+                'notification_sound': self.notification_sound.isChecked()
+            }
+        }
+        
+        return settings 

@@ -1400,3 +1400,9 @@ class MainWindow(QMainWindow):
                 # 记录日志
                 logger.debug(f"已关闭设置视图: {view_id}")
                 break 
+
+    def _on_settings_saved(self):
+        """处理设置保存信号"""
+        # 关闭设置视图
+        self.show_status_message("设置已保存")
+        self._close_settings_view() 
