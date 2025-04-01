@@ -21,6 +21,7 @@ class SettingsView(QWidget):
     
     # 设置保存信号
     settings_saved = Signal(dict)  # 配置字典
+    settings_cancelled = Signal()  # 新增：设置取消信号
     
     def __init__(self, config=None, parent=None):
         """初始化设置界面
@@ -367,9 +368,8 @@ class SettingsView(QWidget):
     
     def _cancel_settings(self):
         """取消设置"""
-        # 如果在单独窗口中，关闭窗口
-        if self.parent() and hasattr(self.parent(), 'close'):
-            self.parent().close()
+        # 发出取消设置信号，让主窗口处理
+        self.settings_cancelled.emit()
     
     def _reset_settings(self):
         """重置为默认设置"""

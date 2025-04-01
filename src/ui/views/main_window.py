@@ -453,6 +453,8 @@ class MainWindow(QMainWindow):
             elif function_name == 'settings':
                 from src.ui.views.settings_view import SettingsView
                 view = SettingsView(self.config)
+                # 连接设置取消信号
+                view.settings_cancelled.connect(self._close_settings_view)
                 
             elif function_name == 'help':
                 from src.ui.views.help_doc_view import HelpDocView
@@ -1381,3 +1383,20 @@ class MainWindow(QMainWindow):
             # 其他异常
             self._update_network_status("异常", str(e)[:20])
             logger.error(f"网络连接检查失败: {e}") 
+
+    def _close_settings_view(self):
+        """关闭设置视图并返回到之前的视图"""
+        # 找到设置视图并移除
+        for view_id, view in list(self.opened_views.items()):
+            if hasattr(view, 'settings_cancelled'):  # 检查是否是设置视图
+                # 从栈布局中移除
+                self.central_layout.removeWidget(view)
+                # 从已打开视图中移除
+                self.opened_views.pop(view_id, None)
+                # 返回到欢迎视图或其他视图
+                if self.central_layout.count() > 0:
+                    # 如果还有其他视图，则显示第一个
+                    self.central_layout.setCurrentIndex(0)
+                # 记录日志
+                logger.debug(f"已关闭设置视图: {view_id}")
+                break 
