@@ -47,7 +47,16 @@ class DownloadView(QWidget):
             QGroupBox { 
                 font-weight: bold; 
                 padding-top: 2px; 
-                margin-top: 0.4em; 
+                margin-top: 0.5em; 
+                border: 1px solid #444;
+                border-radius: 3px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 7px;
+                padding: 0 3px;
+                background-color: palette(window);
             }
             QTabWidget::pane {
                 border: 1px solid #444;
@@ -265,44 +274,81 @@ class DownloadView(QWidget):
     
     def _create_download_panel(self):
         """创建下载状态和列表面板"""
-        # 创建下载状态组
-        status_group = QGroupBox("下载状态")
-        status_layout = QVBoxLayout(status_group)
+        # 创建标签页控件来容纳下载状态和列表
+        self.download_tabs = QTabWidget()
+        self.download_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # 创建下载状态标签页
+        self.status_tab = QWidget()
+        status_layout = QVBoxLayout(self.status_tab)
+        status_layout.setContentsMargins(8, 8, 8, 8)
+        status_layout.setSpacing(5)
         
         # 当前下载任务
-        status_layout.addWidget(QLabel("当前下载任务:"))
+        status_label = QLabel("当前下载任务:")
+        status_label.setStyleSheet("font-weight: bold;")
+        status_layout.addWidget(status_label)
         
         self.current_task_label = QLabel("未开始下载")
-        self.current_task_label.setStyleSheet("font-weight: bold;")
+        self.current_task_label.setStyleSheet("color: #0066cc;")
         status_layout.addWidget(self.current_task_label)
         
         # 整体进度
         self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
         status_layout.addWidget(self.overall_progress_label)
         
-        # 添加到主布局
-        self.main_layout.addWidget(status_group)
+        # 添加提示信息
+        tips_label = QLabel("提示: 点击\"开始下载\"按钮开始下载任务。下载进度将显示在\"下载列表\"标签页中。")
+        tips_label.setStyleSheet("color: #666; margin-top: 10px;")
+        tips_label.setWordWrap(True)
+        status_layout.addWidget(tips_label)
         
-        # 创建下载列表组
-        download_list_group = QGroupBox("下载列表")
-        download_list_layout = QVBoxLayout(download_list_group)
+        # 添加伸展因子，使内容靠上对齐
+        status_layout.addStretch(1)
+        
+        # 创建下载列表标签页
+        self.list_tab = QWidget()
+        list_layout = QVBoxLayout(self.list_tab)
+        list_layout.setContentsMargins(8, 8, 8, 8)
+        list_layout.setSpacing(5)
+        
+        # 添加提示信息
+        list_tip_label = QLabel("下载进度将显示在此处。下载完成后可以使用\"清空列表\"按钮清除记录。")
+        list_tip_label.setStyleSheet("color: #666;")
+        list_tip_label.setWordWrap(True)
+        list_layout.addWidget(list_tip_label)
         
         # 创建下载列表
         self.download_list = QListWidget()
-        download_list_layout.addWidget(self.download_list)
+        self.download_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        list_layout.addWidget(self.download_list)
+        
+        # 将两个标签页添加到标签页控件
+        self.download_tabs.addTab(self.status_tab, "下载状态")
+        self.download_tabs.addTab(self.list_tab, "下载列表")
+        
+        # 连接标签页切换信号，清除星号提示
+        self.download_tabs.currentChanged.connect(self._on_tab_changed)
         
         # 添加到主布局
-        self.main_layout.addWidget(download_list_group, 4)  # 给下载列表更多的空间
+        self.main_layout.addWidget(self.download_tabs, 4)  # 给标签页更多的空间
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 5, 0, 0)  # 增加上边距
         
         self.start_button = QPushButton("开始下载")
         self.start_button.setMinimumHeight(40)
+        self.start_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         self.save_config_button = QPushButton("保存配置")
+        self.save_config_button.setMinimumHeight(30)
+        self.save_config_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        
         self.clear_list_button = QPushButton("清空列表")
+        self.clear_list_button.setMinimumHeight(30)
+        self.clear_list_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
         button_layout.addWidget(self.start_button)
         button_layout.addWidget(self.save_config_button)
@@ -571,6 +617,11 @@ class DownloadView(QWidget):
             self.download_list.addItem(item)
             # 滚动到最新项目
             self.download_list.scrollToBottom()
+            
+            # 如果当前不在下载列表标签页，显示提示
+            if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
+                # 切换到下载列表标签页查看详情
+                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
     
     def update_overall_progress(self, completed, total):
         """更新总体进度
@@ -585,9 +636,16 @@ class DownloadView(QWidget):
         
         self.overall_progress_label.setText(f"总进度: {completed}/{total} ({percent}%)")
         
+        # 切换到下载状态标签页
+        if self.download_tabs.currentIndex() != 0:  # 0是下载状态的索引
+            self.download_tabs.setTabText(0, "下载状态 *")  # 添加星号表示有更新
+        
         # 如果已全部完成，启用开始按钮
         if completed >= total and total > 0:
             self.start_button.setEnabled(True)
+            # 恢复标签页文本
+            self.download_tabs.setTabText(0, "下载状态")
+            self.download_tabs.setTabText(1, "下载列表")
     
     def update_current_task(self, task_description):
         """更新当前任务描述
@@ -596,10 +654,15 @@ class DownloadView(QWidget):
             task_description: 任务描述文本
         """
         self.current_task_label.setText(task_description)
+        
+        # 如果不在下载状态标签页，添加提示
+        if self.download_tabs.currentIndex() != 0:  # 0是下载状态的索引
+            self.download_tabs.setTabText(0, "下载状态 *")  # 添加星号表示有更新
     
     def clear_download_list(self):
         """清空下载列表"""
         self.download_list.clear()
+        self.download_tabs.setTabText(1, "下载列表")  # 恢复标签页文本
         
     def load_config(self, config):
         """从配置加载UI状态
@@ -652,3 +715,14 @@ class DownloadView(QWidget):
         
         max_concurrent = config.get('DOWNLOAD', {}).get('max_concurrent_downloads', 5)
         self.max_downloads.setValue(max_concurrent) 
+    
+    def _on_tab_changed(self, index):
+        """标签页切换事件处理
+        
+        Args:
+            index: 新的标签页索引
+        """
+        # 清除当前标签页的星号提示
+        current_tab_text = self.download_tabs.tabText(index)
+        if current_tab_text.endswith(" *"):
+            self.download_tabs.setTabText(index, current_tab_text[:-2]) 
