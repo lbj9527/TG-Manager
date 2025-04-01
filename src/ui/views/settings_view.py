@@ -465,6 +465,26 @@ class SettingsView(QWidget):
         self.enable_notifications.setChecked(True)
         self.notification_sound.setChecked(True)
     
+    def _on_theme_changed(self, theme_name):
+        """主题变更处理
+        
+        Args:
+            theme_name: 新主题名称
+        """
+        # 实时应用主题变更
+        logger.debug(f"设置界面中选择了新主题: {theme_name}")
+        
+        # 应用主题
+        success = self.theme_manager.apply_theme(theme_name)
+        
+        if success:
+            # 强制重绘整个界面
+            self.repaint()
+            
+            # 通知父窗口也需要刷新
+            if self.parent():
+                self.parent().repaint()
+    
     def _collect_settings(self):
         """收集设置
         
@@ -582,97 +602,4 @@ class SettingsView(QWidget):
             self.minimize_to_tray.setChecked(ui_config.get('minimize_to_tray', True))
             self.start_minimized.setChecked(ui_config.get('start_minimized', False))
             self.enable_notifications.setChecked(ui_config.get('enable_notifications', True))
-            self.notification_sound.setChecked(ui_config.get('notification_sound', True))
-    
-    def _on_theme_changed(self, theme_name):
-        """主题变更处理
-        
-        Args:
-            theme_name: 新主题名称
-        """
-        # 实时应用主题变更
-        logger.debug(f"设置界面中选择了新主题: {theme_name}")
-        
-        # 应用主题
-        success = self.theme_manager.apply_theme(theme_name)
-        
-        if success:
-            # 强制重绘整个界面
-            self.repaint()
-            
-            # 通知父窗口也需要刷新
-            if self.parent():
-                self.parent().repaint()
-        
-        # 更新界面上的颜色显示
-        for property_name in ["primary", "secondary", "warning", "danger", "success"]:
-            color_value = self.theme_manager.get_custom_property(property_name)
-            button_name = f"{property_name}_color_button"
-            if hasattr(self, button_name):
-                button = getattr(self, button_name)
-                # 根据浅色/深色调整文本颜色
-                color = QColor(color_value)
-                text_color = "#ffffff" if color.lightness() < 128 else "#000000"
-                button.setStyleSheet(f"""
-                    QPushButton {{
-                        background-color: {color_value}; 
-                        color: {text_color};
-                        padding: 5px;
-                        min-width: 80px;
-                    }}
-                    QPushButton:hover {{
-                        border: 1px solid #CCCCCC;
-                    }}
-                """)
-            
-            # 更新颜色标签
-            label_name = f"{property_name}_color_label"
-            if hasattr(self, label_name):
-                label = getattr(self, label_name)
-                label.setText(color_value)
-    
-    def _collect_settings(self):
-        """收集设置
-        
-        Returns:
-            dict: 设置字典
-        """
-        settings = {
-            'GENERAL': {
-                'download_path': self.download_path.text(),
-                'max_concurrent_downloads': self.max_concurrent_downloads.value(),
-                'auto_retry_downloads': self.auto_retry_downloads.isChecked(),
-                'retry_count': self.retry_count.value(),
-                'max_concurrent_uploads': self.max_concurrent_uploads.value(),
-                'default_caption_template': self.default_caption_template.text(),
-                'default_forward_delay': self.default_forward_delay.value(),
-                'preserve_date_default': self.preserve_date_default.isChecked()
-            },
-            'API': {
-                'api_id': self.api_id.text(),
-                'api_hash': self.api_hash.text(),
-                'phone_number': self.phone_number.text(),
-                'use_bot': self.use_bot.isChecked(),
-                'bot_token': self.bot_token.text() if self.use_bot.isChecked() else '',
-                'session_name': self.session_name.text(),
-                'auto_restart_session': self.auto_restart_session.isChecked()
-            },
-            'PROXY': {
-                'use_proxy': self.use_proxy.isChecked(),
-                'proxy_type': self.proxy_type.currentText() if self.use_proxy.isChecked() else '',
-                'proxy_host': self.proxy_host.text() if self.use_proxy.isChecked() else '',
-                'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 0,
-                'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
-                'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
-            },
-            'UI': {
-                'theme': self.theme.currentText(),
-                'confirm_exit': self.confirm_exit.isChecked(),
-                'minimize_to_tray': self.minimize_to_tray.isChecked(),
-                'start_minimized': self.start_minimized.isChecked(),
-                'enable_notifications': self.enable_notifications.isChecked(),
-                'notification_sound': self.notification_sound.isChecked()
-            }
-        }
-        
-        return settings 
+            self.notification_sound.setChecked(ui_config.get('notification_sound', True)) 

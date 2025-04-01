@@ -86,7 +86,7 @@ class TGManagerApp(QObject):
         # 应用主题
         theme_manager = self.theme_manager
         if theme_manager.apply_theme(theme_name):
-            logger.debug(f"成功应用主题 '{theme_name}' 及其自定义属性")
+            logger.debug(f"成功应用主题 '{theme_name}'")
         else:
             logger.warning(f"应用主题 '{theme_name}' 失败")
     
