@@ -158,8 +158,8 @@ class TGManagerApp(QObject):
                 
                 logger.info("已加载配置文件")
                 
-                # 应用主题设置
-                self._apply_theme_from_config()
+                # 注意：仅在初始化时应用主题，在其他情况下不要再次应用
+                # 这里不再调用 self._apply_theme_from_config()
         except Exception as e:
             logger.error(f"加载配置失败: {e}")
             self.config = {}  # 设置为空字典作为默认配置
@@ -263,18 +263,25 @@ class TGManagerApp(QObject):
 
     def _on_config_saved(self):
         """配置保存后的处理"""
+        # 获取当前主题
+        current_theme = self.theme_manager.get_current_theme_name()
+        
         # 重新加载配置
         self.load_config()
         
-        # 应用配置中的主题设置
-        theme_name = self.config.get('UI', {}).get('theme', '深色主题')
+        # 获取配置中的主题设置
+        config_theme = self.config.get('UI', {}).get('theme', '深色主题')
         
-        # 应用主题
-        success = self.theme_manager.apply_theme(theme_name)
-        if success:
-            logger.info(f"已保存配置，主题: {theme_name}")
+        # 只有当配置中的主题与当前主题不同时才应用主题
+        if config_theme != current_theme:
+            # 应用主题
+            success = self.theme_manager.apply_theme(config_theme)
+            if success:
+                logger.info(f"已更新主题: {config_theme}")
+            else:
+                logger.warning(f"应用主题 '{config_theme}' 失败")
         else:
-            logger.warning(f"应用主题 '{theme_name}' 失败")
+            logger.info(f"已保存配置，主题保持不变: {current_theme}")
     
     def _on_theme_changed(self, theme_name):
         """主题变更处理
@@ -282,10 +289,23 @@ class TGManagerApp(QObject):
         Args:
             theme_name: 新主题名称
         """
-        logger.info(f"正在切换主题: {theme_name}")
+        # 获取当前主题
+        current_theme = self.theme_manager.get_current_theme_name()
         
-        # 应用主题
-        self.theme_manager.apply_theme(theme_name)
+        # 只有当新主题与当前主题不同时才应用
+        if theme_name != current_theme:
+            logger.info(f"正在切换主题: 从 {current_theme} 到 {theme_name}")
+            
+            # 应用主题
+            self.theme_manager.apply_theme(theme_name)
+            
+            # 更新配置中的主题设置
+            if 'UI' in self.config:
+                self.config['UI']['theme'] = theme_name
+            else:
+                self.config['UI'] = {'theme': theme_name}
+        else:
+            logger.debug(f"忽略主题变更请求，当前已是 {theme_name} 主题")
 
 
 def main():

@@ -130,7 +130,8 @@ class MainWindow(QMainWindow):
                 "help": QStyle.SP_MessageBoxQuestion,
                 "update": QStyle.SP_BrowserReload,
                 "about": QStyle.SP_MessageBoxInformation,
-                "app": QStyle.SP_DesktopIcon
+                "app": QStyle.SP_DesktopIcon,
+                "home": QStyle.SP_ArrowBack
             }
             
             if icon_name in standard_icons:
@@ -311,6 +312,13 @@ class MainWindow(QMainWindow):
         # 分隔符
         self.toolbar.addSeparator()
         
+        # 返回主页按钮
+        self.home_action = QAction("返回主页", self)
+        self.home_action.setIcon(self._get_icon("home"))
+        self.home_action.setStatusTip("返回到欢迎页面")
+        self.home_action.triggered.connect(self._return_to_welcome)
+        self.toolbar.addAction(self.home_action)
+        
         # 设置按钮
         self.settings_action = QAction("设置", self)
         self.settings_action.setIcon(self._get_icon("settings"))
@@ -465,8 +473,8 @@ class MainWindow(QMainWindow):
             elif function_name == 'settings':
                 from src.ui.views.settings_view import SettingsView
                 view = SettingsView(self.config)
-                # 连接设置取消信号
-                view.settings_cancelled.connect(self._close_settings_view)
+                # 连接设置保存信号
+                view.settings_saved.connect(self._on_settings_saved)
                 
             elif function_name == 'help':
                 from src.ui.views.help_doc_view import HelpDocView
@@ -1411,25 +1419,40 @@ class MainWindow(QMainWindow):
             self._update_network_status("异常", str(e)[:20])
             logger.warning(f"网络连接检查失败: {e}")  # 降级为warning，避免频繁error日志
     
+    def _return_to_welcome(self):
+        """返回欢迎页面"""
+        logger.debug("返回欢迎页面")
+        # 如果有多个视图，切换到欢迎页面
+        if self.central_layout.count() > 0:
+            self.central_layout.setCurrentWidget(self.welcome_widget)
+    
+    def show_status_message(self, message, timeout=3000):
+        """在状态栏显示消息
+        
+        Args:
+            message: 显示的消息文本
+            timeout: 显示时间(毫秒)，默认3秒
+        """
+        logger.debug(f"状态栏消息: {message}")
+        self.statusBar().showMessage(message, timeout)
+
     def _close_settings_view(self):
         """关闭设置视图并返回到之前的视图"""
         # 找到设置视图并移除
         for view_id, view in list(self.opened_views.items()):
-            if hasattr(view, 'settings_cancelled'):  # 检查是否是设置视图
+            if hasattr(view, 'settings_saved'):  # 检查是否是设置视图
                 # 从栈布局中移除
                 self.central_layout.removeWidget(view)
                 # 从已打开视图中移除
                 self.opened_views.pop(view_id, None)
-                # 返回到欢迎视图或其他视图
-                if self.central_layout.count() > 0:
-                    # 如果还有其他视图，则显示第一个
-                    self.central_layout.setCurrentIndex(0)
+                # 返回到欢迎视图
+                self.central_layout.setCurrentWidget(self.welcome_widget)
                 # 记录日志
                 logger.debug(f"已关闭设置视图: {view_id}")
                 break 
 
     def _on_settings_saved(self):
         """处理设置保存信号"""
-        # 关闭设置视图
-        self.show_status_message("设置已保存")
-        self._close_settings_view() 
+        # 显示状态消息
+        self.statusBar().showMessage("设置已保存", 3000)
+        # 不需要关闭设置视图，保持在当前页面 

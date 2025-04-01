@@ -41,6 +41,13 @@ class SettingsView(QWidget):
         # 获取主题管理器
         self.theme_manager = get_theme_manager()
         
+        # 添加临时主题存储
+        self.original_theme = self.theme_manager.get_current_theme_name()
+        self.temp_theme = self.original_theme
+        
+        # 跟踪设置是否已更改
+        self.settings_changed = False
+        
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.setLayout(self.main_layout)
@@ -57,6 +64,9 @@ class SettingsView(QWidget):
         # 加载配置
         if self.config:
             self.load_config(self.config)
+        
+        # 初始状态下禁用保存按钮
+        self.save_button.setEnabled(False)
         
         logger.info("设置界面初始化完成")
     
@@ -337,14 +347,12 @@ class SettingsView(QWidget):
         """创建底部按钮"""
         button_layout = QHBoxLayout()
         
-        self.save_button = QPushButton("保存设置")
-        self.cancel_button = QPushButton("取消")
         self.reset_button = QPushButton("重置为默认")
+        self.save_button = QPushButton("保存设置")
         
-        button_layout.addWidget(self.reset_button)
-        button_layout.addStretch()
-        button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.save_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.reset_button)
         
         self.main_layout.addLayout(button_layout)
     
@@ -355,8 +363,25 @@ class SettingsView(QWidget):
         
         # 底部按钮
         self.save_button.clicked.connect(self._save_settings)
-        self.cancel_button.clicked.connect(self._cancel_settings)
         self.reset_button.clicked.connect(self._reset_settings)
+        
+        # 连接各个控件的值变更信号，以跟踪设置变化
+        # 一般文本输入框
+        for widget in self.findChildren(QLineEdit):
+            widget.textChanged.connect(self._on_setting_changed)
+        
+        # 单选框、复选框
+        for widget in self.findChildren(QCheckBox):
+            widget.toggled.connect(self._on_setting_changed)
+        
+        # 下拉列表
+        for widget in self.findChildren(QComboBox):
+            if widget != self.theme:  # 主题下拉框已有特殊处理
+                widget.currentTextChanged.connect(self._on_setting_changed)
+        
+        # 数字输入框
+        for widget in self.findChildren(QSpinBox):
+            widget.valueChanged.connect(self._on_setting_changed)
     
     def _browse_download_path(self):
         """浏览下载路径"""
@@ -368,6 +393,44 @@ class SettingsView(QWidget):
         
         if directory:
             self.download_path.setText(directory)
+    
+    def _on_theme_changed(self, theme_name):
+        """主题变更处理
+        
+        Args:
+            theme_name: 新主题名称
+        """
+        # 获取当前临时主题
+        current_theme = self.temp_theme
+        
+        # 只有当新主题与当前临时主题不同时才应用
+        if theme_name != current_theme:
+            # 实时应用主题变更，但只作为临时预览
+            logger.debug(f"设置界面中临时预览新主题: 从 {current_theme} 到 {theme_name}")
+            
+            # 应用主题
+            success = self.theme_manager.apply_theme(theme_name)
+            
+            if success:
+                # 更新临时主题记录
+                self.temp_theme = theme_name
+                
+                # 标记设置已更改
+                self._on_setting_changed()
+                
+                # 强制重绘整个界面
+                self.repaint()
+                
+                # 通知父窗口也需要刷新
+                if self.parent():
+                    self.parent().repaint()
+        else:
+            logger.debug(f"忽略主题变更请求，当前已是 {theme_name} 主题")
+    
+    def _on_setting_changed(self):
+        """当任何设置值变更时调用此方法，启用保存按钮"""
+        self.settings_changed = True
+        self.save_button.setEnabled(True)
     
     def _save_settings(self):
         """保存设置到配置"""
@@ -393,6 +456,9 @@ class SettingsView(QWidget):
             if 'UI' in collected_settings:
                 settings['UI'].update(collected_settings['UI'])
             
+            # 保存主题设置
+            self.original_theme = self.temp_theme
+            
             # 保存设置到文件
             with open("config.json", 'w', encoding='utf-8') as f:
                 json.dump(settings, f, ensure_ascii=False, indent=2)
@@ -400,6 +466,12 @@ class SettingsView(QWidget):
             # 获取日志记录器
             logger = get_logger()
             logger.info(f"设置已保存，主题: {self.theme.currentText()}")
+            
+            # 重置设置变更状态
+            self.settings_changed = False
+            
+            # 禁用保存按钮
+            self.save_button.setEnabled(False)
             
             # 发送设置保存信号，不带参数
             self.settings_saved.emit()
@@ -410,11 +482,6 @@ class SettingsView(QWidget):
             logger = get_logger()
             logger.error(f"保存设置失败: {e}")
             QMessageBox.critical(self, "错误", f"保存设置失败: {e}")
-    
-    def _cancel_settings(self):
-        """取消设置"""
-        # 发出取消设置信号，让主窗口处理
-        self.settings_cancelled.emit()
     
     def _reset_settings(self):
         """重置为默认设置"""
@@ -464,26 +531,9 @@ class SettingsView(QWidget):
         self.start_minimized.setChecked(False)
         self.enable_notifications.setChecked(True)
         self.notification_sound.setChecked(True)
-    
-    def _on_theme_changed(self, theme_name):
-        """主题变更处理
         
-        Args:
-            theme_name: 新主题名称
-        """
-        # 实时应用主题变更
-        logger.debug(f"设置界面中选择了新主题: {theme_name}")
-        
-        # 应用主题
-        success = self.theme_manager.apply_theme(theme_name)
-        
-        if success:
-            # 强制重绘整个界面
-            self.repaint()
-            
-            # 通知父窗口也需要刷新
-            if self.parent():
-                self.parent().repaint()
+        # 标记设置已更改
+        self._on_setting_changed()
     
     def _collect_settings(self):
         """收集设置
