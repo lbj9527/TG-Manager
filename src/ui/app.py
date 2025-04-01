@@ -30,15 +30,43 @@ class TGManagerApp(QObject):
     config_saved = Signal()
     app_closing = Signal()
     
-    def __init__(self):
+    def __init__(self, verbose=False):
         super().__init__()
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("TG-Manager")
         self.app.setOrganizationName("TG-Manager")
         self.app.setOrganizationDomain("tg-manager.org")
+        self.verbose = verbose
+        
+        if self.verbose:
+            logger.debug("初始化应用程序，应用样式...")
         
         # 设置应用样式
         apply_stylesheet(self.app, theme='dark_teal.xml')
+        
+        if self.verbose:
+            logger.debug("已应用基础样式表: dark_teal.xml")
+        
+        # 修复深色主题下文本框文字颜色问题
+        extra_styles = """
+        QLineEdit {
+            color: #FFFFFF;
+        }
+        QSpinBox, QDoubleSpinBox {
+            color: #FFFFFF;
+        }
+        QComboBox {
+            color: #FFFFFF;
+        }
+        QTextEdit, QPlainTextEdit {
+            color: #FFFFFF;
+        }
+        """
+        self.app.setStyleSheet(self.app.styleSheet() + extra_styles)
+        
+        if self.verbose:
+            logger.debug("已应用额外的样式表修复：输入控件文本颜色")
+            logger.debug(f"额外样式内容：\n{extra_styles}")
         
         # 初始化配置管理器
         self.config_manager = ConfigManager()
@@ -154,20 +182,22 @@ class TGManagerApp(QObject):
         return None
     
     def run(self):
-        """运行应用程序"""
-        # 设置退出代码
-        exit_code = self.app.exec()
-        return exit_code
+        """运行应用程序
+        
+        Returns:
+            int: 应用程序退出代码
+        """
+        if self.verbose:
+            logger.debug("正在启动事件循环")
+        
+        # 启动应用程序事件循环
+        return self.app.exec()
         
     def cleanup(self):
-        """清理资源并保存配置"""
+        """清理资源"""
         logger.info("正在关闭应用程序...")
-        
-        # 发出应用关闭信号
-        self.app_closing.emit()
-        
-        # 保存配置
         self.save_config()
+        self.app_closing.emit()
         
         # 关闭事件循环
         if self.event_loop and self.event_loop.is_running():

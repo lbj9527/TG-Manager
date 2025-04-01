@@ -37,13 +37,21 @@ def main():
     """主程序入口"""
     parser = argparse.ArgumentParser(description="TG-Manager GUI - Telegram 消息管理工具图形界面版本")
     parser.add_argument("--debug", action="store_true", help="启用调试模式")
+    parser.add_argument("--verbose", action="store_true", help="显示详细日志信息")
     
     args = parser.parse_args()
     
+    # 设置日志系统
+    setup_logger()
+    
     # 设置日志级别
-    if args.debug:
+    if args.debug or args.verbose:
         logger.remove()
-        logger.add(sys.stderr, level="DEBUG")
+        logger.add(
+            sys.stderr,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level="DEBUG"
+        )
         logger.add(
             "logs/app_{time:YYYY-MM-DD}.log",
             rotation="00:00",
@@ -52,14 +60,13 @@ def main():
             level="DEBUG"
         )
     
-    # 设置日志系统
-    setup_logger()
-    
     # 启动 UI 应用程序
     logger.info("启动 TG-Manager 图形界面")
+    if args.verbose:
+        logger.debug("已启用详细日志模式")
     
     try:
-        app = TGManagerApp()
+        app = TGManagerApp(verbose=args.verbose)
         sys.exit(app.run())
     except Exception as e:
         logger.error(f"程序运行出错: {e}")
