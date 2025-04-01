@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QComboBox, QTextEdit, QSplitter, QAbstractItemView,
-    QProgressBar
+    QProgressBar, QTabWidget, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QIcon
@@ -38,14 +38,41 @@ class ForwardView(QWidget):
         self.config = config or {}
         
         # 设置布局
-        self.main_layout = QHBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(2)  # 减小布局间距
+        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         self.setLayout(self.main_layout)
         
-        # 创建左侧面板-配置选项
-        self._create_left_panel()
+        # 设置统一的组框样式
+        self.setStyleSheet("""
+            QGroupBox { 
+                font-weight: bold; 
+                padding-top: 2px; 
+                margin-top: 0.4em; 
+            }
+            QTabWidget::pane {
+                border: 1px solid #444;
+                padding: 1px;
+            }
+            QTabBar::tab {
+                padding: 3px 8px;
+            }
+        """)
         
-        # 创建右侧面板-转发列表和状态
-        self._create_right_panel()
+        # 创建上部配置标签页
+        self.config_tabs = QTabWidget()
+        self.config_tabs.setMaximumHeight(320)  # 设置最大高度
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.main_layout.addWidget(self.config_tabs)
+        
+        # 创建配置标签页
+        self._create_config_panel()
+        
+        # 创建下部转发规则和状态面板
+        self._create_forward_panel()
+        
+        # 创建底部操作按钮
+        self._create_action_buttons()
         
         # 连接信号
         self._connect_signals()
@@ -59,17 +86,13 @@ class ForwardView(QWidget):
         
         logger.info("转发界面初始化完成")
     
-    def _create_left_panel(self):
-        """创建左侧面板-配置选项"""
-        # 创建左侧容器
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_panel.setMinimumWidth(400)
-        left_panel.setMaximumWidth(500)
-        
-        # ===== 源频道配置 =====
-        source_group = QGroupBox("源频道配置")
-        source_layout = QVBoxLayout(source_group)
+    def _create_config_panel(self):
+        """创建配置标签页"""
+        # 源频道标签页
+        self.source_tab = QWidget()
+        source_layout = QVBoxLayout(self.source_tab)
+        source_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        source_layout.setSpacing(4)  # 减小间距
         
         # 源频道输入
         form_layout = QFormLayout()
@@ -78,30 +101,34 @@ class ForwardView(QWidget):
         self.source_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
         form_layout.addRow("源频道:", self.source_input)
         
-        self.add_source_button = QPushButton("添加源频道")
-        
         source_layout.addLayout(form_layout)
-        source_layout.addWidget(self.add_source_button)
+        
+        # 添加源频道按钮
+        button_layout = QHBoxLayout()
+        self.add_source_button = QPushButton("添加源频道")
+        self.remove_source_button = QPushButton("删除所选")
+        
+        button_layout.addWidget(self.add_source_button)
+        button_layout.addWidget(self.remove_source_button)
+        button_layout.addStretch(1)
+        
+        source_layout.addLayout(button_layout)
         
         # 源频道列表
-        sources_list_layout = QVBoxLayout()
-        sources_list_layout.addWidget(QLabel("已配置源频道:"))
+        source_list_label = QLabel("已配置源频道:")
         
         self.source_list = QListWidget()
         self.source_list.setSelectionMode(QListWidget.ExtendedSelection)
-        sources_list_layout.addWidget(self.source_list)
+        self.source_list.setMinimumHeight(160)  # 设置最小高度
         
-        # 源频道按钮
-        source_buttons_layout = QHBoxLayout()
-        self.remove_source_button = QPushButton("删除所选")
-        source_buttons_layout.addWidget(self.remove_source_button)
+        source_layout.addWidget(source_list_label)
+        source_layout.addWidget(self.source_list, 1)  # 使列表占据所有剩余空间
         
-        sources_list_layout.addLayout(source_buttons_layout)
-        source_layout.addLayout(sources_list_layout)
-        
-        # ===== 转发选项组 =====
-        options_group = QGroupBox("转发选项")
-        options_layout = QVBoxLayout(options_group)
+        # 转发选项标签页
+        self.options_tab = QWidget()
+        options_layout = QVBoxLayout(self.options_tab)
+        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        options_layout.setSpacing(4)  # 减小间距
         
         # 转发选项
         options_grid = QGridLayout()
@@ -116,6 +143,7 @@ class ForwardView(QWidget):
         options_grid.addWidget(self.remove_caption_check, 1, 0)
         
         self.custom_caption_check = QCheckBox("使用自定义说明文字")
+        self.custom_caption_check.toggled.connect(lambda checked: self.caption_template.setEnabled(checked))
         options_grid.addWidget(self.custom_caption_check, 1, 1)
         
         self.protect_content_check = QCheckBox("保护内容")
@@ -149,40 +177,53 @@ class ForwardView(QWidget):
         
         delay_layout.addWidget(self.forward_delay)
         delay_layout.addStretch()
+        
         options_layout.addLayout(delay_layout)
         
-        # 将组件添加到左侧面板
-        left_layout.addWidget(source_group)
-        left_layout.addWidget(options_group)
+        # 转发规则标签页
+        self.rules_tab = QWidget()
+        rules_layout = QVBoxLayout(self.rules_tab)
+        rules_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        rules_layout.setSpacing(4)  # 减小间距
         
-        # 操作按钮
-        button_layout = QHBoxLayout()
+        # 规则创建表单
+        rule_form = QFormLayout()
         
-        self.start_forward_button = QPushButton("开始转发")
-        self.start_forward_button.setMinimumHeight(40)
+        self.target_input = QLineEdit()
+        self.target_input.setPlaceholderText("目标频道链接或ID")
+        rule_form.addRow("目标频道:", self.target_input)
         
-        self.stop_forward_button = QPushButton("停止转发")
-        self.stop_forward_button.setEnabled(False)
+        self.keyword_input = QLineEdit()
+        self.keyword_input.setPlaceholderText("留空表示不过滤关键词")
+        rule_form.addRow("关键词过滤:", self.keyword_input)
         
-        self.save_config_button = QPushButton("保存配置")
+        self.media_type_combo = QComboBox()
+        self.media_type_combo.addItem("所有类型", "all")
+        self.media_type_combo.addItem("仅文本", "text")
+        self.media_type_combo.addItem("仅照片", "photo")
+        self.media_type_combo.addItem("仅视频", "video")
+        self.media_type_combo.addItem("仅文件", "document")
+        rule_form.addRow("媒体类型:", self.media_type_combo)
         
-        button_layout.addWidget(self.start_forward_button)
-        button_layout.addWidget(self.stop_forward_button)
-        button_layout.addWidget(self.save_config_button)
+        rules_layout.addLayout(rule_form)
         
-        left_layout.addLayout(button_layout)
+        # 添加规则按钮
+        rule_button_layout = QHBoxLayout()
+        self.add_rule_button = QPushButton("添加规则")
+        rule_button_layout.addWidget(self.add_rule_button)
+        rule_button_layout.addStretch(1)
         
-        # 添加到主布局
-        self.main_layout.addWidget(left_panel)
+        rules_layout.addLayout(rule_button_layout)
+        
+        # 将标签页添加到配置面板
+        self.config_tabs.addTab(self.source_tab, "源频道")
+        self.config_tabs.addTab(self.options_tab, "转发选项")
+        self.config_tabs.addTab(self.rules_tab, "转发规则")
     
-    def _create_right_panel(self):
-        """创建右侧面板-转发列表和状态"""
-        # 创建右侧容器
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        
-        # 创建转发规则面板
-        rules_group = QGroupBox("转发规则")
+    def _create_forward_panel(self):
+        """创建转发规则和状态面板"""
+        # 转发规则列表
+        rules_group = QGroupBox("转发规则列表")
         rules_layout = QVBoxLayout(rules_group)
         
         # 创建规则表格
@@ -196,50 +237,17 @@ class ForwardView(QWidget):
         
         rules_layout.addWidget(self.rules_table)
         
-        # 添加规则按钮布局
-        add_rule_layout = QHBoxLayout()
+        # 添加到主布局
+        self.main_layout.addWidget(rules_group, 2)  # 给规则表格更多空间
         
-        # 添加目标频道输入
-        target_form_layout = QFormLayout()
-        self.target_input = QLineEdit()
-        self.target_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        target_form_layout.addRow("目标频道:", self.target_input)
-        
-        # 关键词过滤输入
-        self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("使用逗号分隔多个关键词")
-        target_form_layout.addRow("关键词过滤:", self.keyword_input)
-        
-        add_rule_layout.addLayout(target_form_layout)
-        
-        # 添加媒体类型选择
-        media_type_layout = QFormLayout()
-        self.media_type_combo = QComboBox()
-        self.media_type_combo.addItems(["所有类型", "图片", "视频", "文档", "音频", "动画"])
-        media_type_layout.addRow("媒体类型:", self.media_type_combo)
-        
-        # 添加按钮
-        self.add_rule_button = QPushButton("添加规则")
-        self.remove_rule_button = QPushButton("删除规则")
-        
-        button_layout = QVBoxLayout()
-        button_layout.addWidget(self.add_rule_button)
-        button_layout.addWidget(self.remove_rule_button)
-        button_layout.addStretch()
-        
-        add_rule_layout.addLayout(media_type_layout)
-        add_rule_layout.addLayout(button_layout)
-        
-        rules_layout.addLayout(add_rule_layout)
-        
-        # 创建状态面板
+        # 转发状态面板
         self.status_group = QGroupBox("转发状态")
         status_layout = QVBoxLayout(self.status_group)
         
         # 状态表格
         self.status_table = QTableWidget()
         self.status_table.setColumnCount(4)
-        self.status_table.setHorizontalHeaderLabels(["消息ID", "源频道", "目标频道", "状态"])
+        self.status_table.setHorizontalHeaderLabels(["源频道", "目标频道", "已转发消息数", "状态"])
         self.status_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.status_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.status_table.horizontalHeader().setStretchLastSection(True)
@@ -271,8 +279,12 @@ class ForwardView(QWidget):
         
         status_layout.addLayout(progress_layout)
         
-        # 操作按钮区域
-        action_layout = QHBoxLayout()
+        # 添加到主布局
+        self.main_layout.addWidget(self.status_group, 1)
+    
+    def _create_action_buttons(self):
+        """创建底部操作按钮"""
+        button_layout = QHBoxLayout()
         
         self.start_forward_button = QPushButton("开始转发")
         self.start_forward_button.setMinimumHeight(40)
@@ -282,20 +294,14 @@ class ForwardView(QWidget):
         
         self.save_config_button = QPushButton("保存配置")
         
-        action_layout.addWidget(self.start_forward_button)
-        action_layout.addWidget(self.stop_forward_button)
-        action_layout.addWidget(self.save_config_button)
+        button_layout.addWidget(self.start_forward_button)
+        button_layout.addWidget(self.stop_forward_button)
+        button_layout.addWidget(self.save_config_button)
         
-        # 添加面板到右侧布局
-        right_layout.addWidget(rules_group)
-        right_layout.addWidget(self.status_group)
-        right_layout.addLayout(action_layout)
-        
-        # 添加到主布局
-        self.main_layout.addWidget(right_panel)
+        self.main_layout.addLayout(button_layout)
     
     def _connect_signals(self):
-        """连接信号"""
+        """连接信号和槽"""
         # 源频道管理
         self.add_source_button.clicked.connect(self._add_source)
         self.remove_source_button.clicked.connect(self._remove_sources)
@@ -307,6 +313,34 @@ class ForwardView(QWidget):
         self.start_forward_button.clicked.connect(self._start_forward)
         self.stop_forward_button.clicked.connect(self._stop_forward)
         self.save_config_button.clicked.connect(self._save_config)
+        
+        # 启用自定义说明文字
+        self.custom_caption_check.toggled.connect(self.caption_template.setEnabled)
+    
+    def _init_state(self):
+        """初始化状态"""
+        self.forward_rules = []
+        self.rules_table.setRowCount(0)
+        self.status_table.setRowCount(0)
+        self.overall_status_label.setText("等待转发...")
+        self.forwarded_count_label.setText("已转发: 0 条消息")
+        self.start_forward_button.setEnabled(True)
+        self.stop_forward_button.setEnabled(False)
+        self.save_config_button.setEnabled(True)
+        self.source_input.clear()
+        self.target_input.clear()
+        self.keyword_input.clear()
+        self.media_type_combo.setCurrentIndex(0)
+        self.source_list.clear()
+        self.caption_template.setEnabled(False)
+        self.caption_template.setPlainText("")
+        self.forward_delay.setValue(3)
+        self.preserve_date_check.setChecked(False)
+        self.disable_notification_check.setChecked(False)
+        self.remove_caption_check.setChecked(False)
+        self.custom_caption_check.setChecked(False)
+        self.protect_content_check.setChecked(False)
+        self.schedule_message_check.setChecked(False)
     
     def _add_source(self):
         """添加源频道到列表"""

@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QFileSystemModel, QTreeView, QSplitter, QTextEdit, QSizePolicy
+    QFileSystemModel, QTreeView, QSplitter, QTextEdit, QSizePolicy,
+    QTabWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QModelIndex
 from PySide6.QtGui import QIcon
@@ -38,14 +39,41 @@ class UploadView(QWidget):
         self.config = config or {}
         
         # 设置布局
-        self.main_layout = QHBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(2)  # 减小布局间距
+        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         self.setLayout(self.main_layout)
         
-        # 创建左侧面板-配置选项
-        self._create_left_panel()
+        # 设置统一的组框样式
+        self.setStyleSheet("""
+            QGroupBox { 
+                font-weight: bold; 
+                padding-top: 2px; 
+                margin-top: 0.5em; 
+            }
+            QTabWidget::pane {
+                border: 1px solid #444;
+                padding: 1px;
+            }
+            QTabBar::tab {
+                padding: 3px 8px;
+            }
+        """)
         
-        # 创建右侧面板-文件选择器和上传队列
-        self._create_right_panel()
+        # 创建上部配置标签页
+        self.config_tabs = QTabWidget()
+        self.config_tabs.setMaximumHeight(280)  # 减小最大高度，从320降至280
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.main_layout.addWidget(self.config_tabs)
+        
+        # 创建配置标签页
+        self._create_config_panel()
+        
+        # 创建下部上传状态面板
+        self._create_upload_panel()
+        
+        # 创建底部操作按钮
+        self._create_action_buttons()
         
         # 连接信号
         self._connect_signals()
@@ -59,22 +87,15 @@ class UploadView(QWidget):
         
         logger.info("上传界面初始化完成")
     
-    def _create_left_panel(self):
-        """创建左侧面板-配置选项"""
-        # 创建左侧容器
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_panel.setMinimumWidth(300)  # 减小最小宽度
-        left_panel.setMaximumWidth(450)  # 适当减小最大宽度
+    def _create_config_panel(self):
+        """创建配置标签页"""
+        # 目标频道标签页
+        self.channel_tab = QWidget()
+        channel_layout = QVBoxLayout(self.channel_tab)
+        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        channel_layout.setSpacing(4)  # 减小间距
         
-        # 设置尺寸策略，允许更灵活的缩放
-        left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        
-        # ===== 频道配置组 =====
-        channel_group = QGroupBox("目标频道配置")
-        channel_layout = QVBoxLayout()
-        
-        # 频道链接
+        # 频道输入
         form_layout = QFormLayout()
         
         self.channel_input = QLineEdit()
@@ -83,68 +104,62 @@ class UploadView(QWidget):
         
         channel_layout.addLayout(form_layout)
         
-        # 添加和删除频道按钮
-        channel_button_layout = QHBoxLayout()
-        
+        # 添加频道按钮
+        button_layout = QHBoxLayout()
         self.add_channel_button = QPushButton("添加频道")
         self.remove_channel_button = QPushButton("删除所选")
         
-        channel_button_layout.addWidget(self.add_channel_button)
-        channel_button_layout.addWidget(self.remove_channel_button)
+        button_layout.addWidget(self.add_channel_button)
+        button_layout.addWidget(self.remove_channel_button)
+        button_layout.addStretch(1)
         
-        channel_layout.addLayout(channel_button_layout)
+        channel_layout.addLayout(button_layout)
         
         # 频道列表
+        channel_list_label = QLabel("已配置目标频道:")
+        
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.channel_list.setMinimumHeight(85)  # 设置最小高度以显示约3行
         
-        channel_layout.addWidget(QLabel("已配置频道:"))
-        channel_layout.addWidget(self.channel_list)
+        channel_layout.addWidget(channel_list_label)
+        channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
         
-        channel_group.setLayout(channel_layout)
+        # 上传选项标签页
+        self.options_tab = QWidget()
+        options_layout = QVBoxLayout(self.options_tab)
+        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        options_layout.setSpacing(4)  # 减小间距
         
-        # ===== 上传选项组 =====
-        options_group = QGroupBox("上传选项")
-        options_layout = QVBoxLayout()
-        
-        # 说明文字选项
-        caption_group = QGroupBox("说明文字设置")
-        caption_layout = QVBoxLayout()
+        # 说明文字选项 - 改为水平布局
+        caption_options_layout = QGridLayout()
+        caption_options_layout.setHorizontalSpacing(15)  # 增加水平间距
         
         self.use_folder_name_check = QCheckBox("使用文件夹名称作为说明文字")
         self.use_folder_name_check.setChecked(True)
+        caption_options_layout.addWidget(self.use_folder_name_check, 0, 0)
         
         self.read_title_txt_check = QCheckBox("读取title.txt文件作为说明文字")
         self.read_title_txt_check.setChecked(True)
+        caption_options_layout.addWidget(self.read_title_txt_check, 0, 1)
         
-        caption_layout.addWidget(self.use_folder_name_check)
-        caption_layout.addWidget(self.read_title_txt_check)
-        
-        # 自定义说明文字模板
-        caption_layout.addWidget(QLabel("自定义说明文字模板:"))
-        self.caption_template = QTextEdit()
-        self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称")
-        self.caption_template.setMaximumHeight(80)
-        caption_layout.addWidget(self.caption_template)
-        
-        caption_group.setLayout(caption_layout)
-        options_layout.addWidget(caption_group)
-        
-        # 媒体组设置
-        media_group = QGroupBox("媒体组设置")
-        media_layout = QVBoxLayout()
-        
+        # 媒体组设置 - 放到水平布局中
         self.keep_media_groups_check = QCheckBox("保持原始文件组合为媒体组")
         self.keep_media_groups_check.setChecked(True)
+        caption_options_layout.addWidget(self.keep_media_groups_check, 1, 0)
         
         self.auto_thumbnail_check = QCheckBox("自动生成视频缩略图")
         self.auto_thumbnail_check.setChecked(True)
+        caption_options_layout.addWidget(self.auto_thumbnail_check, 1, 1)
         
-        media_layout.addWidget(self.keep_media_groups_check)
-        media_layout.addWidget(self.auto_thumbnail_check)
+        options_layout.addLayout(caption_options_layout)
         
-        media_group.setLayout(media_layout)
-        options_layout.addWidget(media_group)
+        # 自定义说明文字模板
+        options_layout.addWidget(QLabel("自定义说明文字模板:"))
+        self.caption_template = QTextEdit()
+        self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称")
+        self.caption_template.setMaximumHeight(80)
+        options_layout.addWidget(self.caption_template)
         
         # 上传延迟
         delay_layout = QHBoxLayout()
@@ -160,34 +175,11 @@ class UploadView(QWidget):
         
         options_layout.addLayout(delay_layout)
         
-        options_group.setLayout(options_layout)
-        
-        # ===== 操作按钮 =====
-        button_layout = QHBoxLayout()
-        
-        self.start_upload_button = QPushButton("开始上传")
-        self.start_upload_button.setMinimumHeight(40)
-        
-        self.save_config_button = QPushButton("保存配置")
-        
-        button_layout.addWidget(self.start_upload_button)
-        button_layout.addWidget(self.save_config_button)
-        
-        # 将组件添加到左侧面板
-        left_layout.addWidget(channel_group)
-        left_layout.addWidget(options_group)
-        left_layout.addLayout(button_layout)
-        
-        self.main_layout.addWidget(left_panel)
-    
-    def _create_right_panel(self):
-        """创建右侧面板-文件选择器和上传队列"""
-        # 创建右侧容器
-        right_panel = QSplitter(Qt.Vertical)
-        
-        # ===== 文件选择器 =====
-        file_selector_group = QGroupBox("本地文件选择器")
-        file_selector_layout = QVBoxLayout()
+        # 文件选择器标签页
+        self.file_selector_tab = QWidget()
+        file_selector_layout = QVBoxLayout(self.file_selector_tab)
+        file_selector_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        file_selector_layout.setSpacing(4)  # 减小间距
         
         # 文件系统导航
         file_nav_layout = QHBoxLayout()
@@ -231,69 +223,95 @@ class UploadView(QWidget):
         
         file_selector_layout.addLayout(file_selection_layout)
         
-        file_selector_group.setLayout(file_selector_layout)
+        # 将标签页添加到配置面板
+        self.config_tabs.addTab(self.channel_tab, "目标频道")
+        self.config_tabs.addTab(self.options_tab, "上传选项")
+        self.config_tabs.addTab(self.file_selector_tab, "文件选择")
+    
+    def _create_upload_panel(self):
+        """创建上传状态面板"""
+        # 创建下部区域的容器
+        upload_container = QWidget()
+        upload_container_layout = QVBoxLayout(upload_container)
+        upload_container_layout.setContentsMargins(0, 0, 0, 0)  # 移除容器的边距
+        upload_container_layout.setSpacing(2)  # 减小间距
         
-        # ===== 上传队列 =====
-        upload_queue_group = QGroupBox("上传队列")
-        upload_queue_layout = QVBoxLayout()
+        # 上传队列标题和状态
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 队列状态
+        queue_title = QLabel("<b>上传队列</b>")
+        queue_title.setStyleSheet("font-size: 12px;")
+        header_layout.addWidget(queue_title)
+        
         self.queue_status_label = QLabel("待上传: 0个文件，共0MB")
-        upload_queue_layout.addWidget(self.queue_status_label)
+        header_layout.addWidget(self.queue_status_label)
+        header_layout.addStretch(1)
+        
+        upload_container_layout.addLayout(header_layout)
         
         # 上传队列列表
         self.upload_list = QListWidget()
-        upload_queue_layout.addWidget(self.upload_list)
+        self.upload_list.setMinimumHeight(120)  # 确保列表有足够的高度
+        upload_container_layout.addWidget(self.upload_list)
         
-        # 队列控制按钮
-        queue_control_layout = QHBoxLayout()
+        # 当前进度信息
+        progress_layout = QHBoxLayout()
+        progress_layout.setContentsMargins(0, 2, 0, 0)
         
-        self.clear_queue_button = QPushButton("清空队列")
-        self.remove_selected_button = QPushButton("移除所选")
-        
-        queue_control_layout.addWidget(self.clear_queue_button)
-        queue_control_layout.addWidget(self.remove_selected_button)
-        
-        upload_queue_layout.addLayout(queue_control_layout)
-        
-        # 当前进度
-        progress_layout = QVBoxLayout()
+        progress_info_layout = QVBoxLayout()
+        progress_info_layout.setSpacing(1)
         
         self.current_file_label = QLabel("当前文件: -")
         self.upload_speed_label = QLabel("速度: - | 剩余时间: -")
         
-        progress_layout.addWidget(self.current_file_label)
-        progress_layout.addWidget(self.upload_speed_label)
+        progress_info_layout.addWidget(self.current_file_label)
+        progress_info_layout.addWidget(self.upload_speed_label)
         
-        upload_queue_layout.addLayout(progress_layout)
+        progress_layout.addLayout(progress_info_layout)
+        progress_layout.addStretch(1)
         
-        upload_queue_group.setLayout(upload_queue_layout)
+        upload_container_layout.addLayout(progress_layout)
         
-        # 添加组件到右侧面板
-        right_panel.addWidget(file_selector_group)
-        right_panel.addWidget(upload_queue_group)
-        right_panel.setSizes([500, 300])  # 设置初始分割比例
+        # 添加到主布局，增加下方区域的比例
+        self.main_layout.addWidget(upload_container, 2)  # 从1增加到2，增大下方区域比例
+    
+    def _create_action_buttons(self):
+        """创建底部操作按钮"""
+        button_layout = QHBoxLayout()
         
-        self.main_layout.addWidget(right_panel, 1)  # 1表示伸展系数
+        self.start_upload_button = QPushButton("开始上传")
+        self.start_upload_button.setMinimumHeight(40)
+        
+        self.save_config_button = QPushButton("保存配置")
+        self.clear_queue_button = QPushButton("清空队列")
+        self.remove_selected_button = QPushButton("移除所选")
+        
+        button_layout.addWidget(self.start_upload_button)
+        button_layout.addWidget(self.save_config_button)
+        button_layout.addWidget(self.clear_queue_button)
+        button_layout.addWidget(self.remove_selected_button)
+        
+        self.main_layout.addLayout(button_layout)
     
     def _connect_signals(self):
         """连接信号和槽"""
-        # 文件浏览
-        self.browse_button.clicked.connect(self._browse_directory)
-        self.file_tree.clicked.connect(self._on_file_tree_clicked)
-        
-        # 文件选择
-        self.select_all_button.clicked.connect(self._select_all_files)
-        self.clear_selection_button.clicked.connect(self._clear_file_selection)
-        self.add_to_queue_button.clicked.connect(self._add_to_queue)
-        
-        # 队列控制
-        self.clear_queue_button.clicked.connect(self._clear_queue)
-        self.remove_selected_button.clicked.connect(self._remove_selected_from_queue)
-        
         # 频道管理
         self.add_channel_button.clicked.connect(self._add_channel)
         self.remove_channel_button.clicked.connect(self._remove_channels)
+        
+        # 文件选择
+        self.browse_button.clicked.connect(self._browse_directory)
+        self.file_tree.doubleClicked.connect(self._on_file_double_clicked)
+        
+        # 文件操作
+        self.select_all_button.clicked.connect(self._select_all_files)
+        self.clear_selection_button.clicked.connect(self._clear_selection)
+        self.add_to_queue_button.clicked.connect(self._add_to_queue)
+        
+        # 队列管理
+        self.clear_queue_button.clicked.connect(self._clear_queue)
+        self.remove_selected_button.clicked.connect(self._remove_selected_files)
         
         # 上传控制
         self.start_upload_button.clicked.connect(self._start_upload)
@@ -311,11 +329,11 @@ class UploadView(QWidget):
             self.path_input.setText(directory)
             self.file_tree.setRootIndex(self.fs_model.index(directory))
     
-    def _on_file_tree_clicked(self, index):
-        """文件树点击处理
+    def _on_file_double_clicked(self, index):
+        """文件树双击处理
         
         Args:
-            index: 被点击的项的索引
+            index: 被双击的项的索引
         """
         # 更新当前路径
         path = self.fs_model.filePath(index)
@@ -325,7 +343,7 @@ class UploadView(QWidget):
         """全选文件"""
         self.file_tree.selectAll()
     
-    def _clear_file_selection(self):
+    def _clear_selection(self):
         """取消文件选择"""
         self.file_tree.clearSelection()
     
@@ -382,7 +400,7 @@ class UploadView(QWidget):
         self.upload_queue = []
         self._update_queue_status()
     
-    def _remove_selected_from_queue(self):
+    def _remove_selected_files(self):
         """从队列中移除选中的项目"""
         selected_items = self.upload_list.selectedItems()
         

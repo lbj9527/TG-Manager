@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QSizePolicy
+    QSizePolicy, QTabWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 
@@ -37,14 +37,41 @@ class DownloadView(QWidget):
         self.use_keywords = use_keywords
         
         # 设置布局
-        self.main_layout = QHBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(2)  # 减小布局间距
+        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         self.setLayout(self.main_layout)
         
-        # 创建左侧面板-配置选项
-        self._create_left_panel()
+        # 设置统一的组框样式
+        self.setStyleSheet("""
+            QGroupBox { 
+                font-weight: bold; 
+                padding-top: 2px; 
+                margin-top: 0.4em; 
+            }
+            QTabWidget::pane {
+                border: 1px solid #444;
+                padding: 1px;
+            }
+            QTabBar::tab {
+                padding: 3px 8px;
+            }
+        """)
         
-        # 创建右侧面板-下载列表和状态
-        self._create_right_panel()
+        # 创建上部配置标签页
+        self.config_tabs = QTabWidget()
+        self.config_tabs.setMaximumHeight(320)  # 设置最大高度
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.main_layout.addWidget(self.config_tabs)
+        
+        # 创建配置标签页
+        self._create_config_panel()
+        
+        # 创建下部下载状态和列表面板
+        self._create_download_panel()
+        
+        # 创建底部操作按钮
+        self._create_action_buttons()
         
         # 连接事件
         self._connect_signals()
@@ -58,29 +85,24 @@ class DownloadView(QWidget):
         
         logger.info(f"{'关键词' if self.use_keywords else '普通'}下载界面初始化完成")
     
-    def _create_left_panel(self):
-        """创建左侧面板"""
-        # 创建左侧容器
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_panel.setMinimumWidth(300)  # 减小最小宽度
-        left_panel.setMaximumWidth(450)  # 适当减小最大宽度
+    def _create_config_panel(self):
+        """创建配置标签页"""
+        # 频道配置标签页
+        self.channel_tab = QWidget()
+        channel_layout = QVBoxLayout(self.channel_tab)
+        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        channel_layout.setSpacing(4)  # 减小间距
         
-        # 设置尺寸策略，允许更灵活的缩放
-        left_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        
-        # ===== 频道配置组 =====
-        channel_group = QGroupBox("频道配置")
-        channel_layout = QVBoxLayout()
-        
-        # 频道链接
+        # 创建顶部表单面板
         form_layout = QFormLayout()
         
+        # 频道输入
         self.channel_input = QLineEdit()
         self.channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("源频道:", self.channel_input)
+        form_layout.addRow("频道链接:", self.channel_input)
         
-        id_layout = QHBoxLayout()
+        # 消息范围
+        range_layout = QHBoxLayout()
         
         self.start_id = QSpinBox()
         self.start_id.setRange(1, 999999999)
@@ -88,119 +110,89 @@ class DownloadView(QWidget):
         
         self.end_id = QSpinBox()
         self.end_id.setRange(0, 999999999)
-        self.end_id.setValue(100)
+        self.end_id.setValue(0)
         self.end_id.setSpecialValueText("最新消息")
         
-        id_layout.addWidget(QLabel("开始ID:"))
-        id_layout.addWidget(self.start_id)
-        id_layout.addWidget(QLabel("结束ID:"))
-        id_layout.addWidget(self.end_id)
+        range_layout.addWidget(QLabel("从消息ID:"))
+        range_layout.addWidget(self.start_id)
+        range_layout.addWidget(QLabel("到:"))
+        range_layout.addWidget(self.end_id)
         
-        channel_layout.addLayout(form_layout)
-        channel_layout.addLayout(id_layout)
+        form_layout.addRow("", range_layout)
         
-        # 添加和删除频道按钮
-        channel_button_layout = QHBoxLayout()
-        
+        # 添加频道按钮
+        button_layout = QHBoxLayout()
         self.add_channel_button = QPushButton("添加频道")
         self.remove_channel_button = QPushButton("删除所选")
         
-        channel_button_layout.addWidget(self.add_channel_button)
-        channel_button_layout.addWidget(self.remove_channel_button)
-        
-        channel_layout.addLayout(channel_button_layout)
+        button_layout.addWidget(self.add_channel_button)
+        button_layout.addWidget(self.remove_channel_button)
+        button_layout.addStretch(1)
         
         # 频道列表
+        channel_list_label = QLabel("已配置下载频道:")
+        
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.channel_list.setMinimumHeight(160)  # 设置最小高度
         
-        channel_layout.addWidget(QLabel("已配置频道:"))
-        channel_layout.addWidget(self.channel_list)
+        channel_layout.addLayout(form_layout)
+        channel_layout.addLayout(button_layout)
+        channel_layout.addWidget(channel_list_label)
+        channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
         
-        channel_group.setLayout(channel_layout)
+        # 下载选项标签页
+        self.options_tab = QWidget()
+        options_layout = QVBoxLayout(self.options_tab)
+        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        options_layout.setSpacing(4)  # 减小间距
         
-        # ===== 下载选项组 =====
-        options_group = QGroupBox("下载选项")
-        options_layout = QVBoxLayout()
+        # 媒体类型选项
+        media_layout = QVBoxLayout()
+        media_layout.addWidget(QLabel("要下载的媒体类型:"))
         
-        # 媒体类型选择
-        media_label = QLabel("媒体类型:")
-        
-        media_layout = QGridLayout()
+        media_check_layout = QGridLayout()
         
         self.photo_check = QCheckBox("照片")
         self.photo_check.setChecked(True)
-        media_layout.addWidget(self.photo_check, 0, 0)
+        media_check_layout.addWidget(self.photo_check, 0, 0)
         
         self.video_check = QCheckBox("视频")
         self.video_check.setChecked(True)
-        media_layout.addWidget(self.video_check, 0, 1)
+        media_check_layout.addWidget(self.video_check, 0, 1)
         
         self.document_check = QCheckBox("文档")
         self.document_check.setChecked(True)
-        media_layout.addWidget(self.document_check, 1, 0)
+        media_check_layout.addWidget(self.document_check, 1, 0)
         
         self.audio_check = QCheckBox("音频")
         self.audio_check.setChecked(True)
-        media_layout.addWidget(self.audio_check, 1, 1)
+        media_check_layout.addWidget(self.audio_check, 1, 1)
         
         self.animation_check = QCheckBox("动画")
         self.animation_check.setChecked(True)
-        media_layout.addWidget(self.animation_check, 2, 0)
+        media_check_layout.addWidget(self.animation_check, 2, 0)
         
-        options_layout.addWidget(media_label)
+        media_layout.addLayout(media_check_layout)
         options_layout.addLayout(media_layout)
-        
-        # 关键词过滤
-        if self.use_keywords:
-            keywords_layout = QVBoxLayout()
-            keywords_label = QLabel("关键词过滤:")
-            
-            self.keywords_input = QLineEdit()
-            self.keywords_input.setPlaceholderText("输入关键词，用逗号分隔多个关键词")
-            
-            keywords_layout.addWidget(keywords_label)
-            keywords_layout.addWidget(self.keywords_input)
-            
-            # 添加和删除关键词按钮
-            keywords_button_layout = QHBoxLayout()
-            
-            self.add_keyword_button = QPushButton("添加关键词")
-            self.remove_keyword_button = QPushButton("删除所选")
-            
-            keywords_button_layout.addWidget(self.add_keyword_button)
-            keywords_button_layout.addWidget(self.remove_keyword_button)
-            
-            keywords_layout.addLayout(keywords_button_layout)
-            
-            # 关键词列表
-            self.keywords_list = QListWidget()
-            self.keywords_list.setSelectionMode(QListWidget.ExtendedSelection)
-            
-            keywords_layout.addWidget(QLabel("已添加关键词:"))
-            keywords_layout.addWidget(self.keywords_list)
-            
-            options_layout.addLayout(keywords_layout)
         
         # 下载路径
         path_layout = QHBoxLayout()
-        
-        self.download_path = QLineEdit()
-        self.download_path.setReadOnly(True)
-        self.download_path.setText("downloads")
-        
-        self.browse_button = QPushButton("浏览...")
-        
         path_layout.addWidget(QLabel("下载路径:"))
+        
+        self.download_path = QLineEdit("downloads")
         path_layout.addWidget(self.download_path)
-        path_layout.addWidget(self.browse_button)
+        
+        self.browse_path_button = QPushButton("浏览...")
+        path_layout.addWidget(self.browse_path_button)
         
         options_layout.addLayout(path_layout)
         
-        # 并行下载设置
+        # 并行下载选项
         parallel_layout = QHBoxLayout()
         
         self.parallel_check = QCheckBox("启用并行下载")
+        self.parallel_check.toggled.connect(lambda checked: self.max_downloads.setEnabled(checked))
         
         self.max_downloads = QSpinBox()
         self.max_downloads.setRange(1, 20)
@@ -210,38 +202,57 @@ class DownloadView(QWidget):
         parallel_layout.addWidget(self.parallel_check)
         parallel_layout.addWidget(QLabel("最大并发:"))
         parallel_layout.addWidget(self.max_downloads)
+        parallel_layout.addStretch(1)
         
         options_layout.addLayout(parallel_layout)
         
-        options_group.setLayout(options_layout)
+        # 关键词标签页（仅在关键词模式下显示）
+        if self.use_keywords:
+            self.keyword_tab = QWidget()
+            keyword_layout = QVBoxLayout(self.keyword_tab)
+            keyword_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+            keyword_layout.setSpacing(4)  # 减小间距
+            
+            # 关键词输入
+            keyword_form = QFormLayout()
+            
+            self.keyword_input = QLineEdit()
+            self.keyword_input.setPlaceholderText("输入要筛选的关键词")
+            keyword_form.addRow("关键词:", self.keyword_input)
+            
+            keyword_layout.addLayout(keyword_form)
+            
+            # 关键词按钮
+            keyword_buttons = QHBoxLayout()
+            
+            self.add_keyword_button = QPushButton("添加关键词")
+            self.remove_keyword_button = QPushButton("删除所选")
+            
+            keyword_buttons.addWidget(self.add_keyword_button)
+            keyword_buttons.addWidget(self.remove_keyword_button)
+            keyword_buttons.addStretch(1)
+            
+            keyword_layout.addLayout(keyword_buttons)
+            
+            # 关键词列表
+            keyword_layout.addWidget(QLabel("已配置关键词:"))
+            
+            self.keywords_list = QListWidget()
+            self.keywords_list.setSelectionMode(QListWidget.ExtendedSelection)
+            keyword_layout.addWidget(self.keywords_list, 1)  # 使列表占据所有剩余空间
+            
+            # 添加到标签页
+            self.config_tabs.addTab(self.keyword_tab, "关键词筛选")
         
-        # ===== 操作按钮 =====
-        button_layout = QHBoxLayout()
-        
-        self.start_button = QPushButton("开始下载")
-        self.start_button.setMinimumHeight(40)
-        
-        self.save_config_button = QPushButton("保存配置")
-        
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.save_config_button)
-        
-        # 将组件添加到左侧面板
-        left_layout.addWidget(channel_group)
-        left_layout.addWidget(options_group)
-        left_layout.addLayout(button_layout)
-        
-        self.main_layout.addWidget(left_panel)
+        # 将标签页添加到配置面板
+        self.config_tabs.addTab(self.channel_tab, "频道配置")
+        self.config_tabs.addTab(self.options_tab, "下载选项")
     
-    def _create_right_panel(self):
-        """创建右侧面板"""
-        # 创建右侧容器
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        
-        # ===== 下载状态组 =====
+    def _create_download_panel(self):
+        """创建下载状态和列表面板"""
+        # 创建下载状态组
         status_group = QGroupBox("下载状态")
-        status_layout = QVBoxLayout()
+        status_layout = QVBoxLayout(status_group)
         
         # 当前下载任务
         status_layout.addWidget(QLabel("当前下载任务:"))
@@ -254,46 +265,51 @@ class DownloadView(QWidget):
         self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
         status_layout.addWidget(self.overall_progress_label)
         
-        status_group.setLayout(status_layout)
+        # 添加到主布局
+        self.main_layout.addWidget(status_group)
         
-        # ===== 下载列表组 =====
+        # 创建下载列表组
         download_list_group = QGroupBox("下载列表")
-        download_list_layout = QVBoxLayout()
+        download_list_layout = QVBoxLayout(download_list_group)
         
-        # 创建下载列表滚动区域
+        # 创建下载列表
         self.download_list = QListWidget()
-        
         download_list_layout.addWidget(self.download_list)
         
-        download_list_group.setLayout(download_list_layout)
+        # 添加到主布局
+        self.main_layout.addWidget(download_list_group, 4)  # 给下载列表更多的空间
+    
+    def _create_action_buttons(self):
+        """创建底部操作按钮"""
+        button_layout = QHBoxLayout()
         
-        # 添加组件到右侧面板
-        right_layout.addWidget(status_group)
-        right_layout.addWidget(download_list_group, 1)  # 1 表示伸展因子
+        self.start_button = QPushButton("开始下载")
+        self.start_button.setMinimumHeight(40)
         
-        self.main_layout.addWidget(right_panel, 1)  # 1 表示伸展因子
+        self.save_config_button = QPushButton("保存配置")
+        self.clear_list_button = QPushButton("清空列表")
+        
+        button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.save_config_button)
+        button_layout.addWidget(self.clear_list_button)
+        
+        self.main_layout.addLayout(button_layout)
     
     def _connect_signals(self):
         """连接信号和槽"""
-        # 并行下载复选框状态改变时
-        self.parallel_check.stateChanged.connect(self._on_parallel_state_changed)
-        
-        # 浏览按钮点击
-        self.browse_button.clicked.connect(self._browse_download_path)
-        
-        # 添加频道按钮点击
+        # 频道管理
         self.add_channel_button.clicked.connect(self._add_channel)
-        
-        # 删除频道按钮点击
         self.remove_channel_button.clicked.connect(self._remove_channels)
         
-        # 开始下载按钮点击
+        # 路径浏览
+        self.browse_path_button.clicked.connect(self._browse_download_path)
+        
+        # 下载控制
         self.start_button.clicked.connect(self._start_download)
-        
-        # 保存配置按钮点击
         self.save_config_button.clicked.connect(self._save_config)
+        self.clear_list_button.clicked.connect(self.clear_download_list)
         
-        # 如果是关键词模式，连接关键词相关信号
+        # 如果是关键词模式，连接关键词管理
         if self.use_keywords:
             self.add_keyword_button.clicked.connect(self._add_keyword)
             self.remove_keyword_button.clicked.connect(self._remove_keywords)
@@ -304,19 +320,10 @@ class DownloadView(QWidget):
         self.channel_input.setToolTip("输入Telegram频道链接或ID")
         self.start_id.setToolTip("起始消息ID (包含)")
         self.end_id.setToolTip("结束消息ID (包含), 0表示最新消息")
-        self.browse_button.setToolTip("选择下载文件保存位置")
+        self.browse_path_button.setToolTip("选择下载文件保存位置")
         
         if self.use_keywords:
-            self.keywords_input.setToolTip("输入关键词，多个关键词用逗号分隔")
-    
-    @Slot(int)
-    def _on_parallel_state_changed(self, state):
-        """并行下载复选框状态改变处理
-        
-        Args:
-            state: 复选框状态
-        """
-        self.max_downloads.setEnabled(state == Qt.Checked)
+            self.keyword_input.setToolTip("输入要筛选的关键词")
     
     def _browse_download_path(self):
         """浏览下载路径对话框"""
@@ -364,14 +371,13 @@ class DownloadView(QWidget):
     
     def _remove_channels(self):
         """删除选中的频道"""
-        # 获取所有选中项
         selected_items = self.channel_list.selectedItems()
         
         if not selected_items:
             QMessageBox.information(self, "提示", "请先选择要删除的频道")
             return
         
-        # 逆序删除，避免索引变化问题
+        # 删除选中的频道
         for item in reversed(selected_items):
             row = self.channel_list.row(item)
             self.channel_list.takeItem(row)
@@ -381,43 +387,35 @@ class DownloadView(QWidget):
         if not self.use_keywords:
             return
             
-        keywords_text = self.keywords_input.text().strip()
+        keywords_text = self.keyword_input.text().strip()
         
         if not keywords_text:
             QMessageBox.warning(self, "警告", "请输入关键词")
             return
         
-        # 分割关键词
-        keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
+        # 检查是否已存在相同关键词
+        if self.keywords_list.findItems(keywords_text, Qt.MatchExactly):
+            QMessageBox.information(self, "提示", "此关键词已在列表中")
+            return
         
-        # 添加到列表，忽略重复项
-        for keyword in keywords:
-            # 检查是否已存在
-            exists = False
-            for i in range(self.keywords_list.count()):
-                if self.keywords_list.item(i).text() == keyword:
-                    exists = True
-                    break
-            
-            if not exists:
-                self.keywords_list.addItem(keyword)
+        # 添加到列表
+        self.keywords_list.addItem(keywords_text)
         
         # 清空输入
-        self.keywords_input.clear()
+        self.keyword_input.clear()
     
     def _remove_keywords(self):
         """删除选中的关键词"""
         if not self.use_keywords:
             return
             
-        # 获取所有选中项
         selected_items = self.keywords_list.selectedItems()
         
         if not selected_items:
             QMessageBox.information(self, "提示", "请先选择要删除的关键词")
             return
         
-        # 逆序删除，避免索引变化问题
+        # 删除选中的关键词
         for item in reversed(selected_items):
             row = self.keywords_list.row(item)
             self.keywords_list.takeItem(row)
@@ -426,7 +424,7 @@ class DownloadView(QWidget):
         """获取选中的媒体类型
         
         Returns:
-            list: 选中的媒体类型列表
+            list: 媒体类型列表
         """
         media_types = []
         
