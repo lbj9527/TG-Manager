@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QComboBox,
     QListWidget, QListWidgetItem, QMessageBox,
-    QTextEdit, QSplitter, QTabWidget, QDateTimeEdit
+    QTextEdit, QSplitter, QTabWidget, QDateTimeEdit,
+    QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot, QDateTime
 from PySide6.QtGui import QIcon, QTextCursor
@@ -39,7 +40,7 @@ class ListenView(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.setLayout(self.main_layout)
         
-        # 创建顶部配置面板
+        # 创建顶部配置面板（使用滚动区域）
         self._create_config_panel()
         
         # 创建中间消息显示面板
@@ -61,9 +62,20 @@ class ListenView(QWidget):
         logger.info("监听界面初始化完成")
     
     def _create_config_panel(self):
-        """创建顶部配置面板"""
+        """创建顶部配置面板（添加滚动区域）"""
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        
+        # 创建内容部件
+        config_widget = QWidget()
+        config_layout = QVBoxLayout(config_widget)
+        config_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 监听配置组
         config_group = QGroupBox("监听配置")
-        config_layout = QVBoxLayout()
+        config_inner_layout = QVBoxLayout()
         
         # 创建顶部表单面板
         form_layout = QFormLayout()
@@ -74,34 +86,37 @@ class ListenView(QWidget):
         form_layout.addRow("监听频道:", self.channel_input)
         
         # 创建水平布局存放添加按钮和频道列表
-        channel_list_layout = QHBoxLayout()
+        channel_action_layout = QHBoxLayout()
         
         # 添加频道按钮
         self.add_channel_button = QPushButton("添加频道")
-        channel_list_layout.addWidget(self.add_channel_button)
+        channel_action_layout.addWidget(self.add_channel_button)
         
         # 删除频道按钮
         self.remove_channel_button = QPushButton("删除所选")
-        channel_list_layout.addWidget(self.remove_channel_button)
+        channel_action_layout.addWidget(self.remove_channel_button)
         
-        # 频道列表
-        channel_layout = QVBoxLayout()
-        channel_layout.addWidget(QLabel("已配置监听频道:"))
+        # 添加弹性空间，让按钮靠左对齐
+        channel_action_layout.addStretch(1)
+        
+        # 频道列表部分
+        channel_list_label = QLabel("已配置监听频道:")
         
         self.channel_list = QListWidget()
-        self.channel_list.setMaximumHeight(100)
+        self.channel_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.channel_list.setMinimumHeight(80)
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
-        channel_layout.addWidget(self.channel_list)
         
-        # 完整的频道配置面板
-        channel_config_layout = QHBoxLayout()
-        channel_config_layout.addLayout(form_layout)
-        channel_config_layout.addLayout(channel_list_layout)
+        # 添加表单、按钮和列表到布局
+        config_inner_layout.addLayout(form_layout)
+        config_inner_layout.addLayout(channel_action_layout)
+        config_inner_layout.addWidget(channel_list_label)
+        config_inner_layout.addWidget(self.channel_list)
         
-        config_layout.addLayout(channel_config_layout)
-        config_layout.addLayout(channel_layout)
+        config_group.setLayout(config_inner_layout)
+        config_layout.addWidget(config_group)
         
-        # 过滤选项
+        # 过滤选项组
         filter_group = QGroupBox("消息过滤")
         filter_layout = QVBoxLayout()
         
@@ -120,71 +135,95 @@ class ListenView(QWidget):
         self.media_type_combo.addItem("仅照片", "photo")
         self.media_type_combo.addItem("仅视频", "video")
         self.media_type_combo.addItem("仅文件", "document")
+        self.media_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         filter_form.addRow("媒体类型:", self.media_type_combo)
         
         filter_layout.addLayout(filter_form)
         
-        # 过滤选项复选框
-        filter_checkboxes = QHBoxLayout()
+        # 过滤选项复选框 - 使用流式布局
+        filter_checkboxes = QVBoxLayout()
         
+        # 第一行复选框
+        filter_row1 = QHBoxLayout()
         self.exclude_forwards_check = QCheckBox("排除转发消息")
         self.exclude_replies_check = QCheckBox("排除回复消息")
+        filter_row1.addWidget(self.exclude_forwards_check)
+        filter_row1.addWidget(self.exclude_replies_check)
+        filter_row1.addStretch(1)
+        
+        # 第二行复选框
+        filter_row2 = QHBoxLayout()
         self.exclude_media_check = QCheckBox("排除媒体消息")
         self.exclude_links_check = QCheckBox("排除带链接消息")
+        filter_row2.addWidget(self.exclude_media_check)
+        filter_row2.addWidget(self.exclude_links_check)
+        filter_row2.addStretch(1)
         
-        filter_checkboxes.addWidget(self.exclude_forwards_check)
-        filter_checkboxes.addWidget(self.exclude_replies_check)
-        filter_checkboxes.addWidget(self.exclude_media_check)
-        filter_checkboxes.addWidget(self.exclude_links_check)
+        filter_checkboxes.addLayout(filter_row1)
+        filter_checkboxes.addLayout(filter_row2)
         
         filter_layout.addLayout(filter_checkboxes)
         
         # 时间过滤
-        time_filter_layout = QHBoxLayout()
+        time_filter_layout = QVBoxLayout()
+        time_header = QHBoxLayout()
         
         self.time_filter_check = QCheckBox("启用时间过滤")
-        time_filter_layout.addWidget(self.time_filter_check)
+        time_header.addWidget(self.time_filter_check)
+        time_header.addStretch(1)
         
-        time_filter_layout.addWidget(QLabel("从:"))
+        time_inputs = QHBoxLayout()
+        time_inputs.addWidget(QLabel("从:"))
         self.start_time = QDateTimeEdit(QDateTime.currentDateTime().addDays(-1))
         self.start_time.setCalendarPopup(True)
         self.start_time.setEnabled(False)
-        time_filter_layout.addWidget(self.start_time)
+        self.start_time.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        time_inputs.addWidget(self.start_time)
         
-        time_filter_layout.addWidget(QLabel("至:"))
+        time_inputs.addWidget(QLabel("至:"))
         self.end_time = QDateTimeEdit(QDateTime.currentDateTime())
         self.end_time.setCalendarPopup(True)
         self.end_time.setEnabled(False)
-        time_filter_layout.addWidget(self.end_time)
+        self.end_time.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        time_inputs.addWidget(self.end_time)
         
         # 连接时间过滤复选框和日期选择器的启用状态
         self.time_filter_check.toggled.connect(self.start_time.setEnabled)
         self.time_filter_check.toggled.connect(self.end_time.setEnabled)
         
+        time_filter_layout.addLayout(time_header)
+        time_filter_layout.addLayout(time_inputs)
+        
         filter_layout.addLayout(time_filter_layout)
         
         filter_group.setLayout(filter_layout)
+        config_layout.addWidget(filter_group)
         
         # 通知选项
         notify_group = QGroupBox("通知配置")
         notify_layout = QVBoxLayout()
         
-        notify_checkboxes = QHBoxLayout()
-        
+        # 第一行复选框
+        notify_row1 = QHBoxLayout()
         self.desktop_notify_check = QCheckBox("桌面通知")
         self.desktop_notify_check.setChecked(True)
         self.sound_notify_check = QCheckBox("声音提醒")
+        notify_row1.addWidget(self.desktop_notify_check)
+        notify_row1.addWidget(self.sound_notify_check)
+        notify_row1.addStretch(1)
+        
+        # 第二行复选框
+        notify_row2 = QHBoxLayout()
         self.highlight_check = QCheckBox("高亮关键字")
         self.highlight_check.setChecked(True)
         self.auto_scroll_check = QCheckBox("自动滚动到新消息")
         self.auto_scroll_check.setChecked(True)
+        notify_row2.addWidget(self.highlight_check)
+        notify_row2.addWidget(self.auto_scroll_check)
+        notify_row2.addStretch(1)
         
-        notify_checkboxes.addWidget(self.desktop_notify_check)
-        notify_checkboxes.addWidget(self.sound_notify_check)
-        notify_checkboxes.addWidget(self.highlight_check)
-        notify_checkboxes.addWidget(self.auto_scroll_check)
-        
-        notify_layout.addLayout(notify_checkboxes)
+        notify_layout.addLayout(notify_row1)
+        notify_layout.addLayout(notify_row2)
         
         # 最大显示消息数
         max_messages_layout = QHBoxLayout()
@@ -195,20 +234,24 @@ class ListenView(QWidget):
         self.max_messages.setRange(50, 1000)
         self.max_messages.setValue(200)
         self.max_messages.setSingleStep(50)
+        self.max_messages.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         max_messages_layout.addWidget(self.max_messages)
-        max_messages_layout.addStretch()
+        max_messages_layout.addStretch(1)
         
         notify_layout.addLayout(max_messages_layout)
         
         notify_group.setLayout(notify_layout)
-        
-        # 添加所有配置面板
-        config_layout.addWidget(filter_group)
         config_layout.addWidget(notify_group)
         
-        config_group.setLayout(config_layout)
-        self.main_layout.addWidget(config_group)
+        # 添加弹性空间使配置面板向上对齐
+        config_layout.addStretch(1)
+        
+        # 设置滚动区域的内容
+        scroll_area.setWidget(config_widget)
+        
+        # 添加滚动区域到主布局
+        self.main_layout.addWidget(scroll_area)
     
     def _create_message_panel(self):
         """创建中间消息显示面板"""
@@ -226,7 +269,11 @@ class ListenView(QWidget):
         # 添加主消息面板
         self.message_tabs.addTab(self.main_message_view, "所有消息")
         
-        self.main_layout.addWidget(self.message_tabs, 1)  # 1表示伸展系数
+        # 设置消息面板的尺寸策略，让它能够占据大部分空间
+        self.message_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # 以更大的比例添加消息面板到主布局
+        self.main_layout.addWidget(self.message_tabs, 3)  # 增加伸展系数，使消息面板占用更多空间
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -237,10 +284,15 @@ class ListenView(QWidget):
         
         self.stop_listen_button = QPushButton("停止监听")
         self.stop_listen_button.setEnabled(False)
+        self.stop_listen_button.setMinimumHeight(40)
         
         self.save_config_button = QPushButton("保存配置")
         self.clear_messages_button = QPushButton("清空消息")
         self.export_messages_button = QPushButton("导出消息")
+        
+        # 确保按钮大小合理
+        for button in [self.save_config_button, self.clear_messages_button, self.export_messages_button]:
+            button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
         button_layout.addWidget(self.start_listen_button)
         button_layout.addWidget(self.stop_listen_button)
