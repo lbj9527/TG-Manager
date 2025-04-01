@@ -56,12 +56,24 @@ class MainWindow(QMainWindow):
         # 添加欢迎页
         self.welcome_widget = QWidget()
         welcome_layout = QVBoxLayout(self.welcome_widget)
-        welcome_label = QMessageBox()
-        welcome_label.setWindowTitle("欢迎使用")
-        welcome_label.setText("<h2>欢迎使用 TG-Manager</h2>"
-                            "<p>请从左侧导航树选择功能</p>")
-        welcome_label.setIcon(QMessageBox.Information)
-        welcome_layout.addWidget(welcome_label)
+        
+        # 创建水印标签，取代原来的QMessageBox
+        welcome_label = QLabel("<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>欢迎使用 TG-Manager</h1>"
+                              "<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>")
+        welcome_label.setAlignment(Qt.AlignCenter)
+        welcome_label.setStyleSheet("""
+            background-color: transparent;
+            color: rgba(120, 120, 120, 60%);
+        """)
+        # 使用更大的字号
+        font = welcome_label.font()
+        font.setPointSize(font.pointSize() + 6)
+        welcome_label.setFont(font)
+        
+        welcome_layout.addStretch(2)  # 顶部弹性空间
+        welcome_layout.addWidget(welcome_label, 0, Qt.AlignCenter)  # 居中显示
+        welcome_layout.addStretch(3)  # 底部弹性空间
+        
         self.central_layout.addWidget(self.welcome_widget)
 
         # 界面元素初始化
