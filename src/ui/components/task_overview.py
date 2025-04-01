@@ -100,14 +100,17 @@ class TaskOverview(QWidget):
             count_label.setAlignment(Qt.AlignCenter)
             count_font = QFont()
             count_font.setBold(True)
-            count_font.setPointSize(14)  # 减小字体大小
+            count_font.setPointSize(16)  # 增加字体大小，从14pt到16pt
             count_label.setFont(count_font)
             count_label.setStyleSheet(f"color: {item['color']};")
             
             # 添加描述标签（小字体）
             desc_label = QLabel(item["label"])
             desc_label.setAlignment(Qt.AlignCenter)
-            desc_label.setStyleSheet("color: #757575; font-size: 8pt;")  # 减小字体大小
+            desc_font = QFont()
+            desc_font.setBold(True)  # 添加粗体效果
+            desc_label.setFont(desc_font)
+            desc_label.setStyleSheet(f"color: {item['color']}; font-size: 10pt;")  # 增加字体大小，从8pt到10pt，颜色与数字一致
             
             # 将标签添加到计数组件布局
             counter_layout.addWidget(count_label)
