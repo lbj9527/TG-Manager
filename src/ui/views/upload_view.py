@@ -62,7 +62,7 @@ class UploadView(QWidget):
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
-        self.config_tabs.setMaximumHeight(280)  # 减小最大高度，从320降至280
+        self.config_tabs.setMaximumHeight(360)  # 增加最大高度，从320增加到360
         self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.main_layout.addWidget(self.config_tabs)
         
@@ -133,42 +133,75 @@ class UploadView(QWidget):
         
         # 说明文字选项 - 改为水平布局
         caption_options_layout = QGridLayout()
-        caption_options_layout.setHorizontalSpacing(15)  # 增加水平间距
+        caption_options_layout.setHorizontalSpacing(20)  # 增加水平间距
+        caption_options_layout.setVerticalSpacing(10)    # 增加垂直间距
+        caption_options_layout.setContentsMargins(0, 5, 0, 5)  # 增加上下边距
         
         self.use_folder_name_check = QCheckBox("使用文件夹名称作为说明文字")
         self.use_folder_name_check.setChecked(True)
+        self.use_folder_name_check.setMinimumHeight(30)  # 增加高度
         caption_options_layout.addWidget(self.use_folder_name_check, 0, 0)
         
         self.read_title_txt_check = QCheckBox("读取title.txt文件作为说明文字")
         self.read_title_txt_check.setChecked(True)
+        self.read_title_txt_check.setMinimumHeight(30)  # 增加高度
         caption_options_layout.addWidget(self.read_title_txt_check, 0, 1)
         
         # 媒体组设置 - 放到水平布局中
         self.keep_media_groups_check = QCheckBox("保持原始文件组合为媒体组")
         self.keep_media_groups_check.setChecked(True)
+        self.keep_media_groups_check.setMinimumHeight(30)  # 增加高度
         caption_options_layout.addWidget(self.keep_media_groups_check, 1, 0)
         
         self.auto_thumbnail_check = QCheckBox("自动生成视频缩略图")
         self.auto_thumbnail_check.setChecked(True)
+        self.auto_thumbnail_check.setMinimumHeight(30)  # 增加高度
         caption_options_layout.addWidget(self.auto_thumbnail_check, 1, 1)
         
         options_layout.addLayout(caption_options_layout)
         
         # 自定义说明文字模板
-        options_layout.addWidget(QLabel("自定义说明文字模板:"))
+        caption_template_layout = QVBoxLayout()
+        caption_template_layout.setContentsMargins(0, 10, 0, 0)  # 增加顶部间距
+        
+        caption_template_label = QLabel("自定义说明文字模板:")
+        caption_template_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        caption_template_label.setMinimumHeight(25)  # 设置标签高度
+        caption_template_layout.addWidget(caption_template_label)
+        
         self.caption_template = QTextEdit()
-        self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称")
-        self.caption_template.setMaximumHeight(80)
-        options_layout.addWidget(self.caption_template)
+        self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称\n{datetime} - 当前日期时间\n{index} - 文件序号")
+        # 增加最大高度，从80px增加到160px，以显示更多内容
+        self.caption_template.setMinimumHeight(120)  # 设置最小高度
+        self.caption_template.setMaximumHeight(160)  # 增加最大高度
+        # 设置更适合文本编辑的尺寸策略
+        self.caption_template.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        
+        # 设置文本编辑区样式
+        self.caption_template.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #555;
+                border-radius: 3px;
+                padding: 5px;
+            }
+        """)
+        
+        caption_template_layout.addWidget(self.caption_template)
+        options_layout.addLayout(caption_template_layout)
         
         # 上传延迟
         delay_layout = QHBoxLayout()
-        delay_layout.addWidget(QLabel("上传延迟:"))
+        delay_layout.setContentsMargins(0, 8, 0, 0)  # 增加顶部间距
+        
+        delay_label = QLabel("上传延迟:")
+        delay_label.setMinimumWidth(80)  # 设置标签最小宽度
+        delay_layout.addWidget(delay_label)
         
         self.upload_delay = QSpinBox()
         self.upload_delay.setRange(0, 60)
         self.upload_delay.setValue(2)
         self.upload_delay.setSuffix(" 秒")
+        self.upload_delay.setMinimumWidth(100)  # 设置控件最小宽度
         
         delay_layout.addWidget(self.upload_delay)
         delay_layout.addStretch()

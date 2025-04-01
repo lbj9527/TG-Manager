@@ -101,44 +101,59 @@ class DownloadView(QWidget):
         self.channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
         form_layout.addRow("频道链接:", self.channel_input)
         
-        # 消息范围
+        # 先添加表单布局到主布局
+        channel_layout.addLayout(form_layout)
+        
+        # 消息范围 - 创建左对齐的布局
         range_layout = QHBoxLayout()
+        range_layout.setContentsMargins(0, 5, 0, 5)  # 增加上下间距
+        
+        # 从消息ID标签
+        id_label = QLabel("从消息ID:")
+        id_label.setMinimumWidth(80)  # 设置最小宽度确保对齐
+        range_layout.addWidget(id_label)
         
         self.start_id = QSpinBox()
         self.start_id.setRange(1, 999999999)
         self.start_id.setValue(1)
+        self.start_id.setMinimumWidth(100)  # 设置固定宽度
+        range_layout.addWidget(self.start_id)
+        
+        range_layout.addWidget(QLabel("到:"))
         
         self.end_id = QSpinBox()
         self.end_id.setRange(0, 999999999)
         self.end_id.setValue(0)
         self.end_id.setSpecialValueText("最新消息")
-        
-        range_layout.addWidget(QLabel("从消息ID:"))
-        range_layout.addWidget(self.start_id)
-        range_layout.addWidget(QLabel("到:"))
+        self.end_id.setMinimumWidth(100)  # 设置固定宽度
         range_layout.addWidget(self.end_id)
         
-        form_layout.addRow("", range_layout)
-        
-        # 添加频道按钮
-        button_layout = QHBoxLayout()
+        # 添加频道和删除按钮移到这一行
         self.add_channel_button = QPushButton("添加频道")
-        self.remove_channel_button = QPushButton("删除所选")
+        self.add_channel_button.setMinimumHeight(28)  # 设置按钮高度
+        range_layout.addWidget(self.add_channel_button)
         
-        button_layout.addWidget(self.add_channel_button)
-        button_layout.addWidget(self.remove_channel_button)
-        button_layout.addStretch(1)
+        self.remove_channel_button = QPushButton("删除所选")
+        self.remove_channel_button.setMinimumHeight(28)  # 设置按钮高度
+        range_layout.addWidget(self.remove_channel_button)
+        
+        # 添加伸展因子，确保控件左对齐
+        range_layout.addStretch(1)
+        
+        # 添加消息范围布局到主布局
+        channel_layout.addLayout(range_layout)
         
         # 频道列表
         channel_list_label = QLabel("已配置下载频道:")
+        channel_list_label.setContentsMargins(0, 10, 0, 5)  # 增加上下间距
+        channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        
+        channel_layout.addWidget(channel_list_label)
         
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.channel_list.setMinimumHeight(160)  # 设置最小高度
         
-        channel_layout.addLayout(form_layout)
-        channel_layout.addLayout(button_layout)
-        channel_layout.addWidget(channel_list_label)
         channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
         
         # 下载选项标签页
