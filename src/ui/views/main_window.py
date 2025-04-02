@@ -301,6 +301,7 @@ class MainWindow(QMainWindow):
         self.toolbar = self.addToolBar("主工具栏")
         self.toolbar.setObjectName("main_toolbar")
         self.toolbar.setMovable(True)
+        self.toolbar.setAllowedAreas(Qt.TopToolBarArea | Qt.LeftToolBarArea | Qt.RightToolBarArea | Qt.BottomToolBarArea)
         
         # 登录按钮
         self.login_action = QAction("登录", self)
@@ -419,6 +420,36 @@ class MainWindow(QMainWindow):
         """连接信号和槽"""
         # 窗口状态变化信号
         self.window_state_changed.connect(self._save_window_state)
+        
+        # 侧边栏导航树信号
+        self.nav_tree.item_selected.connect(self._handle_navigation)
+        
+        # 工具栏移动信号 - 捕获工具栏被移动的事件
+        self.toolbar.movableChanged.connect(self._on_toolbar_state_changed)
+        self.toolbar.topLevelChanged.connect(self._on_toolbar_state_changed)
+
+    def _on_toolbar_state_changed(self, _=None):
+        """工具栏状态改变时触发，保存窗口状态"""
+        # 状态改变后延迟保存窗口状态，确保已完成移动
+        QTimer.singleShot(100, self._save_current_state)
+    
+    def _save_current_state(self):
+        """保存当前窗口状态"""
+        window_state = {
+            'geometry': self.saveGeometry(),
+            'state': self.saveState()
+        }
+        self.window_state_changed.emit(window_state)
+
+    def showEvent(self, event):
+        """窗口显示事件
+        
+        Args:
+            event: 窗口显示事件
+        """
+        super().showEvent(event)
+        # 窗口显示后，延迟保存状态，确保所有组件都已布局好
+        QTimer.singleShot(500, self._save_current_state)
     
     def _toggle_sidebar(self, checked):
         """切换侧边栏的可见性
@@ -682,7 +713,9 @@ class MainWindow(QMainWindow):
                 try:
                     state = ui_config.get('window_state')
                     if state:
-                        self.restoreState(QByteArray.fromBase64(state.encode()))
+                        success = self.restoreState(QByteArray.fromBase64(state.encode()))
+                        if not success:
+                            logger.warning("恢复窗口状态返回失败")
                 except Exception as e:
                     logger.warning(f"恢复窗口状态失败: {e}")
                     
@@ -691,6 +724,9 @@ class MainWindow(QMainWindow):
             QSizePolicy.Expanding, 
             QSizePolicy.Expanding
         )
+        
+        # 确保所有窗口元素正确显示
+        self.update()
     
     def _save_window_state(self, state_data):
         """保存窗口状态

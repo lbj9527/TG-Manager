@@ -262,26 +262,40 @@ class TGManagerApp(QObject):
             self.event_loop.stop()
 
     def _on_config_saved(self):
-        """配置保存后的处理"""
-        # 获取当前主题
+        """处理配置保存信号"""
+        # 判断是否是设置界面发出的信号，是否应该应用主题
+        # 如果是主窗口的窗口状态变化触发的保存，则不要重新应用主题
+        ui_config = self.config.get('UI', {})
+        saved_theme = ui_config.get('theme', '')
         current_theme = self.theme_manager.get_current_theme_name()
         
-        # 重新加载配置
-        self.load_config()
+        # 保存窗口状态到配置
+        if hasattr(self.main_window, 'window_state_changed'):
+            # 注意：这里主动获取当前窗口状态，确保工具栏状态也被保存
+            window_state = {
+                'geometry': self.main_window.saveGeometry(),
+                'state': self.main_window.saveState()
+            }
+            
+            # 更新配置
+            if 'UI' not in self.config:
+                self.config['UI'] = {}
+            
+            ui_config = self.config['UI'] 
+            ui_config['window_geometry'] = window_state['geometry'].toBase64().data().decode()
+            ui_config['window_state'] = window_state['state'].toBase64().data().decode()
+            self.config['UI'] = ui_config
         
-        # 获取配置中的主题设置
-        config_theme = self.config.get('UI', {}).get('theme', '深色主题')
+        # 只有当主题发生变化时才应用新主题
+        if saved_theme and saved_theme != current_theme:
+            logger.info(f"设置中主题发生变化，从 '{current_theme}' 变更为 '{saved_theme}'")
+            self.theme_changed.emit(saved_theme)
         
-        # 只有当配置中的主题与当前主题不同时才应用主题
-        if config_theme != current_theme:
-            # 应用主题
-            success = self.theme_manager.apply_theme(config_theme)
-            if success:
-                logger.info(f"已更新主题: {config_theme}")
-            else:
-                logger.warning(f"应用主题 '{config_theme}' 失败")
-        else:
-            logger.info(f"已保存配置，主题保持不变: {current_theme}")
+        # 保存配置到文件
+        self.save_config()
+        
+        # 发送配置保存信号
+        self.config_saved.emit()
     
     def _on_theme_changed(self, theme_name):
         """主题变更处理
