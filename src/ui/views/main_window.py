@@ -427,10 +427,17 @@ class MainWindow(QMainWindow):
         # 工具栏移动信号 - 捕获工具栏被移动的事件
         self.toolbar.movableChanged.connect(self._on_toolbar_state_changed)
         self.toolbar.topLevelChanged.connect(self._on_toolbar_state_changed)
+        self.toolbar.allowedAreasChanged.connect(self._on_toolbar_state_changed)
+        self.toolbar.orientationChanged.connect(self._on_toolbar_state_changed)
+        self.toolbar.visibilityChanged.connect(self._on_toolbar_state_changed)
+        
+        # 在工具栏区域鼠标释放时保存状态，捕获拖动结束事件
+        self.toolbar.installEventFilter(self)
 
     def _on_toolbar_state_changed(self, _=None):
         """工具栏状态改变时触发，保存窗口状态"""
         # 状态改变后延迟保存窗口状态，确保已完成移动
+        logger.debug("工具栏状态已改变，准备保存")
         QTimer.singleShot(100, self._save_current_state)
     
     def _save_current_state(self):
@@ -439,6 +446,7 @@ class MainWindow(QMainWindow):
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
+        logger.debug("保存窗口状态，包括工具栏位置")
         self.window_state_changed.emit(window_state)
 
     def showEvent(self, event):
@@ -698,18 +706,33 @@ class MainWindow(QMainWindow):
                 try:
                     geometry = ui_config.get('window_geometry')
                     if geometry:
+                        logger.debug("正在恢复窗口几何形状")
                         self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
                 except Exception as e:
                     logger.warning(f"恢复窗口几何形状失败: {e}")
             
-            # 加载窗口状态（停靠窗口等）
+            # 加载窗口状态（停靠窗口、工具栏位置等）
             if 'window_state' in ui_config:
                 try:
                     state = ui_config.get('window_state')
                     if state:
+                        logger.debug("正在恢复窗口状态，包括工具栏位置")
+                        
+                        # 尝试恢复窗口状态
                         success = self.restoreState(QByteArray.fromBase64(state.encode()))
+                        
                         if not success:
-                            logger.warning("恢复窗口状态返回失败")
+                            logger.warning("恢复窗口状态返回失败，尝试替代方法")
+                            # 尝试另一种方法恢复工具栏位置
+                            try:
+                                # 确保工具栏状态会正确读取
+                                toolbar_settings = self.toolbar.saveState()
+                                self.toolbar.restoreState(toolbar_settings)
+                                logger.debug("已尝试使用替代方法恢复工具栏状态")
+                            except Exception as e:
+                                logger.warning(f"尝试恢复工具栏状态时出错: {e}")
+                        else:
+                            logger.debug("成功恢复窗口状态")
                 except Exception as e:
                     logger.warning(f"恢复窗口状态失败: {e}")
                     
@@ -718,6 +741,28 @@ class MainWindow(QMainWindow):
             QSizePolicy.Expanding, 
             QSizePolicy.Expanding
         )
+        
+        # 确保工具栏连接了信号
+        if hasattr(self, 'toolbar'):
+            # 确保工具栏信号连接
+            try:
+                self.toolbar.topLevelChanged.disconnect(self._on_toolbar_state_changed)
+            except:
+                pass  # 如果未连接，忽略错误
+                
+            try:
+                self.toolbar.movableChanged.disconnect(self._on_toolbar_state_changed)
+            except:
+                pass  # 如果未连接，忽略错误
+                
+            # 重新连接信号
+            self.toolbar.topLevelChanged.connect(self._on_toolbar_state_changed)
+            self.toolbar.movableChanged.connect(self._on_toolbar_state_changed)
+            
+            # 添加更多的信号监听以捕获工具栏变化
+            self.toolbar.allowedAreasChanged.connect(self._on_toolbar_state_changed)
+            self.toolbar.orientationChanged.connect(self._on_toolbar_state_changed)
+            self.toolbar.visibilityChanged.connect(self._on_toolbar_state_changed)
         
         # 确保所有窗口元素正确显示
         self.update()
@@ -728,18 +773,28 @@ class MainWindow(QMainWindow):
         Args:
             state_data: 窗口状态数据
         """
-        ui_config = self.config.get('UI', {})
-        
-        # 更新窗口状态数据
-        if 'geometry' in state_data:
-            ui_config['window_geometry'] = state_data['geometry'].toBase64().data().decode()
-        
-        if 'state' in state_data:
-            ui_config['window_state'] = state_data['state'].toBase64().data().decode()
-        
-        # 更新配置
-        self.config['UI'] = ui_config
-        self.config_saved.emit(self.config)
+        try:
+            ui_config = self.config.get('UI', {})
+            
+            # 更新窗口状态数据
+            if 'geometry' in state_data:
+                ui_config['window_geometry'] = state_data['geometry'].toBase64().data().decode()
+                logger.debug("保存了窗口几何形状")
+            
+            if 'state' in state_data:
+                ui_config['window_state'] = state_data['state'].toBase64().data().decode()
+                logger.debug("保存了窗口状态，包括工具栏位置")
+            
+            # 更新配置
+            self.config['UI'] = ui_config
+            
+            # 发送配置保存信号，但不触发主题变更
+            # 注意：我们使用emit而不是直接触发_on_config_saved以避免循环调用
+            self.config_saved.emit(self.config)
+            
+            logger.debug("窗口状态已成功保存到配置")
+        except Exception as e:
+            logger.error(f"保存窗口状态失败: {e}")
     
     def closeEvent(self, event):
         """窗口关闭事件处理
@@ -776,11 +831,23 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'network_timer') and self.network_timer.isActive():
             self.network_timer.stop()
         
-        # 保存窗口状态
+        # 保存窗口状态，确保工具栏位置被保存
+        logger.debug("程序关闭前保存窗口状态，包括工具栏位置")
         window_state = {
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
+        
+        # 直接保存到配置，确保状态保存成功
+        try:
+            ui_config = self.config.get('UI', {})
+            ui_config['window_geometry'] = window_state['geometry'].toBase64().data().decode()
+            ui_config['window_state'] = window_state['state'].toBase64().data().decode()
+            self.config['UI'] = ui_config
+        except Exception as e:
+            logger.error(f"关闭窗口时保存窗口状态失败: {e}")
+            
+        # 发送窗口状态变化信号
         self.window_state_changed.emit(window_state)
         
         # 接受关闭事件
@@ -1519,3 +1586,29 @@ class MainWindow(QMainWindow):
         # 显示状态消息
         self.statusBar().showMessage("设置已保存", 3000)
         # 不需要关闭设置视图，保持在当前页面 
+
+    def eventFilter(self, obj, event):
+        """事件过滤器，用于捕获工具栏的鼠标事件
+        
+        Args:
+            obj: 事件源对象
+            event: 事件对象
+            
+        Returns:
+            bool: 是否已处理事件
+        """
+        # 检查事件是否来自工具栏
+        if obj == self.toolbar:
+            # 捕获鼠标释放事件，通常是拖动结束
+            from PySide6.QtCore import QEvent
+            if event.type() == QEvent.MouseButtonRelease:
+                logger.debug("检测到工具栏鼠标释放事件，可能是拖动结束")
+                # 稍微延迟保存，以确保工具栏状态已完全更新
+                QTimer.singleShot(300, self._save_current_state)
+            # 捕获移动事件结束
+            elif event.type() == QEvent.Move:
+                logger.debug("检测到工具栏移动事件")
+                QTimer.singleShot(300, self._save_current_state)
+            
+        # 继续正常事件处理
+        return super().eventFilter(obj, event) 

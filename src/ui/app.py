@@ -172,7 +172,7 @@ class TGManagerApp(QObject):
             save_theme: 是否保存主题设置，默认为True
         """
         try:
-            # 读取配置文件
+            # 先读取配置文件的当前内容
             with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
@@ -187,6 +187,25 @@ class TGManagerApp(QObject):
                 }
                 logger.warning("配置中缺少UI部分，已创建默认UI配置")
             
+            # 从内存配置同步UI设置
+            if 'UI' in self.config:
+                # 保留window_geometry和window_state
+                window_geometry = self.config['UI'].get('window_geometry')
+                window_state = self.config['UI'].get('window_state')
+                
+                if window_geometry:
+                    config['UI']['window_geometry'] = window_geometry
+                    logger.debug("已从内存同步窗口几何形状到配置文件")
+                    
+                if window_state:
+                    config['UI']['window_state'] = window_state
+                    logger.debug("已从内存同步窗口状态（包括工具栏位置）到配置文件")
+                
+                # 同步其他UI设置，但避免覆盖已有的window_*设置
+                for key, value in self.config['UI'].items():
+                    if key not in ['window_geometry', 'window_state'] or key not in config['UI']:
+                        config['UI'][key] = value
+                        
             # 仅当save_theme为True时保存主题设置
             if save_theme:
                 # 如果主题设置缺失或需要更新，添加当前主题
@@ -264,6 +283,17 @@ class TGManagerApp(QObject):
     def cleanup(self):
         """清理资源"""
         logger.info("正在关闭应用程序...")
+        
+        # 确保主窗口保存了当前状态，包括工具栏位置
+        if hasattr(self, 'main_window'):
+            try:
+                # 如果主窗口有保存状态的方法，直接调用
+                if hasattr(self.main_window, '_save_current_state'):
+                    logger.debug("主动触发窗口状态保存")
+                    self.main_window._save_current_state()
+            except Exception as e:
+                logger.error(f"保存窗口状态失败: {e}")
+        
         # 保存配置但不自动保存主题设置，只保存窗口状态等其他设置
         self.save_config(save_theme=False)
         self.app_closing.emit()
