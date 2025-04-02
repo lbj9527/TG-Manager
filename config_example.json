@@ -1,0 +1,94 @@
+{
+  "GENERAL": {
+    "api_id": 123456,
+    "api_hash": "abcdef1234567890abcdef1234567890",
+    "limit": 50,
+    "pause_time": 60,
+    "timeout": 30,
+    "max_retries": 3,
+    "proxy_enabled": false,
+    "proxy_type": "SOCKS5",
+    "proxy_addr": "127.0.0.1",
+    "proxy_port": 1080,
+    "proxy_username": null,
+    "proxy_password": null
+  },
+  "DOWNLOAD": {
+    "downloadSetting": [
+      {
+        "source_channels": "@channel1",
+        "start_id": 0,
+        "end_id": 0,
+        "media_types": ["photo", "video", "document", "audio", "animation"],
+        "keywords": ["关键词1", "关键词2"]
+      },
+      {
+        "source_channels": "@channel2",
+        "start_id": 1000,
+        "end_id": 2000,
+        "media_types": ["photo", "video"],
+        "keywords": []
+      }
+    ],
+    "download_path": "downloads",
+    "parallel_download": false,
+    "max_concurrent_downloads": 10
+  },
+  "UPLOAD": {
+    "target_channels": ["@target_channel1", "@target_channel2"],
+    "directory": "uploads",
+    "caption_template": "{filename} - 上传于 {date}",
+    "delay_between_uploads": 0.5
+  },
+  "FORWARD": {
+    "forward_channel_pairs": [
+      {
+        "source_channel": "@source_channel1",
+        "target_channels": ["@target_channel1", "@target_channel2"]
+      },
+      {
+        "source_channel": "@source_channel2",
+        "target_channels": ["@target_channel3"]
+      }
+    ],
+    "remove_captions": false,
+    "hide_author": false,
+    "media_types": ["photo", "video", "document", "audio", "animation"],
+    "forward_delay": 0.1,
+    "start_id": 0,
+    "end_id": 0,
+    "tmp_path": "tmp"
+  },
+  "MONITOR": {
+    "monitor_channel_pairs": [
+      {
+        "source_channel": "@source_channel1",
+        "target_channels": ["@target_channel1", "@target_channel2"],
+        "remove_captions": false,
+        "text_filter": [
+          {
+            "original_text": "要替换的文本",
+            "target_text": "替换后的文本"
+          },
+          {
+            "original_text": "广告内容",
+            "target_text": ""
+          }
+        ]
+      }
+    ],
+    "media_types": ["photo", "video", "document", "audio", "animation", "sticker", "voice", "video_note"],
+    "duration": "2099-12-31",
+    "forward_delay": 1.0
+  },
+  "UI": {
+    "window_geometry": "AdnQywADAAAAAAEoAAAAPgAABQ8AAAMYAAABKAAAAF0AAAUPAAADGAAAAAAAAAAABkAAAAEoAAAAXQAABQ8AAAMY",
+    "window_state": "AAAA/wAAAAD9AAAAAQAAAAAAAAEEAAACg/wCAAAAAfsAAAAYAHMAaQBkAGUAYgBhAHIAXwBkAG8AYwBrAQAAACAAAAKDAAABHwD///8AAAKPAAACgwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAEAAAABAAAAGABtAGEAaQBuAF8AdABvAG8AbABiAGEAcgMAAAAA/////wAAAAAAAAAA",
+    "theme": "青色主题",
+    "confirm_exit": true,
+    "minimize_to_tray": true,
+    "start_minimized": false,
+    "enable_notifications": true,
+    "notification_sound": true
+  }
+} 

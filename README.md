@@ -13,6 +13,149 @@ TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道�
 - **图形界面**：提供基于 PySide6 的图形用户界面，支持所有核心功能
 - **用户界面**：清晰的状态更新、进度显示和错误提示，完全分离的业务逻辑和 UI 交互
 
+## 配置说明
+
+TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为项目根目录下的 `config.json`。项目中提供了 `config_example.json` 作为示例配置，您可以复制并根据需要修改。
+
+### 配置文件结构
+
+配置文件包含以下几个主要部分：
+
+- **GENERAL**: 通用配置，包含 API 凭据和代理设置
+- **DOWNLOAD**: 下载相关配置
+- **UPLOAD**: 上传相关配置
+- **FORWARD**: 转发相关配置
+- **MONITOR**: 监听相关配置
+- **UI**: 用户界面相关配置
+
+### 1. GENERAL - 通用配置
+
+```json
+"GENERAL": {
+  "api_id": 123456,               // Telegram API ID
+  "api_hash": "abcdef1234...",    // Telegram API Hash
+  "limit": 50,                    // 每次获取消息的数量
+  "pause_time": 60,               // API 限制后的暂停时间(秒)
+  "timeout": 30,                  // 网络请求超时时间(秒)
+  "max_retries": 3,               // 最大重试次数
+  "proxy_enabled": false,         // 是否启用代理
+  "proxy_type": "SOCKS5",         // 代理类型: SOCKS5/SOCKS4/HTTP/HTTPS
+  "proxy_addr": "127.0.0.1",      // 代理服务器地址
+  "proxy_port": 1080,             // 代理服务器端口
+  "proxy_username": null,         // 代理用户名(可选)
+  "proxy_password": null          // 代理密码(可选)
+}
+```
+
+### 2. DOWNLOAD - 下载配置
+
+```json
+"DOWNLOAD": {
+  "downloadSetting": [            // 下载设置列表
+    {
+      "source_channels": "@channel1",  // 源频道
+      "start_id": 0,              // 起始消息ID (0表示从最新消息开始)
+      "end_id": 0,                // 结束消息ID (0表示下载到最早消息)
+      "media_types": ["photo", "video", "document", "audio", "animation"],  // 要下载的媒体类型
+      "keywords": ["关键词1", "关键词2"]  // 关键词列表(用于关键词下载模式)
+    }
+  ],
+  "download_path": "downloads",    // 下载文件保存路径
+  "parallel_download": false,      // 是否启用并行下载
+  "max_concurrent_downloads": 10   // 最大并发下载数
+}
+```
+
+### 3. UPLOAD - 上传配置
+
+```json
+"UPLOAD": {
+  "target_channels": ["@target_channel1", "@target_channel2"],  // 目标频道列表
+  "directory": "uploads",          // 上传文件目录
+  "caption_template": "{filename} - 上传于 {date}",  // 说明文字模板
+  "delay_between_uploads": 0.5     // 上传间隔时间(秒)
+}
+```
+
+### 4. FORWARD - 转发配置
+
+```json
+"FORWARD": {
+  "forward_channel_pairs": [       // 转发频道对列表
+    {
+      "source_channel": "@source_channel1",  // 源频道
+      "target_channels": ["@target_channel1", "@target_channel2"]  // 目标频道列表
+    }
+  ],
+  "remove_captions": false,        // 是否移除媒体说明文字
+  "hide_author": false,            // 是否隐藏原作者
+  "media_types": ["photo", "video", "document", "audio", "animation"],  // 要转发的媒体类型
+  "forward_delay": 0.1,            // 转发间隔时间(秒)
+  "start_id": 0,                   // 起始消息ID
+  "end_id": 0,                     // 结束消息ID
+  "tmp_path": "tmp"                // 临时文件路径
+}
+```
+
+### 5. MONITOR - 监听配置
+
+```json
+"MONITOR": {
+  "monitor_channel_pairs": [       // 监听频道对列表
+    {
+      "source_channel": "@source_channel1",  // 源频道
+      "target_channels": ["@target_channel1", "@target_channel2"],  // 目标频道列表
+      "remove_captions": false,    // 是否移除媒体说明文字
+      "text_filter": [             // 文本替换规则
+        {
+          "original_text": "要替换的文本",
+          "target_text": "替换后的文本"
+        }
+      ]
+    }
+  ],
+  "media_types": ["photo", "video", "document", "audio", "animation", "sticker", "voice", "video_note"],  // 要监听的媒体类型
+  "duration": "2099-12-31",        // 监听截止日期
+  "forward_delay": 1.0             // 转发间隔时间(秒)
+}
+```
+
+### 6. UI - 用户界面配置
+
+```json
+"UI": {
+  "theme": "深色主题",             // 界面主题
+  "confirm_exit": true,            // 退出时是否需要确认
+  "minimize_to_tray": true,        // 是否最小化到系统托盘
+  "start_minimized": false,        // 是否以最小化状态启动
+  "enable_notifications": true,    // 是否启用通知
+  "notification_sound": true       // 是否启用通知声音
+}
+```
+
+### 频道标识格式
+
+TG-Manager 支持以下几种格式的频道标识：
+
+- **用户名格式**：`@username`，例如 `@telegram`
+- **链接格式**：`https://t.me/username`，例如 `https://t.me/telegram`
+- **ID格式**：数字ID，例如 `-1001234567890`
+- **对话链接**：`https://t.me/c/1234567890`
+
+### 媒体类型
+
+以下是支持的媒体类型列表：
+
+- `photo`: 图片
+- `video`: 视频
+- `document`: 文档文件
+- `audio`: 音频
+- `animation`: 动画 (GIF)
+- `sticker`: 贴纸
+- `voice`: 语音消息
+- `video_note`: 圆形视频消息
+- `text`: 纯文本消息
+
 ## 使用方式
 
 ### 图形用户界面
