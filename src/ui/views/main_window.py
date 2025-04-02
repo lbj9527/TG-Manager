@@ -156,6 +156,14 @@ class MainWindow(QMainWindow):
         login_action.triggered.connect(self._handle_login)
         self.file_menu.addAction(login_action)
         
+        # 设置动作
+        settings_action = QAction("设置", self)
+        settings_action.setIcon(self._get_icon("settings"))
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.setStatusTip("打开系统设置")
+        settings_action.triggered.connect(self._open_settings)
+        self.file_menu.addAction(settings_action)
+        
         # 退出动作
         exit_action = QAction("退出", self)
         exit_action.setIcon(self._get_icon("exit"))
@@ -166,14 +174,6 @@ class MainWindow(QMainWindow):
         
         # 配置菜单
         self.config_menu = self.menubar.addMenu("配置")
-        
-        # 打开设置
-        settings_action = QAction("系统设置", self)
-        settings_action.setIcon(self._get_icon("settings"))
-        settings_action.setShortcut("Ctrl+,")
-        settings_action.setStatusTip("打开系统设置")
-        settings_action.triggered.connect(self._open_settings)
-        self.config_menu.addAction(settings_action)
         
         # 导入配置
         import_config_action = QAction("导入配置", self)
@@ -500,12 +500,6 @@ class MainWindow(QMainWindow):
             elif function_name == 'task_manager':
                 from src.ui.views.task_view import TaskView
                 view = TaskView(self.config)
-                
-            elif function_name == 'settings':
-                from src.ui.views.settings_view import SettingsView
-                view = SettingsView(self.config)
-                # 连接设置保存信号
-                view.settings_saved.connect(self._on_settings_saved)
                 
             elif function_name == 'help':
                 from src.ui.views.help_doc_view import HelpDocView
@@ -892,8 +886,41 @@ class MainWindow(QMainWindow):
     
     def _open_settings(self):
         """打开设置界面"""
-        # 通过导航树API找到设置项并触发点击
-        self.nav_tree.select_item_by_function("settings")
+        logger.debug("尝试打开设置视图")
+        try:
+            # 先检查是否已经打开
+            if "settings_view" in self.opened_views:
+                logger.debug("设置视图已存在，切换到该视图")
+                self.central_layout.setCurrentWidget(self.opened_views["settings_view"])
+                return
+            
+            # 直接创建并显示设置视图
+            from src.ui.views.settings_view import SettingsView
+            
+            # 创建设置视图
+            settings_view = SettingsView(self.config, self)
+            
+            # 添加到中心区域
+            self.central_layout.addWidget(settings_view)
+            self.opened_views["settings_view"] = settings_view
+            
+            # 使设置视图可见
+            self.central_layout.setCurrentWidget(settings_view)
+            
+            # 连接设置视图的信号
+            if hasattr(settings_view, 'settings_saved'):
+                settings_view.settings_saved.connect(self._on_settings_saved)
+            
+            logger.info("成功打开设置视图")
+            
+        except Exception as e:
+            logger.error(f"打开设置视图失败: {e}", exc_info=True)
+            QMessageBox.warning(
+                self,
+                "模块加载失败",
+                f"无法加载设置模块。\n错误: {str(e)}",
+                QMessageBox.Ok
+            )
     
     def _open_task_manager(self):
         """打开任务管理器"""

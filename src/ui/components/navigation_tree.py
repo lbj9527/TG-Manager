@@ -119,12 +119,6 @@ class NavigationTree(QWidget):
                 "description": "查看和分析系统日志"
             }),
             
-            # 系统设置
-            NavigationItem("系统设置", "system_settings", "system_tools", "function", {
-                "function": "settings",
-                "description": "配置系统参数"
-            }),
-            
             # 帮助文档
             NavigationItem("帮助文档", "help_doc", "system_tools", "function", {
                 "function": "help",

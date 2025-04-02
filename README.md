@@ -25,23 +25,25 @@ python run_ui.py
 
 图形界面提供以下功能模块：
 
-1. **下载界面**：配置频道和媒体类型，从Telegram频道下载媒体
-2. **上传界面**：浏览本地文件，上传到指定Telegram频道
+1. **下载界面**：配置频道和媒体类型，从 Telegram 频道下载媒体
+2. **上传界面**：浏览本地文件，上传到指定 Telegram 频道
 3. **转发界面**：设置转发规则，在不同频道之间转发消息
 4. **监听界面**：实时监听频道消息，支持条件过滤
 5. **任务管理**：查看和管理所有任务，支持暂停/继续操作
-6. **设置界面**：配置API凭据、代理设置和全局选项
+6. **设置界面**：配置 API 凭据、代理设置和全局选项
 
 界面特点：
+
 - 所有配置自动保存和加载
 - 实时任务状态和进度显示
 - 多任务并行处理
 - 统一的错误处理和通知
 
 界面组成：
-- **菜单栏**：提供文件、视图、任务和帮助等菜单选项
-- **工具栏**：包含登录、设置、任务管理器和日志查看器等快捷按钮
-- **导航树**：左侧导航面板，提供功能模块的分类导航
+
+- **菜单栏**：提供文件（包含登录、设置和退出）、配置（包含导入和导出）、工具和视图等菜单选项
+- **工具栏**：包含登录、返回主页、设置、任务管理器和日志查看器等快捷按钮
+- **导航树**：左侧导航面板，提供功能模块的分类导航，包括媒体下载、媒体上传、消息转发、消息监听、任务管理和系统工具（日志查看器、帮助文档）
 - **任务概览**：左侧任务管理面板，显示任务统计和活跃任务列表，支持任务状态监控和任务管理操作
 - **主内容区**：中央区域，根据选择的功能显示对应的界面
 
@@ -80,21 +82,25 @@ TG-Manager/
 ## 安装
 
 1. 克隆项目并进入目录：
+
 ```bash
 git clone https://github.com/yourusername/TG-Manager.git
 cd TG-Manager
 ```
 
 2. 安装依赖（推荐使用虚拟环境）：
+
 ```bash
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-3. 配置Telegram API：
-   - 访问 https://my.telegram.org/apps 获取API ID和API Hash
+3. 配置 Telegram API：
+
+   - 访问 https://my.telegram.org/apps 获取 API ID 和 API Hash
    - 将获取的凭据填入配置文件或通过设置界面配置
 
 4. 运行应用：
+
 ```bash
 # 启动图形界面
 python run_ui.py
@@ -255,7 +261,7 @@ async def upload_example():
 
 ### 6. 转发管理器 (Forwarder)
 
-转发管理器负责在不同的Telegram频道之间转发消息。
+转发管理器负责在不同的 Telegram 频道之间转发消息。
 
 - 支持多种消息类型转发
 - 提供访问权限校验
@@ -279,14 +285,14 @@ async def forward_example():
     # 设置源频道和目标频道
     source_channel = "source_channel_username"
     target_channel = "target_channel_username"
-    
+
     # 转发最近的50条消息
     await forwarder.forward_messages(source_channel, target_channel, limit=50)
 ```
 
 ### 7. 监听器 (Monitor)
 
-监听器用于实时监听Telegram频道和群组的新消息。
+监听器用于实时监听 Telegram 频道和群组的新消息。
 
 - 支持多频道并行监听
 - 提供消息过滤和关键词匹配
@@ -313,21 +319,21 @@ monitor.on("status", lambda status: print(f"状态: {status}"))
 async def monitor_example():
     # 设置要监听的频道列表
     channels = ["channel1", "channel2", "group3"]
-    
+
     # 开始监听
     await monitor.start_monitoring(channels)
-    
+
     # 停止监听
     # await monitor.stop_monitoring()
 ```
 
-### 8. UI状态管理器 (UIStateManager)
+### 8. UI 状态管理器 (UIStateManager)
 
-UI状态管理器用于在业务逻辑和UI之间传递状态。
+UI 状态管理器用于在业务逻辑和 UI 之间传递状态。
 
 - 提供状态订阅和更新机制
 - 支持进度追踪和错误处理
-- 确保UI和业务逻辑的完全分离
+- 确保 UI 和业务逻辑的完全分离
 
 **使用示例**:
 
@@ -354,7 +360,7 @@ ui_state_manager.unregister("download_progress", on_download_progress)
 
 ### 9. 图形界面组件
 
-TG-Manager的图形界面基于PySide6开发，主要组件包括：
+TG-Manager 的图形界面基于 PySide6 开发，主要组件包括：
 
 #### 主窗口 (MainWindow)
 
