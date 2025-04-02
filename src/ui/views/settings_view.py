@@ -7,11 +7,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QTabWidget,
-    QComboBox, QFileDialog, QMessageBox, QColorDialog,
+    QComboBox, QFileDialog, QMessageBox,
     QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QColor
 import json
 
 from src.utils.logger import get_logger

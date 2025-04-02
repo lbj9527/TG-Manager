@@ -164,19 +164,21 @@ class TGManagerApp(QObject):
             logger.error(f"加载配置失败: {e}")
             self.config = {}  # 设置为空字典作为默认配置
     
-    def save_config(self):
+    def save_config(self, save_theme=True):
         """
         保存应用程序配置到文件
+        
+        Args:
+            save_theme: 是否保存主题设置，默认为True
         """
         try:
             # 读取配置文件
             with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
-            # 确保UI部分和主题设置存在
+            # 确保UI部分存在
             if 'UI' not in config:
                 config['UI'] = {
-                    'theme': self.theme_manager.get_current_theme_name(),
                     'confirm_exit': True,
                     'minimize_to_tray': True,
                     'start_minimized': False,
@@ -185,17 +187,25 @@ class TGManagerApp(QObject):
                 }
                 logger.warning("配置中缺少UI部分，已创建默认UI配置")
             
-            # 如果主题设置缺失，添加当前主题
-            if 'theme' not in config['UI']:
+            # 仅当save_theme为True时保存主题设置
+            if save_theme:
+                # 如果主题设置缺失或需要更新，添加当前主题
                 config['UI']['theme'] = self.theme_manager.get_current_theme_name()
-                logger.warning("配置中缺少theme属性，已添加当前主题")
+                logger.debug(f"保存主题设置: {config['UI']['theme']}")
+            elif 'theme' not in config['UI']:
+                # 如果不保存主题但配置中没有主题设置，使用默认主题
+                config['UI']['theme'] = "深色主题"
+                logger.warning("配置中缺少theme属性，已添加默认主题")
             
             # 保存配置到文件
             with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             
-            current_theme = config['UI'].get('theme', "深色主题")
-            logger.info(f"已保存配置文件，主题: {current_theme}")
+            if save_theme:
+                current_theme = config['UI'].get('theme', "深色主题")
+                logger.info(f"已保存配置文件，主题: {current_theme}")
+            else:
+                logger.info("已保存配置文件（不包含主题设置）")
             
             return config
         except Exception as e:
@@ -254,7 +264,8 @@ class TGManagerApp(QObject):
     def cleanup(self):
         """清理资源"""
         logger.info("正在关闭应用程序...")
-        self.save_config()
+        # 保存配置但不自动保存主题设置，只保存窗口状态等其他设置
+        self.save_config(save_theme=False)
         self.app_closing.emit()
         
         # 关闭事件循环
@@ -263,12 +274,6 @@ class TGManagerApp(QObject):
 
     def _on_config_saved(self):
         """处理配置保存信号"""
-        # 判断是否是设置界面发出的信号，是否应该应用主题
-        # 如果是主窗口的窗口状态变化触发的保存，则不要重新应用主题
-        ui_config = self.config.get('UI', {})
-        saved_theme = ui_config.get('theme', '')
-        current_theme = self.theme_manager.get_current_theme_name()
-        
         # 保存窗口状态到配置
         if hasattr(self.main_window, 'window_state_changed'):
             # 注意：这里主动获取当前窗口状态，确保工具栏状态也被保存
@@ -285,14 +290,23 @@ class TGManagerApp(QObject):
             ui_config['window_geometry'] = window_state['geometry'].toBase64().data().decode()
             ui_config['window_state'] = window_state['state'].toBase64().data().decode()
             self.config['UI'] = ui_config
+            
+            # 保存配置到文件，但不保存主题设置
+            self.save_config(save_theme=False)
+            return
+        
+        # 如果不是窗口状态变化，则处理来自设置界面的保存请求
+        ui_config = self.config.get('UI', {})
+        saved_theme = ui_config.get('theme', '')
+        current_theme = self.theme_manager.get_current_theme_name()
         
         # 只有当主题发生变化时才应用新主题
         if saved_theme and saved_theme != current_theme:
             logger.info(f"设置中主题发生变化，从 '{current_theme}' 变更为 '{saved_theme}'")
             self.theme_changed.emit(saved_theme)
         
-        # 保存配置到文件
-        self.save_config()
+        # 保存配置到文件，包括主题设置
+        self.save_config(save_theme=True)
         
         # 发送配置保存信号
         self.config_saved.emit()
