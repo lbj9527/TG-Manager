@@ -182,9 +182,9 @@ class DownloadView(QWidget):
         channel_widget_layout.setSpacing(2)
         
         # 频道列表标题
-        channel_list_label = QLabel("已配置下载频道:")
-        channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
-        channel_widget_layout.addWidget(channel_list_label)
+        self.channel_list_label = QLabel("已配置下载频道:  0个")
+        self.channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        channel_widget_layout.addWidget(self.channel_list_label)
         
         # 频道列表 - 设置固定高度以限制显示行数
         self.channel_list = QListWidget()
@@ -449,6 +449,9 @@ class DownloadView(QWidget):
         # 清空输入
         self.channel_input.clear()
         self.keyword_input.clear()
+        
+        # 更新频道列表标题
+        self._update_channel_list_title()
     
     def _remove_channels(self):
         """删除选中的频道"""
@@ -462,6 +465,9 @@ class DownloadView(QWidget):
         for item in reversed(selected_items):
             row = self.channel_list.row(item)
             self.channel_list.takeItem(row)
+        
+        # 更新频道列表标题
+        self._update_channel_list_title()
     
     def _get_media_types(self):
         """获取选中的媒体类型
@@ -677,6 +683,9 @@ class DownloadView(QWidget):
                 item.setData(Qt.UserRole, channel_data)
                 self.channel_list.addItem(item)
         
+        # 更新频道列表标题
+        self._update_channel_list_title()
+        
         # 加载媒体类型
         if download_settings and 'media_types' in download_settings[0]:
             media_types = download_settings[0].get('media_types', [])
@@ -707,3 +716,8 @@ class DownloadView(QWidget):
         current_tab_text = self.download_tabs.tabText(index)
         if current_tab_text.endswith(" *"):
             self.download_tabs.setTabText(index, current_tab_text[:-2]) 
+    
+    def _update_channel_list_title(self):
+        """更新频道列表标题，显示频道数量"""
+        channel_count = self.channel_list.count()
+        self.channel_list_label.setText(f"已配置下载频道:  {channel_count}个") 
