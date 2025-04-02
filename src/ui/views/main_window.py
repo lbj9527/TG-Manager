@@ -493,6 +493,10 @@ class MainWindow(QMainWindow):
                 from src.ui.views.download_view import DownloadView
                 view = DownloadView(self.config)
                 
+            elif function_name == 'download_keywords':
+                from src.ui.views.download_view import DownloadView
+                view = DownloadView(self.config, use_keywords=True)
+                
             elif function_name == 'upload':
                 from src.ui.views.upload_view import UploadView
                 view = UploadView(self.config)
@@ -744,25 +748,27 @@ class MainWindow(QMainWindow):
         
         # 确保工具栏连接了信号
         if hasattr(self, 'toolbar'):
-            # 确保工具栏信号连接
-            try:
-                self.toolbar.topLevelChanged.disconnect(self._on_toolbar_state_changed)
-            except:
-                pass  # 如果未连接，忽略错误
-                
-            try:
-                self.toolbar.movableChanged.disconnect(self._on_toolbar_state_changed)
-            except:
-                pass  # 如果未连接，忽略错误
-                
-            # 重新连接信号
-            self.toolbar.topLevelChanged.connect(self._on_toolbar_state_changed)
-            self.toolbar.movableChanged.connect(self._on_toolbar_state_changed)
+            # 完全避免先断开连接，直接处理连接信号
+            # 保存所有需要连接的工具栏信号和槽函数对，避免重复代码
+            toolbar_signals = [
+                self.toolbar.topLevelChanged,
+                self.toolbar.movableChanged,
+                self.toolbar.allowedAreasChanged,
+                self.toolbar.orientationChanged,
+                self.toolbar.visibilityChanged
+            ]
             
-            # 添加更多的信号监听以捕获工具栏变化
-            self.toolbar.allowedAreasChanged.connect(self._on_toolbar_state_changed)
-            self.toolbar.orientationChanged.connect(self._on_toolbar_state_changed)
-            self.toolbar.visibilityChanged.connect(self._on_toolbar_state_changed)
+            # 使用简单地连接方式，不尝试先断开，这样就不会触发警告
+            for signal in toolbar_signals:
+                # 在连接前不断开连接，PySide6会处理好重复连接的情况
+                # 即使有重复连接也不会有问题，系统会忽略
+                try:
+                    signal.connect(self._on_toolbar_state_changed)
+                    logger.debug(f"连接工具栏信号: {signal.__name__ if hasattr(signal, '__name__') else 'unknown signal'}")
+                except Exception as e:
+                    # 忽略任何连接过程中的错误
+                    logger.debug(f"信号连接异常 (可忽略): {e}")
+                    pass
         
         # 确保所有窗口元素正确显示
         self.update()
