@@ -171,11 +171,19 @@ class DownloadView(QWidget):
         options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         options_layout.setSpacing(4)  # 减小间距
         
-        # 媒体类型选项
+        # 媒体类型选项 - 减少上下留白
         media_layout = QVBoxLayout()
-        media_layout.addWidget(QLabel("要下载的媒体类型:"))
+        media_layout.setSpacing(2)  # 减少间距
+        media_layout.setContentsMargins(0, 0, 0, 0)  # 去除边距
+        
+        media_type_label = QLabel("要下载的媒体类型:")
+        media_type_label.setStyleSheet("margin-bottom: 2px;")  # 减少下边距
+        media_layout.addWidget(media_type_label)
         
         media_check_layout = QGridLayout()
+        media_check_layout.setVerticalSpacing(1)  # 减少垂直间距
+        media_check_layout.setHorizontalSpacing(5)  # 保持水平间距
+        media_check_layout.setContentsMargins(5, 0, 0, 2)  # 仅保留左边距和少量底部边距
         
         self.photo_check = QCheckBox("照片")
         self.photo_check.setChecked(True)
@@ -200,20 +208,9 @@ class DownloadView(QWidget):
         media_layout.addLayout(media_check_layout)
         options_layout.addLayout(media_layout)
         
-        # 下载路径
-        path_layout = QHBoxLayout()
-        path_layout.addWidget(QLabel("下载路径:"))
-        
-        self.download_path = QLineEdit("downloads")
-        path_layout.addWidget(self.download_path)
-        
-        self.browse_path_button = QPushButton("浏览...")
-        path_layout.addWidget(self.browse_path_button)
-        
-        options_layout.addLayout(path_layout)
-        
-        # 并行下载选项
+        # 并行下载选项 - 调整间距
         parallel_layout = QHBoxLayout()
+        parallel_layout.setContentsMargins(0, 8, 0, 0)  # 增加与上方媒体类型的间距
         
         self.parallel_check = QCheckBox("启用并行下载")
         self.parallel_check.toggled.connect(lambda checked: self.max_downloads.setEnabled(checked))
@@ -229,6 +226,24 @@ class DownloadView(QWidget):
         parallel_layout.addStretch(1)
         
         options_layout.addLayout(parallel_layout)
+        
+        # 添加一些空间
+        options_layout.addSpacing(8)
+        
+        # 下载路径 - 移到标签卡的下部
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("下载路径:"))
+        
+        self.download_path = QLineEdit("downloads")
+        path_layout.addWidget(self.download_path)
+        
+        self.browse_path_button = QPushButton("浏览...")
+        path_layout.addWidget(self.browse_path_button)
+        
+        options_layout.addLayout(path_layout)
+        
+        # 添加弹性空间，使上方内容靠上显示，下方留白
+        options_layout.addStretch(1)
         
         # 关键词标签页（仅在关键词模式下显示）
         if self.use_keywords:
