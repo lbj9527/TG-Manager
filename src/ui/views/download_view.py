@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QSizePolicy, QTabWidget
+    QSizePolicy, QTabWidget, QSplitter
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 
@@ -92,7 +92,7 @@ class DownloadView(QWidget):
         if self.config:
             self.load_config(self.config)
         
-        logger.info(f"{'关键词' if self.use_keywords else '普通'}下载界面初始化完成")
+        logger.info("下载界面初始化完成")
     
     def _create_config_panel(self):
         """创建配置标签页"""
@@ -104,6 +104,7 @@ class DownloadView(QWidget):
         
         # 创建顶部表单面板
         form_layout = QFormLayout()
+        form_layout.setContentsMargins(0, 0, 0, 5)  # 减小底部间距
         
         # 频道输入
         self.channel_input = QLineEdit()
@@ -115,7 +116,7 @@ class DownloadView(QWidget):
         
         # 消息范围 - 创建左对齐的布局
         range_layout = QHBoxLayout()
-        range_layout.setContentsMargins(0, 5, 0, 5)  # 增加上下间距
+        range_layout.setContentsMargins(0, 0, 0, 5)  # 减小上下间距
         
         # 从消息ID标签
         id_label = QLabel("从消息ID:")
@@ -125,7 +126,7 @@ class DownloadView(QWidget):
         self.start_id = QSpinBox()
         self.start_id.setRange(1, 999999999)
         self.start_id.setValue(1)
-        self.start_id.setMinimumWidth(100)  # 设置固定宽度
+        self.start_id.setMinimumWidth(90)  # 减小宽度
         range_layout.addWidget(self.start_id)
         
         range_layout.addWidget(QLabel("到:"))
@@ -134,17 +135,8 @@ class DownloadView(QWidget):
         self.end_id.setRange(0, 999999999)
         self.end_id.setValue(0)
         self.end_id.setSpecialValueText("最新消息")
-        self.end_id.setMinimumWidth(100)  # 设置固定宽度
+        self.end_id.setMinimumWidth(90)  # 减小宽度
         range_layout.addWidget(self.end_id)
-        
-        # 添加频道和删除按钮移到这一行
-        self.add_channel_button = QPushButton("添加频道")
-        self.add_channel_button.setMinimumHeight(28)  # 设置按钮高度
-        range_layout.addWidget(self.add_channel_button)
-        
-        self.remove_channel_button = QPushButton("删除所选")
-        self.remove_channel_button.setMinimumHeight(28)  # 设置按钮高度
-        range_layout.addWidget(self.remove_channel_button)
         
         # 添加伸展因子，确保控件左对齐
         range_layout.addStretch(1)
@@ -152,18 +144,56 @@ class DownloadView(QWidget):
         # 添加消息范围布局到主布局
         channel_layout.addLayout(range_layout)
         
-        # 频道列表
+        # 创建关键词输入行 - 新增的专门布局
+        keywords_layout = QHBoxLayout()
+        keywords_layout.setContentsMargins(0, 5, 0, 5)  # 设置上下间距
+        
+        # 添加关键词标签和输入框
+        keyword_label = QLabel("关键词:")
+        keyword_label.setMinimumWidth(70)  # 设置最小宽度确保对齐
+        keywords_layout.addWidget(keyword_label)
+        
+        self.keyword_input = QLineEdit()
+        self.keyword_input.setPlaceholderText("输入要筛选的关键词，多个用逗号分隔")
+        self.keyword_input.setMinimumWidth(300)  # 增加最小宽度
+        # 设置尺寸策略为水平方向可扩展
+        self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        keywords_layout.addWidget(self.keyword_input, 3)  # 设置拉伸因子为3，使其占据更多空间
+        
+        # 添加频道和删除按钮
+        self.add_channel_button = QPushButton("添加频道")
+        self.add_channel_button.setMinimumHeight(28)  # 设置按钮高度
+        keywords_layout.addWidget(self.add_channel_button, 0)  # 不设置拉伸
+        
+        self.remove_channel_button = QPushButton("删除所选")
+        self.remove_channel_button.setMinimumHeight(28)  # 设置按钮高度
+        keywords_layout.addWidget(self.remove_channel_button, 0)  # 不设置拉伸
+        
+        # 添加伸展因子，确保控件左对齐
+        keywords_layout.addStretch(1)
+        
+        # 添加关键词布局到主布局
+        channel_layout.addLayout(keywords_layout)
+        
+        # 创建频道列表部分 - 不再使用分割器，直接添加到布局
+        channel_widget = QWidget()
+        channel_widget_layout = QVBoxLayout(channel_widget)
+        channel_widget_layout.setContentsMargins(0, 0, 0, 0)
+        channel_widget_layout.setSpacing(2)
+        
+        # 频道列表标题
         channel_list_label = QLabel("已配置下载频道:")
-        channel_list_label.setContentsMargins(0, 10, 0, 5)  # 增加上下间距
         channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        channel_widget_layout.addWidget(channel_list_label)
         
-        channel_layout.addWidget(channel_list_label)
-        
+        # 频道列表 - 设置固定高度以限制显示行数
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.channel_list.setMinimumHeight(160)  # 设置最小高度
+        self.channel_list.setFixedHeight(90)  # 设置固定高度约显示3行
+        channel_widget_layout.addWidget(self.channel_list)
         
-        channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
+        # 将频道列表部分添加到主布局
+        channel_layout.addWidget(channel_widget, 1)  # 使频道列表占据所有剩余空间
         
         # 下载选项标签页
         self.options_tab = QWidget()
@@ -244,44 +274,6 @@ class DownloadView(QWidget):
         
         # 添加弹性空间，使上方内容靠上显示，下方留白
         options_layout.addStretch(1)
-        
-        # 关键词标签页（仅在关键词模式下显示）
-        if self.use_keywords:
-            self.keyword_tab = QWidget()
-            keyword_layout = QVBoxLayout(self.keyword_tab)
-            keyword_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-            keyword_layout.setSpacing(4)  # 减小间距
-            
-            # 关键词输入
-            keyword_form = QFormLayout()
-            
-            self.keyword_input = QLineEdit()
-            self.keyword_input.setPlaceholderText("输入要筛选的关键词")
-            keyword_form.addRow("关键词:", self.keyword_input)
-            
-            keyword_layout.addLayout(keyword_form)
-            
-            # 关键词按钮
-            keyword_buttons = QHBoxLayout()
-            
-            self.add_keyword_button = QPushButton("添加关键词")
-            self.remove_keyword_button = QPushButton("删除所选")
-            
-            keyword_buttons.addWidget(self.add_keyword_button)
-            keyword_buttons.addWidget(self.remove_keyword_button)
-            keyword_buttons.addStretch(1)
-            
-            keyword_layout.addLayout(keyword_buttons)
-            
-            # 关键词列表
-            keyword_layout.addWidget(QLabel("已配置关键词:"))
-            
-            self.keywords_list = QListWidget()
-            self.keywords_list.setSelectionMode(QListWidget.ExtendedSelection)
-            keyword_layout.addWidget(self.keywords_list, 1)  # 使列表占据所有剩余空间
-            
-            # 添加到标签页
-            self.config_tabs.addTab(self.keyword_tab, "关键词筛选")
         
         # 将标签页添加到配置面板
         self.config_tabs.addTab(self.channel_tab, "频道配置")
@@ -385,10 +377,8 @@ class DownloadView(QWidget):
         self.save_config_button.clicked.connect(self._save_config)
         self.clear_list_button.clicked.connect(self.clear_download_list)
         
-        # 如果是关键词模式，连接关键词管理
-        if self.use_keywords:
-            self.add_keyword_button.clicked.connect(self._add_keyword)
-            self.remove_keyword_button.clicked.connect(self._remove_keywords)
+        # 下载标签页切换
+        self.download_tabs.currentChanged.connect(self._on_tab_changed)
     
     def _init_ui_state(self):
         """初始化UI状态"""
@@ -398,8 +388,8 @@ class DownloadView(QWidget):
         self.end_id.setToolTip("结束消息ID (包含), 0表示最新消息")
         self.browse_path_button.setToolTip("选择下载文件保存位置")
         
-        if self.use_keywords:
-            self.keyword_input.setToolTip("输入要筛选的关键词")
+        # 关键词输入提示 - 移除对use_keywords的检查
+        self.keyword_input.setToolTip("输入要筛选的关键词")
     
     def _browse_download_path(self):
         """浏览下载路径对话框"""
@@ -427,16 +417,30 @@ class DownloadView(QWidget):
                 QMessageBox.information(self, "提示", "此频道已在列表中")
                 return
         
+        # 获取关键词
+        keywords = []
+        keywords_text = self.keyword_input.text().strip()
+        if keywords_text:
+            keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
+        
         # 创建频道数据
         channel_data = {
             'channel': channel,
             'start_id': self.start_id.value(),
             'end_id': self.end_id.value(),
+            'keywords': keywords
         }
         
-        # 创建列表项
+        # 创建列表项并设置文本
         item = QListWidgetItem()
-        item.setText(f"{channel} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})")
+        display_text = f"{channel} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})"
+        
+        # 如果有关键词，添加到显示文本中
+        if keywords:
+            keywords_str = '，'.join(keywords)
+            display_text += f"（关键词：{keywords_str}）"
+        
+        item.setText(display_text)
         item.setData(Qt.UserRole, channel_data)
         
         # 添加到列表
@@ -444,6 +448,7 @@ class DownloadView(QWidget):
         
         # 清空输入
         self.channel_input.clear()
+        self.keyword_input.clear()
     
     def _remove_channels(self):
         """删除选中的频道"""
@@ -457,44 +462,6 @@ class DownloadView(QWidget):
         for item in reversed(selected_items):
             row = self.channel_list.row(item)
             self.channel_list.takeItem(row)
-    
-    def _add_keyword(self):
-        """添加关键词到列表"""
-        if not self.use_keywords:
-            return
-            
-        keywords_text = self.keyword_input.text().strip()
-        
-        if not keywords_text:
-            QMessageBox.warning(self, "警告", "请输入关键词")
-            return
-        
-        # 检查是否已存在相同关键词
-        if self.keywords_list.findItems(keywords_text, Qt.MatchExactly):
-            QMessageBox.information(self, "提示", "此关键词已在列表中")
-            return
-        
-        # 添加到列表
-        self.keywords_list.addItem(keywords_text)
-        
-        # 清空输入
-        self.keyword_input.clear()
-    
-    def _remove_keywords(self):
-        """删除选中的关键词"""
-        if not self.use_keywords:
-            return
-            
-        selected_items = self.keywords_list.selectedItems()
-        
-        if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的关键词")
-            return
-        
-        # 删除选中的关键词
-        for item in reversed(selected_items):
-            row = self.keywords_list.row(item)
-            self.keywords_list.takeItem(row)
     
     def _get_media_types(self):
         """获取选中的媒体类型
@@ -522,17 +489,18 @@ class DownloadView(QWidget):
         return media_types
     
     def _get_keywords(self):
-        """获取关键词列表
+        """获取所有频道中配置的关键词列表
         
         Returns:
             list: 关键词列表
         """
-        if not self.use_keywords:
-            return []
-            
         keywords = []
-        for i in range(self.keywords_list.count()):
-            keywords.append(self.keywords_list.item(i).text())
+        for i in range(self.channel_list.count()):
+            channel_data = self.channel_list.item(i).data(Qt.UserRole)
+            if 'keywords' in channel_data and channel_data['keywords']:
+                for keyword in channel_data['keywords']:
+                    if keyword not in keywords:
+                        keywords.append(keyword)
         
         return keywords
     
@@ -561,20 +529,18 @@ class DownloadView(QWidget):
             QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
             return
         
-        # 如果是关键词模式，检查关键词
-        if self.use_keywords and self.keywords_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请至少添加一个关键词")
-            return
+        # 获取关键词列表，不再需要检查是否是关键词模式
+        keywords = self._get_keywords()
         
         # 收集配置
         config = {
             'channels': self._get_channels(),
             'media_types': media_types,
-            'keywords': self._get_keywords() if self.use_keywords else [],
+            'keywords': keywords,
             'download_path': self.download_path.text(),
             'parallel_download': self.parallel_check.isChecked(),
             'max_concurrent_downloads': self.max_downloads.value() if self.parallel_check.isChecked() else 1,
-            'use_keywords': self.use_keywords
+            'use_keywords': self.use_keywords  # 保留此字段以便后台处理兼容
         }
         
         # 发出下载开始信号
@@ -598,7 +564,7 @@ class DownloadView(QWidget):
         config = {
             'channels': self._get_channels(),
             'media_types': self._get_media_types(),
-            'keywords': self._get_keywords() if self.use_keywords else [],
+            'keywords': self._get_keywords(),  # 总是保存关键词列表
             'download_path': self.download_path.text(),
             'parallel_download': self.parallel_check.isChecked(),
             'max_concurrent_downloads': self.max_downloads.value() if self.parallel_check.isChecked() else 1
@@ -687,8 +653,6 @@ class DownloadView(QWidget):
         """
         # 清空现有项目
         self.channel_list.clear()
-        if self.use_keywords:
-            self.keywords_list.clear()
         
         # 加载频道
         download_settings = config.get('DOWNLOAD', {}).get('downloadSetting', [])
@@ -696,20 +660,22 @@ class DownloadView(QWidget):
             channel_data = {
                 'channel': setting.get('source_channels', ''),
                 'start_id': setting.get('start_id', 1),
-                'end_id': setting.get('end_id', 0)
+                'end_id': setting.get('end_id', 0),
+                'keywords': setting.get('keywords', [])
             }
             
             if channel_data['channel']:
                 item = QListWidgetItem()
-                item.setText(f"{channel_data['channel']} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})")
+                display_text = f"{channel_data['channel']} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})"
+                
+                # 如果有关键词，添加到显示文本中
+                if channel_data['keywords']:
+                    keywords_str = '，'.join(channel_data['keywords'])
+                    display_text += f"（关键词：{keywords_str}）"
+                
+                item.setText(display_text)
                 item.setData(Qt.UserRole, channel_data)
                 self.channel_list.addItem(item)
-            
-            # 如果是关键词模式，加载关键词
-            if self.use_keywords and 'keywords' in setting:
-                for keyword in setting.get('keywords', []):
-                    if keyword and self.keywords_list.findItems(keyword, Qt.MatchExactly) == []:
-                        self.keywords_list.addItem(keyword)
         
         # 加载媒体类型
         if download_settings and 'media_types' in download_settings[0]:

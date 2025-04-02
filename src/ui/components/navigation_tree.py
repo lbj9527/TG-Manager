@@ -78,10 +78,6 @@ class NavigationTree(QWidget):
                 "function": "download",
                 "description": "从频道批量下载媒体文件"
             }),
-            NavigationItem("关键词下载", "keyword_download", "download_category", "function", {
-                "function": "download_keywords",
-                "description": "使用关键词筛选下载媒体文件"
-            }),
             
             # 媒体上传分类
             NavigationItem("媒体上传", "upload_category", None, "category"),

@@ -493,10 +493,6 @@ class MainWindow(QMainWindow):
                 from src.ui.views.download_view import DownloadView
                 view = DownloadView(self.config)
                 
-            elif function_name == 'download_keywords':
-                from src.ui.views.download_view import DownloadView
-                view = DownloadView(self.config, use_keywords=True)
-                
             elif function_name == 'upload':
                 from src.ui.views.upload_view import UploadView
                 view = UploadView(self.config)
