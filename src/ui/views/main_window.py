@@ -441,12 +441,16 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(100, self._save_current_state)
     
     def _save_current_state(self):
-        """保存当前窗口状态"""
+        """保存当前窗口状态（只保存窗口几何信息和工具栏位置等布局状态）
+        
+        注意：此方法只会保存窗口的布局相关配置，不会影响其他配置项如主题设置等。
+        这些布局状态没有单独的保存按钮，因此会自动保存，以便在下次启动时恢复布局。
+        """
         window_state = {
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
-        logger.debug("保存窗口状态，包括工具栏位置")
+        logger.debug("保存窗口布局状态，包括窗口几何信息和工具栏位置")
         self.window_state_changed.emit(window_state)
 
     def showEvent(self, event):
@@ -790,8 +794,9 @@ class MainWindow(QMainWindow):
             # 更新配置
             self.config['UI'] = ui_config
             
-            # 发送配置保存信号，但不触发主题变更
+            # 发送配置保存信号，传递完整配置字典
             # 注意：我们使用emit而不是直接触发_on_config_saved以避免循环调用
+            # TGManagerApp类中的_on_config_saved方法会处理保存逻辑，确保保留主题设置
             self.config_saved.emit(self.config)
             
             logger.debug("窗口状态已成功保存到配置")
@@ -832,25 +837,6 @@ class MainWindow(QMainWindow):
             
         if hasattr(self, 'network_timer') and self.network_timer.isActive():
             self.network_timer.stop()
-        
-        # 保存窗口状态，确保工具栏位置被保存
-        logger.debug("程序关闭前保存窗口状态，包括工具栏位置")
-        window_state = {
-            'geometry': self.saveGeometry(),
-            'state': self.saveState()
-        }
-        
-        # 直接保存到配置，确保状态保存成功
-        try:
-            ui_config = self.config.get('UI', {})
-            ui_config['window_geometry'] = window_state['geometry'].toBase64().data().decode()
-            ui_config['window_state'] = window_state['state'].toBase64().data().decode()
-            self.config['UI'] = ui_config
-        except Exception as e:
-            logger.error(f"关闭窗口时保存窗口状态失败: {e}")
-            
-        # 发送窗口状态变化信号
-        self.window_state_changed.emit(window_state)
         
         # 接受关闭事件
         event.accept()

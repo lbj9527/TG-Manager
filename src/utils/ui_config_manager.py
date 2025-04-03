@@ -107,41 +107,41 @@ class UIConfigManager:
             if "downloadSetting" in download_config:
                 valid_download_settings = []
                 for item in download_config["downloadSetting"]:
-                    try:
-                        # 转换媒体类型
-                        if "media_types" in item:
-                            media_types = []
-                            for mt in item["media_types"]:
-                                try:
-                                    if mt in [e.value for e in MediaType]:
-                                        media_types.append(MediaType(mt))
-                                    else:
-                                        logger.warning(f"无效的媒体类型: {mt}，已跳过")
-                                except Exception:
-                                    logger.warning(f"无效的媒体类型: {mt}，已跳过")
-                            
-                            # 如果没有有效的媒体类型，使用默认值
-                            if not media_types:
-                                media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
-                                logger.warning("媒体类型列表为空，已使用默认值")
-                            
-                            item["media_types"] = media_types
-                        
-                        # 确保source_channels有效
-                        if "source_channels" not in item or not item["source_channels"]:
-                            continue  # 跳过无效的下载设置项
-                        
-                        # 修复source_channels
-                        try:
-                            source_channel = UIChannelPair.validate_channel_id(item["source_channels"], "源频道")
-                            item["source_channels"] = source_channel
-                        except ValueError as e:
-                            logger.warning(f"无效的源频道: {item.get('source_channels')}, {e}")
-                            continue  # 跳过无效项
-                        
-                        valid_download_settings.append(item)
-                    except Exception as e:
-                        logger.warning(f"处理下载设置项时出错: {e}")
+                  try:
+                      # 转换媒体类型
+                      if "media_types" in item:
+                          media_types = []
+                          for mt in item["media_types"]:
+                              try:
+                                  if mt in [e.value for e in MediaType]:
+                                      media_types.append(MediaType(mt))
+                                  else:
+                                      logger.warning(f"无效的媒体类型: {mt}，已跳过")
+                              except Exception:
+                                  logger.warning(f"无效的媒体类型: {mt}，已跳过")
+                          
+                          # 如果没有有效的媒体类型，使用默认值
+                          if not media_types:
+                              media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
+                              logger.warning("媒体类型列表为空，已使用默认值")
+                          
+                          item["media_types"] = media_types
+                      
+                      # 确保source_channels有效
+                      if "source_channels" not in item or not item["source_channels"]:
+                          continue  # 跳过无效的下载设置项
+                      
+                      # 修复source_channels
+                      try:
+                          source_channel = UIChannelPair.validate_channel_id(item["source_channels"], "源频道")
+                          item["source_channels"] = source_channel
+                      except ValueError as e:
+                          logger.warning(f"无效的源频道: {item.get('source_channels')}, {e}")
+                          continue  # 跳过无效项
+                      
+                      valid_download_settings.append(item)
+                  except Exception as e:
+                      logger.warning(f"处理下载设置项时出错: {e}")
                 
                 # 如果没有有效的下载设置项，添加一个空的设置项
                 if not valid_download_settings:
@@ -356,6 +356,42 @@ class UIConfigManager:
                     logger.warning("上传目标频道列表为空，已添加默认项")
                 
                 upload_config["target_channels"] = valid_targets
+            
+            # 修复UI部分
+            ui_config = config_data.get("UI", {})
+            if not ui_config:
+                ui_config = {
+                    'theme': "深色主题",
+                    'confirm_exit': True,
+                    'minimize_to_tray': True,
+                    'start_minimized': False,
+                    'enable_notifications': True,
+                    'notification_sound': True,
+                    'window_geometry': None,
+                    'window_state': None
+                }
+                logger.warning("UI配置为空，使用默认值")
+
+            # 确保theme是有效值
+            valid_themes = ["深色主题", "浅色主题", "蓝色主题", "红色主题", "绿色主题", "青色主题", "紫色主题", "橙色主题"]
+            if "theme" not in ui_config or ui_config["theme"] not in valid_themes:
+                ui_config["theme"] = "深色主题"
+                logger.warning(f"UI主题无效，重置为深色主题")
+
+            # 修复window_geometry和window_state
+            for field in ["window_geometry", "window_state"]:
+                if field in ui_config and not isinstance(ui_config[field], str):
+                    ui_config[field] = None
+                    logger.warning(f"UI {field} 类型无效，设置为None")
+
+            # 确保布尔值字段正确
+            bool_fields = ["confirm_exit", "minimize_to_tray", "start_minimized", "enable_notifications", "notification_sound"]
+            for field in bool_fields:
+                if field not in ui_config or not isinstance(ui_config[field], bool):
+                    ui_config[field] = True  # 默认都是启用的
+                    logger.warning(f"UI {field} 类型无效，设置为True")
+
+            config_data["UI"] = ui_config
             
             # 创建UI配置对象
             return UIConfig(**config_data)

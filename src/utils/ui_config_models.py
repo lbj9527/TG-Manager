@@ -380,6 +380,21 @@ class UIMonitorConfig(BaseModel):
         title = "监听配置"
 
 
+class UIUIConfig(BaseModel):
+    """用户界面配置模型"""
+    theme: str = Field("深色主题", description="界面主题")
+    confirm_exit: bool = Field(True, description="退出时是否需要确认")
+    minimize_to_tray: bool = Field(True, description="最小化到系统托盘")
+    start_minimized: bool = Field(False, description="启动时最小化")
+    enable_notifications: bool = Field(True, description="启用通知")
+    notification_sound: bool = Field(True, description="启用通知声音")
+    window_geometry: Optional[str] = Field(None, description="窗口几何位置")
+    window_state: Optional[str] = Field(None, description="窗口状态(包含工具栏位置)")
+
+    class Config:
+        title = "界面配置"
+
+
 class UIConfig(BaseModel):
     """完整UI配置模型"""
     GENERAL: UIGeneralConfig
@@ -387,6 +402,7 @@ class UIConfig(BaseModel):
     UPLOAD: UIUploadConfig
     FORWARD: UIForwardConfig
     MONITOR: UIMonitorConfig
+    UI: UIUIConfig
 
     class Config:
         title = "TG-Manager 配置"
@@ -464,6 +480,16 @@ def create_default_config() -> UIConfig:
             ],
             duration=(datetime.now().replace(year=datetime.now().year + 1)).strftime("%Y-%m-%d"),  # 设置为一年后
             forward_delay=1.0
+        ),
+        UI=UIUIConfig(
+            theme="深色主题",
+            confirm_exit=True,
+            minimize_to_tray=True,
+            start_minimized=False,
+            enable_notifications=True,
+            notification_sound=True,
+            window_geometry=None,
+            window_state=None
         )
     )
 

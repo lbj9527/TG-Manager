@@ -166,6 +166,7 @@ class TGManagerApp(QObject):
                 'UPLOAD': ui_config.UPLOAD.dict(),
                 'FORWARD': ui_config.FORWARD.dict(),
                 'MONITOR': ui_config.MONITOR.dict(),
+                'UI': ui_config.UI.dict(),  # 添加UI配置，从Pydantic模型获取
             }
             
             # 处理下载配置中的嵌套对象
@@ -211,33 +212,6 @@ class TGManagerApp(QObject):
                 # 使用默认监听设置
                 self.config["MONITOR"]["monitor_channel_pairs"] = []
             
-            # 加载UI配置，这部分直接从配置文件读取
-            try:
-                with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
-                    file_config = json.load(f)
-                    if 'UI' in file_config:
-                        self.config['UI'] = file_config['UI']
-                    else:
-                        # 创建默认UI配置
-                        self.config['UI'] = {
-                            'theme': "深色主题",
-                            'confirm_exit': True,
-                            'minimize_to_tray': True,
-                            'start_minimized': False,
-                            'enable_notifications': True,
-                            'notification_sound': True
-                        }
-            except Exception as e:
-                logger.warning(f"加载UI配置失败: {e}，使用默认配置")
-                self.config['UI'] = {
-                    'theme': "深色主题",
-                    'confirm_exit': True,
-                    'minimize_to_tray': True,
-                    'start_minimized': False,
-                    'enable_notifications': True,
-                    'notification_sound': True
-                }
-            
             logger.info("已加载配置文件")
             
         except Exception as e:
@@ -253,14 +227,7 @@ class TGManagerApp(QObject):
                 'UPLOAD': default_config.get('UPLOAD', {}),
                 'FORWARD': default_config.get('FORWARD', {}),
                 'MONITOR': default_config.get('MONITOR', {}),
-                'UI': {
-                    'theme': "深色主题",
-                    'confirm_exit': True,
-                    'minimize_to_tray': True,
-                    'start_minimized': False,
-                    'enable_notifications': True,
-                    'notification_sound': True
-                }
+                'UI': default_config.get('UI', {})
             }
             logger.info("已使用默认配置")
     
@@ -272,78 +239,43 @@ class TGManagerApp(QObject):
             save_theme: 是否保存主题设置，默认为True
         """
         try:
-            # 先读取配置文件的当前内容以获取完整配置
-            with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
-                file_config = json.load(f)
-            
-            # 确保UI部分存在
-            if 'UI' not in file_config:
-                file_config['UI'] = {
-                    'confirm_exit': True,
-                    'minimize_to_tray': True,
-                    'start_minimized': False,
-                    'enable_notifications': True,
-                    'notification_sound': True
-                }
-                logger.warning("配置中缺少UI部分，已创建默认UI配置")
-            
-            # 从内存配置同步UI设置
-            if 'UI' in self.config:
-                # 保留window_geometry和window_state
-                window_geometry = self.config['UI'].get('window_geometry')
-                window_state = self.config['UI'].get('window_state')
-                
-                if window_geometry:
-                    file_config['UI']['window_geometry'] = window_geometry
-                    logger.debug("已从内存同步窗口几何形状到配置文件")
-                    
-                if window_state:
-                    file_config['UI']['window_state'] = window_state
-                    logger.debug("已从内存同步窗口状态（包括工具栏位置）到配置文件")
-                
-                # 同步其他UI设置，但避免覆盖已有的window_*设置
-                for key, value in self.config['UI'].items():
-                    if key not in ['window_geometry', 'window_state'] or key not in file_config['UI']:
-                        file_config['UI'][key] = value
-                        
-            # 仅当save_theme为True时保存主题设置
-            if save_theme:
-                # 如果主题设置缺失或需要更新，添加当前主题
-                file_config['UI']['theme'] = self.theme_manager.get_current_theme_name()
-                logger.debug(f"保存主题设置: {file_config['UI']['theme']}")
-            elif 'theme' not in file_config['UI']:
-                # 如果不保存主题但配置中没有主题设置，使用默认主题
-                file_config['UI']['theme'] = "深色主题"
-                logger.warning("配置中缺少theme属性，已添加默认主题")
-            
-            # 更新UI配置管理器中的配置
-            if 'GENERAL' in self.config:
-                file_config['GENERAL'] = self.config['GENERAL']
-            if 'DOWNLOAD' in self.config:
-                file_config['DOWNLOAD'] = self.config['DOWNLOAD']
-            if 'UPLOAD' in self.config:
-                file_config['UPLOAD'] = self.config['UPLOAD']
-            if 'FORWARD' in self.config:
-                file_config['FORWARD'] = self.config['FORWARD']
-            if 'MONITOR' in self.config:
-                file_config['MONITOR'] = self.config['MONITOR']
+            # 如果不保存主题设置，临时保存当前主题
+            current_theme = None
+            if not save_theme and 'UI' in self.config and 'theme' in self.config['UI']:
+                current_theme = self.config['UI']['theme']
+                logger.debug(f"临时保存当前主题: {current_theme}")
             
             # 使用UI配置管理器更新并保存配置
-            self.ui_config_manager.update_from_dict(file_config)
+            self.ui_config_manager.update_from_dict(self.config)
             save_success = self.ui_config_manager.save_config()
+            
+            # 如果不保存主题设置，恢复原来的主题
+            if not save_theme and current_theme:
+                # 暂时不改变内存中的配置，仅在下次保存时更新
+                with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                    file_config = json.load(f)
+                    if current_theme and 'UI' in file_config:
+                        file_config['UI']['theme'] = current_theme
+                        logger.debug(f"恢复配置文件中的主题: {current_theme}")
+                        
+                        # 重新保存文件
+                        with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                            json.dump(file_config, f, ensure_ascii=False, indent=2)
             
             if save_success:
                 if save_theme:
-                    current_theme = file_config['UI'].get('theme', "深色主题")
+                    current_theme = self.config.get('UI', {}).get('theme', "深色主题")
                     logger.info(f"已保存配置文件，主题: {current_theme}")
                 else:
                     logger.info("已保存配置文件（不包含主题设置）")
+                return self.config
             else:
                 logger.error("保存配置文件失败")
-            
-            return file_config
+                return {}
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
+            import traceback
+            logger.debug(f"保存配置错误详情:\n{traceback.format_exc()}")
             return {}
     
     def update_config(self, section, key, value):
@@ -399,18 +331,7 @@ class TGManagerApp(QObject):
         """清理资源"""
         logger.info("正在关闭应用程序...")
         
-        # 确保主窗口保存了当前状态，包括工具栏位置
-        if hasattr(self, 'main_window'):
-            try:
-                # 如果主窗口有保存状态的方法，直接调用
-                if hasattr(self.main_window, '_save_current_state'):
-                    logger.debug("主动触发窗口状态保存")
-                    self.main_window._save_current_state()
-            except Exception as e:
-                logger.error(f"保存窗口状态失败: {e}")
-        
-        # 保存配置但不自动保存主题设置，只保存窗口状态等其他设置
-        self.save_config(save_theme=False)
+        # 发送应用程序关闭信号
         self.app_closing.emit()
         
         # 关闭事件循环
@@ -419,79 +340,117 @@ class TGManagerApp(QObject):
 
     def _on_config_saved(self, updated_config=None):
         """处理配置保存信号"""
-        # 如果接收到更新后的配置，先更新内存中的配置
-        if isinstance(updated_config, dict):
-            logger.debug(f"接收到更新后的配置数据，准备保存")
-            
-            # 更新内存中的配置
-            self.config.update(updated_config)
-            
-            # 使用UI配置管理器更新配置
-            try:
-                # 先读取当前完整配置
-                with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
-                    file_config = json.load(f)
+        try:
+            # 如果接收到更新后的配置，先更新内存中的配置
+            if isinstance(updated_config, dict):
+                logger.debug(f"接收到更新后的配置数据，准备保存")
                 
-                # 更新接收到的部分
+                # 备份当前主题设置（如果有的话）
+                current_theme = None
+                if 'UI' in self.config and 'theme' in self.config['UI']:
+                    current_theme = self.config['UI'].get('theme')
+                    logger.debug(f"备份当前主题设置: {current_theme}")
+                
+                # 更新内存中的配置
                 for section, section_data in updated_config.items():
-                    file_config[section] = section_data
+                    self.config[section] = section_data
+                
+                # 如果更新的配置中没有主题设置但之前有，则恢复
+                if current_theme and ('UI' not in updated_config or 'theme' not in updated_config.get('UI', {})):
+                    if 'UI' not in self.config:
+                        self.config['UI'] = {}
+                    logger.debug(f"恢复主题设置: {current_theme}")
+                    self.config['UI']['theme'] = current_theme
                 
                 # 使用UI配置管理器更新和保存
                 logger.debug("通过UIConfigManager更新配置")
-                self.ui_config_manager.update_from_dict(file_config)
-                save_success = self.ui_config_manager.save_config()
+                try:
+                    self.ui_config_manager.update_from_dict(self.config)
+                    save_success = self.ui_config_manager.save_config()
+                    
+                    if save_success:
+                        logger.info("配置已通过UIConfigManager成功保存")
+                        
+                        # 检查主题是否变更
+                        ui_config = self.config.get('UI', {})
+                        saved_theme = ui_config.get('theme', '')
+                        current_theme = self.theme_manager.get_current_theme_name()
+                        
+                        # 如果主题发生变化，触发主题更改信号
+                        if saved_theme and saved_theme != current_theme:
+                            logger.info(f"主题发生变化，从 '{current_theme}' 变更为 '{saved_theme}'")
+                            self.theme_changed.emit(saved_theme)
+                        
+                        # 发送配置保存成功信号
+                        self.config_saved.emit()
+                    else:
+                        logger.error("UIConfigManager保存配置失败")
+                except Exception as e:
+                    logger.error(f"通过UIConfigManager更新配置失败: {e}")
+                    import traceback
+                    logger.debug(f"保存配置错误详情:\n{traceback.format_exc()}")
+                    
+                    # 回退到原始保存方法
+                    self.save_config(save_theme=True)
+                    self.config_saved.emit()
                 
-                if save_success:
-                    logger.info("配置已通过UIConfigManager成功保存")
-                else:
-                    logger.error("UIConfigManager保存配置失败")
+                return
+            
+            # 如果是窗口状态变化，仅保存窗口状态（不保存整个配置）
+            if hasattr(self.main_window, 'window_state_changed'):
+                try:
+                    # 获取当前窗口状态
+                    window_state = {
+                        'geometry': self.main_window.saveGeometry(),
+                        'state': self.main_window.saveState()
+                    }
+                    
+                    # 更新内存中的窗口状态配置
+                    if 'UI' not in self.config:
+                        self.config['UI'] = {}
+                    
+                    # 更新内存中的UI配置
+                    self.config['UI']['window_geometry'] = window_state['geometry'].toBase64().data().decode()
+                    self.config['UI']['window_state'] = window_state['state'].toBase64().data().decode()
+                    
+                    # 仅保存窗口布局相关的配置项，不修改其他配置
+                    try:
+                        # 从文件读取当前配置
+                        with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                            file_config = json.load(f)
+                        
+                        # 确保UI部分存在
+                        if 'UI' not in file_config:
+                            file_config['UI'] = {}
+                        
+                        # 只更新窗口几何信息和状态
+                        file_config['UI']['window_geometry'] = self.config['UI']['window_geometry']
+                        file_config['UI']['window_state'] = self.config['UI']['window_state']
+                        
+                        # 保存回文件
+                        with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                            json.dump(file_config, f, ensure_ascii=False, indent=2)
+                        
+                        logger.debug("窗口布局状态已单独保存")
+                    except Exception as e:
+                        logger.error(f"保存窗口布局状态失败: {e}")
+                        import traceback
+                        logger.debug(f"保存窗口布局状态错误详情:\n{traceback.format_exc()}")
+                except Exception as e:
+                    logger.error(f"获取窗口状态失败: {e}")
+                    import traceback
+                    logger.debug(f"获取窗口状态错误详情:\n{traceback.format_exc()}")
                 
-                # 发送配置保存信号
-                self.config_saved.emit()
-            except Exception as e:
-                logger.error(f"通过UIConfigManager更新配置失败: {e}")
-                # 回退到原始保存方法
-                self.save_config(save_theme=True)
-                self.config_saved.emit()
+                return
             
-            return
+            # 如果是来自设置界面的普通保存请求
+            self.save_config(save_theme=True)
+            self.config_saved.emit()
             
-        # 保存窗口状态到配置
-        if hasattr(self.main_window, 'window_state_changed'):
-            # 注意：这里主动获取当前窗口状态，确保工具栏状态也被保存
-            window_state = {
-                'geometry': self.main_window.saveGeometry(),
-                'state': self.main_window.saveState()
-            }
-            
-            # 更新配置
-            if 'UI' not in self.config:
-                self.config['UI'] = {}
-            
-            ui_config = self.config['UI'] 
-            ui_config['window_geometry'] = window_state['geometry'].toBase64().data().decode()
-            ui_config['window_state'] = window_state['state'].toBase64().data().decode()
-            self.config['UI'] = ui_config
-            
-            # 保存配置到文件，但不保存主题设置
-            self.save_config(save_theme=False)
-            return
-        
-        # 如果不是窗口状态变化，则处理来自设置界面的保存请求
-        ui_config = self.config.get('UI', {})
-        saved_theme = ui_config.get('theme', '')
-        current_theme = self.theme_manager.get_current_theme_name()
-        
-        # 只有当主题发生变化时才应用新主题
-        if saved_theme and saved_theme != current_theme:
-            logger.info(f"设置中主题发生变化，从 '{current_theme}' 变更为 '{saved_theme}'")
-            self.theme_changed.emit(saved_theme)
-        
-        # 保存配置到文件，包括主题设置
-        self.save_config(save_theme=True)
-        
-        # 发送配置保存信号
-        self.config_saved.emit()
+        except Exception as e:
+            logger.error(f"处理配置保存信号失败: {e}")
+            import traceback
+            logger.debug(f"处理配置保存信号错误详情:\n{traceback.format_exc()}")
     
     def _on_theme_changed(self, theme_name):
         """主题变更处理
