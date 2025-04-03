@@ -120,6 +120,20 @@ class UIConfigManager:
                     general_config["proxy_type"] = ProxyType.SOCKS5
                     logger.warning("配置文件中的proxy_type无效，已重置为SOCKS5")
             
+            # 修复代理地址和端口
+            if "proxy_enabled" in general_config:
+                proxy_enabled = general_config.get("proxy_enabled", False)
+                # 如果禁用代理，确保代理地址和端口有默认值
+                if not proxy_enabled:
+                    if not general_config.get("proxy_addr") or general_config.get("proxy_addr") == "":
+                        general_config["proxy_addr"] = "127.0.0.1"
+                    if not general_config.get("proxy_port") or general_config.get("proxy_port") < 1:
+                        general_config["proxy_port"] = 1080
+                # 如果启用代理，确保代理地址非空
+                elif proxy_enabled and (not general_config.get("proxy_addr") or general_config.get("proxy_addr") == ""):
+                    logger.warning("启用代理但代理地址为空，设置为默认值127.0.0.1")
+                    general_config["proxy_addr"] = "127.0.0.1"
+            
             # 更新General部分
             config_data["GENERAL"] = general_config
             

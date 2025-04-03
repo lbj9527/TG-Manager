@@ -353,6 +353,16 @@ class SettingsView(QWidget):
             # 从UI收集设置
             collected_settings = self._collect_settings()
             
+            # 验证代理设置
+            # 如果启用代理，确保代理地址不为空
+            if collected_settings['GENERAL']['proxy_enabled']:
+                proxy_addr = collected_settings['GENERAL']['proxy_addr']
+                if not proxy_addr:
+                    QMessageBox.warning(self, "代理设置错误", "启用代理时，代理地址不能为空。请输入有效的代理服务器地址。")
+                    # 切换到代理设置选项卡
+                    self.settings_tabs.setCurrentWidget(self.proxy_tab)
+                    return
+            
             # 创建更新后的配置副本
             updated_config = {}
             if isinstance(self.config, dict):
@@ -387,7 +397,19 @@ class SettingsView(QWidget):
         except Exception as e:
             # 直接使用外部定义的 logger
             logger.error(f"保存设置失败: {e}")
-            QMessageBox.critical(self, "错误", f"保存设置失败: {e}")
+            
+            # 根据错误类型提供更具体的错误消息
+            error_msg = f"保存设置失败: {e}"
+            if "proxy_addr" in str(e).lower():
+                error_msg = "代理设置错误: 启用代理时，代理地址不能为空"
+            elif "proxy_port" in str(e).lower():
+                error_msg = "代理设置错误: 代理端口必须是1-65535之间的有效数字"
+            elif "api_id" in str(e).lower():
+                error_msg = "API设置错误: API ID必须是正整数"
+            elif "api_hash" in str(e).lower():
+                error_msg = "API设置错误: API Hash格式不正确"
+            
+            QMessageBox.critical(self, "错误", error_msg)
     
     def _reset_settings(self):
         """重置为默认设置"""
@@ -462,7 +484,7 @@ class SettingsView(QWidget):
                 # 代理设置移动到GENERAL部分
                 'proxy_enabled': self.use_proxy.isChecked(),
                 'proxy_type': proxy_type_value,  # 使用枚举值
-                'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '',
+                'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '127.0.0.1',  # 即使代理禁用，也使用默认值
                 'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 1080,  # 即使代理禁用，也设为1080而不是0
                 'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
                 'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
@@ -499,8 +521,21 @@ class SettingsView(QWidget):
             # 代理设置从GENERAL加载
             self.use_proxy.setChecked(general_config.get('proxy_enabled', False))
             self.proxy_type.setCurrentText(general_config.get('proxy_type', 'SOCKS5'))
-            self.proxy_host.setText(general_config.get('proxy_addr', ''))
-            self.proxy_port.setValue(general_config.get('proxy_port', 1080))
+            
+            # 确保启用代理时有有效的代理地址
+            proxy_addr = general_config.get('proxy_addr', '')
+            if self.use_proxy.isChecked() and not proxy_addr:
+                proxy_addr = '127.0.0.1'
+                logger.warning("启用代理但地址为空，使用默认地址127.0.0.1")
+            self.proxy_host.setText(proxy_addr)
+            
+            # 确保有有效的代理端口
+            proxy_port = general_config.get('proxy_port', 1080)
+            if proxy_port < 1 or proxy_port > 65535:
+                proxy_port = 1080
+                logger.warning(f"无效的代理端口: {general_config.get('proxy_port')}，使用默认端口1080")
+            self.proxy_port.setValue(proxy_port)
+            
             self.proxy_username.setText(general_config.get('proxy_username', ''))
             self.proxy_password.setText(general_config.get('proxy_password', ''))
         
