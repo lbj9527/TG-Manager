@@ -66,7 +66,13 @@ TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为
     "target_channels": ["@target_channel1", "@target_channel2"], // 目标频道列表
     "directory": "uploads", // 上传文件目录
     "caption_template": "{filename} - 上传于 {date}", // 说明文字模板
-    "delay_between_uploads": 0.5 // 上传间隔时间(秒)
+    "delay_between_uploads": 0.5, // 上传间隔时间(秒)
+    "options": { // 上传选项
+      "use_folder_name": true, // 是否使用文件夹名称作为说明文字
+      "read_title_txt": false, // 是否读取title.txt文件作为说明文字
+      "use_custom_template": false, // 是否使用自定义模板
+      "auto_thumbnail": true // 是否自动生成视频缩略图
+    }
   },
   "FORWARD": {
     "forward_channel_pairs": [
@@ -160,6 +166,11 @@ python run_ui.py
 
 1. **下载界面**：配置频道和媒体类型，从 Telegram 频道下载媒体
 2. **上传界面**：浏览本地文件，上传到指定 Telegram 频道
+   - 支持选择上传目录：可以通过界面浏览按钮选择上传文件所在的目录
+   - 目录路径持久化：用户选择的上传目录会保存在配置中，下次启动时自动加载
+   - 文件浏览器：基于选定目录显示文件列表，可以选择多个文件添加到上传队列
+   - 上传选项：支持设置说明文字模板、上传延迟和自动生成视频缩略图等功能
+   - 实时进度跟踪：上传过程中显示当前文件进度、速度和剩余时间
 3. **转发界面**：设置转发规则，在不同频道之间转发消息
 4. **监听界面**：实时监听频道消息，支持条件过滤
 5. **任务管理**：查看和管理所有任务，支持暂停/继续操作

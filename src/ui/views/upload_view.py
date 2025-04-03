@@ -596,7 +596,7 @@ class UploadView(QWidget):
         # 创建上传配置
         upload_config = {
             'target_channels': target_channels,
-            'directory': 'uploads',  # 使用默认值，可以添加目录选择功能
+            'directory': self.path_input.text() or 'uploads',  # 使用当前选择的目录路径
             'caption_template': self.caption_template.toPlainText(),
             'delay_between_uploads': self.upload_delay.value(),
             'options': upload_options
@@ -732,6 +732,12 @@ class UploadView(QWidget):
         # 加载说明文字模板
         caption_template = upload_config.get('caption_template', '{filename}')
         self.caption_template.setPlainText(caption_template)
+        
+        # 加载上传目录路径
+        directory = upload_config.get('directory', 'uploads')
+        if os.path.exists(directory):
+            self.path_input.setText(directory)
+            self.file_tree.setRootIndex(self.fs_model.index(directory))
         
         # 加载上传延迟
         self.upload_delay.setValue(upload_config.get('delay_between_uploads', 2))

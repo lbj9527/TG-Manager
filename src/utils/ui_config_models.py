@@ -241,8 +241,8 @@ class UIDownloadConfig(BaseModel):
     def validate_download_path(cls, v):
         if not v:
             raise ValueError("下载路径不能为空")
-        # 简单的路径字符检查
-        if re.search(r'[<>:"|?*]', v):
+        # 修改路径字符检查，允许Windows盘符格式（如D:）
+        if re.search(r'[<>"|?*]', v):
             raise ValueError("下载路径包含非法字符")
         return v
 
@@ -284,8 +284,8 @@ class UIUploadConfig(BaseModel):
     def validate_directory(cls, v):
         if not v:
             raise ValueError("上传目录不能为空")
-        # 简单的路径字符检查
-        if re.search(r'[<>:"|?*]', v):
+        # 修改路径字符检查，允许Windows盘符格式（如D:）
+        if re.search(r'[<>"|?*]', v):
             raise ValueError("上传目录包含非法字符")
         return v
 
@@ -341,8 +341,8 @@ class UIForwardConfig(BaseModel):
     def validate_tmp_path(cls, v):
         if not v:
             raise ValueError("临时文件路径不能为空")
-        # 简单的路径字符检查
-        if re.search(r'[<>:"|?*]', v):
+        # 修改路径字符检查，允许Windows盘符格式（如D:）
+        if re.search(r'[<>"|?*]', v):
             raise ValueError("临时文件路径包含非法字符")
         return v
 
