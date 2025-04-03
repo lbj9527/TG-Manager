@@ -99,27 +99,6 @@ class NavigationTree(QWidget):
                 "function": "monitor",
                 "description": "监听频道实时消息并转发"
             }),
-            
-            # 任务管理
-            NavigationItem("任务管理", "task_management", None, "function", {
-                "function": "task_manager",
-                "description": "管理所有任务"
-            }),
-            
-            # 系统工具分类
-            NavigationItem("系统工具", "system_tools", None, "category"),
-            
-            # 日志查看器
-            NavigationItem("日志查看器", "log_viewer", "system_tools", "function", {
-                "function": "logs",
-                "description": "查看和分析系统日志"
-            }),
-            
-            # 帮助文档
-            NavigationItem("帮助文档", "help_doc", "system_tools", "function", {
-                "function": "help",
-                "description": "查看应用帮助文档"
-            }),
         ]
         
         # 构建导航项字典和树形结构
@@ -246,10 +225,7 @@ class NavigationTree(QWidget):
                 
         # 根据部分名称匹配处理特殊情况
         function_mappings = {
-            "tasks": "task_manager",  # 任务菜单项对应task_manager功能
             "listen": "monitor",      # 监听菜单项对应monitor功能
-            "log": "logs",            # 处理日志查看器的可能缩写
-            "log_viewer": "logs"      # 另一种可能的日志查看器名称
         }
         
         if function_name in function_mappings:
