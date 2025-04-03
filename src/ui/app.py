@@ -7,6 +7,7 @@ import sys
 import json
 import asyncio
 import signal
+import os
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QSettings
@@ -54,7 +55,13 @@ class TGManagerApp(QObject):
         
         # 初始化UI配置管理器
         try:
-            self.ui_config_manager = UIConfigManager("config.json")
+            # 检查配置文件是否存在
+            config_path = "config.json"
+            if os.path.exists(config_path) and not os.access(config_path, os.W_OK):
+                logger.warning(f"配置文件 {config_path} 存在但不可写")
+                # 将在main_window初始化后显示错误
+            
+            self.ui_config_manager = UIConfigManager(config_path)
             logger.info("UI配置管理器初始化成功")
         except Exception as e:
             logger.error(f"UI配置管理器初始化失败: {e}")
@@ -115,6 +122,12 @@ class TGManagerApp(QObject):
             self.main_window = MainWindow(self.config)
             self.main_window.config_saved.connect(self._on_config_saved)
             self.main_window.show()
+            
+            # 初始化完成后检查配置文件是否可写
+            if os.path.exists(config_path) and not os.access(config_path, os.W_OK):
+                # 主窗口已创建，显示权限错误对话框
+                self._show_permission_error_and_exit()
+                
         except Exception as e:
             logger.error(f"初始化主窗口失败: {e}")
             # 显示错误对话框
@@ -237,6 +250,12 @@ class TGManagerApp(QObject):
         
         Args:
             save_theme: 是否保存主题设置，默认为True
+            
+        Returns:
+            dict: 保存的配置，如果保存失败则返回空字典
+            
+        Raises:
+            PermissionError: 当没有权限写入配置文件时抛出
         """
         try:
             # 如果不保存主题设置，临时保存当前主题
@@ -247,20 +266,33 @@ class TGManagerApp(QObject):
             
             # 使用UI配置管理器更新并保存配置
             self.ui_config_manager.update_from_dict(self.config)
-            save_success = self.ui_config_manager.save_config()
+            try:
+                save_success = self.ui_config_manager.save_config()
+            except PermissionError:
+                # 权限错误直接向上传递
+                logger.warning(f"save_config: 保存配置时遇到权限问题，将错误向上传递")
+                raise
             
             # 如果不保存主题设置，恢复原来的主题
-            if not save_theme and current_theme:
-                # 暂时不改变内存中的配置，仅在下次保存时更新
-                with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
-                    file_config = json.load(f)
-                    if current_theme and 'UI' in file_config:
-                        file_config['UI']['theme'] = current_theme
-                        logger.debug(f"恢复配置文件中的主题: {current_theme}")
-                        
-                        # 重新保存文件
-                        with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
-                            json.dump(file_config, f, ensure_ascii=False, indent=2)
+            if not save_theme and current_theme and save_success:
+                try:
+                    # 尝试从文件重新读取配置并修改主题
+                    with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                        file_config = json.load(f)
+                        if 'UI' in file_config:
+                            file_config['UI']['theme'] = current_theme
+                            logger.debug(f"恢复配置文件中的主题: {current_theme}")
+                            
+                            # 重新保存文件
+                            with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                                json.dump(file_config, f, ensure_ascii=False, indent=2)
+                except PermissionError:
+                    # 恢复主题时的权限错误同样向上传递
+                    logger.warning(f"恢复主题时遇到权限问题，将错误向上传递")
+                    raise
+                except Exception as e:
+                    # 恢复主题的其他错误则只记录日志，不影响返回结果
+                    logger.error(f"恢复主题时出错: {e}")
             
             if save_success:
                 if save_theme:
@@ -272,6 +304,10 @@ class TGManagerApp(QObject):
             else:
                 logger.error("保存配置文件失败")
                 return {}
+        except PermissionError:
+            # 权限错误直接向上传递，让调用者处理
+            logger.warning("在save_config中捕获到权限错误，重新抛出")
+            raise
         except Exception as e:
             logger.error(f"保存配置失败: {e}")
             import traceback
@@ -385,14 +421,23 @@ class TGManagerApp(QObject):
                         self.config_saved.emit()
                     else:
                         logger.error("UIConfigManager保存配置失败")
+                except PermissionError as pe:
+                    logger.warning(f"保存配置时遇到权限问题: {pe}")
+                    
+                    # 调用显示权限错误并退出的方法，确保程序立即退出
+                    self._show_permission_error_and_exit()
                 except Exception as e:
                     logger.error(f"通过UIConfigManager更新配置失败: {e}")
                     import traceback
                     logger.debug(f"保存配置错误详情:\n{traceback.format_exc()}")
                     
                     # 回退到原始保存方法
-                    self.save_config(save_theme=True)
-                    self.config_saved.emit()
+                    try:
+                        self.save_config(save_theme=True)
+                        self.config_saved.emit()
+                    except PermissionError:
+                        # 如果原始保存方法也遇到权限问题，显示错误对话框
+                        self._show_permission_error_and_exit()
                 
                 return
             
@@ -432,6 +477,8 @@ class TGManagerApp(QObject):
                             json.dump(file_config, f, ensure_ascii=False, indent=2)
                         
                         logger.debug("窗口布局状态已单独保存")
+                    except PermissionError:
+                        logger.warning("保存窗口布局状态时遇到权限问题，将在下次完整保存配置时一并处理")
                     except Exception as e:
                         logger.error(f"保存窗口布局状态失败: {e}")
                         import traceback
@@ -444,13 +491,47 @@ class TGManagerApp(QObject):
                 return
             
             # 如果是来自设置界面的普通保存请求
-            self.save_config(save_theme=True)
-            self.config_saved.emit()
+            try:
+                self.save_config(save_theme=True)
+                self.config_saved.emit()
+            except PermissionError as pe:
+                logger.warning(f"普通保存配置时遇到权限问题: {pe}")
+                # 显示错误对话框并立即退出程序
+                self._show_permission_error_and_exit()
             
         except Exception as e:
             logger.error(f"处理配置保存信号失败: {e}")
             import traceback
             logger.debug(f"处理配置保存信号错误详情:\n{traceback.format_exc()}")
+    
+    def _show_permission_error_and_exit(self):
+        """显示权限错误对话框并退出程序"""
+        from PySide6.QtWidgets import QMessageBox
+        
+        # 在主窗口中显示权限错误信息
+        config_path = os.path.abspath(self.ui_config_manager.config_path)
+        error_msg = (
+            f"无法写入配置文件 '{config_path}'，因为该文件为只读状态或您没有写入权限。\n\n"
+            f"请退出程序，修改文件权限后重新启动。\n\n"
+            f"您可以尝试：\n"
+            f"1. 右键点击文件 -> 属性 -> 取消勾选'只读'属性\n"
+            f"2. 以管理员身份运行程序\n"
+            f"3. 将程序移动到有写入权限的目录"
+        )
+        
+        QMessageBox.critical(
+            self.main_window,
+            "配置文件权限错误",
+            error_msg,
+            QMessageBox.Ok
+        )
+        
+        # 用户点击确定后，立即关闭程序
+        logger.info("因配置文件权限问题，应用程序立即退出")
+        # 先执行清理操作
+        self.cleanup()
+        # 直接退出进程
+        sys.exit(1)
     
     def _on_theme_changed(self, theme_name):
         """主题变更处理

@@ -409,24 +409,39 @@ class UIConfigManager:
         
         Returns:
             bool: 保存是否成功
+            
+        Raises:
+            PermissionError: 当没有写入配置文件权限时抛出
         """
         try:
             # 确保配置目录存在
             os.makedirs(os.path.dirname(os.path.abspath(self.config_path)), exist_ok=True)
             
-            # 将配置转换为字典并保存
+            # 将配置转换为字典并准备保存
             config_dict = self.ui_config.dict()
             
             # 将枚举值转换为字符串
             self._convert_enums_to_str(config_dict)
             
+            # 检查文件是否存在且是否可写
+            if os.path.exists(self.config_path):
+                if not os.access(self.config_path, os.W_OK):
+                    logger.warning(f"配置文件 {self.config_path} 不可写")
+                    raise PermissionError(f"没有权限写入配置文件: {self.config_path}")
+            
+            # 尝试写入配置文件
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(config_dict, f, ensure_ascii=False, indent=2)
             
             logger.info(f"配置已保存到：{self.config_path}")
             return True
-        
+            
+        except PermissionError as pe:
+            # 当遇到权限错误时，直接抛出，不做处理
+            logger.warning(f"保存配置时遇到权限错误：{pe}")
+            raise
         except Exception as e:
+            # 其他错误则记录并返回False
             logger.error(f"保存配置失败：{e}")
             return False
     
