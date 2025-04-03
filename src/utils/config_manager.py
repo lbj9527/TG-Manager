@@ -38,12 +38,7 @@ class DownloadSettingItem(BaseModel):
 class DownloadConfig(BaseModel):
     """下载配置模型"""
     downloadSetting: List[DownloadSettingItem] = []
-    source_channels: List[str] = []  # 保留旧参数，向后兼容
-    start_id: int = 0  # 保留旧参数，向后兼容
-    end_id: int = 0  # 保留旧参数，向后兼容
-    organize_by_chat: bool = True  # 保留旧参数，向后兼容
     download_path: str = "downloads"
-    media_types: List[str] = ["photo", "video", "document", "audio", "animation"]
     parallel_download: bool = False
     max_concurrent_downloads: int = 10
 

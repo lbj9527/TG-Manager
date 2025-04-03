@@ -22,6 +22,8 @@ class DownloadView(QWidget):
     
     # 下载开始信号
     download_started = Signal(dict)  # 下载配置
+    # 配置保存信号
+    config_saved = Signal(dict)  # 添加配置保存信号
     
     def __init__(self, config=None, parent=None, use_keywords=False):
         """初始化下载界面
@@ -69,7 +71,7 @@ class DownloadView(QWidget):
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
-        self.config_tabs.setMaximumHeight(320)  # 设置最大高度
+        self.config_tabs.setMaximumHeight(360)  # 设置最大高度，从320增加到360，增加40像素
         self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.main_layout.addWidget(self.config_tabs)
         
@@ -100,11 +102,11 @@ class DownloadView(QWidget):
         self.channel_tab = QWidget()
         channel_layout = QVBoxLayout(self.channel_tab)
         channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        channel_layout.setSpacing(4)  # 减小间距
+        channel_layout.setSpacing(2)  # 进一步减小间距
         
         # 创建顶部表单面板
         form_layout = QFormLayout()
-        form_layout.setContentsMargins(0, 0, 0, 5)  # 减小底部间距
+        form_layout.setContentsMargins(0, 0, 0, 2)  # 减小底部间距
         
         # 频道输入
         self.channel_input = QLineEdit()
@@ -116,7 +118,7 @@ class DownloadView(QWidget):
         
         # 消息范围 - 创建左对齐的布局
         range_layout = QHBoxLayout()
-        range_layout.setContentsMargins(0, 0, 0, 5)  # 减小上下间距
+        range_layout.setContentsMargins(0, 0, 0, 2)  # 减小上下间距
         
         # 从消息ID标签
         id_label = QLabel("从消息ID:")
@@ -146,7 +148,7 @@ class DownloadView(QWidget):
         
         # 创建关键词输入行 - 新增的专门布局
         keywords_layout = QHBoxLayout()
-        keywords_layout.setContentsMargins(0, 5, 0, 5)  # 设置上下间距
+        keywords_layout.setContentsMargins(0, 2, 0, 2)  # 减小上下间距
         
         # 添加关键词标签和输入框
         keyword_label = QLabel("关键词:")
@@ -175,7 +177,39 @@ class DownloadView(QWidget):
         # 添加关键词布局到主布局
         channel_layout.addLayout(keywords_layout)
         
-        # 创建频道列表部分 - 不再使用分割器，直接添加到布局
+        # 媒体类型选项 - 从下载选项标签页移动到频道配置标签页
+        media_layout = QHBoxLayout()
+        media_layout.setSpacing(10)
+        media_layout.setContentsMargins(0, 2, 0, 2)  # 减小上下间距
+        
+        media_type_label = QLabel("要下载的媒体类型:")
+        media_type_label.setMinimumWidth(110)
+        media_layout.addWidget(media_type_label)
+        
+        self.photo_check = QCheckBox("照片")
+        self.photo_check.setChecked(True)
+        media_layout.addWidget(self.photo_check)
+        
+        self.video_check = QCheckBox("视频")
+        self.video_check.setChecked(True)
+        media_layout.addWidget(self.video_check)
+        
+        self.document_check = QCheckBox("文档")
+        self.document_check.setChecked(True)
+        media_layout.addWidget(self.document_check)
+        
+        self.audio_check = QCheckBox("音频")
+        self.audio_check.setChecked(True)
+        media_layout.addWidget(self.audio_check)
+        
+        self.animation_check = QCheckBox("动画")
+        self.animation_check.setChecked(True)
+        media_layout.addWidget(self.animation_check)
+        
+        media_layout.addStretch(1) # 添加弹簧，让控件靠左对齐
+        channel_layout.addLayout(media_layout)
+        
+        # 创建频道列表部分 - 使用滚动区域显示
         channel_widget = QWidget()
         channel_widget_layout = QVBoxLayout(channel_widget)
         channel_widget_layout.setContentsMargins(0, 0, 0, 0)
@@ -186,11 +220,27 @@ class DownloadView(QWidget):
         self.channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
         channel_widget_layout.addWidget(self.channel_list_label)
         
-        # 频道列表 - 设置固定高度以限制显示行数
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
+        scroll_area.setFixedHeight(100)  # 设置滚动区域的固定高度，从60增加到75
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # 创建一个容器部件来包含列表
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
+        
+        # 频道列表 - 不再设置固定高度，让它在滚动区域内自然扩展
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.channel_list.setFixedHeight(90)  # 设置固定高度约显示3行
-        channel_widget_layout.addWidget(self.channel_list)
+        scroll_layout.addWidget(self.channel_list)
+        
+        # 设置滚动区域的内容
+        scroll_area.setWidget(scroll_content)
+        channel_widget_layout.addWidget(scroll_area)
         
         # 将频道列表部分添加到主布局
         channel_layout.addWidget(channel_widget, 1)  # 使频道列表占据所有剩余空间
@@ -200,43 +250,6 @@ class DownloadView(QWidget):
         options_layout = QVBoxLayout(self.options_tab)
         options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         options_layout.setSpacing(4)  # 减小间距
-        
-        # 媒体类型选项 - 减少上下留白
-        media_layout = QVBoxLayout()
-        media_layout.setSpacing(2)  # 减少间距
-        media_layout.setContentsMargins(0, 0, 0, 0)  # 去除边距
-        
-        media_type_label = QLabel("要下载的媒体类型:")
-        media_type_label.setStyleSheet("margin-bottom: 2px;")  # 减少下边距
-        media_layout.addWidget(media_type_label)
-        
-        media_check_layout = QGridLayout()
-        media_check_layout.setVerticalSpacing(1)  # 减少垂直间距
-        media_check_layout.setHorizontalSpacing(5)  # 保持水平间距
-        media_check_layout.setContentsMargins(5, 0, 0, 2)  # 仅保留左边距和少量底部边距
-        
-        self.photo_check = QCheckBox("照片")
-        self.photo_check.setChecked(True)
-        media_check_layout.addWidget(self.photo_check, 0, 0)
-        
-        self.video_check = QCheckBox("视频")
-        self.video_check.setChecked(True)
-        media_check_layout.addWidget(self.video_check, 0, 1)
-        
-        self.document_check = QCheckBox("文档")
-        self.document_check.setChecked(True)
-        media_check_layout.addWidget(self.document_check, 1, 0)
-        
-        self.audio_check = QCheckBox("音频")
-        self.audio_check.setChecked(True)
-        media_check_layout.addWidget(self.audio_check, 1, 1)
-        
-        self.animation_check = QCheckBox("动画")
-        self.animation_check.setChecked(True)
-        media_check_layout.addWidget(self.animation_check, 2, 0)
-        
-        media_layout.addLayout(media_check_layout)
-        options_layout.addLayout(media_layout)
         
         # 并行下载选项 - 调整间距
         parallel_layout = QHBoxLayout()
@@ -379,6 +392,11 @@ class DownloadView(QWidget):
         
         # 下载标签页切换
         self.download_tabs.currentChanged.connect(self._on_tab_changed)
+        
+        # 如果有父窗口，尝试连接config_saved信号
+        parent = self.parent()
+        if parent and hasattr(parent, 'save_config'):
+            self.config_saved.connect(parent.save_config)
     
     def _init_ui_state(self):
         """初始化UI状态"""
@@ -423,12 +441,16 @@ class DownloadView(QWidget):
         if keywords_text:
             keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
         
+        # 获取选中的媒体类型
+        media_types = self._get_media_types()
+        
         # 创建频道数据
         channel_data = {
             'channel': channel,
             'start_id': self.start_id.value(),
             'end_id': self.end_id.value(),
-            'keywords': keywords
+            'keywords': keywords,
+            'media_types': media_types
         }
         
         # 创建列表项并设置文本
@@ -439,6 +461,18 @@ class DownloadView(QWidget):
         if keywords:
             keywords_str = '，'.join(keywords)
             display_text += f"（关键词：{keywords_str}）"
+        
+        # 添加媒体类型到显示文本中
+        if media_types:
+            media_types_display = {
+                "photo": "照片",
+                "video": "视频",
+                "document": "文档",
+                "audio": "音频",
+                "animation": "动画"
+            }
+            media_types_str = '、'.join([media_types_display.get(t, t) for t in media_types])
+            display_text += f"（媒体类型：{media_types_str}）"
         
         item.setText(display_text)
         item.setData(Qt.UserRole, channel_data)
@@ -566,18 +600,43 @@ class DownloadView(QWidget):
             QMessageBox.warning(self, "警告", "请至少添加一个频道")
             return
         
-        # 配置将在主界面中处理保存
-        config = {
-            'channels': self._get_channels(),
-            'media_types': self._get_media_types(),
-            'keywords': self._get_keywords(),  # 总是保存关键词列表
+        # 从UI收集频道设置
+        download_setting = []
+        for i in range(self.channel_list.count()):
+            channel_data = self.channel_list.item(i).data(Qt.UserRole)
+            setting_item = {
+                'source_channels': channel_data.get('channel', ''),
+                'start_id': channel_data.get('start_id', 0),
+                'end_id': channel_data.get('end_id', 0),
+                'keywords': channel_data.get('keywords', []),
+                'media_types': channel_data.get('media_types', ["photo", "video", "document", "audio", "animation"])
+            }
+            download_setting.append(setting_item)
+        
+        # 按照现有配置结构更新DOWNLOAD部分
+        download_config = {
+            'downloadSetting': download_setting,
             'download_path': self.download_path.text(),
             'parallel_download': self.parallel_check.isChecked(),
-            'max_concurrent_downloads': self.max_downloads.value() if self.parallel_check.isChecked() else 1
+            'max_concurrent_downloads': self.max_downloads.value()
         }
         
-        # TODO: 在主界面中处理配置保存
-        QMessageBox.information(self, "配置保存", "配置已保存")
+        # 组织完整配置
+        updated_config = {}
+        if isinstance(self.config, dict):
+            updated_config = self.config.copy()  # 复制当前配置
+        
+        # 更新DOWNLOAD部分
+        updated_config['DOWNLOAD'] = download_config
+        
+        # 发送配置保存信号
+        self.config_saved.emit(updated_config)
+        
+        # 显示成功消息
+        QMessageBox.information(self, "配置保存", "下载配置已保存")
+        
+        # 更新本地配置引用
+        self.config = updated_config
     
     def update_download_progress(self, task_id, filename, progress, status):
         """更新下载进度
@@ -667,7 +726,8 @@ class DownloadView(QWidget):
                 'channel': setting.get('source_channels', ''),
                 'start_id': setting.get('start_id', 1),
                 'end_id': setting.get('end_id', 0),
-                'keywords': setting.get('keywords', [])
+                'keywords': setting.get('keywords', []),
+                'media_types': setting.get('media_types', ["photo", "video", "document", "audio", "animation"])
             }
             
             if channel_data['channel']:
@@ -679,6 +739,18 @@ class DownloadView(QWidget):
                     keywords_str = '，'.join(channel_data['keywords'])
                     display_text += f"（关键词：{keywords_str}）"
                 
+                # 添加媒体类型到显示文本中
+                if channel_data['media_types']:
+                    media_types_display = {
+                        "photo": "照片",
+                        "video": "视频",
+                        "document": "文档",
+                        "audio": "音频",
+                        "animation": "动画"
+                    }
+                    media_types_str = '、'.join([media_types_display.get(t, t) for t in channel_data['media_types']])
+                    display_text += f"（媒体类型：{media_types_str}）"
+                
                 item.setText(display_text)
                 item.setData(Qt.UserRole, channel_data)
                 self.channel_list.addItem(item)
@@ -686,14 +758,13 @@ class DownloadView(QWidget):
         # 更新频道列表标题
         self._update_channel_list_title()
         
-        # 加载媒体类型
-        if download_settings and 'media_types' in download_settings[0]:
-            media_types = download_settings[0].get('media_types', [])
-            self.photo_check.setChecked("photo" in media_types)
-            self.video_check.setChecked("video" in media_types)
-            self.document_check.setChecked("document" in media_types)
-            self.audio_check.setChecked("audio" in media_types)
-            self.animation_check.setChecked("animation" in media_types)
+        # 加载默认媒体类型 - 不再从单一位置加载，而是根据每个频道单独设置
+        # 这里只设置默认选中状态
+        self.photo_check.setChecked(True)
+        self.video_check.setChecked(True)
+        self.document_check.setChecked(True)
+        self.audio_check.setChecked(True)
+        self.animation_check.setChecked(True)
         
         # 加载下载路径
         download_path = config.get('DOWNLOAD', {}).get('download_path', 'downloads')
@@ -704,7 +775,7 @@ class DownloadView(QWidget):
         self.parallel_check.setChecked(parallel_download)
         
         max_concurrent = config.get('DOWNLOAD', {}).get('max_concurrent_downloads', 5)
-        self.max_downloads.setValue(max_concurrent) 
+        self.max_downloads.setValue(max_concurrent)
     
     def _on_tab_changed(self, index):
         """标签页切换事件处理

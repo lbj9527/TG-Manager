@@ -9,6 +9,15 @@
 - 保持向后兼容，仍然能够读取旧版本配置文件
 - 优化设置界面，移除了通用标签页，因为相关设置已在各功能模块中单独设置
 - 从 GENERAL 部分移除了重复的配置参数（如 download_path, max_concurrent_downloads 等），这些参数已在各自专门的模块配置中定义
+- 精简 DOWNLOAD 部分的配置项，只保留 downloadSetting 数组、download_path、parallel_download 和 max_concurrent_downloads 参数
+
+### 界面优化
+
+- **下载界面改进**:
+  - 将媒体类型选项从"下载选项"标签页移至"频道配置"标签页中关键词行的下方
+  - 修改频道显示格式，在添加频道后显示更丰富的信息：链接、ID 范围、关键词和媒体类型
+  - 优化配置加载逻辑，从 downloadSetting 数组的每个条目中单独读取媒体类型
+  - 每个频道支持独立设置不同的媒体类型，提高灵活性
 
 本文档记录 TG-Manager 项目的所有重要变更。
 
