@@ -15,6 +15,7 @@ import json
 
 from src.utils.logger import get_logger
 from src.utils.theme_manager import get_theme_manager
+from src.utils.ui_config_models import ProxyType
 
 logger = get_logger()
 
@@ -23,7 +24,7 @@ class SettingsView(QWidget):
     """设置界面，提供应用程序配置管理"""
     
     # 设置保存信号
-    settings_saved = Signal()  # 没有参数的信号
+    settings_saved = Signal(dict)  # 带参数的信号
     settings_cancelled = Signal()  # 设置取消信号
     
     def __init__(self, config=None, parent=None):
@@ -59,6 +60,11 @@ class SettingsView(QWidget):
         
         # 连接信号
         self._connect_signals()
+        
+        # 如果父窗口有config_saved方法，连接信号
+        if parent and hasattr(parent, 'config_saved'):
+            logger.debug("将设置视图的config_saved信号连接到父窗口")
+            self.settings_saved.connect(parent.config_saved)
         
         # 加载配置
         if self.config:
@@ -340,36 +346,31 @@ class SettingsView(QWidget):
     def _save_settings(self):
         """保存设置到配置"""
         try:
-            # 从配置文件直接读取配置
-            with open("config.json", 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-            
             # 从UI收集设置
             collected_settings = self._collect_settings()
             
-            # 更新顶层节点设置 - 不再使用API和PROXY部分
-            if 'GENERAL' not in settings:
-                settings['GENERAL'] = {}
-            if 'GENERAL' in collected_settings:
-                settings['GENERAL'].update(collected_settings['GENERAL'])
+            # 创建更新后的配置副本
+            updated_config = {}
+            if isinstance(self.config, dict):
+                updated_config = self.config.copy()  # 复制当前配置
             
-            # 更新UI设置
-            if 'UI' not in settings:
-                settings['UI'] = {}
+            # 更新GENERAL和UI部分
+            if 'GENERAL' in collected_settings:
+                if 'GENERAL' not in updated_config:
+                    updated_config['GENERAL'] = {}
+                updated_config['GENERAL'].update(collected_settings['GENERAL'])
             
             if 'UI' in collected_settings:
-                settings['UI'].update(collected_settings['UI'])
+                if 'UI' not in updated_config:
+                    updated_config['UI'] = {}
+                updated_config['UI'].update(collected_settings['UI'])
             
             # 保存主题设置
             self.original_theme = self.temp_theme
             
-            # 保存设置到文件
-            with open("config.json", 'w', encoding='utf-8') as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-            
-            # 获取日志记录器
-            logger = get_logger()
-            logger.info(f"设置已保存，主题: {self.theme.currentText()}")
+            # 发送配置保存信号
+            logger.debug("向主窗口发送配置保存信号，更新设置")
+            self.settings_saved.emit(updated_config)
             
             # 重置设置变更状态
             self.settings_changed = False
@@ -377,13 +378,10 @@ class SettingsView(QWidget):
             # 禁用保存按钮
             self.save_button.setEnabled(False)
             
-            # 发送设置保存信号，不带参数
-            self.settings_saved.emit()
-            
             # 显示成功信息
             QMessageBox.information(self, "设置", "设置已成功保存")
         except Exception as e:
-            logger = get_logger()
+            # 直接使用外部定义的 logger
             logger.error(f"保存设置失败: {e}")
             QMessageBox.critical(self, "错误", f"保存设置失败: {e}")
     
@@ -435,6 +433,23 @@ class SettingsView(QWidget):
         Returns:
             dict: 设置字典
         """
+        # 将代理类型文本转换为ProxyType枚举
+        proxy_type_text = self.proxy_type.currentText()
+        proxy_type_value = None
+        try:
+            if proxy_type_text == "SOCKS5":
+                proxy_type_value = ProxyType.SOCKS5
+            elif proxy_type_text == "HTTP":
+                proxy_type_value = ProxyType.HTTP
+            elif proxy_type_text == "MTProto":
+                proxy_type_value = ProxyType.MTPROTO
+            else:
+                # 默认为SOCKS5
+                proxy_type_value = ProxyType.SOCKS5
+        except Exception as e:
+            logger.warning(f"代理类型转换失败: {e}，使用默认值SOCKS5")
+            proxy_type_value = ProxyType.SOCKS5
+        
         settings = {
             'GENERAL': {
                 # API设置移动到GENERAL部分
@@ -442,7 +457,7 @@ class SettingsView(QWidget):
                 'api_hash': self.api_hash.text(),
                 # 代理设置移动到GENERAL部分
                 'proxy_enabled': self.use_proxy.isChecked(),
-                'proxy_type': self.proxy_type.currentText() if self.use_proxy.isChecked() else 'SOCKS5',
+                'proxy_type': proxy_type_value,  # 使用枚举值
                 'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '',
                 'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 0,
                 'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
