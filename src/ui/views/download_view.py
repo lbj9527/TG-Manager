@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 
 from src.utils.logger import get_logger
+from src.utils.ui_config_models import MediaType
 
 logger = get_logger()
 
@@ -604,12 +605,33 @@ class DownloadView(QWidget):
         download_setting = []
         for i in range(self.channel_list.count()):
             channel_data = self.channel_list.item(i).data(Qt.UserRole)
+            
+            # 收集并转换媒体类型
+            media_types = channel_data.get('media_types', ["photo", "video", "document", "audio", "animation"])
+            
+            # 确保媒体类型是有效的值
+            valid_media_types = []
+            for mt in media_types:
+                try:
+                    # 如果已经是字符串，检查是否是有效的MediaType值
+                    if isinstance(mt, str) and mt in [e.value for e in MediaType]:
+                        valid_media_types.append(mt)
+                    elif isinstance(mt, MediaType):
+                        # 如果已经是MediaType实例，直接添加其值
+                        valid_media_types.append(mt.value)
+                except Exception as e:
+                    logger.warning(f"跳过无效的媒体类型 {mt}: {e}")
+            
+            # 如果没有有效的媒体类型，添加默认类型
+            if not valid_media_types:
+                valid_media_types = ["photo", "video", "document", "audio", "animation"]
+            
             setting_item = {
                 'source_channels': channel_data.get('channel', ''),
                 'start_id': channel_data.get('start_id', 0),
                 'end_id': channel_data.get('end_id', 0),
                 'keywords': channel_data.get('keywords', []),
-                'media_types': channel_data.get('media_types', ["photo", "video", "document", "audio", "animation"])
+                'media_types': valid_media_types
             }
             download_setting.append(setting_item)
         
@@ -630,6 +652,7 @@ class DownloadView(QWidget):
         updated_config['DOWNLOAD'] = download_config
         
         # 发送配置保存信号
+        logger.debug(f"向主窗口发送配置保存信号，更新下载配置")
         self.config_saved.emit(updated_config)
         
         # 显示成功消息

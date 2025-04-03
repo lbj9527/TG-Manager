@@ -4,6 +4,7 @@ UI配置管理器模块，负责UI配置的加载、保存和与原配置的转�
 
 import os
 import json
+import re
 from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
 import logging
@@ -71,37 +72,299 @@ class UIConfigManager:
             UIConfig: UI配置对象
         """
         try:
-            # 转换GeneralConfig
+            # 确保必要的部分存在
+            sections = ["GENERAL", "DOWNLOAD", "UPLOAD", "FORWARD", "MONITOR"]
+            for section in sections:
+                if section not in config_data:
+                    config_data[section] = {}
+            
+            # 修复 GENERAL 部分
             general_config = config_data.get("GENERAL", {})
+            
+            # 确保 api_id 是有效的正整数
+            if "api_id" not in general_config or not isinstance(general_config["api_id"], int) or general_config["api_id"] <= 0:
+                general_config["api_id"] = 12345678  # 使用占位符，用户需要在运行前提供正确的值
+                logger.warning("配置文件中的api_id无效，已替换为占位符")
+            
+            # 确保 api_hash 是有效的字符串
+            if "api_hash" not in general_config or not re.match(r'^[a-f0-9]{32}$', str(general_config.get("api_hash", "")).lower()):
+                general_config["api_hash"] = "0123456789abcdef0123456789abcdef"  # 使用占位符
+                logger.warning("配置文件中的api_hash无效，已替换为占位符")
+            
+            # 修复代理类型
             if "proxy_type" in general_config:
                 try:
                     general_config["proxy_type"] = ProxyType(general_config["proxy_type"])
                 except ValueError:
                     general_config["proxy_type"] = ProxyType.SOCKS5
+                    logger.warning("配置文件中的proxy_type无效，已重置为SOCKS5")
             
-            # 转换DownloadConfig
+            # 更新General部分
+            config_data["GENERAL"] = general_config
+            
+            # 修复 DOWNLOAD 部分
             download_config = config_data.get("DOWNLOAD", {})
             if "downloadSetting" in download_config:
+                valid_download_settings = []
                 for item in download_config["downloadSetting"]:
-                    if "media_types" in item:
-                        item["media_types"] = [
-                            MediaType(mt) if mt in [e.value for e in MediaType] else MediaType.PHOTO
-                            for mt in item["media_types"]
-                        ]
+                    try:
+                        # 转换媒体类型
+                        if "media_types" in item:
+                            media_types = []
+                            for mt in item["media_types"]:
+                                try:
+                                    if mt in [e.value for e in MediaType]:
+                                        media_types.append(MediaType(mt))
+                                    else:
+                                        logger.warning(f"无效的媒体类型: {mt}，已跳过")
+                                except Exception:
+                                    logger.warning(f"无效的媒体类型: {mt}，已跳过")
+                            
+                            # 如果没有有效的媒体类型，使用默认值
+                            if not media_types:
+                                media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
+                                logger.warning("媒体类型列表为空，已使用默认值")
+                            
+                            item["media_types"] = media_types
+                        
+                        # 确保source_channels有效
+                        if "source_channels" not in item or not item["source_channels"]:
+                            continue  # 跳过无效的下载设置项
+                        
+                        # 修复source_channels
+                        try:
+                            source_channel = UIChannelPair.validate_channel_id(item["source_channels"], "源频道")
+                            item["source_channels"] = source_channel
+                        except ValueError as e:
+                            logger.warning(f"无效的源频道: {item.get('source_channels')}, {e}")
+                            continue  # 跳过无效项
+                        
+                        valid_download_settings.append(item)
+                    except Exception as e:
+                        logger.warning(f"处理下载设置项时出错: {e}")
+                
+                # 如果没有有效的下载设置项，添加一个空的设置项
+                if not valid_download_settings:
+                    valid_download_settings = [{
+                        "source_channels": "",
+                        "start_id": 0,
+                        "end_id": 0,
+                        "media_types": [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT],
+                        "keywords": []
+                    }]
+                    logger.warning("下载设置列表为空，已添加默认项")
+                
+                download_config["downloadSetting"] = valid_download_settings
             
-            # 转换媒体类型列表
-            for section in ["FORWARD", "MONITOR"]:
-                if section in config_data and "media_types" in config_data[section]:
-                    config_data[section]["media_types"] = [
-                        MediaType(mt) if mt in [e.value for e in MediaType] else MediaType.PHOTO
-                        for mt in config_data[section]["media_types"]
-                    ]
+            # 修复 FORWARD 部分
+            forward_config = config_data.get("FORWARD", {})
+            
+            # 转换媒体类型
+            if "media_types" in forward_config:
+                media_types = []
+                for mt in forward_config["media_types"]:
+                    try:
+                        if mt in [e.value for e in MediaType]:
+                            media_types.append(MediaType(mt))
+                    except Exception:
+                        pass
+                
+                # 如果没有有效的媒体类型，使用默认值
+                if not media_types:
+                    media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
+                    logger.warning("转发媒体类型列表为空，已使用默认值")
+                
+                forward_config["media_types"] = media_types
+            
+            # 修复frequency_channel_pairs
+            if "forward_channel_pairs" in forward_config:
+                valid_pairs = []
+                for pair in forward_config["forward_channel_pairs"]:
+                    try:
+                        source_channel = pair.get("source_channel", "")
+                        target_channels = pair.get("target_channels", [])
+                        
+                        # 跳过无效的源频道
+                        if not source_channel:
+                            continue
+                        
+                        # 修复源频道
+                        try:
+                            source_channel = UIChannelPair.validate_channel_id(source_channel, "源频道")
+                        except ValueError:
+                            continue  # 跳过无效项
+                        
+                        # 修复目标频道
+                        valid_targets = []
+                        for target in target_channels:
+                            try:
+                                valid_target = UIChannelPair.validate_channel_id(target, "目标频道")
+                                valid_targets.append(valid_target)
+                            except ValueError:
+                                pass  # 跳过无效目标
+                        
+                        # 如果没有有效的目标频道，跳过这一对
+                        if not valid_targets:
+                            continue
+                        
+                        valid_pairs.append({
+                            "source_channel": source_channel,
+                            "target_channels": valid_targets
+                        })
+                    except Exception as e:
+                        logger.warning(f"处理转发频道对时出错: {e}")
+                
+                # 如果没有有效的转发频道对，添加一个空的
+                if not valid_pairs:
+                    valid_pairs = [{
+                        "source_channel": "",
+                        "target_channels": [""]
+                    }]
+                    logger.warning("转发频道对列表为空，已添加默认项")
+                
+                forward_config["forward_channel_pairs"] = valid_pairs
+            
+            # 修复 MONITOR 部分
+            monitor_config = config_data.get("MONITOR", {})
+            
+            # 修复 duration
+            if "duration" in monitor_config:
+                current_date = datetime.now()
+                future_date = current_date.replace(year=current_date.year + 1)
+                future_date_str = future_date.strftime("%Y-%m-%d")
+                
+                try:
+                    # 尝试解析日期，如果无效或已过期，则使用未来日期
+                    if not monitor_config["duration"] or datetime.strptime(monitor_config["duration"], "%Y-%m-%d") < current_date:
+                        monitor_config["duration"] = future_date_str
+                        logger.warning(f"监听截止日期无效或已过期，已设置为未来日期: {future_date_str}")
+                except Exception:
+                    monitor_config["duration"] = future_date_str
+                    logger.warning(f"无效的监听截止日期，已设置为未来日期: {future_date_str}")
+            
+            # 转换媒体类型
+            if "media_types" in monitor_config:
+                media_types = []
+                for mt in monitor_config["media_types"]:
+                    try:
+                        if mt in [e.value for e in MediaType]:
+                            media_types.append(MediaType(mt))
+                    except Exception:
+                        pass
+                
+                # 如果没有有效的媒体类型，使用默认值
+                if not media_types:
+                    media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
+                    logger.warning("监听媒体类型列表为空，已使用默认值")
+                
+                monitor_config["media_types"] = media_types
+            
+            # 修复monitor_channel_pairs
+            if "monitor_channel_pairs" in monitor_config:
+                valid_pairs = []
+                for pair in monitor_config["monitor_channel_pairs"]:
+                    try:
+                        source_channel = pair.get("source_channel", "")
+                        target_channels = pair.get("target_channels", [])
+                        
+                        # 跳过无效的源频道
+                        if not source_channel:
+                            continue
+                        
+                        # 修复源频道
+                        try:
+                            source_channel = UIChannelPair.validate_channel_id(source_channel, "源频道")
+                        except ValueError:
+                            continue  # 跳过无效项
+                        
+                        # 修复目标频道
+                        valid_targets = []
+                        for target in target_channels:
+                            try:
+                                valid_target = UIChannelPair.validate_channel_id(target, "目标频道")
+                                valid_targets.append(valid_target)
+                            except ValueError:
+                                # 如果遇到无效链接，尝试修复
+                                if target.startswith('https://t.me/+'):
+                                    # 私有链接，可能是格式不符合要求的链接
+                                    valid_target = '+' + target.split('/+')[1]
+                                    valid_targets.append(valid_target)
+                                    logger.warning(f"已尝试修复不规范的私有链接: {target} -> {valid_target}")
+                                else:
+                                    logger.warning(f"无效的目标频道: {target}，已跳过")
+                        
+                        # 如果没有有效的目标频道，跳过这一对
+                        if not valid_targets:
+                            continue
+                        
+                        # 构建有效的配置项
+                        valid_pair = {
+                            "source_channel": source_channel,
+                            "target_channels": valid_targets,
+                            "remove_captions": pair.get("remove_captions", False)
+                        }
+                        
+                        # 处理文本过滤器
+                        if "text_filter" in pair:
+                            valid_filters = []
+                            for filter_item in pair["text_filter"]:
+                                if isinstance(filter_item, dict) and "original_text" in filter_item:
+                                    valid_filters.append({
+                                        "original_text": filter_item["original_text"],
+                                        "target_text": filter_item.get("target_text", "")
+                                    })
+                            valid_pair["text_filter"] = valid_filters
+                        
+                        valid_pairs.append(valid_pair)
+                    except Exception as e:
+                        logger.warning(f"处理监听频道对时出错: {e}")
+                
+                # 如果没有有效的监听频道对，添加一个空的
+                if not valid_pairs:
+                    valid_pairs = [{
+                        "source_channel": "",
+                        "target_channels": [""],
+                        "remove_captions": False,
+                        "text_filter": []
+                    }]
+                    logger.warning("监听频道对列表为空，已添加默认项")
+                
+                monitor_config["monitor_channel_pairs"] = valid_pairs
+            
+            # 修复UPLOAD部分
+            upload_config = config_data.get("UPLOAD", {})
+            
+            # 修复target_channels
+            if "target_channels" in upload_config:
+                valid_targets = []
+                for target in upload_config["target_channels"]:
+                    try:
+                        valid_target = UIChannelPair.validate_channel_id(target, "目标频道")
+                        valid_targets.append(valid_target)
+                    except ValueError:
+                        # 尝试修复无效链接
+                        if target.startswith('https://t.me/+'):
+                            valid_target = '+' + target.split('/+')[1]
+                            valid_targets.append(valid_target)
+                            logger.warning(f"已尝试修复不规范的私有链接: {target} -> {valid_target}")
+                        else:
+                            logger.warning(f"无效的目标频道: {target}，已跳过")
+                
+                # 如果没有有效的目标频道，添加一个空的
+                if not valid_targets:
+                    valid_targets = [""]
+                    logger.warning("上传目标频道列表为空，已添加默认项")
+                
+                upload_config["target_channels"] = valid_targets
             
             # 创建UI配置对象
             return UIConfig(**config_data)
         
         except Exception as e:
             logger.error(f"转换配置失败：{e}，创建默认配置")
+            # 输出更详细的错误信息，便于调试
+            import traceback
+            logger.debug(f"转换配置错误详情：\n{traceback.format_exc()}")
             return create_default_config()
     
     def save_config(self) -> bool:
@@ -157,9 +420,14 @@ class UIConfigManager:
         """
         获取UI配置对象
         
+        如果内部配置无效，则创建一个默认配置
+        
         Returns:
             UIConfig: UI配置对象
         """
+        if self.ui_config is None:
+            logger.warning("UI配置对象为空，创建默认配置")
+            self.ui_config = create_default_config()
         return self.ui_config
     
     def set_ui_config(self, ui_config: UIConfig) -> None:

@@ -93,30 +93,74 @@ class UIChannelPair(BaseModel):
 
     @classmethod
     def validate_channel_id(cls, channel_id: str, field_name: str) -> str:
-        # 频道ID可以是数字、@用户名或完整的t.me链接
+        """
+        验证并标准化频道ID/链接格式
+        
+        Args:
+            channel_id: 频道ID/链接
+            field_name: 字段名称（用于错误消息）
+        
+        Returns:
+            str: 标准化后的频道ID/链接
+        
+        Raises:
+            ValueError: 当频道ID/链接格式无效时
+        """
+        # 频道ID可以是数字、@用户名、完整的t.me链接或+开头的私有ID
         if not channel_id:
             raise ValueError(f"{field_name}不能为空")
         
         # 标准化频道ID
         channel_id = channel_id.strip()
         
+        # 优先处理特殊格式：通过/+或+开头的私有链接
+        if channel_id.startswith('+') or '/+' in channel_id:
+            # 如果是https://t.me/+xxx格式的私有频道邀请链接
+            if channel_id.startswith('https://t.me/+'):
+                invite_code = channel_id.split('/+', 1)[1].split('/', 1)[0]
+                if invite_code:
+                    return '+' + invite_code  # 只保留邀请码部分，格式为+xxx
+            # 已经是+xxx格式的私有频道ID
+            elif channel_id.startswith('+') and len(channel_id) > 1:
+                return channel_id
+        
         # 检查是否为t.me链接
         if channel_id.startswith('https://t.me/'):
-            # 验证链接格式
-            if not re.match(r'^https://t\.me/([a-zA-Z][a-zA-Z0-9_]{3,}|joinchat/[a-zA-Z0-9_-]+|c/[0-9]+|[a-zA-Z0-9_-]+)(/[0-9]+)?$', channel_id):
-                raise ValueError(f"{field_name}链接格式不正确")
-        # 检查是否为@用户名
-        elif channel_id.startswith('@'):
-            # 验证用户名格式
-            if not re.match(r'^@[a-zA-Z][a-zA-Z0-9_]{3,}$', channel_id):
-                raise ValueError(f"{field_name}用户名格式不正确")
-        # 检查是否为数字ID或带前缀的ID
-        else:
-            # 验证数字ID或带前缀的ID
-            if not re.match(r'^-?[0-9]+$', channel_id) and not re.match(r'^[+\-][a-zA-Z0-9_-]+$', channel_id):
-                raise ValueError(f"{field_name}ID格式不正确")
+            # 放宽链接格式限制
+            if '/joinchat/' in channel_id or '/c/' in channel_id or '/s/' in channel_id:
+                return channel_id  # 支持joinchat、频道、超级群组链接
+            # 尝试提取用户名或ID
+            parts = channel_id.split('/')
+            if len(parts) >= 4:
+                username = parts[3].split('?')[0]  # 移除可能的查询参数
+                if username:
+                    # 检查是否包含消息ID (格式如 https://t.me/username/123)
+                    if len(parts) >= 5 and parts[4].isdigit():
+                        return channel_id  # 保持原链接，包含消息ID
+                    # 否则只返回用户名部分
+                    return '@' + username
         
-        return channel_id
+        # 检查是否为@用户名
+        if channel_id.startswith('@'):
+            username = channel_id[1:]
+            # 放宽用户名验证要求
+            if len(username) >= 3:
+                return channel_id
+        
+        # 检查是否为数字ID
+        if re.match(r'^-?[0-9]+$', channel_id):
+            return channel_id
+        
+        # 尝试处理其他格式的私有链接或ID
+        if re.match(r'^[+\-][a-zA-Z0-9_-]+$', channel_id):
+            return channel_id
+        
+        # 特殊处理：可能是不带@的用户名
+        if re.match(r'^[a-zA-Z][a-zA-Z0-9_]{3,}$', channel_id):
+            return '@' + channel_id
+        
+        # 所有验证都失败
+        raise ValueError(f"{field_name}格式不正确，支持@用户名、数字ID、t.me链接或私有频道链接")
 
     class Config:
         title = "频道配对"
@@ -358,8 +402,8 @@ def create_default_config() -> UIConfig:
     """
     return UIConfig(
         GENERAL=UIGeneralConfig(
-            api_id=0,
-            api_hash="",
+            api_id=12345678,  # 占位符 API ID，用户需要替换为自己的真实值
+            api_hash="0123456789abcdef0123456789abcdef",  # 占位符 API Hash，用户需要替换为自己的真实值
             limit=50,
             pause_time=60,
             timeout=30,
@@ -372,7 +416,7 @@ def create_default_config() -> UIConfig:
         DOWNLOAD=UIDownloadConfig(
             downloadSetting=[
                 UIDownloadSettingItem(
-                    source_channels="",
+                    source_channels="@username",  # 占位符频道名，用户需要替换为实际频道
                     start_id=0,
                     end_id=0,
                     media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
@@ -384,7 +428,7 @@ def create_default_config() -> UIConfig:
             max_concurrent_downloads=10
         ),
         UPLOAD=UIUploadConfig(
-            target_channels=[""],
+            target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
             directory="uploads",
             caption_template="{filename}",
             delay_between_uploads=0.5
@@ -392,8 +436,8 @@ def create_default_config() -> UIConfig:
         FORWARD=UIForwardConfig(
             forward_channel_pairs=[
                 UIChannelPair(
-                    source_channel="",
-                    target_channels=[""]
+                    source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
+                    target_channels=["@username"]  # 占位符频道名，用户需要替换为实际频道
                 )
             ],
             remove_captions=False,
@@ -407,8 +451,8 @@ def create_default_config() -> UIConfig:
         MONITOR=UIMonitorConfig(
             monitor_channel_pairs=[
                 UIMonitorChannelPair(
-                    source_channel="",
-                    target_channels=[""],
+                    source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
+                    target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
                     remove_captions=False,
                     text_filter=[]
                 )
@@ -418,7 +462,7 @@ def create_default_config() -> UIConfig:
                 MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
                 MediaType.VOICE, MediaType.VIDEO_NOTE
             ],
-            duration=None,
+            duration=(datetime.now().replace(year=datetime.now().year + 1)).strftime("%Y-%m-%d"),  # 设置为一年后
             forward_delay=1.0
         )
     )
