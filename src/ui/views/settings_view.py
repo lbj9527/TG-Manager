@@ -73,10 +73,6 @@ class SettingsView(QWidget):
         """创建设置选项卡"""
         self.settings_tabs = QTabWidget()
         
-        # 创建通用设置选项卡
-        self.general_tab = self._create_general_tab()
-        self.settings_tabs.addTab(self.general_tab, "通用")
-        
         # 创建API设置选项卡
         self.api_tab = self._create_api_tab()
         self.settings_tabs.addTab(self.api_tab, "API设置")
@@ -91,82 +87,6 @@ class SettingsView(QWidget):
         
         # 添加到主布局
         self.main_layout.addWidget(self.settings_tabs)
-    
-    def _create_general_tab(self):
-        """创建通用设置选项卡
-        
-        Returns:
-            QWidget: 通用设置面板
-        """
-        general_widget = QWidget()
-        general_layout = QVBoxLayout(general_widget)
-        
-        # 创建下载设置组
-        download_group = QGroupBox("下载设置")
-        download_layout = QFormLayout()
-        
-        self.download_path = QLineEdit()
-        download_path_layout = QHBoxLayout()
-        download_path_layout.addWidget(self.download_path)
-        
-        self.browse_download_button = QPushButton("浏览...")
-        download_path_layout.addWidget(self.browse_download_button)
-        
-        download_layout.addRow("默认下载路径:", download_path_layout)
-        
-        self.max_concurrent_downloads = QSpinBox()
-        self.max_concurrent_downloads.setRange(1, 10)
-        self.max_concurrent_downloads.setValue(3)
-        download_layout.addRow("最大同时下载数:", self.max_concurrent_downloads)
-        
-        self.auto_retry_downloads = QCheckBox("下载失败自动重试")
-        self.auto_retry_downloads.setChecked(True)
-        download_layout.addRow("", self.auto_retry_downloads)
-        
-        self.retry_count = QSpinBox()
-        self.retry_count.setRange(1, 5)
-        self.retry_count.setValue(3)
-        download_layout.addRow("重试次数:", self.retry_count)
-        
-        download_group.setLayout(download_layout)
-        general_layout.addWidget(download_group)
-        
-        # 创建上传设置组
-        upload_group = QGroupBox("上传设置")
-        upload_layout = QFormLayout()
-        
-        self.max_concurrent_uploads = QSpinBox()
-        self.max_concurrent_uploads.setRange(1, 10)
-        self.max_concurrent_uploads.setValue(2)
-        upload_layout.addRow("最大同时上传数:", self.max_concurrent_uploads)
-        
-        self.default_caption_template = QLineEdit()
-        self.default_caption_template.setPlaceholderText("{filename}")
-        upload_layout.addRow("默认说明文字模板:", self.default_caption_template)
-        
-        upload_group.setLayout(upload_layout)
-        general_layout.addWidget(upload_group)
-        
-        # 创建转发设置组
-        forward_group = QGroupBox("转发设置")
-        forward_layout = QFormLayout()
-        
-        self.default_forward_delay = QSpinBox()
-        self.default_forward_delay.setRange(0, 60)
-        self.default_forward_delay.setValue(3)
-        self.default_forward_delay.setSuffix(" 秒")
-        forward_layout.addRow("默认转发延迟:", self.default_forward_delay)
-        
-        self.preserve_date_default = QCheckBox("默认保留原始日期")
-        forward_layout.addRow("", self.preserve_date_default)
-        
-        forward_group.setLayout(forward_layout)
-        general_layout.addWidget(forward_group)
-        
-        # 添加伸展以填充空白区域
-        general_layout.addStretch()
-        
-        return general_widget
     
     def _create_api_tab(self):
         """创建API设置选项卡
@@ -357,9 +277,6 @@ class SettingsView(QWidget):
     
     def _connect_signals(self):
         """连接信号和槽"""
-        # 浏览按钮
-        self.browse_download_button.clicked.connect(self._browse_download_path)
-        
         # 底部按钮
         self.save_button.clicked.connect(self._save_settings)
         self.reset_button.clicked.connect(self._reset_settings)
@@ -381,17 +298,6 @@ class SettingsView(QWidget):
         # 数字输入框
         for widget in self.findChildren(QSpinBox):
             widget.valueChanged.connect(self._on_setting_changed)
-    
-    def _browse_download_path(self):
-        """浏览下载路径"""
-        directory = QFileDialog.getExistingDirectory(
-            self, 
-            "选择下载目录",
-            self.download_path.text() or ""
-        )
-        
-        if directory:
-            self.download_path.setText(directory)
     
     def _on_theme_changed(self, theme_name):
         """主题变更处理
@@ -441,12 +347,11 @@ class SettingsView(QWidget):
             # 从UI收集设置
             collected_settings = self._collect_settings()
             
-            # 更新顶层节点设置
-            for section in ['GENERAL', 'API', 'PROXY']:
-                if section not in settings:
-                    settings[section] = {}
-                if section in collected_settings:
-                    settings[section].update(collected_settings[section])
+            # 更新顶层节点设置 - 不再使用API和PROXY部分
+            if 'GENERAL' not in settings:
+                settings['GENERAL'] = {}
+            if 'GENERAL' in collected_settings:
+                settings['GENERAL'].update(collected_settings['GENERAL'])
             
             # 更新UI设置
             if 'UI' not in settings:
@@ -496,16 +401,6 @@ class SettingsView(QWidget):
         if reply != QMessageBox.Yes:
             return
         
-        # 重置通用设置
-        self.download_path.setText("")
-        self.max_concurrent_downloads.setValue(3)
-        self.auto_retry_downloads.setChecked(True)
-        self.retry_count.setValue(3)
-        self.max_concurrent_uploads.setValue(2)
-        self.default_caption_template.setText("")
-        self.default_forward_delay.setValue(3)
-        self.preserve_date_default.setChecked(False)
-        
         # 重置API设置
         self.api_id.setText("")
         self.api_hash.setText("")
@@ -542,28 +437,13 @@ class SettingsView(QWidget):
         """
         settings = {
             'GENERAL': {
-                'download_path': self.download_path.text(),
-                'max_concurrent_downloads': self.max_concurrent_downloads.value(),
-                'auto_retry_downloads': self.auto_retry_downloads.isChecked(),
-                'retry_count': self.retry_count.value(),
-                'max_concurrent_uploads': self.max_concurrent_uploads.value(),
-                'default_caption_template': self.default_caption_template.text(),
-                'default_forward_delay': self.default_forward_delay.value(),
-                'preserve_date_default': self.preserve_date_default.isChecked()
-            },
-            'API': {
-                'api_id': self.api_id.text(),
+                # API设置移动到GENERAL部分
+                'api_id': int(self.api_id.text()) if self.api_id.text().strip().isdigit() else 0,
                 'api_hash': self.api_hash.text(),
-                'phone_number': self.phone_number.text(),
-                'use_bot': self.use_bot.isChecked(),
-                'bot_token': self.bot_token.text() if self.use_bot.isChecked() else '',
-                'session_name': self.session_name.text(),
-                'auto_restart_session': self.auto_restart_session.isChecked()
-            },
-            'PROXY': {
-                'use_proxy': self.use_proxy.isChecked(),
-                'proxy_type': self.proxy_type.currentText() if self.use_proxy.isChecked() else '',
-                'proxy_host': self.proxy_host.text() if self.use_proxy.isChecked() else '',
+                # 代理设置移动到GENERAL部分
+                'proxy_enabled': self.use_proxy.isChecked(),
+                'proxy_type': self.proxy_type.currentText() if self.use_proxy.isChecked() else 'SOCKS5',
+                'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '',
                 'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 0,
                 'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
                 'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
@@ -591,8 +471,23 @@ class SettingsView(QWidget):
             
         logger.debug("加载设置配置")
         
-        # API 设置 - 直接从顶层API节点加载
-        if 'API' in config:
+        # 通用设置 - 从顶层GENERAL节点加载
+        if 'GENERAL' in config:
+            general_config = config.get('GENERAL', {})
+            # API设置从GENERAL加载
+            self.api_id.setText(str(general_config.get('api_id', '')))
+            self.api_hash.setText(general_config.get('api_hash', ''))
+            # 代理设置从GENERAL加载
+            self.use_proxy.setChecked(general_config.get('proxy_enabled', False))
+            self.proxy_type.setCurrentText(general_config.get('proxy_type', 'SOCKS5'))
+            self.proxy_host.setText(general_config.get('proxy_addr', ''))
+            self.proxy_port.setValue(general_config.get('proxy_port', 1080))
+            self.proxy_username.setText(general_config.get('proxy_username', ''))
+            self.proxy_password.setText(general_config.get('proxy_password', ''))
+        
+        # 为了向后兼容，尝试从旧的API和PROXY部分加载数据
+        # API 设置 - 尝试从顶层API节点加载（如果GENERAL中没有相关设置）
+        if 'API' in config and (not 'api_id' in config.get('GENERAL', {}) or not config['GENERAL']['api_id']):
             api_config = config.get('API', {})
             self.api_id.setText(str(api_config.get('api_id', '')))
             self.api_hash.setText(api_config.get('api_hash', ''))
@@ -602,8 +497,8 @@ class SettingsView(QWidget):
             self.session_name.setText(api_config.get('session_name', 'tg_manager_session'))
             self.auto_restart_session.setChecked(api_config.get('auto_restart_session', True))
             
-        # 代理设置 - 直接从顶层PROXY节点加载
-        if 'PROXY' in config:
+        # 代理设置 - 尝试从顶层PROXY节点加载（如果GENERAL中没有相关设置）
+        if 'PROXY' in config and (not 'proxy_enabled' in config.get('GENERAL', {}) or not config['GENERAL']['proxy_enabled']):
             proxy_config = config.get('PROXY', {})
             self.use_proxy.setChecked(proxy_config.get('use_proxy', False))
             self.proxy_type.setCurrentText(proxy_config.get('proxy_type', 'SOCKS5'))
@@ -611,37 +506,6 @@ class SettingsView(QWidget):
             self.proxy_port.setValue(proxy_config.get('proxy_port', 1080))
             self.proxy_username.setText(proxy_config.get('proxy_username', ''))
             self.proxy_password.setText(proxy_config.get('proxy_password', ''))
-            
-        # 通用设置 - 从顶层GENERAL节点加载
-        if 'GENERAL' in config:
-            general_config = config.get('GENERAL', {})
-            # 下载相关设置
-            self.download_path.setText(general_config.get('download_path', 'downloads'))
-            self.max_concurrent_downloads.setValue(general_config.get('max_concurrent_downloads', 3))
-            self.auto_retry_downloads.setChecked(general_config.get('auto_retry_downloads', True))
-            self.retry_count.setValue(general_config.get('retry_count', 3))
-            # 上传相关设置
-            self.max_concurrent_uploads.setValue(general_config.get('max_concurrent_uploads', 2))
-            self.default_caption_template.setText(general_config.get('default_caption_template', '{filename}'))
-            # 转发相关设置
-            self.default_forward_delay.setValue(general_config.get('default_forward_delay', 3))
-            self.preserve_date_default.setChecked(general_config.get('preserve_date_default', False))
-            
-        # 下载设置 - 兼容旧版本配置结构
-        if 'Download' in config and 'download_path' not in config.get('GENERAL', {}):
-            download_config = config.get('Download', {})
-            # 只在GENERAL中找不到相应设置时才从旧的Download节点加载
-            if not self.download_path.text():
-                self.download_path.setText(download_config.get('default_path', 'downloads'))
-            if self.max_concurrent_downloads.value() == 3:  # 检查是否为默认值
-                self.max_concurrent_downloads.setValue(download_config.get('concurrent_downloads', 3))
-            
-        # 上传设置 - 兼容旧版本配置结构
-        if 'Upload' in config and 'default_caption_template' not in config.get('GENERAL', {}):
-            upload_config = config.get('Upload', {})
-            # 只在GENERAL中找不到相应设置时才从旧的Upload节点加载
-            if not self.default_caption_template.text():
-                self.default_caption_template.setText(upload_config.get('caption_template', '{filename}'))
             
         # UI设置 - 从UI节点加载
         if 'UI' in config:

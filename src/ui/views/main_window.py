@@ -856,11 +856,11 @@ class MainWindow(QMainWindow):
         event.accept()
     
     def _handle_login(self):
-        """处理登录按钮点击事件"""
+        """处理用户登录"""
         try:
-            # 创建登录对话框
+            # 创建登录表单对话框
             login_dialog = QDialog(self)
-            login_dialog.setWindowTitle("登录到Telegram")
+            login_dialog.setWindowTitle("登录Telegram")
             login_dialog.setMinimumWidth(400)
             
             # 创建布局
@@ -873,10 +873,10 @@ class MainWindow(QMainWindow):
             phone_input = QLineEdit()
             
             # 从配置中加载API ID和Hash（如果存在）
-            if 'API' in self.config and 'api_id' in self.config['API']:
-                api_id_input.setText(str(self.config['API']['api_id']))
-            if 'API' in self.config and 'api_hash' in self.config['API']:
-                api_hash_input.setText(self.config['API']['api_hash'])
+            if 'GENERAL' in self.config and 'api_id' in self.config['GENERAL']:
+                api_id_input.setText(str(self.config['GENERAL']['api_id']))
+            if 'GENERAL' in self.config and 'api_hash' in self.config['GENERAL']:
+                api_hash_input.setText(self.config['GENERAL']['api_hash'])
             
             # 添加表单字段
             form_layout.addRow("API ID:", api_id_input)
@@ -923,12 +923,12 @@ class MainWindow(QMainWindow):
                 
                 # 如果选择了记住凭据，保存到配置中
                 if remember_checkbox.isChecked():
-                    if 'API' not in self.config:
-                        self.config['API'] = {}
+                    if 'GENERAL' not in self.config:
+                        self.config['GENERAL'] = {}
                     
-                    self.config['API']['api_id'] = int(api_id)
-                    self.config['API']['api_hash'] = api_hash
-                    self.config['API']['phone'] = phone
+                    self.config['GENERAL']['api_id'] = int(api_id)
+                    self.config['GENERAL']['api_hash'] = api_hash
+                    self.config['GENERAL']['phone_number'] = phone
                     
                     # 发出配置更新信号
                     self.config_saved.emit(self.config)
