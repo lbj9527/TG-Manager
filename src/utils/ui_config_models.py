@@ -64,6 +64,13 @@ class UIGeneralConfig(BaseModel):
                 raise ValueError("启用代理时，代理地址不能为空")
         return v
 
+    @validator('proxy_port')
+    def validate_proxy_port(cls, v, values):
+        if values.get('proxy_enabled', False):
+            if v < 1 or v > 65535:
+                raise ValueError("代理端口必须在1-65535范围内")
+        return v
+
 
 class UITextFilterItem(BaseModel):
     """文本替换项模型"""
@@ -436,7 +443,7 @@ def create_default_config() -> UIConfig:
             proxy_enabled=False,
             proxy_type=ProxyType.SOCKS5,
             proxy_addr="127.0.0.1",
-            proxy_port=1080
+            proxy_port=1080  # 确保即使禁用代理，端口值也有效
         ),
         DOWNLOAD=UIDownloadConfig(
             downloadSetting=[

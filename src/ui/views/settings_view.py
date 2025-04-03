@@ -463,7 +463,7 @@ class SettingsView(QWidget):
                 'proxy_enabled': self.use_proxy.isChecked(),
                 'proxy_type': proxy_type_value,  # 使用枚举值
                 'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '',
-                'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 0,
+                'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 1080,  # 即使代理禁用，也设为1080而不是0
                 'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
                 'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
             },

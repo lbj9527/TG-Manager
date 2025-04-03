@@ -37,7 +37,7 @@ class UIConfigManager:
         """
         加载或创建UI配置
         
-        如果配置文件存在，则加载现有配置；否则创建默认配置
+        如果配置文件存在，则加载现有配置；否则创建默认配置并保存到文件
         
         Returns:
             UIConfig: UI配置对象
@@ -51,7 +51,28 @@ class UIConfigManager:
             
             # 文件不存在，创建默认配置
             logger.info(f"配置文件不存在：{self.config_path}，创建默认配置")
-            return create_default_config()
+            default_config = create_default_config()
+            
+            # 保存默认配置到文件
+            try:
+                # 确保目录存在
+                os.makedirs(os.path.dirname(os.path.abspath(self.config_path)), exist_ok=True)
+                
+                # 将配置转换为字典
+                config_dict = default_config.dict()
+                
+                # 将枚举值转换为字符串
+                self._convert_enums_to_str(config_dict)
+                
+                # 写入配置文件
+                with open(self.config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config_dict, f, ensure_ascii=False, indent=2)
+                
+                logger.info(f"默认配置已保存到：{self.config_path}")
+            except Exception as e:
+                logger.warning(f"保存默认配置时出错：{e}")
+            
+            return default_config
         
         except json.JSONDecodeError:
             logger.error(f"配置文件格式错误：{self.config_path}，创建默认配置")
@@ -501,10 +522,29 @@ class UIConfigManager:
             bool: 更新是否成功
         """
         try:
+            # 尝试根据配置字典创建新的UIConfig对象
             self.ui_config = UIConfig(**config_dict)
             return True
         except Exception as e:
-            logger.error(f"更新配置失败：{e}")
+            # 增强错误日志，输出详细的验证错误信息
+            from pydantic import ValidationError
+            if isinstance(e, ValidationError):
+                # 输出每个验证错误的详细信息
+                for error in e.errors():
+                    error_loc = " -> ".join(str(loc) for loc in error.get('loc', []))
+                    error_msg = error.get('msg', '未知错误')
+                    error_type = error.get('type', '未知类型')
+                    logger.error(f"更新配置失败：1 validation error for {error_loc}")
+                    logger.error(f"更新配置失败：{error_loc}")
+                    logger.error(f"  {error_msg} (type={error_type})")
+            else:
+                # 其他类型的错误
+                logger.error(f"更新配置失败：{e}")
+            
+            # 输出更详细的错误信息用于调试
+            import traceback
+            logger.debug(f"配置更新错误详情：\n{traceback.format_exc()}")
+            
             return False
     
     def create_config_manager(self) -> ConfigManager:
