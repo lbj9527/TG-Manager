@@ -42,6 +42,9 @@ class TGManagerApp(QObject):
         self.app.setOrganizationDomain("tg-manager.org")
         self.verbose = verbose
         
+        # 添加标志，用于跟踪是否已显示权限错误对话框
+        self._permission_error_shown = False
+        
         if self.verbose:
             logger.debug("初始化应用程序，应用样式...")
         
@@ -121,6 +124,15 @@ class TGManagerApp(QObject):
         try:
             self.main_window = MainWindow(self.config)
             self.main_window.config_saved.connect(self._on_config_saved)
+            
+            # 将窗口居中显示在屏幕上
+            screen = self.app.primaryScreen()
+            screen_geometry = screen.availableGeometry()
+            window_geometry = self.main_window.frameGeometry()
+            center_point = screen_geometry.center()
+            window_geometry.moveCenter(center_point)
+            self.main_window.move(window_geometry.topLeft())
+            
             self.main_window.show()
             
             # 初始化完成后检查配置文件是否可写
@@ -506,7 +518,15 @@ class TGManagerApp(QObject):
     
     def _show_permission_error_and_exit(self):
         """显示权限错误对话框并退出程序"""
+        # 如果已经显示过错误对话框，则直接返回
+        if self._permission_error_shown:
+            logger.debug("已经显示过权限错误对话框，不再重复显示")
+            return
+            
         from PySide6.QtWidgets import QMessageBox
+        
+        # 设置标志，表示已显示错误对话框
+        self._permission_error_shown = True
         
         # 在主窗口中显示权限错误信息
         config_path = os.path.abspath(self.ui_config_manager.config_path)
