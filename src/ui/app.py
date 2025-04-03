@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QSettings
+from PySide6.QtWidgets import QSystemTrayIcon
 
 from src.utils.logger import get_logger
 from src.utils.config_manager import ConfigManager
@@ -133,7 +134,41 @@ class TGManagerApp(QObject):
             window_geometry.moveCenter(center_point)
             self.main_window.move(window_geometry.topLeft())
             
-            self.main_window.show()
+            # 检查是否启用了"启动时最小化"功能
+            start_minimized = False
+            if 'UI' in self.config and isinstance(self.config['UI'], dict):
+                start_minimized = self.config['UI'].get('start_minimized', False)
+            
+            # 如果启用了系统托盘和启动时最小化功能
+            if start_minimized and 'UI' in self.config and self.config['UI'].get('minimize_to_tray', False):
+                logger.info("启用了启动时最小化功能，应用程序将最小化到系统托盘")
+                # 先确保系统托盘可用
+                if hasattr(self.main_window, '_create_system_tray'):
+                    # 确保系统托盘已创建
+                    if not hasattr(self.main_window, 'tray_icon'):
+                        self.main_window._create_system_tray()
+                    
+                    # 显示托盘图标，但不显示主窗口
+                    if hasattr(self.main_window, 'tray_icon'):
+                        self.main_window.tray_icon.show()
+                        # 显示通知
+                        self.main_window.tray_icon.showMessage(
+                            "TG-Manager 已启动",
+                            "应用程序在后台运行中。点击托盘图标以显示窗口。",
+                            QSystemTrayIcon.Information,
+                            2000
+                        )
+                    else:
+                        # 如果托盘创建失败，仍然显示窗口
+                        logger.warning("系统托盘创建失败，将显示主窗口")
+                        self.main_window.show()
+                else:
+                    # 如果没有实现托盘功能，仍然显示窗口
+                    logger.warning("系统托盘功能不可用，将显示主窗口")
+                    self.main_window.show()
+            else:
+                # 正常显示窗口
+                self.main_window.show()
             
             # 初始化完成后检查配置文件是否可写
             if os.path.exists(config_path) and not os.access(config_path, os.W_OK):

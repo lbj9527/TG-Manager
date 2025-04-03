@@ -243,6 +243,10 @@ class SettingsView(QWidget):
         behavior_layout.addRow("", self.minimize_to_tray)
         
         self.start_minimized = QCheckBox("启动时最小化")
+        # 默认不选中
+        self.start_minimized.setChecked(False)
+        # 添加提示说明
+        self.start_minimized.setToolTip("启用后程序启动时将自动最小化到系统托盘，需要同时启用'最小化到系统托盘'选项")
         behavior_layout.addRow("", self.start_minimized)
         
         behavior_group.setLayout(behavior_layout)
