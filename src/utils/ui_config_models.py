@@ -262,6 +262,15 @@ class UIUploadConfig(BaseModel):
     directory: str = Field("uploads", description="上传文件目录")
     caption_template: str = Field("{filename}", description="说明文字模板")
     delay_between_uploads: float = Field(0.5, description="上传间隔时间(秒)", ge=0)
+    options: dict = Field(
+        default_factory=lambda: {
+            "use_folder_name": True,
+            "read_title_txt": False,
+            "use_custom_template": False,
+            "auto_thumbnail": True
+        },
+        description="上传选项"
+    )
 
     @validator('target_channels')
     def validate_target_channels(cls, v):

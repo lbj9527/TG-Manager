@@ -26,6 +26,7 @@ class UploadView(QWidget):
     
     # 上传开始信号
     upload_started = Signal(dict)  # 上传配置
+    config_saved = Signal(dict)    # 配置保存信号
     
     def __init__(self, config=None, parent=None):
         """初始化上传界面
@@ -77,6 +78,11 @@ class UploadView(QWidget):
         
         # 连接信号
         self._connect_signals()
+        
+        # 如果父窗口有config_saved信号，连接配置保存信号
+        if parent and hasattr(parent, 'config_saved'):
+            logger.debug("将上传视图的config_saved信号连接到父窗口")
+            self.config_saved.connect(parent.config_saved)
         
         # 上传队列
         self.upload_queue = []
@@ -574,25 +580,45 @@ class UploadView(QWidget):
             QMessageBox.warning(self, "警告", "请至少添加一个目标频道")
             return
         
-        # 收集配置
+        # 收集目标频道
         target_channels = []
         for i in range(self.channel_list.count()):
             target_channels.append(self.channel_list.item(i).text())
         
-        config = {
-            'target_channels': target_channels,
-            'options': {
-                'use_folder_name': self.use_folder_name_check.isChecked(),
-                'read_title_txt': self.read_title_txt_check.isChecked(),
-                'use_custom_template': self.use_custom_template_check.isChecked(),
-                'caption_template': self.caption_template.toPlainText(),
-                'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
-                'upload_delay': self.upload_delay.value()
-            }
+        # 收集上传选项
+        upload_options = {
+            'use_folder_name': self.use_folder_name_check.isChecked(),
+            'read_title_txt': self.read_title_txt_check.isChecked(),
+            'use_custom_template': self.use_custom_template_check.isChecked(),
+            'auto_thumbnail': self.auto_thumbnail_check.isChecked()
         }
         
-        # TODO: 在主界面中处理配置保存
-        QMessageBox.information(self, "配置保存", "配置已保存")
+        # 创建上传配置
+        upload_config = {
+            'target_channels': target_channels,
+            'directory': 'uploads',  # 使用默认值，可以添加目录选择功能
+            'caption_template': self.caption_template.toPlainText(),
+            'delay_between_uploads': self.upload_delay.value(),
+            'options': upload_options
+        }
+        
+        # 组织完整配置
+        updated_config = {}
+        if isinstance(self.config, dict):
+            updated_config = self.config.copy()  # 复制当前配置
+        
+        # 更新UPLOAD部分
+        updated_config['UPLOAD'] = upload_config
+        
+        # 发送配置保存信号
+        logger.debug("向主窗口发送配置保存信号，更新上传配置")
+        self.config_saved.emit(updated_config)
+        
+        # 显示成功消息
+        QMessageBox.information(self, "配置保存", "上传配置已保存")
+        
+        # 更新本地配置引用
+        self.config = updated_config
     
     def _update_queue_status(self):
         """更新队列状态"""
@@ -685,25 +711,38 @@ class UploadView(QWidget):
         Args:
             config: 配置字典
         """
+        # 保存配置引用
+        self.config = config
+        
         # 清空现有项目
         self.channel_list.clear()
         
+        # 检查上传配置是否存在
+        if 'UPLOAD' not in config:
+            logger.warning("配置中不存在UPLOAD部分")
+            return
+            
+        upload_config = config['UPLOAD']
+        
         # 加载目标频道
-        target_channels = config.get('UPLOAD', {}).get('target_channels', [])
+        target_channels = upload_config.get('target_channels', [])
         for channel in target_channels:
             self.channel_list.addItem(channel)
         
-        # 加载上传选项
-        caption_template = config.get('UPLOAD', {}).get('caption_template', '{filename}')
+        # 加载说明文字模板
+        caption_template = upload_config.get('caption_template', '{filename}')
         self.caption_template.setPlainText(caption_template)
         
-        # 加载其他选项（如果存在的话）
-        upload_options = config.get('UPLOAD', {}).get('options', {})
-        if upload_options:
+        # 加载上传延迟
+        self.upload_delay.setValue(upload_config.get('delay_between_uploads', 2))
+        
+        # 加载其他选项
+        options = upload_config.get('options', {})
+        if options:
             # 设置说明文字选项
-            use_folder_name = upload_options.get('use_folder_name', True)
-            read_title_txt = upload_options.get('read_title_txt', False)
-            use_custom_template = upload_options.get('use_custom_template', False)
+            use_folder_name = options.get('use_folder_name', True)
+            read_title_txt = options.get('read_title_txt', False)
+            use_custom_template = options.get('use_custom_template', False)
             
             # 确保只有一个选项被选中
             if use_custom_template:
@@ -722,5 +761,7 @@ class UploadView(QWidget):
             # 更新模板编辑区启用状态
             self.caption_template.setEnabled(self.use_custom_template_check.isChecked())
             
-            self.auto_thumbnail_check.setChecked(upload_options.get('auto_thumbnail', True))
-            self.upload_delay.setValue(upload_options.get('upload_delay', 2)) 
+            # 自动缩略图选项
+            self.auto_thumbnail_check.setChecked(options.get('auto_thumbnail', True))
+            
+        logger.debug("上传配置已成功加载") 
