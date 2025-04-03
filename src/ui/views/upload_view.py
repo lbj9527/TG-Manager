@@ -137,26 +137,49 @@ class UploadView(QWidget):
         caption_options_layout.setVerticalSpacing(10)    # 增加垂直间距
         caption_options_layout.setContentsMargins(0, 5, 0, 5)  # 增加上下边距
         
+        # 创建互斥的单选选项
         self.use_folder_name_check = QCheckBox("使用文件夹名称作为说明文字")
-        self.use_folder_name_check.setChecked(True)
-        self.use_folder_name_check.setMinimumHeight(30)  # 增加高度
-        caption_options_layout.addWidget(self.use_folder_name_check, 0, 0)
+        self.use_folder_name_check.setChecked(True)  # 默认选中
+        self.use_folder_name_check.setMinimumHeight(25)
         
         self.read_title_txt_check = QCheckBox("读取title.txt文件作为说明文字")
-        self.read_title_txt_check.setChecked(True)
-        self.read_title_txt_check.setMinimumHeight(30)  # 增加高度
-        caption_options_layout.addWidget(self.read_title_txt_check, 0, 1)
+        self.read_title_txt_check.setChecked(False)
+        self.read_title_txt_check.setMinimumHeight(25)
         
-        # 媒体组设置 - 放到水平布局中
-        self.keep_media_groups_check = QCheckBox("保持原始文件组合为媒体组")
-        self.keep_media_groups_check.setChecked(True)
-        self.keep_media_groups_check.setMinimumHeight(30)  # 增加高度
-        caption_options_layout.addWidget(self.keep_media_groups_check, 1, 0)
+        self.use_custom_template_check = QCheckBox("使用自定义作为说明文字模板")
+        self.use_custom_template_check.setChecked(False)
+        self.use_custom_template_check.setMinimumHeight(25)
         
+        # 将说明文字选项添加到网格布局
+        caption_options_layout.addWidget(self.use_folder_name_check, 0, 0)
+        caption_options_layout.addWidget(self.read_title_txt_check, 1, 0)
+        caption_options_layout.addWidget(self.use_custom_template_check, 2, 0)
+        
+        # 自动生成缩略图选项
         self.auto_thumbnail_check = QCheckBox("自动生成视频缩略图")
         self.auto_thumbnail_check.setChecked(True)
-        self.auto_thumbnail_check.setMinimumHeight(30)  # 增加高度
-        caption_options_layout.addWidget(self.auto_thumbnail_check, 1, 1)
+        self.auto_thumbnail_check.setMinimumHeight(30)
+        caption_options_layout.addWidget(self.auto_thumbnail_check, 0, 1)
+        
+        # 上传延迟选项添加到网格布局
+        delay_widget = QWidget()
+        delay_layout = QHBoxLayout(delay_widget)
+        delay_layout.setContentsMargins(0, 0, 0, 0)
+        
+        delay_label = QLabel("上传延迟:")
+        delay_label.setMinimumWidth(60)
+        delay_layout.addWidget(delay_label)
+        
+        self.upload_delay = QSpinBox()
+        self.upload_delay.setRange(0, 60)
+        self.upload_delay.setValue(2)
+        self.upload_delay.setSuffix(" 秒")
+        self.upload_delay.setMinimumWidth(70)
+        delay_layout.addWidget(self.upload_delay)
+        delay_layout.addStretch()
+        
+        delay_widget.setMinimumHeight(30)
+        caption_options_layout.addWidget(delay_widget, 1, 1)
         
         options_layout.addLayout(caption_options_layout)
         
@@ -171,11 +194,14 @@ class UploadView(QWidget):
         
         self.caption_template = QTextEdit()
         self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称\n{datetime} - 当前日期时间\n{index} - 文件序号")
-        # 增加最大高度，从80px增加到160px，以显示更多内容
-        self.caption_template.setMinimumHeight(120)  # 设置最小高度
-        self.caption_template.setMaximumHeight(160)  # 增加最大高度
+        # 减小高度，从120px减少到100px，从160px减少到140px
+        self.caption_template.setMinimumHeight(100)  # 设置最小高度
+        self.caption_template.setMaximumHeight(140)  # 减小最大高度
         # 设置更适合文本编辑的尺寸策略
         self.caption_template.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        
+        # 如果未选择自定义模板选项，则禁用编辑区
+        self.caption_template.setEnabled(False)
         
         # 设置文本编辑区样式
         self.caption_template.setStyleSheet("""
@@ -188,25 +214,6 @@ class UploadView(QWidget):
         
         caption_template_layout.addWidget(self.caption_template)
         options_layout.addLayout(caption_template_layout)
-        
-        # 上传延迟
-        delay_layout = QHBoxLayout()
-        delay_layout.setContentsMargins(0, 8, 0, 0)  # 增加顶部间距
-        
-        delay_label = QLabel("上传延迟:")
-        delay_label.setMinimumWidth(80)  # 设置标签最小宽度
-        delay_layout.addWidget(delay_label)
-        
-        self.upload_delay = QSpinBox()
-        self.upload_delay.setRange(0, 60)
-        self.upload_delay.setValue(2)
-        self.upload_delay.setSuffix(" 秒")
-        self.upload_delay.setMinimumWidth(100)  # 设置控件最小宽度
-        
-        delay_layout.addWidget(self.upload_delay)
-        delay_layout.addStretch()
-        
-        options_layout.addLayout(delay_layout)
         
         # 文件选择器标签页
         self.file_selector_tab = QWidget()
@@ -333,6 +340,11 @@ class UploadView(QWidget):
         self.add_channel_button.clicked.connect(self._add_channel)
         self.remove_channel_button.clicked.connect(self._remove_channels)
         
+        # 说明文字选项互斥处理
+        self.use_folder_name_check.clicked.connect(self._handle_caption_option)
+        self.read_title_txt_check.clicked.connect(self._handle_caption_option)
+        self.use_custom_template_check.clicked.connect(self._handle_caption_option)
+        
         # 文件选择
         self.browse_button.clicked.connect(self._browse_directory)
         self.file_tree.doubleClicked.connect(self._on_file_double_clicked)
@@ -349,6 +361,33 @@ class UploadView(QWidget):
         # 上传控制
         self.start_upload_button.clicked.connect(self._start_upload)
         self.save_config_button.clicked.connect(self._save_config)
+    
+    def _handle_caption_option(self):
+        """处理说明文字选项的互斥"""
+        sender = self.sender()
+        
+        # 确保至少有一个选项被选中
+        if not sender.isChecked():
+            sender.setChecked(True)
+            return
+        
+        # 根据点击的选项取消选中其他选项
+        if sender == self.use_folder_name_check:
+            self.read_title_txt_check.setChecked(False)
+            self.use_custom_template_check.setChecked(False)
+        elif sender == self.read_title_txt_check:
+            self.use_folder_name_check.setChecked(False)
+            self.use_custom_template_check.setChecked(False)
+        elif sender == self.use_custom_template_check:
+            self.use_folder_name_check.setChecked(False)
+            self.read_title_txt_check.setChecked(False)
+            
+        # 如果选择自定义模板，设置焦点到模板编辑区
+        if sender == self.use_custom_template_check and sender.isChecked():
+            self.caption_template.setFocus()
+            
+        # 自定义模板编辑区的启用状态
+        self.caption_template.setEnabled(self.use_custom_template_check.isChecked())
     
     def _browse_directory(self):
         """浏览文件夹对话框"""
@@ -512,8 +551,8 @@ class UploadView(QWidget):
             'options': {
                 'use_folder_name': self.use_folder_name_check.isChecked(),
                 'read_title_txt': self.read_title_txt_check.isChecked(),
+                'use_custom_template': self.use_custom_template_check.isChecked(),
                 'caption_template': self.caption_template.toPlainText(),
-                'keep_media_groups': self.keep_media_groups_check.isChecked(),
                 'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
                 'upload_delay': self.upload_delay.value()
             }
@@ -545,8 +584,8 @@ class UploadView(QWidget):
             'options': {
                 'use_folder_name': self.use_folder_name_check.isChecked(),
                 'read_title_txt': self.read_title_txt_check.isChecked(),
+                'use_custom_template': self.use_custom_template_check.isChecked(),
                 'caption_template': self.caption_template.toPlainText(),
-                'keep_media_groups': self.keep_media_groups_check.isChecked(),
                 'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
                 'upload_delay': self.upload_delay.value()
             }
@@ -661,8 +700,27 @@ class UploadView(QWidget):
         # 加载其他选项（如果存在的话）
         upload_options = config.get('UPLOAD', {}).get('options', {})
         if upload_options:
-            self.use_folder_name_check.setChecked(upload_options.get('use_folder_name', True))
-            self.read_title_txt_check.setChecked(upload_options.get('read_title_txt', True))
-            self.keep_media_groups_check.setChecked(upload_options.get('keep_media_groups', True))
+            # 设置说明文字选项
+            use_folder_name = upload_options.get('use_folder_name', True)
+            read_title_txt = upload_options.get('read_title_txt', False)
+            use_custom_template = upload_options.get('use_custom_template', False)
+            
+            # 确保只有一个选项被选中
+            if use_custom_template:
+                self.use_custom_template_check.setChecked(True)
+                self.use_folder_name_check.setChecked(False)
+                self.read_title_txt_check.setChecked(False)
+            elif read_title_txt:
+                self.read_title_txt_check.setChecked(True)
+                self.use_folder_name_check.setChecked(False)
+                self.use_custom_template_check.setChecked(False)
+            else:  # 默认使用文件夹名称
+                self.use_folder_name_check.setChecked(True)
+                self.read_title_txt_check.setChecked(False)
+                self.use_custom_template_check.setChecked(False)
+                
+            # 更新模板编辑区启用状态
+            self.caption_template.setEnabled(self.use_custom_template_check.isChecked())
+            
             self.auto_thumbnail_check.setChecked(upload_options.get('auto_thumbnail', True))
             self.upload_delay.setValue(upload_options.get('upload_delay', 2)) 
