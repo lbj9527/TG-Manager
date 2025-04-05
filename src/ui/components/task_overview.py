@@ -125,16 +125,12 @@ class TaskOverview(QWidget):
         # 添加计数器容器到主布局
         self.main_layout.addWidget(counters_container)
         
-        # 添加任务列表标题和分隔线
-        task_list_header = QLabel("活跃任务列表")
-        task_list_header.setStyleSheet("font-weight: bold; color: #424242; margin-top: 2px; font-size: 8pt;")  # 减小字体大小
-        
+        # 添加分隔线
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         separator.setStyleSheet("background-color: #E0E0E0;")
         
-        self.main_layout.addWidget(task_list_header)
         self.main_layout.addWidget(separator)
     
     def _create_task_list(self):

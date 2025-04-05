@@ -463,8 +463,8 @@ class MainWindow(QMainWindow):
             event: 窗口显示事件
         """
         super().showEvent(event)
-        # 窗口显示后，延迟保存状态，确保所有组件都已布局好
-        QTimer.singleShot(500, self._save_current_state)
+        # 保留原本的窗口状态保存，但延长延迟时间，确保布局完全稳定
+        QTimer.singleShot(1000, self._save_current_state)
     
     def _toggle_sidebar(self, checked):
         """切换侧边栏的可见性
@@ -1256,17 +1256,33 @@ class MainWindow(QMainWindow):
         
         # 创建分割器
         self.sidebar_splitter = QSplitter(Qt.Vertical)
+        
+        # 为QSplitter设置一个固定的子控件大小策略，防止导航树在启动时改变高度
+        self.sidebar_splitter.setChildrenCollapsible(False)
+        self.sidebar_splitter.setOpaqueResize(True)
+        
+        # 添加控件到分割器
         self.sidebar_splitter.addWidget(self.nav_tree)
         self.sidebar_splitter.addWidget(self.task_overview)
         
-        # 设置初始分割比例 (35% 导航树, 65% 任务概览)
-        self.sidebar_splitter.setSizes([350, 650])
+        # 设置初始分割比例，调整为42%导航树，58%任务概览
+        self.sidebar_splitter.setSizes([420, 580])
+        
+        # 在组件完全初始化后锁定尺寸，防止布局计算导致的高度变化
+        QTimer.singleShot(0, lambda: self._init_splitter_sizes())
         
         # 将分割器添加到停靠窗口
         self.sidebar_dock.setWidget(self.sidebar_splitter)
         
         # 将停靠窗口添加到左侧区域
         self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar_dock)
+    
+    def _init_splitter_sizes(self):
+        """初始化分割器尺寸，确保导航树高度稳定"""
+        if hasattr(self, 'sidebar_splitter'):
+            # 重新设置尺寸一次，以防止初始化过程中的计算误差
+            current_sizes = self.sidebar_splitter.sizes()
+            self.sidebar_splitter.setSizes(current_sizes)
     
     def resizeEvent(self, event: QResizeEvent):
         """窗口大小改变时的处理函数
@@ -1296,11 +1312,14 @@ class MainWindow(QMainWindow):
             # 获取当前窗口高度
             current_height = self.height()
             
-            # 调整分割器中导航树和任务概览的比例
+            # 获取当前分割器尺寸
+            current_sizes = self.sidebar_splitter.sizes()
+            nav_height = current_sizes[0]  # 导航树当前高度
+            
             # 只有当窗口高度大于阈值时才调整，防止在极小的窗口尺寸下产生问题
             if current_height > 400:
-                # 大约保持 40% 导航树, 60% 任务概览
-                self.sidebar_splitter.setSizes([int(current_height * 0.4), int(current_height * 0.6)])
+                # 调整为42%导航树，58%任务概览
+                self.sidebar_splitter.setSizes([int(current_height * 0.42), int(current_height * 0.58)])
         
         # 发出窗口状态变化信号
         window_state = {
