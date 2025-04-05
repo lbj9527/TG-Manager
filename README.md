@@ -56,7 +56,8 @@ TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为
     "proxy_addr": "127.0.0.1", // 代理地址
     "proxy_port": 1080, // 代理端口
     "proxy_username": null, // 代理用户名(可选)
-    "proxy_password": null // 代理密码(可选)
+    "proxy_password": null, // 代理密码(可选)
+    "auto_restart_session": true // 会话控制：Telegram会话在意外断开后是否自动重连(默认为true)
   },
   "DOWNLOAD": {
     "downloadSetting": [
@@ -78,7 +79,8 @@ TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为
     "directory": "uploads", // 上传文件目录
     "caption_template": "{filename} - 上传于 {date}", // 说明文字模板
     "delay_between_uploads": 0.5, // 上传间隔时间(秒)
-    "options": { // 上传选项
+    "options": {
+      // 上传选项
       "use_folder_name": true, // 是否使用文件夹名称作为说明文字
       "read_title_txt": false, // 是否读取title.txt文件作为说明文字
       "use_custom_template": false, // 是否使用自定义模板
@@ -139,6 +141,7 @@ GENERAL 部分包含应用程序的基本设置，包括：
 - Telegram API 凭据：`api_id`和`api_hash`
 - 代理设置：`proxy_enabled`、`proxy_type`、`proxy_addr`等
 - 基本操作参数：`limit`、`pause_time`、`timeout`等
+- 会话控制：`auto_restart_session`控制 Telegram 会话在意外断开后是否自动重连(默认为 true)
 
 ### 频道标识格式
 
