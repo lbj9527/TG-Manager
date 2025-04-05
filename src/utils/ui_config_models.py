@@ -177,7 +177,12 @@ class UIChannelPair(BaseModel):
 class UIMonitorChannelPair(UIChannelPair):
     """监听频道对配置模型"""
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
-    text_filter: List[UITextFilterItem] = Field(default_factory=list, description="文本替换规则")
+    text_filter: List[UITextFilterItem] = Field(
+        default_factory=lambda: [
+            UITextFilterItem(original_text="示例文本", target_text="替换后的文本")
+        ], 
+        description="文本替换规则"
+    )
 
     class Config:
         title = "监听频道配对"
@@ -502,7 +507,12 @@ def create_default_config() -> UIConfig:
                     source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
                     target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
                     remove_captions=False,
-                    text_filter=[]
+                    text_filter=[
+                        UITextFilterItem(
+                            original_text="示例文本",
+                            target_text="替换后的文本"
+                        )
+                    ]
                 )
             ],
             media_types=[

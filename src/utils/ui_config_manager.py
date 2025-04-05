@@ -348,7 +348,26 @@ class UIConfigManager:
                                         "original_text": filter_item["original_text"],
                                         "target_text": filter_item.get("target_text", "")
                                     })
+                            
+                            # 如果过滤器列表为空，添加一个默认示例
+                            if not valid_filters:
+                                valid_filters = [
+                                    {
+                                        "original_text": "示例文本",
+                                        "target_text": "替换后的文本"
+                                    }
+                                ]
+                                logger.warning("文本过滤器为空，添加默认示例")
+                            
                             valid_pair["text_filter"] = valid_filters
+                        else:
+                            # 如果没有text_filter字段，添加默认的
+                            valid_pair["text_filter"] = [
+                                {
+                                    "original_text": "示例文本",
+                                    "target_text": "替换后的文本"
+                                }
+                            ]
                         
                         valid_pairs.append(valid_pair)
                     except Exception as e:
@@ -360,7 +379,12 @@ class UIConfigManager:
                         "source_channel": "",
                         "target_channels": [""],
                         "remove_captions": False,
-                        "text_filter": []
+                        "text_filter": [
+                            {
+                                "original_text": "示例文本",
+                                "target_text": "替换后的文本"
+                            }
+                        ]
                     }]
                     logger.warning("监听频道对列表为空，已添加默认项")
                 
