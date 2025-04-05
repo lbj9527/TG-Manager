@@ -105,12 +105,7 @@ class ListenView(QWidget):
         config_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
         config_layout.setSpacing(4)  # 减小间距
         
-        # 创建频道配置组，移除标题文字
-        channel_group = QGroupBox()
-        channel_layout = QVBoxLayout(channel_group)
-        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        
-        # 创建顶部表单面板
+        # 创建顶部表单面板 - 直接添加到配置布局，移除QGroupBox
         form_layout = QFormLayout()
         form_layout.setSpacing(6)  # 增加表单项间距
         form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
@@ -139,7 +134,8 @@ class ListenView(QWidget):
         self.target_text_input.setPlaceholderText("替换后的目标文本")
         form_layout.addRow("替换为:", self.target_text_input)
         
-        channel_layout.addLayout(form_layout)
+        # 将表单直接添加到配置布局
+        config_layout.addLayout(form_layout)
         
         # 创建水平布局存放添加按钮和频道列表
         channel_action_layout = QHBoxLayout()
@@ -158,7 +154,8 @@ class ListenView(QWidget):
         # 添加弹性空间，让按钮靠左对齐
         channel_action_layout.addStretch(1)
         
-        channel_layout.addLayout(channel_action_layout)
+        # 直接添加到配置布局
+        config_layout.addLayout(channel_action_layout)
         
         # 创建频道列表部分 - 使用滚动区域显示
         channel_widget = QWidget()
@@ -193,11 +190,8 @@ class ListenView(QWidget):
         scroll_area.setWidget(scroll_content)
         channel_widget_layout.addWidget(scroll_area)
         
-        # 添加到布局
-        channel_layout.addWidget(channel_widget, 1)  # 添加伸展系数
-        
-        # 将频道配置组添加到配置布局
-        config_layout.addWidget(channel_group)
+        # 直接添加到配置布局
+        config_layout.addWidget(channel_widget, 1)  # 添加伸展系数
         
         # 监听选项标签页
         self.options_tab = QWidget()
@@ -205,11 +199,10 @@ class ListenView(QWidget):
         options_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
         options_layout.setSpacing(8)  # 增加垂直间距
         
-        # 媒体类型选择 - 移除标题
-        media_types_group = QGroupBox()
-        media_types_layout = QVBoxLayout(media_types_group)
-        media_types_layout.setContentsMargins(6, 8, 6, 8)  # 减小上边距
-        media_types_layout.setSpacing(6)  # 增加间距
+        # 媒体类型选择 - 直接添加到选项布局，移除QGroupBox
+        media_types_label = QLabel("要转发的媒体类型:")
+        media_types_label.setStyleSheet("font-weight: bold;")
+        options_layout.addWidget(media_types_label)
         
         # 媒体类型复选框
         media_types_row1 = QHBoxLayout()
@@ -246,15 +239,20 @@ class ListenView(QWidget):
             checkbox.setChecked(True)
             checkbox.setStyleSheet("padding: 4px;")  # 添加内边距，使复选框更大
         
-        media_types_layout.addLayout(media_types_row1)
-        media_types_layout.addLayout(media_types_row2)
+        # 直接添加到选项布局
+        options_layout.addLayout(media_types_row1)
+        options_layout.addLayout(media_types_row2)
         
-        options_layout.addWidget(media_types_group)
+        # 添加一些间距
+        options_layout.addSpacing(10)
         
-        # 监听参数 - 删除标题
-        monitor_options_group = QGroupBox()
-        monitor_options_layout = QFormLayout(monitor_options_group)
-        monitor_options_layout.setContentsMargins(6, 8, 6, 8)  # 减小上边距
+        # 监听参数 - 直接添加到选项布局，移除QGroupBox
+        monitor_options_label = QLabel("监听参数:")
+        monitor_options_label.setStyleSheet("font-weight: bold;")
+        options_layout.addWidget(monitor_options_label)
+        
+        # 使用表单布局直接添加到选项布局
+        monitor_options_layout = QFormLayout()
         monitor_options_layout.setSpacing(8)  # 增加表单项间距
         monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
         
@@ -283,7 +281,8 @@ class ListenView(QWidget):
         # 连接时间过滤复选框和日期选择器的启用状态
         self.duration_check.toggled.connect(self.duration_date.setEnabled)
         
-        options_layout.addWidget(monitor_options_group)
+        # 直接添加到选项布局
+        options_layout.addLayout(monitor_options_layout)
         
         # 添加弹性空间，使内容靠上对齐
         options_layout.addStretch(1)
