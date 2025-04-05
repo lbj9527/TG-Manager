@@ -129,7 +129,7 @@ class ListenView(QWidget):
         form_layout.addRow("目标频道:", self.target_channel_input)
         
         # 创建复选框 - 移除媒体说明
-        self.remove_captions_check = QCheckBox("移除媒体说明文字")
+        self.remove_captions_check = QCheckBox("移除媒体说明")
         form_layout.addRow("", self.remove_captions_check)
         
         # 文本替换规则
@@ -427,7 +427,18 @@ class ListenView(QWidget):
         target_channels_str = ", ".join(target_channels)
         text_filter_str = ""
         if text_filter:
-            text_filter_str = f" - 替换规则: {len(text_filter)}条"
+            # 将替换规则的显示方式从条数改为详细内容
+            replacements = []
+            for rule in text_filter:
+                original = rule.get("original_text", "")
+                target = rule.get("target_text", "")
+                if original or target:  # 只显示非空的规则
+                    replacements.append(f"{original}->{target}")
+            
+            if replacements:
+                text_filter_str = f" - 替换规则：{', '.join(replacements)}"
+            else:
+                text_filter_str = ""
         
         display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
         if self.remove_captions_check.isChecked():
@@ -753,7 +764,18 @@ class ListenView(QWidget):
             target_channels_str = ", ".join(target_channels)
             text_filter_str = ""
             if text_filter:
-                text_filter_str = f" - 替换规则: {len(text_filter)}条"
+                # 将替换规则的显示方式从条数改为详细内容
+                replacements = []
+                for rule in text_filter:
+                    original = rule.get("original_text", "")
+                    target = rule.get("target_text", "")
+                    if original or target:  # 只显示非空的规则
+                        replacements.append(f"{original}->{target}")
+                
+                if replacements:
+                    text_filter_str = f" - 替换规则：{', '.join(replacements)}"
+                else:
+                    text_filter_str = ""
             
             display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
             if remove_captions:
