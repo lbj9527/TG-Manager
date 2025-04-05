@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
     QFileSystemModel, QTreeView, QSplitter, QTextEdit, QSizePolicy,
-    QTabWidget
+    QTabWidget, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QModelIndex
 from PySide6.QtGui import QIcon
@@ -176,9 +176,11 @@ class UploadView(QWidget):
         delay_label.setMinimumWidth(60)
         delay_layout.addWidget(delay_label)
         
-        self.upload_delay = QSpinBox()
+        self.upload_delay = QDoubleSpinBox()
         self.upload_delay.setRange(0, 60)
-        self.upload_delay.setValue(2)
+        self.upload_delay.setValue(0.5)
+        self.upload_delay.setDecimals(1)
+        self.upload_delay.setSingleStep(0.1)
         self.upload_delay.setSuffix(" 秒")
         self.upload_delay.setMinimumWidth(70)
         delay_layout.addWidget(self.upload_delay)
@@ -560,7 +562,7 @@ class UploadView(QWidget):
                 'use_custom_template': self.use_custom_template_check.isChecked(),
                 'caption_template': self.caption_template.toPlainText(),
                 'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
-                'upload_delay': self.upload_delay.value()
+                'upload_delay': round(float(self.upload_delay.value()), 1)
             }
         }
         
@@ -598,7 +600,7 @@ class UploadView(QWidget):
             'target_channels': target_channels,
             'directory': self.path_input.text() or 'uploads',  # 使用当前选择的目录路径
             'caption_template': self.caption_template.toPlainText(),
-            'delay_between_uploads': self.upload_delay.value(),
+            'delay_between_uploads': round(float(self.upload_delay.value()), 1),  # 四舍五入到一位小数
             'options': upload_options
         }
         
@@ -740,7 +742,15 @@ class UploadView(QWidget):
             self.file_tree.setRootIndex(self.fs_model.index(directory))
         
         # 加载上传延迟
-        self.upload_delay.setValue(upload_config.get('delay_between_uploads', 2))
+        delay_between_uploads = upload_config.get('delay_between_uploads', 0.5)
+        # 确保上传延迟能以小数形式加载
+        if isinstance(delay_between_uploads, (int, float)):
+            self.upload_delay.setValue(float(delay_between_uploads))
+        else:
+            try:
+                self.upload_delay.setValue(float(delay_between_uploads))
+            except (ValueError, TypeError):
+                self.upload_delay.setValue(0.5)
         
         # 加载其他选项
         options = upload_config.get('options', {})

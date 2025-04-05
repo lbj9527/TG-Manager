@@ -288,6 +288,13 @@ class UIUploadConfig(BaseModel):
             v[i] = UIChannelPair.validate_channel_id(channel, f"目标频道[{i}]")
         return v
 
+    @validator('delay_between_uploads')
+    def round_delay_between_uploads(cls, v):
+        """将上传延迟四舍五入到一位小数，避免浮点数精度问题"""
+        if v is not None:
+            return round(v, 1)
+        return v
+
     @validator('directory')
     def validate_directory(cls, v):
         if not v:
@@ -329,6 +336,13 @@ class UIForwardConfig(BaseModel):
     def validate_forward_channel_pairs(cls, v):
         if not v:
             raise ValueError("至少需要一个转发频道对")
+        return v
+
+    @validator('forward_delay')
+    def round_forward_delay(cls, v):
+        """将转发延迟四舍五入到一位小数，避免浮点数精度问题"""
+        if v is not None:
+            return round(v, 1)
         return v
 
     @validator('start_id')
