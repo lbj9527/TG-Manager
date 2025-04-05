@@ -397,6 +397,13 @@ class UIMonitorConfig(BaseModel):
             raise ValueError("至少需要一个监听频道对")
         return v
 
+    @validator('forward_delay')
+    def round_forward_delay(cls, v):
+        """将转发延迟四舍五入到一位小数，避免浮点数精度问题"""
+        if v is not None:
+            return round(v, 1)
+        return v
+
     @validator('duration')
     def validate_duration(cls, v):
         if v is not None:

@@ -25,7 +25,9 @@ class ListenView(QWidget):
     """监听界面，提供对Telegram频道消息的实时监听功能"""
     
     # 监听开始信号
-    listen_started = Signal(dict)  # 监听配置
+    listen_started = Signal(dict)
+    # 配置保存信号
+    config_saved = Signal(dict)
     
     def __init__(self, config=None, parent=None):
         """初始化监听界面
@@ -91,6 +93,11 @@ class ListenView(QWidget):
         # 加载配置
         if self.config:
             self.load_config(self.config)
+            
+            # 记录初始配置中的转发延迟值
+            if 'MONITOR' in self.config and 'forward_delay' in self.config['MONITOR']:
+                initial_delay = self.config['MONITOR']['forward_delay']
+                logger.debug(f"初始配置中的转发延迟值: {initial_delay}, 类型: {type(initial_delay)}")
         
         # 监听配置列表
         self.listen_configs = []
@@ -362,6 +369,12 @@ class ListenView(QWidget):
         self.start_listen_button.clicked.connect(self._start_listen)
         self.stop_listen_button.clicked.connect(self._stop_listen)
         self.save_config_button.clicked.connect(self._save_config)
+        
+        # 如果有父窗口，尝试连接config_saved信号
+        parent = self.parent()
+        if parent and hasattr(parent, 'config_saved'):
+            logger.debug("连接ListenView的config_saved信号到父窗口")
+            self.config_saved.connect(parent.config_saved)
     
     def _add_channel_pair(self):
         """添加频道对到监听列表"""
@@ -387,11 +400,20 @@ class ListenView(QWidget):
         text_filter = []
         original_text = self.original_text_input.text().strip()
         target_text = self.target_text_input.text().strip()
+        
+        # 即使用户没有输入文本替换内容，也添加一个空的text_filter项
         if original_text and target_text:
             text_filter.append({
                 "original_text": original_text,
                 "target_text": target_text
             })
+        else:
+            # 添加空的文本替换规则
+            text_filter.append({
+                "original_text": "",
+                "target_text": ""
+            })
+            logger.debug("用户未输入文本替换内容，添加空的text_filter项")
         
         # 存储完整数据
         pair_data = {
@@ -520,11 +542,18 @@ class ListenView(QWidget):
         for i in range(self.pairs_list.count()):
             item = self.pairs_list.item(i)
             data = item.data(Qt.UserRole)
+            text_filter = data.get("text_filter", [])
+            
+            # 确保text_filter至少有一项，即使是空的
+            if not text_filter:
+                text_filter = [{"original_text": "", "target_text": ""}]
+                logger.debug(f"获取监听配置时，频道对 {data['source_channel']} 的text_filter为空，添加默认空项")
+            
             monitor_channel_pairs.append({
                 "source_channel": data["source_channel"],
                 "target_channels": data["target_channels"],
                 "remove_captions": data["remove_captions"],
-                "text_filter": data.get("text_filter", [])
+                "text_filter": text_filter
             })
         
         # 获取媒体类型
@@ -540,6 +569,7 @@ class ListenView(QWidget):
         
         # 获取转发延迟
         forward_delay = round(float(self.forward_delay.value()), 1)
+        logger.debug(f"获取到转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
         
         # 收集监听配置 - 只保留UIMonitorConfig所需的字段
         monitor_config = {
@@ -561,19 +591,25 @@ class ListenView(QWidget):
         # 获取监听配置
         monitor_config = self._get_monitor_config()
         
-        # 创建UIMonitorConfig对象
         try:
             # 格式化数据以匹配UIMonitorConfig期望的结构
             monitor_channel_pairs = []
             for pair in monitor_config['monitor_channel_pairs']:
+                # 确保text_filter至少有一项
+                text_filter = pair.get('text_filter', [])
+                if not text_filter:
+                    text_filter = [{"original_text": "", "target_text": ""}]
+                    logger.debug(f"保存配置时，频道对 {pair['source_channel']} 的text_filter为空，添加默认空项")
+                
                 # 创建UIMonitorChannelPair对象
                 monitor_channel_pairs.append(UIMonitorChannelPair(
                     source_channel=pair['source_channel'],
                     target_channels=pair['target_channels'],
                     remove_captions=pair['remove_captions'],
-                    text_filter=pair.get('text_filter', [])
+                    text_filter=text_filter
                 ))
             
+            # 创建UIMonitorConfig对象
             ui_monitor_config = UIMonitorConfig(
                 monitor_channel_pairs=monitor_channel_pairs,
                 media_types=monitor_config['media_types'],
@@ -581,13 +617,24 @@ class ListenView(QWidget):
                 forward_delay=monitor_config['forward_delay']
             )
             
-            # 更新配置
-            if 'MONITOR' in self.config:
-                self.config['MONITOR'] = ui_monitor_config.dict()
-            else:
-                self.config.update({'MONITOR': ui_monitor_config.dict()})
+            # 组织完整配置
+            updated_config = {}
+            if isinstance(self.config, dict):
+                updated_config = self.config.copy()  # 复制当前配置
             
+            # 使用模型的dict()方法将对象转换为字典
+            updated_config['MONITOR'] = ui_monitor_config.dict()
+            
+            # 发送配置保存信号
+            logger.debug(f"向主窗口发送配置保存信号，更新监听配置")
+            self.config_saved.emit(updated_config)
+            
+            # 显示成功消息
             QMessageBox.information(self, "配置保存", "监听配置已保存")
+            
+            # 更新本地配置引用
+            self.config = updated_config
+            
         except Exception as e:
             logger.error(f"保存监听配置失败: {e}")
             QMessageBox.warning(self, "配置保存失败", f"保存配置时出错: {e}")
@@ -694,6 +741,11 @@ class ListenView(QWidget):
             remove_captions = pair.get('remove_captions', False)
             text_filter = pair.get('text_filter', [])
             
+            # 确保text_filter至少有一项，即使是空的
+            if not text_filter:
+                text_filter = [{"original_text": "", "target_text": ""}]
+                logger.debug(f"频道对 {source_channel} 的text_filter为空，添加默认空项")
+            
             if not source_channel or not target_channels:
                 continue
             
@@ -746,8 +798,18 @@ class ListenView(QWidget):
         
         # 加载转发延迟
         forward_delay = monitor_config.get('forward_delay', 1.0)
+        logger.debug(f"从配置中加载转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
         if isinstance(forward_delay, (int, float)):
             self.forward_delay.setValue(float(forward_delay))
+            logger.debug(f"设置转发延迟值为: {float(forward_delay)}")
+        else:
+            try:
+                value = float(forward_delay)
+                self.forward_delay.setValue(value)
+                logger.debug(f"转换并设置转发延迟值为: {value}")
+            except (ValueError, TypeError) as e:
+                logger.error(f"转发延迟值转换失败: {e}, 使用默认值1.0")
+                self.forward_delay.setValue(1.0)
         
         # 加载监听截止日期
         duration = monitor_config.get('duration')
