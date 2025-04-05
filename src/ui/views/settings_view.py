@@ -155,7 +155,7 @@ class SettingsView(QWidget):
         proxy_form.addRow("", self.use_proxy)
         
         self.proxy_type = QComboBox()
-        self.proxy_type.addItems(["SOCKS5", "HTTP", "MTProto"])
+        self.proxy_type.addItems(["SOCKS5"])
         self.proxy_type.setEnabled(False)
         proxy_form.addRow("代理类型:", self.proxy_type)
         
@@ -449,20 +449,8 @@ class SettingsView(QWidget):
         """
         # 将代理类型文本转换为ProxyType枚举
         proxy_type_text = self.proxy_type.currentText()
-        proxy_type_value = None
-        try:
-            if proxy_type_text == "SOCKS5":
-                proxy_type_value = ProxyType.SOCKS5
-            elif proxy_type_text == "HTTP":
-                proxy_type_value = ProxyType.HTTP
-            elif proxy_type_text == "MTProto":
-                proxy_type_value = ProxyType.MTPROTO
-            else:
-                # 默认为SOCKS5
-                proxy_type_value = ProxyType.SOCKS5
-        except Exception as e:
-            logger.warning(f"代理类型转换失败: {e}，使用默认值SOCKS5")
-            proxy_type_value = ProxyType.SOCKS5
+        # 由于只支持SOCKS5，直接使用SOCKS5类型
+        proxy_type_value = ProxyType.SOCKS5
         
         settings = {
             'GENERAL': {
