@@ -108,8 +108,8 @@ class Forwarder(EventEmitter):
         self.log.status("开始转发消息")
         
         # 获取配置的源频道和目标频道
-        source_channels = self.forward_config.source_channels
-        target_channels = self.forward_config.target_channels
+        # source_channels = self.forward_config.source_channels
+        # target_channels = self.forward_config.target_channels
         
         # 创建临时会话目录
         temp_dir = self.ensure_temp_dir()
