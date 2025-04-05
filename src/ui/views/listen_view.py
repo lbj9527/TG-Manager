@@ -9,12 +9,14 @@ from PySide6.QtWidgets import (
     QGroupBox, QScrollArea, QSpinBox, QComboBox,
     QListWidget, QListWidgetItem, QMessageBox,
     QTextEdit, QSplitter, QTabWidget, QDateTimeEdit,
-    QSizePolicy
+    QSizePolicy, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt, Signal, Slot, QDateTime
 from PySide6.QtGui import QIcon, QTextCursor
+from datetime import datetime
 
 from src.utils.logger import get_logger
+from src.utils.ui_config_models import UIMonitorConfig, UIMonitorChannelPair, MediaType
 
 logger = get_logger()
 
@@ -47,7 +49,16 @@ class ListenView(QWidget):
             QGroupBox { 
                 font-weight: bold; 
                 padding-top: 2px; 
-                margin-top: 0.4em; 
+                margin-top: 0.5em; 
+                border: 1px solid #444;
+                border-radius: 3px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 7px;
+                padding: 0 3px;
+                background-color: palette(window);
             }
             QTabWidget::pane {
                 border: 1px solid #444;
@@ -60,8 +71,8 @@ class ListenView(QWidget):
         
         # 创建配置标签页
         self.config_tabs = QTabWidget()
-        # 设置配置区域的最大高度，确保消息区域有足够空间
-        self.config_tabs.setMaximumHeight(320)  # 再增加最大高度
+        # 增加配置区域的高度，确保控件显示清晰
+        self.config_tabs.setMaximumHeight(420)
         self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.main_layout.addWidget(self.config_tabs)
         
@@ -94,173 +105,192 @@ class ListenView(QWidget):
         config_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
         config_layout.setSpacing(4)  # 减小间距
         
+        # 创建频道配置组，移除标题文字
+        channel_group = QGroupBox()
+        channel_layout = QVBoxLayout(channel_group)
+        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        
         # 创建顶部表单面板
         form_layout = QFormLayout()
+        form_layout.setSpacing(6)  # 增加表单项间距
+        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 字段可扩展
         
-        # 监听频道
-        self.channel_input = QLineEdit()
-        self.channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("监听频道:", self.channel_input)
+        # 源频道
+        self.source_channel_input = QLineEdit()
+        self.source_channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
+        form_layout.addRow("源频道:", self.source_channel_input)
+        
+        # 目标频道
+        self.target_channel_input = QLineEdit()
+        self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用逗号分隔)")
+        form_layout.addRow("目标频道:", self.target_channel_input)
+        
+        # 创建复选框 - 移除媒体说明
+        self.remove_captions_check = QCheckBox("移除媒体说明文字")
+        form_layout.addRow("", self.remove_captions_check)
+        
+        # 文本替换规则
+        self.original_text_input = QLineEdit()
+        self.original_text_input.setPlaceholderText("要替换的原始文本")
+        form_layout.addRow("文本替换:", self.original_text_input)
+        
+        self.target_text_input = QLineEdit()
+        self.target_text_input.setPlaceholderText("替换后的目标文本")
+        form_layout.addRow("替换为:", self.target_text_input)
+        
+        channel_layout.addLayout(form_layout)
         
         # 创建水平布局存放添加按钮和频道列表
         channel_action_layout = QHBoxLayout()
+        channel_action_layout.setSpacing(8)  # 增加按钮间距
         
-        # 添加频道按钮
-        self.add_channel_button = QPushButton("添加频道")
-        channel_action_layout.addWidget(self.add_channel_button)
+        # 添加频道对按钮
+        self.add_channel_pair_button = QPushButton("添加频道对")
+        self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.add_channel_pair_button)
         
-        # 删除频道按钮
-        self.remove_channel_button = QPushButton("删除所选")
-        channel_action_layout.addWidget(self.remove_channel_button)
+        # 删除频道对按钮
+        self.remove_channel_pair_button = QPushButton("删除所选")
+        self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.remove_channel_pair_button)
         
         # 添加弹性空间，让按钮靠左对齐
         channel_action_layout.addStretch(1)
         
-        # 频道列表部分
-        channel_list_label = QLabel("已配置监听频道:")
+        channel_layout.addLayout(channel_action_layout)
         
-        self.channel_list = QListWidget()
-        self.channel_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        self.channel_list.setMinimumHeight(240)  # 进一步增加频道列表高度
-        self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
+        # 创建频道列表部分 - 使用滚动区域显示
+        channel_widget = QWidget()
+        channel_widget_layout = QVBoxLayout(channel_widget)
+        channel_widget_layout.setContentsMargins(0, 0, 0, 0)
+        channel_widget_layout.setSpacing(2)
         
-        # 添加表单、按钮和列表到布局
-        config_layout.addLayout(form_layout)
-        config_layout.addLayout(channel_action_layout)
-        config_layout.addWidget(channel_list_label)
-        # 给频道列表更大的空间比例
-        config_layout.addWidget(self.channel_list, 1)  # 添加伸展系数
+        # 已配置监听频道对标签 - 使用与下载界面一致的样式
+        self.pairs_list_label = QLabel("已配置监听频道对: 0个")
+        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        channel_widget_layout.addWidget(self.pairs_list_label)
         
-        # 消息过滤标签页
-        self.filter_tab = QWidget()
-        filter_layout = QVBoxLayout(self.filter_tab)
-        filter_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
-        filter_layout.setSpacing(4)  # 减小间距
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
+        scroll_area.setFixedHeight(100)  # 设置滚动区域的固定高度
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
-        # 过滤选项表单
-        filter_form = QFormLayout()
+        # 创建一个容器部件来包含列表
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
         
-        # 关键字过滤
-        self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("多个关键字用逗号分隔，留空不过滤")
-        filter_form.addRow("关键字过滤:", self.keyword_input)
+        # 频道对列表
+        self.pairs_list = QListWidget()
+        self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
+        scroll_layout.addWidget(self.pairs_list)
         
-        # 媒体类型过滤
-        self.media_type_combo = QComboBox()
-        self.media_type_combo.addItem("所有类型", "all")
-        self.media_type_combo.addItem("仅文本", "text")
-        self.media_type_combo.addItem("仅照片", "photo")
-        self.media_type_combo.addItem("仅视频", "video")
-        self.media_type_combo.addItem("仅文件", "document")
-        self.media_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        filter_form.addRow("媒体类型:", self.media_type_combo)
+        # 设置滚动区域的内容
+        scroll_area.setWidget(scroll_content)
+        channel_widget_layout.addWidget(scroll_area)
         
-        filter_layout.addLayout(filter_form)
+        # 添加到布局
+        channel_layout.addWidget(channel_widget, 1)  # 添加伸展系数
         
-        # 过滤选项复选框 - 使用流式布局
-        filter_checkboxes = QVBoxLayout()
+        # 将频道配置组添加到配置布局
+        config_layout.addWidget(channel_group)
         
-        # 第一行复选框
-        filter_row1 = QHBoxLayout()
-        self.exclude_forwards_check = QCheckBox("排除转发消息")
-        self.exclude_replies_check = QCheckBox("排除回复消息")
-        filter_row1.addWidget(self.exclude_forwards_check)
-        filter_row1.addWidget(self.exclude_replies_check)
-        filter_row1.addStretch(1)
+        # 监听选项标签页
+        self.options_tab = QWidget()
+        options_layout = QVBoxLayout(self.options_tab)
+        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
+        options_layout.setSpacing(8)  # 增加垂直间距
         
-        # 第二行复选框
-        filter_row2 = QHBoxLayout()
-        self.exclude_media_check = QCheckBox("排除媒体消息")
-        self.exclude_links_check = QCheckBox("排除带链接消息")
-        filter_row2.addWidget(self.exclude_media_check)
-        filter_row2.addWidget(self.exclude_links_check)
-        filter_row2.addStretch(1)
+        # 媒体类型选择 - 移除标题
+        media_types_group = QGroupBox()
+        media_types_layout = QVBoxLayout(media_types_group)
+        media_types_layout.setContentsMargins(6, 8, 6, 8)  # 减小上边距
+        media_types_layout.setSpacing(6)  # 增加间距
         
-        filter_checkboxes.addLayout(filter_row1)
-        filter_checkboxes.addLayout(filter_row2)
+        # 媒体类型复选框
+        media_types_row1 = QHBoxLayout()
+        media_types_row2 = QHBoxLayout()
         
-        filter_layout.addLayout(filter_checkboxes)
+        self.media_types_checkboxes = {}
         
-        # 时间过滤
-        time_filter_layout = QVBoxLayout()
-        time_header = QHBoxLayout()
+        # 第一行
+        self.media_types_checkboxes["photo"] = QCheckBox("照片")
+        self.media_types_checkboxes["video"] = QCheckBox("视频")
+        self.media_types_checkboxes["document"] = QCheckBox("文件")
+        self.media_types_checkboxes["audio"] = QCheckBox("音频")
         
-        self.time_filter_check = QCheckBox("启用时间过滤")
-        time_header.addWidget(self.time_filter_check)
-        time_header.addStretch(1)
+        media_types_row1.addWidget(self.media_types_checkboxes["photo"])
+        media_types_row1.addWidget(self.media_types_checkboxes["video"])
+        media_types_row1.addWidget(self.media_types_checkboxes["document"])
+        media_types_row1.addWidget(self.media_types_checkboxes["audio"])
+        media_types_row1.addStretch(1)
         
-        time_inputs = QHBoxLayout()
-        time_inputs.addWidget(QLabel("从:"))
-        self.start_time = QDateTimeEdit(QDateTime.currentDateTime().addDays(-1))
-        self.start_time.setCalendarPopup(True)
-        self.start_time.setEnabled(False)
-        self.start_time.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        time_inputs.addWidget(self.start_time)
+        # 第二行
+        self.media_types_checkboxes["animation"] = QCheckBox("动画")
+        self.media_types_checkboxes["sticker"] = QCheckBox("贴纸")
+        self.media_types_checkboxes["voice"] = QCheckBox("语音")
+        self.media_types_checkboxes["video_note"] = QCheckBox("视频笔记")
         
-        time_inputs.addWidget(QLabel("至:"))
-        self.end_time = QDateTimeEdit(QDateTime.currentDateTime())
-        self.end_time.setCalendarPopup(True)
-        self.end_time.setEnabled(False)
-        self.end_time.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        time_inputs.addWidget(self.end_time)
+        media_types_row2.addWidget(self.media_types_checkboxes["animation"])
+        media_types_row2.addWidget(self.media_types_checkboxes["sticker"])
+        media_types_row2.addWidget(self.media_types_checkboxes["voice"])
+        media_types_row2.addWidget(self.media_types_checkboxes["video_note"])
+        media_types_row2.addStretch(1)
+        
+        # 默认选中所有媒体类型
+        for checkbox in self.media_types_checkboxes.values():
+            checkbox.setChecked(True)
+            checkbox.setStyleSheet("padding: 4px;")  # 添加内边距，使复选框更大
+        
+        media_types_layout.addLayout(media_types_row1)
+        media_types_layout.addLayout(media_types_row2)
+        
+        options_layout.addWidget(media_types_group)
+        
+        # 监听参数 - 删除标题
+        monitor_options_group = QGroupBox()
+        monitor_options_layout = QFormLayout(monitor_options_group)
+        monitor_options_layout.setContentsMargins(6, 8, 6, 8)  # 减小上边距
+        monitor_options_layout.setSpacing(8)  # 增加表单项间距
+        monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
+        
+        # 转发延迟
+        self.forward_delay = QDoubleSpinBox()
+        self.forward_delay.setRange(0, 60)
+        self.forward_delay.setValue(1.0)
+        self.forward_delay.setDecimals(1)
+        self.forward_delay.setSingleStep(0.1)
+        self.forward_delay.setSuffix(" 秒")
+        self.forward_delay.setMinimumHeight(26)  # 增加高度
+        monitor_options_layout.addRow("转发延迟:", self.forward_delay)
+        
+        # 监听截止日期
+        self.duration_check = QCheckBox("启用监听截止日期")
+        self.duration_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        monitor_options_layout.addRow("", self.duration_check)
+        
+        self.duration_date = QDateTimeEdit(QDateTime.currentDateTime().addDays(365))
+        self.duration_date.setCalendarPopup(True)
+        self.duration_date.setDisplayFormat("yyyy-MM-dd")
+        self.duration_date.setEnabled(False)
+        self.duration_date.setMinimumHeight(26)  # 增加高度
+        monitor_options_layout.addRow("截止日期:", self.duration_date)
         
         # 连接时间过滤复选框和日期选择器的启用状态
-        self.time_filter_check.toggled.connect(self.start_time.setEnabled)
-        self.time_filter_check.toggled.connect(self.end_time.setEnabled)
+        self.duration_check.toggled.connect(self.duration_date.setEnabled)
         
-        time_filter_layout.addLayout(time_header)
-        time_filter_layout.addLayout(time_inputs)
+        options_layout.addWidget(monitor_options_group)
         
-        filter_layout.addLayout(time_filter_layout)
-        
-        # 通知配置标签页
-        self.notify_tab = QWidget()
-        notify_layout = QVBoxLayout(self.notify_tab)
-        notify_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
-        notify_layout.setSpacing(4)  # 减小间距
-        
-        # 第一行复选框
-        notify_row1 = QHBoxLayout()
-        self.desktop_notify_check = QCheckBox("桌面通知")
-        self.desktop_notify_check.setChecked(True)
-        self.sound_notify_check = QCheckBox("声音提醒")
-        notify_row1.addWidget(self.desktop_notify_check)
-        notify_row1.addWidget(self.sound_notify_check)
-        notify_row1.addStretch(1)
-        
-        # 第二行复选框
-        notify_row2 = QHBoxLayout()
-        self.highlight_check = QCheckBox("高亮关键字")
-        self.highlight_check.setChecked(True)
-        self.auto_scroll_check = QCheckBox("自动滚动到新消息")
-        self.auto_scroll_check.setChecked(True)
-        notify_row2.addWidget(self.highlight_check)
-        notify_row2.addWidget(self.auto_scroll_check)
-        notify_row2.addStretch(1)
-        
-        notify_layout.addLayout(notify_row1)
-        notify_layout.addLayout(notify_row2)
-        
-        # 最大显示消息数
-        max_messages_layout = QHBoxLayout()
-        
-        max_messages_layout.addWidget(QLabel("最大显示消息数:"))
-        
-        self.max_messages = QSpinBox()
-        self.max_messages.setRange(50, 1000)
-        self.max_messages.setValue(200)
-        self.max_messages.setSingleStep(50)
-        self.max_messages.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        
-        max_messages_layout.addWidget(self.max_messages)
-        max_messages_layout.addStretch(1)
-        
-        notify_layout.addLayout(max_messages_layout)
+        # 添加弹性空间，使内容靠上对齐
+        options_layout.addStretch(1)
         
         # 将标签页添加到配置标签页部件
-        self.config_tabs.addTab(self.config_tab, "监听配置")
-        self.config_tabs.addTab(self.filter_tab, "消息过滤")
-        self.config_tabs.addTab(self.notify_tab, "通知配置")
+        self.config_tabs.addTab(self.config_tab, "频道配置")
+        self.config_tabs.addTab(self.options_tab, "媒体和参数")
     
     def _create_message_panel(self):
         """创建中间消息显示面板"""
@@ -278,15 +308,18 @@ class ListenView(QWidget):
         # 添加主消息面板
         self.message_tabs.addTab(self.main_message_view, "所有消息")
         
-        # 设置消息面板的尺寸策略，让它能够占据大部分空间
+        # 设置消息面板的尺寸策略，让它能够占据可用空间但不要太大
         self.message_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # 设置最小高度，确保消息区域有足够空间显示
+        self.message_tabs.setMinimumHeight(180)
         
-        # 将消息标签页直接添加到主布局，占据更多空间
-        self.main_layout.addWidget(self.message_tabs, 5)  # 增加伸展系数，使消息面板占用更多空间
+        # 将消息标签页直接添加到主布局，占据剩余空间
+        self.main_layout.addWidget(self.message_tabs, 1)  # 使用较小的伸展因子，让配置面板占据更多空间
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)  # 增加按钮间距
         
         self.start_listen_button = QPushButton("开始监听")
         self.start_listen_button.setMinimumHeight(40)
@@ -296,8 +329,13 @@ class ListenView(QWidget):
         self.stop_listen_button.setMinimumHeight(40)
         
         self.save_config_button = QPushButton("保存配置")
+        self.save_config_button.setMinimumHeight(30)  # 稍微降低其他按钮的高度，与主按钮区分
+        
         self.clear_messages_button = QPushButton("清空消息")
+        self.clear_messages_button.setMinimumHeight(30)
+        
         self.export_messages_button = QPushButton("导出消息")
+        self.export_messages_button.setMinimumHeight(30)
         
         # 确保按钮大小合理
         for button in [self.save_config_button, self.clear_messages_button, self.export_messages_button]:
@@ -314,8 +352,8 @@ class ListenView(QWidget):
     def _connect_signals(self):
         """连接信号和槽"""
         # 频道管理
-        self.add_channel_button.clicked.connect(self._add_channel)
-        self.remove_channel_button.clicked.connect(self._remove_channels)
+        self.add_channel_pair_button.clicked.connect(self._add_channel_pair)
+        self.remove_channel_pair_button.clicked.connect(self._remove_channel_pairs)
         
         # 消息操作
         self.clear_messages_button.clicked.connect(self._clear_messages)
@@ -326,60 +364,106 @@ class ListenView(QWidget):
         self.stop_listen_button.clicked.connect(self._stop_listen)
         self.save_config_button.clicked.connect(self._save_config)
     
-    def _add_channel(self):
-        """添加频道到监听列表"""
-        channel = self.channel_input.text().strip()
+    def _add_channel_pair(self):
+        """添加频道对到监听列表"""
+        source_channel = self.source_channel_input.text().strip()
+        target_channels = [ch.strip() for ch in self.target_channel_input.text().split(',') if ch.strip()]
         
-        if not channel:
-            QMessageBox.warning(self, "警告", "请输入频道链接或ID")
+        if not source_channel:
+            QMessageBox.warning(self, "警告", "请输入源频道链接或ID")
             return
         
-        # 检查是否已存在相同频道
-        for i in range(self.channel_list.count()):
-            if self.channel_list.item(i).text() == channel:
-                QMessageBox.information(self, "提示", "此频道已在监听列表中")
+        if not target_channels:
+            QMessageBox.warning(self, "警告", "请输入至少一个目标频道")
+            return
+        
+        # 检查是否已存在相同源频道
+        for i in range(self.pairs_list.count()):
+            item_text = self.pairs_list.item(i).text()
+            if item_text.split(" -> ")[0].strip() == source_channel:
+                QMessageBox.information(self, "提示", "已存在相同源频道的监听配置")
                 return
         
-        # 添加到列表
-        self.channel_list.addItem(channel)
+        # 文本替换规则
+        text_filter = []
+        original_text = self.original_text_input.text().strip()
+        target_text = self.target_text_input.text().strip()
+        if original_text and target_text:
+            text_filter.append({
+                "original_text": original_text,
+                "target_text": target_text
+            })
+        
+        # 存储完整数据
+        pair_data = {
+            "source_channel": source_channel,
+            "target_channels": target_channels,
+            "remove_captions": self.remove_captions_check.isChecked(),
+            "text_filter": text_filter
+        }
+        
+        # 添加到列表，采用与下载界面类似的样式
+        target_channels_str = ", ".join(target_channels)
+        text_filter_str = ""
+        if text_filter:
+            text_filter_str = f" - 替换规则: {len(text_filter)}条"
+        
+        display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
+        if self.remove_captions_check.isChecked():
+            display_text += " (移除媒体说明)"
+        
+        item = QListWidgetItem(display_text)
+        item.setData(Qt.UserRole, pair_data)
+        self.pairs_list.addItem(item)
         
         # 为该频道创建一个消息标签页
         channel_view = QTextEdit()
         channel_view.setReadOnly(True)
         channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
         
-        channel_name = channel.split('/')[-1] if '/' in channel else channel
+        channel_name = source_channel.split('/')[-1] if '/' in source_channel else source_channel
         self.message_tabs.addTab(channel_view, channel_name)
         
         # 保存标签页引用
-        self.channel_message_views[channel] = channel_view
+        self.channel_message_views[source_channel] = channel_view
+        
+        # 更新频道数量标签
+        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
         
         # 清空输入
-        self.channel_input.clear()
+        self.source_channel_input.clear()
+        self.target_channel_input.clear()
+        self.original_text_input.clear()
+        self.target_text_input.clear()
+        self.remove_captions_check.setChecked(False)
     
-    def _remove_channels(self):
-        """删除选中的监听频道"""
-        selected_items = self.channel_list.selectedItems()
+    def _remove_channel_pairs(self):
+        """删除选中的监听频道对"""
+        selected_items = self.pairs_list.selectedItems()
         
         if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的频道")
+            QMessageBox.information(self, "提示", "请先选择要删除的频道对")
             return
         
-        # 删除选中的频道
+        # 删除选中的频道对
         for item in reversed(selected_items):
-            channel = item.text()
-            row = self.channel_list.row(item)
-            self.channel_list.takeItem(row)
+            data = item.data(Qt.UserRole)
+            source_channel = data["source_channel"]
+            row = self.pairs_list.row(item)
+            self.pairs_list.takeItem(row)
             
             # 找到并删除对应的标签页
-            if channel in self.channel_message_views:
-                view = self.channel_message_views[channel]
+            if source_channel in self.channel_message_views:
+                view = self.channel_message_views[source_channel]
                 index = self.message_tabs.indexOf(view)
                 if index != -1:
                     self.message_tabs.removeTab(index)
                 
                 # 从字典中删除引用
-                del self.channel_message_views[channel]
+                del self.channel_message_views[source_channel]
+        
+        # 更新频道数量标签
+        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
     
     def _clear_messages(self):
         """清空所有消息"""
@@ -397,46 +481,16 @@ class ListenView(QWidget):
     
     def _start_listen(self):
         """开始监听"""
-        # 检查是否有监听频道
-        if self.channel_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道")
+        # 检查是否有监听频道对
+        if self.pairs_list.count() == 0:
+            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道对")
             return
         
-        # 获取频道列表
-        channels = []
-        for i in range(self.channel_list.count()):
-            channels.append(self.channel_list.item(i).text())
-        
-        # 获取关键字
-        keywords = [kw.strip() for kw in self.keyword_input.text().split(",") if kw.strip()]
-        
-        # 收集配置
-        config = {
-            'channels': channels,
-            'filters': {
-                'keywords': keywords,
-                'media_type': self.media_type_combo.currentData(),
-                'exclude_forwards': self.exclude_forwards_check.isChecked(),
-                'exclude_replies': self.exclude_replies_check.isChecked(),
-                'exclude_media': self.exclude_media_check.isChecked(),
-                'exclude_links': self.exclude_links_check.isChecked(),
-                'time_filter': {
-                    'enabled': self.time_filter_check.isChecked(),
-                    'start_time': self.start_time.dateTime().toString(Qt.ISODate) if self.time_filter_check.isChecked() else None,
-                    'end_time': self.end_time.dateTime().toString(Qt.ISODate) if self.time_filter_check.isChecked() else None
-                }
-            },
-            'notifications': {
-                'desktop_notify': self.desktop_notify_check.isChecked(),
-                'sound_notify': self.sound_notify_check.isChecked(),
-                'highlight': self.highlight_check.isChecked(),
-                'auto_scroll': self.auto_scroll_check.isChecked(),
-                'max_messages': self.max_messages.value()
-            }
-        }
+        # 获取监听配置
+        monitor_config = self._get_monitor_config()
         
         # 发出监听开始信号
-        self.listen_started.emit(config)
+        self.listen_started.emit(monitor_config)
         
         # 添加状态消息
         self._add_status_message("开始监听...")
@@ -456,48 +510,88 @@ class ListenView(QWidget):
         self.start_listen_button.setEnabled(True)
         self.stop_listen_button.setEnabled(False)
     
-    def _save_config(self):
-        """保存当前配置"""
-        # 检查是否有监听频道
-        if self.channel_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道")
-            return
+    def _get_monitor_config(self):
+        """获取当前监听配置
         
-        # 获取频道列表
-        channels = []
-        for i in range(self.channel_list.count()):
-            channels.append(self.channel_list.item(i).text())
+        Returns:
+            dict: 监听配置字典
+        """
+        # 获取频道对列表
+        monitor_channel_pairs = []
+        for i in range(self.pairs_list.count()):
+            item = self.pairs_list.item(i)
+            data = item.data(Qt.UserRole)
+            monitor_channel_pairs.append({
+                "source_channel": data["source_channel"],
+                "target_channels": data["target_channels"],
+                "remove_captions": data["remove_captions"],
+                "text_filter": data.get("text_filter", [])
+            })
         
-        # 获取关键字
-        keywords = [kw.strip() for kw in self.keyword_input.text().split(",") if kw.strip()]
+        # 获取媒体类型
+        media_types = []
+        for media_type, checkbox in self.media_types_checkboxes.items():
+            if checkbox.isChecked():
+                media_types.append(media_type)
         
-        # 收集配置
-        config = {
-            'channels': channels,
-            'filters': {
-                'keywords': keywords,
-                'media_type': self.media_type_combo.currentData(),
-                'exclude_forwards': self.exclude_forwards_check.isChecked(),
-                'exclude_replies': self.exclude_replies_check.isChecked(),
-                'exclude_media': self.exclude_media_check.isChecked(),
-                'exclude_links': self.exclude_links_check.isChecked(),
-                'time_filter': {
-                    'enabled': self.time_filter_check.isChecked(),
-                    'start_time': self.start_time.dateTime().toString(Qt.ISODate) if self.time_filter_check.isChecked() else None,
-                    'end_time': self.end_time.dateTime().toString(Qt.ISODate) if self.time_filter_check.isChecked() else None
-                }
-            },
-            'notifications': {
-                'desktop_notify': self.desktop_notify_check.isChecked(),
-                'sound_notify': self.sound_notify_check.isChecked(),
-                'highlight': self.highlight_check.isChecked(),
-                'auto_scroll': self.auto_scroll_check.isChecked(),
-                'max_messages': self.max_messages.value()
-            }
+        # 获取监听截止日期
+        duration = None
+        if self.duration_check.isChecked():
+            duration = self.duration_date.date().toString("yyyy-MM-dd")
+        
+        # 获取转发延迟
+        forward_delay = round(float(self.forward_delay.value()), 1)
+        
+        # 收集监听配置 - 只保留UIMonitorConfig所需的字段
+        monitor_config = {
+            'monitor_channel_pairs': monitor_channel_pairs,
+            'media_types': media_types,
+            'duration': duration,
+            'forward_delay': forward_delay
         }
         
-        # TODO: 在主界面中处理配置保存
-        QMessageBox.information(self, "配置保存", "配置已保存")
+        return monitor_config
+    
+    def _save_config(self):
+        """保存当前配置"""
+        # 检查是否有监听频道对
+        if self.pairs_list.count() == 0:
+            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道对")
+            return
+        
+        # 获取监听配置
+        monitor_config = self._get_monitor_config()
+        
+        # 创建UIMonitorConfig对象
+        try:
+            # 格式化数据以匹配UIMonitorConfig期望的结构
+            monitor_channel_pairs = []
+            for pair in monitor_config['monitor_channel_pairs']:
+                # 创建UIMonitorChannelPair对象
+                monitor_channel_pairs.append(UIMonitorChannelPair(
+                    source_channel=pair['source_channel'],
+                    target_channels=pair['target_channels'],
+                    remove_captions=pair['remove_captions'],
+                    text_filter=pair.get('text_filter', [])
+                ))
+            
+            ui_monitor_config = UIMonitorConfig(
+                monitor_channel_pairs=monitor_channel_pairs,
+                media_types=monitor_config['media_types'],
+                duration=monitor_config['duration'],
+                forward_delay=monitor_config['forward_delay']
+            )
+            
+            # 更新配置
+            if 'MONITOR' in self.config:
+                self.config['MONITOR'] = ui_monitor_config.dict()
+            else:
+                self.config.update({'MONITOR': ui_monitor_config.dict()})
+            
+            QMessageBox.information(self, "配置保存", "监听配置已保存")
+        except Exception as e:
+            logger.error(f"保存监听配置失败: {e}")
+            QMessageBox.warning(self, "配置保存失败", f"保存配置时出错: {e}")
     
     def _add_status_message(self, message):
         """添加状态消息到消息面板
@@ -536,16 +630,6 @@ class ListenView(QWidget):
         # 构建消息文本
         formatted_msg = f"[{time_str}] [{sender}] {media_tag} {text}"
         
-        # 高亮关键字
-        if self.highlight_check.isChecked() and self.keyword_input.text():
-            keywords = [kw.strip() for kw in self.keyword_input.text().split(",") if kw.strip()]
-            for keyword in keywords:
-                if keyword in formatted_msg:
-                    # 简单实现，实际应用中可能需要更复杂的富文本处理
-                    formatted_msg = formatted_msg.replace(
-                        keyword, f"<span style='background-color: yellow;'>{keyword}</span>"
-                    )
-        
         # 添加到主消息面板
         self.main_message_view.append(formatted_msg)
         
@@ -554,13 +638,12 @@ class ListenView(QWidget):
             self.channel_message_views[channel].append(formatted_msg)
         
         # 自动滚动到底部
-        if self.auto_scroll_check.isChecked():
             self.main_message_view.moveCursor(QTextCursor.End)
             if channel in self.channel_message_views:
                 self.channel_message_views[channel].moveCursor(QTextCursor.End)
         
-        # 限制消息数量
-        max_messages = self.max_messages.value()
+        # 限制消息数量 - 使用固定值200条
+        max_messages = 200
         
         # 删除超出限制的消息
         doc = self.main_message_view.document()
@@ -588,7 +671,7 @@ class ListenView(QWidget):
             config: 配置字典
         """
         # 清空现有项目
-        self.channel_list.clear()
+        self.pairs_list.clear()
         
         # 清除所有频道标签页
         while self.message_tabs.count() > 1:  # 保留"所有消息"标签页
@@ -596,35 +679,103 @@ class ListenView(QWidget):
         
         self.channel_message_views = {}
         
-        # 加载监听频道
-        channels = config.get('LISTEN', {}).get('channels', [])
-        for channel in channels:
-            # 添加到列表
-            self.channel_list.addItem(channel)
+        # 从配置加载监听配置
+        monitor_config = config.get('MONITOR', {})
+        
+        if not monitor_config:
+            logger.warning("配置中没有监听配置")
+            return
+        
+        # 加载监听频道对
+        monitor_channel_pairs = monitor_config.get('monitor_channel_pairs', [])
+        
+        for pair in monitor_channel_pairs:
+            source_channel = pair.get('source_channel', '')
+            target_channels = pair.get('target_channels', [])
+            remove_captions = pair.get('remove_captions', False)
+            text_filter = pair.get('text_filter', [])
+            
+            if not source_channel or not target_channels:
+                continue
+            
+            # 添加到列表，采用与下载界面类似的样式
+            target_channels_str = ", ".join(target_channels)
+            text_filter_str = ""
+            if text_filter:
+                text_filter_str = f" - 替换规则: {len(text_filter)}条"
+            
+            display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
+            if remove_captions:
+                display_text += " (移除媒体说明)"
+            
+            item = QListWidgetItem(display_text)
+            # 存储完整数据
+            pair_data = {
+                "source_channel": source_channel,
+                "target_channels": target_channels,
+                "remove_captions": remove_captions,
+                "text_filter": text_filter
+            }
+            item.setData(Qt.UserRole, pair_data)
+            self.pairs_list.addItem(item)
             
             # 为该频道创建一个消息标签页
             channel_view = QTextEdit()
             channel_view.setReadOnly(True)
             channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
             
-            channel_name = channel.split('/')[-1] if '/' in channel else channel
+            channel_name = source_channel.split('/')[-1] if '/' in source_channel else source_channel
             self.message_tabs.addTab(channel_view, channel_name)
             
             # 保存标签页引用
-            self.channel_message_views[channel] = channel_view
+            self.channel_message_views[source_channel] = channel_view
+        
+        # 更新频道数量标签
+        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
+        
+        # 加载媒体类型
+        media_types = monitor_config.get('media_types', [])
+        
+        # 先取消选中所有复选框
+        for checkbox in self.media_types_checkboxes.values():
+            checkbox.setChecked(False)
+        
+        # 选中配置中指定的媒体类型
+        for media_type in media_types:
+            if media_type in self.media_types_checkboxes:
+                self.media_types_checkboxes[media_type].setChecked(True)
+        
+        # 加载转发延迟
+        forward_delay = monitor_config.get('forward_delay', 1.0)
+        if isinstance(forward_delay, (int, float)):
+            self.forward_delay.setValue(float(forward_delay))
+        
+        # 加载监听截止日期
+        duration = monitor_config.get('duration')
+        if duration:
+            self.duration_check.setChecked(True)
+            try:
+                date = datetime.strptime(duration, "%Y-%m-%d")
+                self.duration_date.setDate(QDateTime.fromString(duration, "yyyy-MM-dd").date())
+            except ValueError:
+                logger.error(f"监听截止日期格式错误: {duration}")
+                self.duration_check.setChecked(False)
+        else:
+            self.duration_check.setChecked(False)
         
         # 加载过滤选项
-        filters = config.get('LISTEN', {}).get('filters', {})
+        # 注意：现在过滤选项存储在配置的filters字段中，而不是直接在MONITOR中
+        # 由于结构变化，我们需要适应旧配置格式和新格式
+        filters = {}
+        
+        # 首先检查是否有新格式的filters字段
+        if 'LISTEN' in config and 'filters' in config['LISTEN']:
+            filters = config['LISTEN'].get('filters', {})
+        
         if filters:
             # 关键字
             keywords = filters.get('keywords', [])
             self.keyword_input.setText(", ".join(keywords))
-            
-            # 媒体类型
-            media_type = filters.get('media_type', 'all')
-            index = self.media_type_combo.findData(media_type)
-            if index != -1:
-                self.media_type_combo.setCurrentIndex(index)
             
             # 其他过滤选项
             self.exclude_forwards_check.setChecked(filters.get('exclude_forwards', False))
@@ -632,21 +783,13 @@ class ListenView(QWidget):
             self.exclude_media_check.setChecked(filters.get('exclude_media', False))
             self.exclude_links_check.setChecked(filters.get('exclude_links', False))
             
-            # 时间过滤
-            time_filter = filters.get('time_filter', {})
-            if time_filter:
-                self.time_filter_check.setChecked(time_filter.get('enabled', False))
-                
-                if time_filter.get('start_time'):
-                    start_time = QDateTime.fromString(time_filter['start_time'], Qt.ISODate)
-                    self.start_time.setDateTime(start_time)
-                
-                if time_filter.get('end_time'):
-                    end_time = QDateTime.fromString(time_filter['end_time'], Qt.ISODate)
-                    self.end_time.setDateTime(end_time)
-        
         # 加载通知选项
-        notifications = config.get('LISTEN', {}).get('notifications', {})
+        # 同样，注意结构变化
+        notifications = {}
+        
+        if 'LISTEN' in config and 'notifications' in config['LISTEN']:
+            notifications = config['LISTEN'].get('notifications', {})
+        
         if notifications:
             self.desktop_notify_check.setChecked(notifications.get('desktop_notify', True))
             self.sound_notify_check.setChecked(notifications.get('sound_notify', False))
