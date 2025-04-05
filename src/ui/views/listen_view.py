@@ -130,15 +130,14 @@ class ListenView(QWidget):
         
         # 创建复选框 - 移除媒体说明
         self.remove_captions_check = QCheckBox("移除媒体说明")
-        form_layout.addRow("", self.remove_captions_check)
         
         # 文本替换规则
         self.original_text_input = QLineEdit()
-        self.original_text_input.setPlaceholderText("要替换的原始文本")
+        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用逗号分隔如：A,B")
         form_layout.addRow("文本替换:", self.original_text_input)
         
         self.target_text_input = QLineEdit()
-        self.target_text_input.setPlaceholderText("替换后的目标文本")
+        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用逗号分隔如：C,D")
         form_layout.addRow("替换为:", self.target_text_input)
         
         # 将表单直接添加到配置布局
@@ -157,6 +156,9 @@ class ListenView(QWidget):
         self.remove_channel_pair_button = QPushButton("删除所选")
         self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
         channel_action_layout.addWidget(self.remove_channel_pair_button)
+        
+        # 添加移除媒体说明复选框
+        channel_action_layout.addWidget(self.remove_captions_check)
         
         # 添加弹性空间，让按钮靠左对齐
         channel_action_layout.addStretch(1)
@@ -376,6 +378,30 @@ class ListenView(QWidget):
             logger.debug("连接ListenView的config_saved信号到父窗口")
             self.config_saved.connect(parent.config_saved)
     
+    def _format_text_filter_display(self, text_filter):
+        """格式化文本替换规则的显示
+        
+        Args:
+            text_filter: 文本替换规则列表
+            
+        Returns:
+            str: 格式化后的文本替换规则字符串
+        """
+        if not text_filter:
+            return ""
+            
+        replacements = []
+        for rule in text_filter:
+            original = rule.get("original_text", "")
+            target = rule.get("target_text", "")
+            if original or target:  # 只显示非空的规则
+                replacements.append(f"{original}->{target}")
+        
+        if replacements:
+            return f" - 替换规则：{', '.join(replacements)}"
+        else:
+            return ""
+    
     def _add_channel_pair(self):
         """添加频道对到监听列表"""
         source_channel = self.source_channel_input.text().strip()
@@ -396,24 +422,61 @@ class ListenView(QWidget):
                 QMessageBox.information(self, "提示", "已存在相同源频道的监听配置")
                 return
         
-        # 文本替换规则
+        # 文本替换规则处理
         text_filter = []
-        original_text = self.original_text_input.text().strip()
-        target_text = self.target_text_input.text().strip()
+        original_texts = [text.strip() for text in self.original_text_input.text().split(',')]
+        target_texts = [text.strip() for text in self.target_text_input.text().split(',')]
         
-        # 即使用户没有输入文本替换内容，也添加一个空的text_filter项
-        if original_text and target_text:
-            text_filter.append({
-                "original_text": original_text,
-                "target_text": target_text
-            })
-        else:
-            # 添加空的文本替换规则
+        # 检查原始文本是否全部为空
+        if any(target_texts) and not any(original_texts):
+            QMessageBox.warning(
+                self, 
+                "原始文本错误", 
+                "原始文本不能为空。请为每个替换规则指定一个原始文本。"
+            )
+            return
+            
+        # 如果原始文本和替换文本都为空，添加一个默认空项
+        if not any(original_texts) and not any(target_texts):
             text_filter.append({
                 "original_text": "",
                 "target_text": ""
             })
             logger.debug("用户未输入文本替换内容，添加空的text_filter项")
+        else:
+            # 检查原始文本和替换文本数量是否匹配
+            if len(original_texts) != len(target_texts) and len(original_texts) > 0 and len(target_texts) > 0:
+                # 显示警告对话框
+                QMessageBox.warning(
+                    self, 
+                    "文本替换规则错误", 
+                    f"原始文本和替换文本数量不匹配。原始文本有{len(original_texts)}项，替换文本有{len(target_texts)}项。每个原始文本应对应一个替换文本。"
+                )
+                return
+                
+            # 检查是否有空的原始文本项
+            empty_indexes = [i+1 for i, text in enumerate(original_texts) if not text and i < len(target_texts) and target_texts[i]]
+            if empty_indexes:
+                positions = ", ".join(map(str, empty_indexes))
+                QMessageBox.warning(
+                    self, 
+                    "原始文本错误", 
+                    f"原始文本不能为空。第 {positions} 个替换规则的原始文本为空，请修正。"
+                )
+                return
+            
+            # 创建文本替换规则项
+            for i, orig in enumerate(original_texts):
+                # 如果原始文本为空且对应的替换文本不为空，跳过（这种情况已在上面处理过）
+                if not orig and i < len(target_texts) and target_texts[i]:
+                    continue
+                    
+                # 如果替换文本列表较短，则对应位置使用空字符串
+                target = target_texts[i] if i < len(target_texts) else ""
+                text_filter.append({
+                    "original_text": orig,
+                    "target_text": target
+                })
         
         # 存储完整数据
         pair_data = {
@@ -425,20 +488,7 @@ class ListenView(QWidget):
         
         # 添加到列表，采用与下载界面类似的样式
         target_channels_str = ", ".join(target_channels)
-        text_filter_str = ""
-        if text_filter:
-            # 将替换规则的显示方式从条数改为详细内容
-            replacements = []
-            for rule in text_filter:
-                original = rule.get("original_text", "")
-                target = rule.get("target_text", "")
-                if original or target:  # 只显示非空的规则
-                    replacements.append(f"{original}->{target}")
-            
-            if replacements:
-                text_filter_str = f" - 替换规则：{', '.join(replacements)}"
-            else:
-                text_filter_str = ""
+        text_filter_str = self._format_text_filter_display(text_filter)
         
         display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
         if self.remove_captions_check.isChecked():
@@ -762,20 +812,7 @@ class ListenView(QWidget):
             
             # 添加到列表，采用与下载界面类似的样式
             target_channels_str = ", ".join(target_channels)
-            text_filter_str = ""
-            if text_filter:
-                # 将替换规则的显示方式从条数改为详细内容
-                replacements = []
-                for rule in text_filter:
-                    original = rule.get("original_text", "")
-                    target = rule.get("target_text", "")
-                    if original or target:  # 只显示非空的规则
-                        replacements.append(f"{original}->{target}")
-                
-                if replacements:
-                    text_filter_str = f" - 替换规则：{', '.join(replacements)}"
-                else:
-                    text_filter_str = ""
+            text_filter_str = self._format_text_filter_display(text_filter)
             
             display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
             if remove_captions:
