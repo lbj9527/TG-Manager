@@ -44,6 +44,7 @@ class UIGeneralConfig(BaseModel):
     proxy_port: int = Field(1080, description="代理服务器端口", ge=1, le=65535)
     proxy_username: Optional[str] = Field(None, description="代理用户名(可选)")
     proxy_password: Optional[str] = Field(None, description="代理密码(可选)")
+    auto_restart_session: bool = Field(True, description="连接断开后自动重连")
 
     @validator('api_id')
     def validate_api_id(cls, v):
@@ -443,7 +444,8 @@ def create_default_config() -> UIConfig:
             proxy_enabled=False,
             proxy_type=ProxyType.SOCKS5,
             proxy_addr="127.0.0.1",
-            proxy_port=1080  # 确保即使禁用代理，端口值也有效
+            proxy_port=1080,  # 确保即使禁用代理，端口值也有效
+            auto_restart_session=True  # 默认启用自动重连
         ),
         DOWNLOAD=UIDownloadConfig(
             downloadSetting=[

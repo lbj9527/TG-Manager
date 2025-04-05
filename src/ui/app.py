@@ -97,6 +97,7 @@ class TGManagerApp(QObject):
                     'api_id': 12345678,  # 占位符
                     'api_hash': '0123456789abcdef0123456789abcdef',  # 占位符
                     'proxy_enabled': False,
+                    'auto_restart_session': True,  # 默认启用自动重连
                 },
                 'DOWNLOAD': {},
                 'UPLOAD': {},

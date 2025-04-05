@@ -116,16 +116,6 @@ class SettingsView(QWidget):
         self.phone_number = QLineEdit()
         telegram_layout.addRow("手机号码:", self.phone_number)
         
-        self.use_bot = QCheckBox("使用Bot Token")
-        telegram_layout.addRow("", self.use_bot)
-        
-        self.bot_token = QLineEdit()
-        self.bot_token.setEnabled(False)
-        telegram_layout.addRow("Bot Token:", self.bot_token)
-        
-        # 连接复选框状态和Bot Token输入框
-        self.use_bot.toggled.connect(self.bot_token.setEnabled)
-        
         telegram_group.setLayout(telegram_layout)
         api_layout.addWidget(telegram_group)
         
@@ -429,8 +419,6 @@ class SettingsView(QWidget):
         self.api_id.setText("")
         self.api_hash.setText("")
         self.phone_number.setText("")
-        self.use_bot.setChecked(False)
-        self.bot_token.setText("")
         self.session_name.setText("tg_manager_session")
         self.auto_restart_session.setChecked(True)
         
@@ -481,6 +469,8 @@ class SettingsView(QWidget):
                 # API设置移动到GENERAL部分
                 'api_id': int(self.api_id.text()) if self.api_id.text().strip().isdigit() else 0,
                 'api_hash': self.api_hash.text(),
+                # 会话设置
+                'auto_restart_session': self.auto_restart_session.isChecked(),
                 # 代理设置移动到GENERAL部分
                 'proxy_enabled': self.use_proxy.isChecked(),
                 'proxy_type': proxy_type_value,  # 使用枚举值
@@ -518,6 +508,8 @@ class SettingsView(QWidget):
             # API设置从GENERAL加载
             self.api_id.setText(str(general_config.get('api_id', '')))
             self.api_hash.setText(general_config.get('api_hash', ''))
+            # 会话设置从GENERAL加载
+            self.auto_restart_session.setChecked(general_config.get('auto_restart_session', True))
             # 代理设置从GENERAL加载
             self.use_proxy.setChecked(general_config.get('proxy_enabled', False))
             self.proxy_type.setCurrentText(general_config.get('proxy_type', 'SOCKS5'))
@@ -546,8 +538,6 @@ class SettingsView(QWidget):
             self.api_id.setText(str(api_config.get('api_id', '')))
             self.api_hash.setText(api_config.get('api_hash', ''))
             self.phone_number.setText(api_config.get('phone_number', ''))
-            self.use_bot.setChecked(api_config.get('use_bot', False))
-            self.bot_token.setText(api_config.get('bot_token', ''))
             self.session_name.setText(api_config.get('session_name', 'tg_manager_session'))
             self.auto_restart_session.setChecked(api_config.get('auto_restart_session', True))
             
