@@ -139,9 +139,10 @@ class TaskOverview(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        #1px solid #E0E0E0
         self.scroll_area.setStyleSheet("""
             QScrollArea {
-                border: 1px solid #E0E0E0;
+                border: none;
                 border-radius: 4px;
                 background-color: #F5F5F5;
             }
@@ -166,6 +167,7 @@ class TaskOverview(QWidget):
             QPushButton {
                 background-color: #2196F3;
                 color: white;
+                border: none;
                 border-radius: 3px;
                 padding: 4px;
                 font-weight: bold;
@@ -255,7 +257,7 @@ class TaskOverview(QWidget):
         progress_bar.setTextVisible(True)
         progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 1px solid #E0E0E0;
+                border: none;
                 border-radius: 3px;
                 text-align: center;
                 background-color: #F5F5F5;
