@@ -34,6 +34,7 @@ class UIGeneralConfig(BaseModel):
     """通用配置模型"""
     api_id: int = Field(..., description="Telegram API ID")
     api_hash: str = Field(..., description="Telegram API Hash")
+    phone_number: Optional[str] = Field(None, description="Telegram账号手机号码")
     limit: int = Field(50, description="每次批量获取消息的数量", ge=1, le=1000)
     pause_time: int = Field(60, description="API限制后的暂停时间(秒)", ge=1)
     timeout: int = Field(30, description="网络请求超时时间(秒)", ge=5, le=300)
@@ -463,6 +464,7 @@ def create_default_config() -> UIConfig:
         GENERAL=UIGeneralConfig(
             api_id=12345678,  # 占位符 API ID，用户需要替换为自己的真实值
             api_hash="0123456789abcdef0123456789abcdef",  # 占位符 API Hash，用户需要替换为自己的真实值
+            phone_number=None,
             limit=50,
             pause_time=60,
             timeout=30,
@@ -471,6 +473,8 @@ def create_default_config() -> UIConfig:
             proxy_type=ProxyType.SOCKS5,
             proxy_addr="127.0.0.1",
             proxy_port=1080,  # 确保即使禁用代理，端口值也有效
+            proxy_username=None,
+            proxy_password=None,
             auto_restart_session=True  # 默认启用自动重连
         ),
         DOWNLOAD=UIDownloadConfig(

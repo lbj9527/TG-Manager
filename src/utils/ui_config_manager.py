@@ -111,6 +111,10 @@ class UIConfigManager:
             if "api_hash" not in general_config or not re.match(r'^[a-f0-9]{32}$', str(general_config.get("api_hash", "")).lower()):
                 general_config["api_hash"] = "0123456789abcdef0123456789abcdef"  # 使用占位符
                 logger.warning("配置文件中的api_hash无效，已替换为占位符")
+                
+            # 确保phone_number字段存在
+            if "phone_number" not in general_config:
+                general_config["phone_number"] = None
             
             # 修复代理类型
             if "proxy_type" in general_config:

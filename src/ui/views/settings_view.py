@@ -207,15 +207,15 @@ class SettingsView(QWidget):
         theme_layout = QFormLayout()
         
         # 主题选择部分
-        self.theme = QComboBox()
+        self.theme_selector = QComboBox()
         # 从主题管理器获取可用主题列表
-        self.theme.addItems(self.theme_manager.get_available_themes())
-        self.theme.setCurrentText(self.theme_manager.get_current_theme_name())
-        self.theme.setToolTip("选择应用程序主题，更改后立即生效")
+        self.theme_selector.addItems(self.theme_manager.get_available_themes())
+        self.theme_selector.setCurrentText(self.theme_manager.get_current_theme_name())
+        self.theme_selector.setToolTip("选择应用程序主题，更改后立即生效")
         # 连接主题变更信号
-        self.theme.currentTextChanged.connect(self._on_theme_changed)
+        self.theme_selector.currentTextChanged.connect(self._on_theme_changed)
         
-        theme_layout.addRow("应用主题:", self.theme)
+        theme_layout.addRow("应用主题:", self.theme_selector)
         
         theme_group.setLayout(theme_layout)
         ui_layout.addWidget(theme_group)
@@ -292,7 +292,7 @@ class SettingsView(QWidget):
         
         # 下拉列表
         for widget in self.findChildren(QComboBox):
-            if widget != self.theme:  # 主题下拉框已有特殊处理
+            if widget != self.theme_selector:  # 主题下拉框已有特殊处理
                 widget.currentTextChanged.connect(self._on_setting_changed)
         
         # 数字输入框
@@ -431,7 +431,7 @@ class SettingsView(QWidget):
         self.proxy_password.setText("")
         
         # 重置界面设置
-        self.theme.setCurrentText("深色主题")
+        self.theme_selector.setCurrentText("深色主题")
         self.confirm_exit.setChecked(True)
         self.minimize_to_tray.setChecked(True)
         self.start_minimized.setChecked(False)
@@ -442,109 +442,106 @@ class SettingsView(QWidget):
         self._on_setting_changed()
     
     def _collect_settings(self):
-        """收集设置
+        """收集设置，构建配置字典
         
         Returns:
-            dict: 设置字典
+            dict: 配置字典
         """
-        # 将代理类型文本转换为ProxyType枚举
-        proxy_type_text = self.proxy_type.currentText()
-        # 由于只支持SOCKS5，直接使用SOCKS5类型
-        proxy_type_value = ProxyType.SOCKS5
+        settings = {}
         
-        settings = {
-            'GENERAL': {
-                # API设置移动到GENERAL部分
-                'api_id': int(self.api_id.text()) if self.api_id.text().strip().isdigit() else 0,
-                'api_hash': self.api_hash.text(),
-                # 会话设置
-                'auto_restart_session': self.auto_restart_session.isChecked(),
-                # 代理设置移动到GENERAL部分
-                'proxy_enabled': self.use_proxy.isChecked(),
-                'proxy_type': proxy_type_value,  # 使用枚举值
-                'proxy_addr': self.proxy_host.text() if self.use_proxy.isChecked() else '127.0.0.1',  # 即使代理禁用，也使用默认值
-                'proxy_port': self.proxy_port.value() if self.use_proxy.isChecked() else 1080,  # 即使代理禁用，也设为1080而不是0
-                'proxy_username': self.proxy_username.text() if self.use_proxy.isChecked() else '',
-                'proxy_password': self.proxy_password.text() if self.use_proxy.isChecked() else ''
-            },
-            'UI': {
-                'theme': self.theme.currentText(),
-                'confirm_exit': self.confirm_exit.isChecked(),
-                'minimize_to_tray': self.minimize_to_tray.isChecked(),
-                'start_minimized': self.start_minimized.isChecked(),
-                'enable_notifications': self.enable_notifications.isChecked(),
-                'notification_sound': self.notification_sound.isChecked()
-            }
+        # 收集API设置
+        settings["GENERAL"] = {
+            "api_id": int(self.api_id.text()) if self.api_id.text().strip() else 0,
+            "api_hash": self.api_hash.text().strip(),
+            "phone_number": self.phone_number.text().strip(),
+            "auto_restart_session": self.auto_restart_session.isChecked()
         }
         
-        return settings
+        # 收集代理设置
+        settings["GENERAL"].update({
+            "proxy_enabled": self.use_proxy.isChecked(),
+            "proxy_type": self.proxy_type.currentText(),
+            "proxy_addr": self.proxy_host.text().strip(),
+            "proxy_port": self.proxy_port.value(),
+            "proxy_username": self.proxy_username.text().strip() or None,
+            "proxy_password": self.proxy_password.text().strip() or None
+        })
+        
+        # 收集UI设置
+        settings["UI"] = {
+            "theme": self.theme_selector.currentText(),
+            "confirm_exit": self.confirm_exit.isChecked(),
+            "minimize_to_tray": self.minimize_to_tray.isChecked(),
+            "start_minimized": self.start_minimized.isChecked(),
+            "enable_notifications": self.enable_notifications.isChecked(),
+            "notification_sound": self.notification_sound.isChecked()
+        }
+        
+        # 合并现有配置
+        merged_settings = self.config.copy() if self.config else {}
+        
+        # 更新设置
+        for section in settings:
+            if section not in merged_settings:
+                merged_settings[section] = {}
+            merged_settings[section].update(settings[section])
+        
+        return merged_settings
     
     def load_config(self, config):
-        """从配置字典加载设置
+        """从配置加载设置
         
         Args:
             config: 配置字典
         """
         if not config:
             return
-            
-        logger.debug("加载设置配置")
         
-        # 通用设置 - 从顶层GENERAL节点加载
-        if 'GENERAL' in config:
-            general_config = config.get('GENERAL', {})
-            # API设置从GENERAL加载
-            self.api_id.setText(str(general_config.get('api_id', '')))
-            self.api_hash.setText(general_config.get('api_hash', ''))
-            # 会话设置从GENERAL加载
-            self.auto_restart_session.setChecked(general_config.get('auto_restart_session', True))
-            # 代理设置从GENERAL加载
-            self.use_proxy.setChecked(general_config.get('proxy_enabled', False))
-            self.proxy_type.setCurrentText(general_config.get('proxy_type', 'SOCKS5'))
+        # 加载API设置
+        if "GENERAL" in config:
+            general = config["GENERAL"]
+            if "api_id" in general:
+                self.api_id.setText(str(general["api_id"]))
+            if "api_hash" in general:
+                self.api_hash.setText(general["api_hash"])
+            if "phone_number" in general and general["phone_number"]:
+                self.phone_number.setText(general["phone_number"])
+            if "auto_restart_session" in general:
+                self.auto_restart_session.setChecked(general["auto_restart_session"])
             
-            # 确保启用代理时有有效的代理地址
-            proxy_addr = general_config.get('proxy_addr', '')
-            if self.use_proxy.isChecked() and not proxy_addr:
-                proxy_addr = '127.0.0.1'
-                logger.warning("启用代理但地址为空，使用默认地址127.0.0.1")
-            self.proxy_host.setText(proxy_addr)
-            
-            # 确保有有效的代理端口
-            proxy_port = general_config.get('proxy_port', 1080)
-            if proxy_port < 1 or proxy_port > 65535:
-                proxy_port = 1080
-                logger.warning(f"无效的代理端口: {general_config.get('proxy_port')}，使用默认端口1080")
-            self.proxy_port.setValue(proxy_port)
-            
-            self.proxy_username.setText(general_config.get('proxy_username', ''))
-            self.proxy_password.setText(general_config.get('proxy_password', ''))
+            # 加载代理设置
+            if "proxy_enabled" in general:
+                self.use_proxy.setChecked(general["proxy_enabled"])
+            if "proxy_type" in general and general["proxy_type"] in ["SOCKS5"]:
+                index = self.proxy_type.findText(general["proxy_type"])
+                if index >= 0:
+                    self.proxy_type.setCurrentIndex(index)
+            if "proxy_addr" in general:
+                self.proxy_host.setText(general["proxy_addr"])
+            if "proxy_port" in general:
+                self.proxy_port.setValue(general["proxy_port"])
+            if "proxy_username" in general and general["proxy_username"]:
+                self.proxy_username.setText(general["proxy_username"])
+            if "proxy_password" in general and general["proxy_password"]:
+                self.proxy_password.setText(general["proxy_password"])
         
-        # 为了向后兼容，尝试从旧的API和PROXY部分加载数据
-        # API 设置 - 尝试从顶层API节点加载（如果GENERAL中没有相关设置）
-        if 'API' in config and (not 'api_id' in config.get('GENERAL', {}) or not config['GENERAL']['api_id']):
-            api_config = config.get('API', {})
-            self.api_id.setText(str(api_config.get('api_id', '')))
-            self.api_hash.setText(api_config.get('api_hash', ''))
-            self.phone_number.setText(api_config.get('phone_number', ''))
-            self.session_name.setText(api_config.get('session_name', 'tg_manager_session'))
-            self.auto_restart_session.setChecked(api_config.get('auto_restart_session', True))
-            
-        # 代理设置 - 尝试从顶层PROXY节点加载（如果GENERAL中没有相关设置）
-        if 'PROXY' in config and (not 'proxy_enabled' in config.get('GENERAL', {}) or not config['GENERAL']['proxy_enabled']):
-            proxy_config = config.get('PROXY', {})
-            self.use_proxy.setChecked(proxy_config.get('use_proxy', False))
-            self.proxy_type.setCurrentText(proxy_config.get('proxy_type', 'SOCKS5'))
-            self.proxy_host.setText(proxy_config.get('proxy_host', ''))
-            self.proxy_port.setValue(proxy_config.get('proxy_port', 1080))
-            self.proxy_username.setText(proxy_config.get('proxy_username', ''))
-            self.proxy_password.setText(proxy_config.get('proxy_password', ''))
-            
-        # UI设置 - 从UI节点加载
-        if 'UI' in config:
-            ui_config = config.get('UI', {})
-            self.theme.setCurrentText(ui_config.get('theme', '深色主题'))
-            self.confirm_exit.setChecked(ui_config.get('confirm_exit', True))
-            self.minimize_to_tray.setChecked(ui_config.get('minimize_to_tray', True))
-            self.start_minimized.setChecked(ui_config.get('start_minimized', False))
-            self.enable_notifications.setChecked(ui_config.get('enable_notifications', True))
-            self.notification_sound.setChecked(ui_config.get('notification_sound', True)) 
+        # 加载UI设置
+        if "UI" in config:
+            ui = config["UI"]
+            if "theme" in ui:
+                index = self.theme_selector.findText(ui["theme"])
+                if index >= 0:
+                    self.theme_selector.setCurrentIndex(index)
+                    # 应用临时主题
+                    self.temp_theme = ui["theme"]
+                    self._on_theme_changed(ui["theme"])
+            if "confirm_exit" in ui:
+                self.confirm_exit.setChecked(ui["confirm_exit"])
+            if "minimize_to_tray" in ui:
+                self.minimize_to_tray.setChecked(ui["minimize_to_tray"])
+            if "start_minimized" in ui:
+                self.start_minimized.setChecked(ui["start_minimized"])
+            if "enable_notifications" in ui:
+                self.enable_notifications.setChecked(ui["enable_notifications"])
+            if "notification_sound" in ui:
+                self.notification_sound.setChecked(ui["notification_sound"]) 

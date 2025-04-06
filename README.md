@@ -47,6 +47,7 @@ TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为
   "GENERAL": {
     "api_id": 123456, // Telegram API ID
     "api_hash": "your_api_hash_here", // Telegram API Hash
+    "phone_number": "+123456789", // Telegram账号手机号码
     "limit": 50, // 每次请求的消息限制数
     "pause_time": 60, // 操作间隔时间(秒)
     "timeout": 30, // 请求超时时间(秒)

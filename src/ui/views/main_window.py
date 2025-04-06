@@ -858,31 +858,36 @@ class MainWindow(QMainWindow):
             
             # 创建布局
             main_layout = QVBoxLayout(login_dialog)
+            
+            # 添加说明标签
+            info_label = QLabel("以下是您在设置中配置的Telegram API凭据和手机号码信息。点击'确定'开始登录。")
+            info_label.setWordWrap(True)
+            main_layout.addWidget(info_label)
+            
+            # 创建表单布局
             form_layout = QFormLayout()
             
-            # 创建表单字段
-            api_id_input = QLineEdit()
-            api_hash_input = QLineEdit()
-            phone_input = QLineEdit()
+            # 创建只读信息展示字段
+            api_id_label = QLabel()
+            api_hash_label = QLabel()
+            phone_label = QLabel()
             
-            # 从配置中加载API ID和Hash（如果存在）
-            if 'GENERAL' in self.config and 'api_id' in self.config['GENERAL']:
-                api_id_input.setText(str(self.config['GENERAL']['api_id']))
-            if 'GENERAL' in self.config and 'api_hash' in self.config['GENERAL']:
-                api_hash_input.setText(self.config['GENERAL']['api_hash'])
+            # 从配置中加载API ID、Hash和手机号码（如果存在）
+            if 'GENERAL' in self.config:
+                if 'api_id' in self.config['GENERAL']:
+                    api_id_label.setText(str(self.config['GENERAL']['api_id']))
+                if 'api_hash' in self.config['GENERAL']:
+                    # 只显示API Hash的一部分，保护隐私
+                    api_hash = self.config['GENERAL']['api_hash']
+                    masked_hash = api_hash[:6] + "..." + api_hash[-6:] if len(api_hash) > 12 else api_hash
+                    api_hash_label.setText(masked_hash)
+                if 'phone_number' in self.config['GENERAL'] and self.config['GENERAL']['phone_number']:
+                    phone_label.setText(self.config['GENERAL']['phone_number'])
             
             # 添加表单字段
-            form_layout.addRow("API ID:", api_id_input)
-            form_layout.addRow("API Hash:", api_hash_input)
-            form_layout.addRow("手机号码:", phone_input)
-            
-            # 添加"记住凭据"选项
-            remember_checkbox = QCheckBox("记住凭据")
-            remember_checkbox.setChecked(True)
-            
-            # 提示信息
-            info_label = QLabel("请输入您的Telegram API凭据和手机号码。如需获取API凭据，请访问 https://my.telegram.org")
-            info_label.setWordWrap(True)
+            form_layout.addRow("API ID:", api_id_label)
+            form_layout.addRow("API Hash:", api_hash_label)
+            form_layout.addRow("手机号码:", phone_label)
             
             # 创建按钮
             button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -890,9 +895,7 @@ class MainWindow(QMainWindow):
             button_box.rejected.connect(login_dialog.reject)
             
             # 组装布局
-            main_layout.addWidget(info_label)
             main_layout.addLayout(form_layout)
-            main_layout.addWidget(remember_checkbox)
             main_layout.addWidget(button_box)
             
             # 显示对话框
@@ -900,42 +903,36 @@ class MainWindow(QMainWindow):
             
             # 如果用户点击了"确定"
             if result == QDialog.Accepted:
-                api_id = api_id_input.text().strip()
-                api_hash = api_hash_input.text().strip()
-                phone = phone_input.text().strip()
-                
-                # 验证输入
-                if not api_id or not api_hash or not phone:
+                # 检查配置中是否存在所需信息
+                if 'GENERAL' not in self.config or 'api_id' not in self.config['GENERAL'] or \
+                   'api_hash' not in self.config['GENERAL'] or 'phone_number' not in self.config['GENERAL'] or \
+                   not self.config['GENERAL']['api_id'] or not self.config['GENERAL']['api_hash'] or \
+                   not self.config['GENERAL']['phone_number']:
                     QMessageBox.warning(
                         self,
-                        "输入错误",
-                        "请填写所有必填字段。",
+                        "配置不完整",
+                        "请在设置中完成API凭据和手机号码的配置。",
                         QMessageBox.Ok
                     )
+                    # 打开设置界面
+                    self._open_settings()
                     return
                 
-                # 如果选择了记住凭据，保存到配置中
-                if remember_checkbox.isChecked():
-                    if 'GENERAL' not in self.config:
-                        self.config['GENERAL'] = {}
-                    
-                    self.config['GENERAL']['api_id'] = int(api_id)
-                    self.config['GENERAL']['api_hash'] = api_hash
-                    self.config['GENERAL']['phone_number'] = phone
-                    
-                    # 发出配置更新信号
-                    self.config_saved.emit(self.config)
+                phone = self.config['GENERAL']['phone_number']
                 
                 # 显示登录成功消息
                 QMessageBox.information(
                     self,
-                    "登录成功",
-                    f"登录信息已保存。手机号: {phone}",
+                    "登录开始",
+                    f"正在使用以下手机号登录: {phone}",
                     QMessageBox.Ok
                 )
                 
                 # 更新状态栏
-                self.statusBar().showMessage(f"已登录: {phone}")
+                self.statusBar().showMessage(f"登录中: {phone}")
+                
+                # 这里可以添加实际的登录逻辑
+                # ...
                 
         except Exception as e:
             logger.error(f"登录处理时出错: {e}")
