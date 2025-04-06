@@ -1,0 +1,146 @@
+{
+  "GENERAL": {
+    "api_id": 25448404,
+    "api_hash": "0c910748a61fc30bb14e073a31933fb6",
+    "limit": 50,
+    "pause_time": 60,
+    "timeout": 30,
+    "max_retries": 3,
+    "proxy_enabled": true,
+    "proxy_type": "SOCKS5",
+    "proxy_addr": "127.0.0.1",
+    "proxy_port": 7890,
+    "proxy_username": "",
+    "proxy_password": "",
+    "auto_restart_session": true
+  },
+  "DOWNLOAD": {
+    "downloadSetting": [
+      {
+        "source_channels": "https://t.me/csdkl1/115",
+        "start_id": 107906,
+        "end_id": 107935,
+        "media_types": [
+          "photo",
+          "video",
+          "document"
+        ],
+        "keywords": [
+          "女神"
+        ]
+      },
+      {
+        "source_channels": "https://t.me/xxzq6/3597",
+        "start_id": 3487,
+        "end_id": 3493,
+        "media_types": [
+          "photo",
+          "video",
+          "document",
+          "audio",
+          "animation"
+        ],
+        "keywords": [
+          "少女"
+        ]
+      }
+    ],
+    "download_path": "downloads",
+    "parallel_download": false,
+    "max_concurrent_downloads": 6
+  },
+  "UPLOAD": {
+    "target_channels": [
+      "@xgyvcu",
+      "+JvLn20QQesE4M2Ux"
+    ],
+    "directory": "E:/pythonProject/TG-Manager/uploads",
+    "caption_template": "{filename}",
+    "delay_between_uploads": 0.3,
+    "options": {
+      "auto_thumbnail": true,
+      "read_title_txt": false,
+      "use_custom_template": false,
+      "use_folder_name": true
+    }
+  },
+  "FORWARD": {
+    "forward_channel_pairs": [
+      {
+        "source_channel": "https://t.me/xxzq6/3591",
+        "target_channels": [
+          "@xgyvcu",
+          "+JvLn20QQesE4M2Ux",
+          "@gsbsbt",
+          "@cuyfcopu"
+        ]
+      }
+    ],
+    "remove_captions": true,
+    "hide_author": true,
+    "media_types": [
+      "photo",
+      "video",
+      "document",
+      "audio",
+      "animation"
+    ],
+    "forward_delay": 0.7,
+    "start_id": 3591,
+    "end_id": 0,
+    "tmp_path": "tmp"
+  },
+  "MONITOR": {
+    "monitor_channel_pairs": [
+      {
+        "source_channel": "@so1234boss",
+        "target_channels": [
+          "@gsbsbt",
+          "+GsKs6Y_IbpxiYzQx"
+        ],
+        "remove_captions": false,
+        "text_filter": [
+          {
+            "original_text": "美女",
+            "target_text": "女神"
+          }
+        ]
+      },
+      {
+        "source_channel": "@XBKFC",
+        "target_channels": [
+          "+JvLn20QQesE4M2Ux"
+        ],
+        "remove_captions": true,
+        "text_filter": [
+          {
+            "original_text": "奶子",
+            "target_text": "巨乳"
+          }
+        ]
+      }
+    ],
+    "media_types": [
+      "photo",
+      "video",
+      "document",
+      "audio",
+      "animation",
+      "sticker",
+      "voice",
+      "video_note"
+    ],
+    "duration": "2026-04-03",
+    "forward_delay": 1.0
+  },
+  "UI": {
+    "theme": "深色主题",
+    "confirm_exit": false,
+    "minimize_to_tray": false,
+    "start_minimized": false,
+    "enable_notifications": true,
+    "notification_sound": true,
+    "window_geometry": "AdnQywADAAAAAAGPAAAAlQAABfAAAAOZAAABjwAAALQAAAXwAAADmQAAAAAAAAAAB4AAAAGPAAAAtAAABfAAAAOZ",
+    "window_state": "AAAA/wAAAAD9AAAAAQAAAAAAAADQAAACrfwCAAAAAfsAAAAYAHMAaQBkAGUAYgBhAHIAXwBkAG8AYwBrAQAAACAAAAKtAAABCgD///8AAAM9AAACrQAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAEAAAABAAAAGABtAGEAaQBuAF8AdABvAG8AbABiAGEAcgMAAAAA/////wAAAAAAAAAA"
+  }
+}
