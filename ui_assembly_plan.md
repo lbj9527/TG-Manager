@@ -125,7 +125,31 @@ download_path = download_config.get('download_path', 'downloads')
 
 ## 二、集成 Qt 事件循环和 asyncio
 
-### 2.1 修改 UI 应用程序入口
+### 2.1 QtAsyncio 概述与架构
+
+QtAsyncio 是 PySide6 提供的一个模块，它允许异步编程与 Qt 应用程序无缝集成。通过 QtAsyncio，我们可以在 Qt 应用中使用 Python 的 asyncio 库，而无需复杂的事件循环集成工作。这使得可以构建响应式 UI 的同时，高效处理耗时操作，避免阻塞主线程。
+
+#### 集成架构
+
+![Qt 和 asyncio 集成架构](https://mermaid.ink/img/pako:eNp1kMFqwzAMhl_F-JQW0r2BwWC0a29jlw6XVNiJA8bxsB0YtO9eZ0kGg55k-f8_fZL3oFqPoBGWceKr0_CK3qWJNPzB6O32zcT2NR5PDcLFOPb5q_J5CHUFI7wzJUwJUb65ggCbX5ewf-9cSlwl_nMnFbC4SoXHvjTvFAB6C1ZOzZfQSM15Lj-GYYqWH1MaHWtMF2pBJ2Zf_CrwmhVHpXkHGrWQlZPSzx-yN7nXuvDZoVcGNORe4W9vH5Ufbvti0bOxTmG5qWFoxUeT9Xk-2HgLTVOr4v8BYAdnmA?type=png)
+
+系统的主要组件:
+
+1. **Qt 事件循环** - 负责 UI 界面更新和用户交互
+2. **asyncio 事件循环** - 处理异步任务
+3. **QtAsyncio 桥接层** - 协调两个事件循环
+4. **异步任务管理器** - 管理应用程序内的异步任务
+5. **自定义事件系统** - 从异步线程安全地更新 UI
+
+#### 集成优势
+
+- 避免 UI 阻塞，保持界面响应
+- 高效处理网络和 I/O 操作
+- 简化复杂任务的代码结构
+- 支持任务取消和超时
+- 保持 Qt 信号槽机制的完整性
+
+### 2.2 修改 UI 应用程序入口
 
 修改`run_ui.py`，使其使用 QtAsyncio:
 
@@ -207,7 +231,7 @@ if __name__ == "__main__":
     main()
 ```
 
-### 2.2 修改 TGManagerApp 类
+### 2.3 修改 TGManagerApp 类
 
 修改应用程序类，支持异步初始化和运行:
 
@@ -242,7 +266,364 @@ class TGManagerApp(QObject):
             raise
 ```
 
-### 2.3 修改 task_manager.py 以支持 QtAsyncio
+### 2.4 实现支持 QtAsyncio 的任务管理系统
+
+#### 2.4.1 自定义事件类
+
+首先实现自定义事件类，用于在异步环境中安全地更新 UI：
+
+```python
+# 自定义事件类
+class TaskCompletedEvent(QEvent):
+    """任务完成事件"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, task_id, result):
+        super().__init__(self.EVENT_TYPE)
+        self.task_id = task_id
+        self.result = result
+
+
+class TaskErrorEvent(QEvent):
+    """任务错误事件"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, task_id, error_message):
+        super().__init__(self.EVENT_TYPE)
+        self.task_id = task_id
+        self.error_message = error_message
+
+
+class GetVerificationCodeEvent(QEvent):
+    """获取验证码事件"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, future):
+        super().__init__(self.EVENT_TYPE)
+        self.future = future
+
+
+class ShowMessageEvent(QEvent):
+    """显示消息事件"""
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, title, message, icon=None):
+        super().__init__(self.EVENT_TYPE)
+        self.title = title
+        self.message = message
+        self.icon = icon or QMessageBox.Information
+```
+
+#### 2.4.2 任务封装类
+
+为了更好地管理任务生命周期，实现任务封装类：
+
+```python
+class Task:
+    """任务类，封装单个异步任务"""
+
+    def __init__(self, task_id, coro_func, *args, **kwargs):
+        self.task_id = task_id
+        self.coro_func = coro_func
+        self.args = args
+        self.kwargs = kwargs
+        self.creation_time = datetime.datetime.now()
+        self.start_time = None
+        self.end_time = None
+        self.status = "created"  # created, running, paused, completed, failed, cancelled
+
+    async def run(self, task_manager=None):
+        """运行任务"""
+        self.start_time = datetime.datetime.now()
+        self.status = "running"
+
+        try:
+            # 将任务管理器作为第一个参数传入
+            if task_manager:
+                result = await self.coro_func(task_manager, *self.args, **self.kwargs)
+            else:
+                result = await self.coro_func(*self.args, **self.kwargs)
+
+            self.status = "completed"
+            return result
+        except asyncio.CancelledError:
+            self.status = "cancelled"
+            raise
+        except Exception as e:
+            self.status = "failed"
+            raise
+        finally:
+            self.end_time = datetime.datetime.now()
+```
+
+#### 2.4.3 完整的任务管理器实现
+
+```python
+class TaskManager(QObject):
+    """任务管理器，负责创建和管理异步任务"""
+
+    # 定义信号
+    task_started = Signal(str)               # 任务开始信号
+    task_progress = Signal(str, int, int)    # 任务进度信号 (任务ID, 当前值, 总值)
+    task_completed = Signal(str, object)     # 任务完成信号 (任务ID, 结果)
+    task_error = Signal(str, str)            # 任务错误信号 (任务ID, 错误信息)
+    task_cancelled = Signal(str)             # 任务取消信号
+    task_paused = Signal(str)                # 任务暂停信号
+    task_resumed = Signal(str)               # 任务恢复信号
+
+    def __init__(self):
+        """初始化任务管理器"""
+        super().__init__()
+        self.tasks = {}                      # 存储所有任务对象
+        self.running_tasks = {}              # 存储运行中的task对象
+        self.paused_tasks = set()            # 存储暂停的任务ID
+        self.task_priorities = {}            # 存储任务优先级
+        self.task_cancel_callbacks = {}      # 存储任务取消回调
+        self.shutdown_event = asyncio.Event()# 用于关闭任务管理器
+
+    def create_task(self, task_id, coro, *args, priority=0, **kwargs):
+        """创建异步任务"""
+        if task_id in self.tasks:
+            raise ValueError(f"任务ID {task_id} 已存在")
+
+        # 创建Task
+        task = Task(task_id, coro, *args, **kwargs)
+        self.tasks[task_id] = task
+        self.task_priorities[task_id] = priority
+        return task
+
+    def start_task(self, task_id):
+        """启动任务"""
+        if task_id not in self.tasks:
+            raise ValueError(f"任务ID {task_id} 不存在")
+
+        if task_id in self.running_tasks:
+            logger.warning(f"任务 {task_id} 已在运行中")
+            return self.running_tasks[task_id]
+
+        task = self.tasks[task_id]
+
+        # 创建取消回调
+        cancel_callback = lambda: self.task_cancelled.emit(task_id)
+        self.task_cancel_callbacks[task_id] = cancel_callback
+
+        # 使用QtAsyncio创建任务
+        async_task = asyncio.create_task(self._run_task(task))
+        self.running_tasks[task_id] = async_task
+
+        # 发出任务开始信号
+        self.task_started.emit(task_id)
+        return async_task
+
+    def cancel_task(self, task_id):
+        """取消任务"""
+        if task_id not in self.running_tasks:
+            logger.warning(f"任务 {task_id} 未运行，无法取消")
+            return False
+
+        async_task = self.running_tasks[task_id]
+        async_task.cancel()
+        return True
+
+    def pause_task(self, task_id):
+        """暂停任务"""
+        if task_id not in self.running_tasks:
+            logger.warning(f"任务 {task_id} 未运行，无法暂停")
+            return False
+
+        if task_id in self.paused_tasks:
+            logger.warning(f"任务 {task_id} 已处于暂停状态")
+            return False
+
+        self.paused_tasks.add(task_id)
+        self.task_paused.emit(task_id)
+        return True
+
+    def resume_task(self, task_id):
+        """恢复任务"""
+        if task_id not in self.paused_tasks:
+            logger.warning(f"任务 {task_id} 未暂停，无法恢复")
+            return False
+
+        self.paused_tasks.remove(task_id)
+        self.task_resumed.emit(task_id)
+        return True
+
+    def is_task_paused(self, task_id):
+        """检查任务是否暂停"""
+        return task_id in self.paused_tasks
+
+    async def wait_if_paused(self, task_id):
+        """如果任务暂停则等待恢复"""
+        while self.is_task_paused(task_id) and not self.shutdown_event.is_set():
+            await asyncio.sleep(0.1)
+
+        # 如果管理器关闭，则抛出取消异常
+        if self.shutdown_event.is_set():
+            raise asyncio.CancelledError("任务管理器正在关闭")
+
+    async def _run_task(self, task):
+        """运行任务并处理结果"""
+        task_id = task.task_id
+        try:
+            # 运行任务
+            result = await task.run(self)
+
+            # 清理任务状态
+            if task_id in self.running_tasks:
+                del self.running_tasks[task_id]
+            if task_id in self.paused_tasks:
+                self.paused_tasks.remove(task_id)
+
+            # 使用Qt事件机制发送完成消息
+            QApplication.instance().postEvent(
+                self, TaskCompletedEvent(task_id, result))
+            return result
+        except asyncio.CancelledError:
+            logger.info(f"任务 {task_id} 已取消")
+            # 调用取消回调
+            if task_id in self.task_cancel_callbacks:
+                callback = self.task_cancel_callbacks[task_id]
+                callback()
+            raise
+        except Exception as e:
+            logger.error(f"任务 {task_id} 执行失败: {e}")
+            # 使用Qt事件机制发送错误消息
+            QApplication.instance().postEvent(
+                self, TaskErrorEvent(task_id, str(e)))
+            raise
+        finally:
+            # 清理资源
+            if task_id in self.running_tasks:
+                del self.running_tasks[task_id]
+            if task_id in self.task_cancel_callbacks:
+                del self.task_cancel_callbacks[task_id]
+
+    def report_progress(self, task_id, current, total):
+        """报告任务进度"""
+        self.task_progress.emit(task_id, current, total)
+
+    async def shutdown(self):
+        """关闭任务管理器，取消所有任务"""
+        logger.info("正在关闭任务管理器...")
+        self.shutdown_event.set()
+
+        # 取消所有运行中的任务
+        for task_id, task in list(self.running_tasks.items()):
+            logger.info(f"取消任务: {task_id}")
+            task.cancel()
+
+        # 等待所有任务完成
+        if self.running_tasks:
+            done, pending = await asyncio.wait(
+                list(self.running_tasks.values()),
+                timeout=5.0
+            )
+
+            if pending:
+                logger.warning(f"有 {len(pending)} 个任务未能在超时时间内完成")
+
+        logger.info("任务管理器已关闭")
+
+    def customEvent(self, event):
+        """处理自定义事件"""
+        if event.type() == TaskCompletedEvent.EVENT_TYPE:
+            self.task_completed.emit(event.task_id, event.result)
+        elif event.type() == TaskErrorEvent.EVENT_TYPE:
+            self.task_error.emit(event.task_id, event.error_message)
+```
+
+#### 2.4.4 在 TGManagerApp 中集成任务管理器
+
+```python
+class TGManagerApp(QObject):
+    """TG-Manager 应用程序主类"""
+
+    def __init__(self, config_path=None, verbose=False):
+        super().__init__()
+        self.verbose = verbose
+        self.config_path = config_path
+
+        # 创建任务管理器实例
+        self.task_manager = None
+
+        # 创建UI配置管理器
+        self.ui_config_manager = None
+
+    def initialize_ui(self):
+        """初始化UI界面"""
+        # 创建主窗口
+        self.main_window = MainWindow(self.ui_config_manager)
+
+        # 连接主窗口关闭信号以进行清理
+        self.main_window.closing.connect(self._handle_app_closing)
+
+        # 显示主窗口
+        self.main_window.show()
+
+    async def async_run(self):
+        """异步运行应用程序"""
+        try:
+            # 加载配置
+            self._load_config()
+
+            # 初始化所需的异步组件
+            await self._initialize_async_components()
+
+            # 最后一步：为防止程序立即退出，等待应用程序的退出信号
+            return QApplication.instance().exec_()
+        except Exception as e:
+            logger.error(f"应用程序运行出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 1
+
+    async def _initialize_async_components(self):
+        """初始化异步组件"""
+        try:
+            logger.info("初始化异步组件...")
+
+            # 创建任务管理器
+            self.task_manager = TaskManager()
+
+            # 将任务管理器连接到主窗口
+            self._connect_task_manager_signals()
+
+            # 初始化客户端管理器
+            # self.client_manager = await self._initialize_client_manager()
+
+            logger.info("异步组件初始化完成")
+        except Exception as e:
+            logger.error(f"异步组件初始化失败: {e}")
+            raise
+
+    def _connect_task_manager_signals(self):
+        """连接任务管理器信号"""
+        if not self.task_manager or not self.main_window:
+            return
+
+        # 将任务管理器信号连接到主窗口方法
+        self.task_manager.task_started.connect(self.main_window.on_task_started)
+        self.task_manager.task_progress.connect(self.main_window.on_task_progress)
+        self.task_manager.task_completed.connect(self.main_window.on_task_completed)
+        self.task_manager.task_error.connect(self.main_window.on_task_error)
+        self.task_manager.task_cancelled.connect(self.main_window.on_task_cancelled)
+        self.task_manager.task_paused.connect(self.main_window.on_task_paused)
+        self.task_manager.task_resumed.connect(self.main_window.on_task_resumed)
+
+    async def _handle_app_closing(self):
+        """处理应用程序关闭事件"""
+        logger.info("应用程序正在关闭...")
+
+        # 关闭任务管理器
+        if self.task_manager:
+            await self.task_manager.shutdown()
+
+        # 关闭其他异步资源
+        # ...
+```
+
+### 2.5 修改 task_manager.py 以支持 QtAsyncio
 
 ```python
 class TaskManager:
@@ -292,7 +673,7 @@ class TaskManager:
             raise
 ```
 
-### 2.4 更新登录处理逻辑
+### 2.6 更新登录处理逻辑
 
 在 MainWindow 中更新\_handle_login 方法：
 
@@ -353,18 +734,7 @@ def _handle_login(self):
         # 如果用户点击了"确定"
         if result == QDialog.Accepted:
             # 检查配置中是否存在所需信息
-            if 'GENERAL' not in self.config or 'api_id' not in self.config['GENERAL'] or \
-               'api_hash' not in self.config['GENERAL'] or 'phone_number' not in self.config['GENERAL'] or \
-               not self.config['GENERAL']['api_id'] or not self.config['GENERAL']['api_hash'] or \
-               not self.config['GENERAL']['phone_number']:
-                QMessageBox.warning(
-                    self,
-                    "配置不完整",
-                    "请在设置中完成API凭据和手机号码的配置。",
-                    QMessageBox.Ok
-                )
-                # 打开设置界面
-                self._open_settings()
+            if not self._validate_login_credentials():
                 return
 
             phone = self.config['GENERAL']['phone_number']
@@ -392,23 +762,56 @@ def _handle_login(self):
             QMessageBox.Ok
         )
 
+def _validate_login_credentials(self):
+    """验证登录凭据是否完整"""
+    if ('GENERAL' not in self.config or
+            'api_id' not in self.config['GENERAL'] or
+            'api_hash' not in self.config['GENERAL'] or
+            'phone_number' not in self.config['GENERAL'] or
+            not self.config['GENERAL']['api_id'] or
+            not self.config['GENERAL']['api_hash'] or
+            not self.config['GENERAL']['phone_number']):
+
+        QMessageBox.warning(
+            self,
+            "配置不完整",
+            "请在设置中完成API凭据和手机号码的配置。",
+            QMessageBox.Ok
+        )
+        # 打开设置界面
+        self._open_settings()
+        return False
+
+    return True
+
 async def _async_login(self):
-    """异步登录过程"""
+    """异步登录过程，包括验证码处理和两步验证"""
     try:
         # 获取配置信息
         api_id = self.config['GENERAL']['api_id']
         api_hash = self.config['GENERAL']['api_hash']
         phone = self.config['GENERAL']['phone_number']
 
+        # 更新状态栏
+        self.statusBar().showMessage("正在初始化客户端...")
+
         # 创建客户端管理器
         client_manager = ClientManager(
             api_id=api_id,
             api_hash=api_hash,
-            phone_number=phone
+            phone_number=phone,
+            proxy_settings=self._get_proxy_settings()
         )
 
         # 发送验证码
-        sent_code = await client_manager.send_code()
+        try:
+            self.statusBar().showMessage("正在发送验证码...")
+            sent_code = await client_manager.send_code()
+            self.statusBar().showMessage("验证码已发送，请输入")
+        except Exception as e:
+            logger.error(f"发送验证码失败: {e}")
+            self._show_login_error("发送验证码失败", str(e))
+            return
 
         # 显示验证码输入对话框
         code = await self._get_verification_code_async()
@@ -499,6 +902,389 @@ def _show_verification_code_dialog(self, future):
         future.set_result(self.code_input.text().strip())
     else:
         future.set_result(None)
+```
+
+### 2.7 完整异步任务示例：异步媒体下载
+
+以下是一个完整的异步媒体下载示例，展示了如何将下载任务集成到 QtAsyncio 环境中：
+
+```python
+class DownloadView(QWidget):
+    """下载视图"""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.downloader = None
+        self.current_task_id = None
+        self.downloads_in_progress = {}
+
+        self._setup_ui()
+        self._connect_signals()
+
+    def _setup_ui(self):
+        """设置UI界面"""
+        # ... UI组件的创建和布局代码 ...
+
+        # 添加开始下载按钮
+        self.start_button = QPushButton("开始下载")
+        self.start_button.clicked.connect(self.start_download)
+
+        # 添加任务进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+        # 添加状态标签
+        self.status_label = QLabel("就绪")
+
+        # 添加任务列表
+        self.task_list = QTableWidget()
+        self.task_list.setColumnCount(4)
+        self.task_list.setHorizontalHeaderLabels(["任务ID", "状态", "进度", "操作"])
+
+    def _connect_signals(self):
+        """连接信号和槽"""
+        # 连接任务管理器信号
+        if self.app.task_manager:
+            self.app.task_manager.task_progress.connect(self._on_task_progress)
+            self.app.task_manager.task_completed.connect(self._on_task_completed)
+            self.app.task_manager.task_error.connect(self._on_task_error)
+
+    def start_download(self):
+        """启动下载任务"""
+        try:
+            # 禁用开始按钮，防止重复点击
+            self.start_button.setEnabled(False)
+            self.status_label.setText("正在准备下载...")
+
+            # 收集下载参数
+            download_params = self._collect_download_params()
+
+            # 验证参数
+            if not self._validate_download_params(download_params):
+                self.start_button.setEnabled(True)
+                return
+
+            # 创建下载任务ID
+            task_id = f"download_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.current_task_id = task_id
+
+            # 在任务列表中添加新任务
+            self._add_task_to_list(task_id, "准备中", 0)
+
+            # 使用任务管理器创建和启动任务
+            self.app.task_manager.create_task(
+                task_id,
+                self._async_download,
+                download_params,
+                priority=1
+            )
+
+            self.app.task_manager.start_task(task_id)
+
+            # 更新状态
+            self.status_label.setText(f"下载任务 {task_id} 已启动")
+
+        except Exception as e:
+            logger.error(f"启动下载任务失败: {e}")
+            QMessageBox.critical(
+                self,
+                "下载错误",
+                f"启动下载任务失败: {str(e)}",
+                QMessageBox.Ok
+            )
+            self.start_button.setEnabled(True)
+
+    async def _async_download(self, task_manager, download_params):
+        """异步下载任务"""
+        task_id = task_manager.current_task.task_id
+
+        try:
+            # 初始化下载器（如果尚未初始化）
+            if not self.downloader:
+                self._initialize_downloader()
+
+            # 更新状态
+            self._update_task_status(task_id, "下载中")
+
+            # 获取要下载的消息总数
+            message_count = await self._get_message_count(download_params)
+
+            # 如果没有消息，则提前结束
+            if message_count == 0:
+                self._update_task_status(task_id, "完成 (无消息)")
+                return {"status": "no_messages", "count": 0}
+
+            # 用于追踪下载进度
+            current_count = 0
+            downloaded_count = 0
+
+            # 开始下载
+            async for message in self._iter_messages(download_params):
+                # 检查任务是否暂停
+                await task_manager.wait_if_paused(task_id)
+
+                # 处理消息
+                if await self._process_message(message, download_params):
+                    downloaded_count += 1
+
+                # 更新进度
+                current_count += 1
+                progress = int((current_count / message_count) * 100)
+                task_manager.report_progress(task_id, current_count, message_count)
+
+                # 每20个消息添加一个小延迟，避免API限制
+                if current_count % 20 == 0:
+                    await asyncio.sleep(0.5)
+
+            # 下载完成
+            result = {
+                "status": "completed",
+                "messages_processed": current_count,
+                "downloaded_count": downloaded_count
+            }
+
+            self._update_task_status(task_id, f"完成 ({downloaded_count}/{current_count})")
+            return result
+
+        except asyncio.CancelledError:
+            logger.info(f"下载任务 {task_id} 已取消")
+            self._update_task_status(task_id, "已取消")
+            raise
+
+        except Exception as e:
+            logger.error(f"下载任务 {task_id} 失败: {e}")
+            self._update_task_status(task_id, f"失败: {str(e)}")
+            raise
+
+    async def _get_message_count(self, params):
+        """获取要下载的消息总数"""
+        # ... 实现获取消息总数的代码 ...
+        return 100  # 示例固定值
+
+    async def _iter_messages(self, params):
+        """迭代获取消息的生成器函数"""
+        # ... 实现消息迭代的代码 ...
+        for i in range(100):  # 示例固定迭代次数
+            # 模拟消息对象
+            message = {"id": i, "text": f"测试消息 {i}", "media": i % 3 == 0}
+            yield message
+            # 小延迟避免API限制
+            await asyncio.sleep(0.1)
+
+    async def _process_message(self, message, params):
+        """处理单个消息，下载符合条件的媒体"""
+        # ... 实现消息处理和媒体下载的代码 ...
+        # 模拟下载过程
+        if message.get("media"):
+            await asyncio.sleep(0.5)  # 模拟下载时间
+            return True
+        return False
+
+    def _initialize_downloader(self):
+        """初始化下载器"""
+        if not self.app.client_manager:
+            raise ValueError("客户端管理器未初始化")
+
+        # 创建下载器实例
+        self.downloader = Downloader(
+            self.app.client_manager.client,
+            self.app.ui_config_manager
+        )
+
+        # 连接下载器信号
+        self.downloader.on("download_started", self._on_download_started)
+        self.downloader.on("download_progress", self._on_download_progress)
+        self.downloader.on("download_complete", self._on_download_complete)
+        self.downloader.on("download_error", self._on_download_error)
+
+    def _collect_download_params(self):
+        """收集下载参数"""
+        # 从UI控件中收集参数
+        params = {
+            "source_channels": [self.channel_input.text()],
+            "media_types": [],
+            "download_path": self.path_input.text() or "downloads",
+            "parallel_download": self.parallel_checkbox.isChecked(),
+            "start_id": self.start_id_input.value(),
+            "end_id": self.end_id_input.value()
+        }
+
+        # 收集选中的媒体类型
+        if self.photo_checkbox.isChecked():
+            params["media_types"].append("photo")
+        if self.video_checkbox.isChecked():
+            params["media_types"].append("video")
+        if self.document_checkbox.isChecked():
+            params["media_types"].append("document")
+        # ... 其他媒体类型 ...
+
+        return params
+
+    def _validate_download_params(self, params):
+        """验证下载参数"""
+        if not params["source_channels"] or not params["source_channels"][0]:
+            QMessageBox.warning(self, "参数错误", "请输入源频道")
+            return False
+
+        if not params["media_types"]:
+            QMessageBox.warning(self, "参数错误", "请至少选择一种媒体类型")
+            return False
+
+        return True
+
+    def _add_task_to_list(self, task_id, status, progress):
+        """添加任务到列表"""
+        row = self.task_list.rowCount()
+        self.task_list.insertRow(row)
+
+        # 设置任务ID
+        id_item = QTableWidgetItem(task_id)
+        id_item.setFlags(id_item.flags() & ~Qt.ItemIsEditable)  # 设为只读
+        self.task_list.setItem(row, 0, id_item)
+
+        # 设置状态
+        self.task_list.setItem(row, 1, QTableWidgetItem(status))
+
+        # 设置进度
+        progress_item = QTableWidgetItem(f"{progress}%")
+        self.task_list.setItem(row, 2, progress_item)
+
+        # 添加操作按钮
+        actions_widget = QWidget()
+        actions_layout = QHBoxLayout(actions_widget)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+
+        # 添加暂停/继续按钮
+        pause_button = QPushButton("暂停")
+        pause_button.setProperty("task_id", task_id)
+        pause_button.clicked.connect(lambda: self._toggle_pause_task(task_id, pause_button))
+        actions_layout.addWidget(pause_button)
+
+        # 添加取消按钮
+        cancel_button = QPushButton("取消")
+        cancel_button.setProperty("task_id", task_id)
+        cancel_button.clicked.connect(lambda: self._cancel_task(task_id))
+        actions_layout.addWidget(cancel_button)
+
+        self.task_list.setCellWidget(row, 3, actions_widget)
+
+        # 保存按钮引用
+        self.downloads_in_progress[task_id] = {
+            "row": row,
+            "pause_button": pause_button,
+            "cancel_button": cancel_button
+        }
+
+    def _update_task_status(self, task_id, status):
+        """更新任务状态"""
+        if task_id in self.downloads_in_progress:
+            row = self.downloads_in_progress[task_id]["row"]
+            self.task_list.item(row, 1).setText(status)
+
+    def _update_task_progress(self, task_id, current, total):
+        """更新任务进度"""
+        if task_id in self.downloads_in_progress:
+            row = self.downloads_in_progress[task_id]["row"]
+            progress = int((current / total) * 100) if total > 0 else 0
+            self.task_list.item(row, 2).setText(f"{progress}%")
+
+            if task_id == self.current_task_id:
+                self.progress_bar.setValue(progress)
+
+    def _toggle_pause_task(self, task_id, button):
+        """切换任务暂停/继续状态"""
+        if not self.app.task_manager:
+            return
+
+        if button.text() == "暂停":
+            if self.app.task_manager.pause_task(task_id):
+                button.setText("继续")
+                self._update_task_status(task_id, "已暂停")
+        else:
+            if self.app.task_manager.resume_task(task_id):
+                button.setText("暂停")
+                self._update_task_status(task_id, "下载中")
+
+    def _cancel_task(self, task_id):
+        """取消任务"""
+        if not self.app.task_manager:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "取消确认",
+            f"确定要取消任务 {task_id} 吗？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            if self.app.task_manager.cancel_task(task_id):
+                self._update_task_status(task_id, "正在取消...")
+
+    # 信号处理函数
+    def _on_task_progress(self, task_id, current, total):
+        """任务进度更新处理"""
+        if task_id.startswith("download_"):
+            self._update_task_progress(task_id, current, total)
+
+    def _on_task_completed(self, task_id, result):
+        """任务完成处理"""
+        if task_id.startswith("download_"):
+            # 如果是当前活动任务，启用开始按钮
+            if task_id == self.current_task_id:
+                self.start_button.setEnabled(True)
+                self.current_task_id = None
+
+                # 更新状态标签
+                messages = result.get("messages_processed", 0)
+                downloaded = result.get("downloaded_count", 0)
+                self.status_label.setText(f"下载完成: {downloaded}/{messages} 个文件已下载")
+
+                # 显示完成消息
+                QMessageBox.information(
+                    self,
+                    "下载完成",
+                    f"任务 {task_id} 已完成。\n"
+                    f"处理了 {messages} 条消息，下载了 {downloaded} 个媒体文件。",
+                    QMessageBox.Ok
+                )
+
+    def _on_task_error(self, task_id, error_message):
+        """任务错误处理"""
+        if task_id.startswith("download_"):
+            # 如果是当前活动任务，启用开始按钮
+            if task_id == self.current_task_id:
+                self.start_button.setEnabled(True)
+                self.current_task_id = None
+                self.status_label.setText(f"错误: {error_message}")
+
+            # 显示错误消息
+            QMessageBox.critical(
+                self,
+                "下载错误",
+                f"任务 {task_id} 失败: {error_message}",
+                QMessageBox.Ok
+            )
+
+    # 下载器事件处理函数
+    def _on_download_started(self, msg_id):
+        """下载开始事件处理"""
+        logger.debug(f"开始下载消息: {msg_id}")
+
+    def _on_download_progress(self, msg_id, current, total):
+        """下载进度事件处理"""
+        logger.debug(f"下载进度: 消息 {msg_id}, {current}/{total}")
+
+    def _on_download_complete(self, msg_id, file_path):
+        """下载完成事件处理"""
+        logger.info(f"下载完成: 消息 {msg_id}, 保存至 {file_path}")
+
+    def _on_download_error(self, msg_id, error):
+        """下载错误事件处理"""
+        logger.error(f"下载错误: 消息 {msg_id}, 错误: {error}")
 ```
 
 ## 三、登录对话框优化
@@ -1885,7 +2671,3 @@ TG-Manager/
 ```
 
 以上结构确保项目完全面向 UI 界面，同时保留了所有核心功能模块。
-
-```
-
-```
