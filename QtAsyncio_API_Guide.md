@@ -2,13 +2,13 @@
 
 ## 简介
 
-QtAsyncio 是 PySide6 提供的一个模块，它允许异步编程与 Qt 应用程序无缝集成。利用 QtAsyncio，开发者可以在 Qt 应用中使用 Python 的 asyncio 库，而无需复杂的事件循环集成工作。这使得可以构建响应式UI的同时，高效处理耗时操作，避免阻塞主线程。
+QtAsyncio 是 PySide6 提供的一个模块，它允许异步编程与 Qt 应用程序无缝集成。利用 QtAsyncio，开发者可以在 Qt 应用中使用 Python 的 asyncio 库，而无需复杂的事件循环集成工作。这使得可以构建响应式 UI 的同时，高效处理耗时操作，避免阻塞主线程。
 
 QtAsyncio 解决了 asyncio 和 Qt 事件循环集成的问题，允许开发者以简单的方式在 Qt 应用中使用 Python 的协程。
 
 ## 安装要求
 
-- PySide6（6.5.0或更高版本）
+- PySide6（6.5.0 或更高版本）
 - Python 3.7+
 
 ## 核心功能
@@ -68,11 +68,12 @@ QtAsyncio.run(handle_sigint=True)
 
 ### 其他常用 asyncio API (可在 QtAsyncio 环境中使用)
 
-QtAsyncio 集成了 asyncio 的标准API，下面是一些常用功能：
+QtAsyncio 集成了 asyncio 的标准 API，下面是一些常用功能：
 
 #### `asyncio.create_task()`
 
 **语法：**
+
 ```python
 asyncio.create_task(coro)
 ```
@@ -83,16 +84,18 @@ asyncio.create_task(coro)
 #### `asyncio.ensure_future()`
 
 **语法：**
+
 ```python
 asyncio.ensure_future(obj)
 ```
 
 **描述：**
-确保对象是一个Future或Task。如果对象是协程，将其包装为一个Task。
+确保对象是一个 Future 或 Task。如果对象是协程，将其包装为一个 Task。
 
 #### `asyncio.sleep()`
 
 **语法：**
+
 ```python
 await asyncio.sleep(delay)
 ```
@@ -103,12 +106,13 @@ await asyncio.sleep(delay)
 #### `asyncio.gather()`
 
 **语法：**
+
 ```python
 await asyncio.gather(*coros_or_futures)
 ```
 
 **描述：**
-并发运行多个协程或Future对象。
+并发运行多个协程或 Future 对象。
 
 ## 与 Qt 信号和槽集成
 
@@ -132,13 +136,13 @@ async def update_ui():
 
 ## 使用示例
 
-### 基本示例：更新UI文本
+### 基本示例：更新 UI 文本
 
 以下示例展示了如何创建一个简单的应用程序，点击按钮后异步更新标签文本：
 
 ```python
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, QPushButton, 
+from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, QPushButton,
                                QVBoxLayout, QWidget)
 import PySide6.QtAsyncio as QtAsyncio
 import asyncio
@@ -179,10 +183,10 @@ if __name__ == "__main__":
 
 下面是一个更复杂的例子，使用埃拉托斯特尼筛法查找素数，展示多个协程并发：
 
-```python
+````python
 from PySide6.QtCore import (Qt, QObject, Signal, Slot)
 from PySide6.QtGui import (QColor, QFont, QPalette)
-from PySide6.QtWidgets import (QApplication, QGridLayout, QLabel, QMainWindow, 
+from PySide6.QtWidgets import (QApplication, QGridLayout, QLabel, QMainWindow,
                               QVBoxLayout, QWidget)
 import PySide6.QtAsyncio as QtAsyncio
 import asyncio
@@ -304,7 +308,87 @@ if __name__ == "__main__":
     main_window.show()
 
     QtAsyncio.run(eratosthenes.start(), handle_sigint=True)
-```
+
+### 埃拉托斯特尼筛法示例分析
+
+这个示例展示了如何在Qt应用程序中使用多个协程并发执行任务，非常适合理解QtAsyncio的强大功能。下面是对这个示例的详细分析：
+
+#### 程序架构
+
+该程序由两个主要组件组成：
+1. **MainWindow类** - 负责UI的呈现和响应
+2. **Eratosthenes类** - 实现算法逻辑和协程管理
+
+#### 多协程并发的实现方式
+
+程序使用了以下几种协程：
+
+1. **主协程** (`start`方法)
+   - 获取事件循环并启动UI更新协程
+   - 循环查找素数基数
+   - 为每个找到的素数基数启动新的标记协程
+   - 等待所有标记协程完成
+
+2. **UI更新协程** (`update_text`方法)
+   - 周期性更新UI文本
+   - 显示交替的文本动画效果
+   - 程序完成时显示结束消息
+
+3. **标记协程** (`mark_number`方法)
+   - 每个素数基数创建一个独立协程
+   - 使用不同颜色标记非素数
+   - 通过Qt信号与UI通信
+
+#### 协程间通信机制
+
+该示例展示了三种关键的协程间通信方式：
+
+1. **Qt信号-槽机制**
+   ```python
+   self.window.set_num.emit(i, color)  # 从协程发送UI更新
+````
+
+2. **共享状态**
+
+   - `self.sieve` - 记录哪些数字已被标记
+   - `self.coroutines` - 跟踪活动协程数量
+   - `self.done` - 标记算法完成
+
+3. **协程计数与等待**
+   ```python
+   while sum(self.coroutines) > 0:
+       await asyncio.sleep(self.tick)
+   ```
+
+#### 非阻塞 UI 更新
+
+所有协程定期使用`await asyncio.sleep(self.tick)`让出控制权，确保：
+
+- UI 保持响应性
+- 多个协程能公平共享 CPU 时间
+- 动画效果平滑流畅
+
+#### 多协程并发的优势
+
+相比传统多线程方法，这种基于协程的实现有以下优势：
+
+1. **简化的同步** - 不需要互斥锁、信号量等同步原语
+2. **自然的错误处理** - 异常在协程内正常传播
+3. **线性代码流程** - 避免回调地狱，代码更易于理解
+4. **高效** - 协程切换比线程切换开销小
+5. **固有的线程安全** - 通过信号机制保证 UI 更新的线程安全
+
+#### 应用场景
+
+这种多协程并发模式特别适合：
+
+- **I/O 密集型任务** - 网络请求、文件操作等
+- **需要频繁 UI 更新的长时间运算**
+- **多任务协作的场景**
+- **动画效果**
+- **后台处理与 UI 交互**
+
+在实际应用中，您可以使用类似模式来实现：文件下载管理器、数据同步工具、实时数据可视化、响应式 UI 等功能。
 
 ## 与 Trio 库的比较
 
@@ -327,8 +411,7 @@ QtAsyncio.run(coro, handle_sigint=True)
 
 ## 最佳实践
 
-1. **避免UI阻塞**：将耗时操作移至异步协程中。
-   
+1. **避免 UI 阻塞**：将耗时操作移至异步协程中。
 2. **合理使用 asyncio.create_task()**：当您不需要立即等待结果时，使用 create_task 创建后台任务。
 
 3. **异常处理**：在异步函数中使用 try/except 处理异常，防止未捕获的异常导致应用崩溃。
@@ -357,13 +440,13 @@ QtAsyncio.run(coro, handle_sigint=True)
 
 2. 与其他异步框架的集成（如 Trio）需要额外工作。
 
-3. 虽然 QtAsyncio 允许在 Qt 应用中使用异步编程，但仍然需要遵循 Qt 应用的最佳实践，例如在UI相关操作中遵循线程安全原则。
+3. 虽然 QtAsyncio 允许在 Qt 应用中使用异步编程，但仍然需要遵循 Qt 应用的最佳实践，例如在 UI 相关操作中遵循线程安全原则。
 
 ## 常见问题解决
 
-### 问题：Qt信号无法连接到异步函数
+### 问题：Qt 信号无法连接到异步函数
 
-**解决方案**：使用lambda函数包装异步调用：
+**解决方案**：使用 lambda 函数包装异步调用：
 
 ```python
 button.clicked.connect(lambda: asyncio.ensure_future(async_function()))
@@ -377,7 +460,7 @@ button.clicked.connect(lambda: asyncio.ensure_future(async_function()))
 # 错误 - 会阻塞UI
 async def long_operation():
     time.sleep(5)  # 同步阻塞
-    
+
 # 正确 - 不会阻塞UI
 async def long_operation():
     await asyncio.sleep(5)  # 异步非阻塞
@@ -399,4 +482,4 @@ QtAsyncio.run(handle_sigint=True)
 
 - [PySide6 官方文档](https://doc.qt.io/qtforpython-6/)
 - [Python asyncio 官方文档](https://docs.python.org/3/library/asyncio.html)
-- [Qt 异步编程指南](https://doc.qt.io/qt-6/qtquick-threading.html) 
+- [Qt 异步编程指南](https://doc.qt.io/qt-6/qtquick-threading.html)
