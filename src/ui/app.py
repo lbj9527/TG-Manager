@@ -398,16 +398,24 @@ class TGManagerApp(QObject):
         return None
     
     def run(self):
-        """运行应用程序
-        
-        Returns:
-            int: 应用程序退出代码
-        """
-        if self.verbose:
-            logger.debug("正在启动事件循环")
-        
-        # 启动应用程序事件循环
-        return self.app.exec()
+        """运行应用程序"""
+        try:
+            # 尝试使用 QtAsyncio 运行应用程序
+            try:
+                import PySide6.QtAsyncio as QtAsyncio
+                logger.info("使用 QtAsyncio 运行应用程序")
+                
+                # QtAsyncio.run() 会接管事件循环，无需调用 app.exec()
+                return QtAsyncio.run(handle_sigint=True)
+            except (ImportError, AttributeError) as e:
+                # 如果没有 QtAsyncio，使用传统方式运行
+                logger.info(f"QtAsyncio 不可用 ({e})，使用传统方式运行")
+                return self.app.exec()
+        except Exception as e:
+            logger.error(f"应用程序运行失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 1
         
     def cleanup(self):
         """清理资源"""
@@ -416,9 +424,52 @@ class TGManagerApp(QObject):
         # 发送应用程序关闭信号
         self.app_closing.emit()
         
-        # 关闭事件循环
-        if self.event_loop and self.event_loop.is_running():
-            self.event_loop.stop()
+        # 确保关闭所有异步任务和事件循环
+        try:
+            import asyncio
+            
+            # 避免"Event loop is already running"错误
+            # 只在没有正在运行的事件循环时尝试取消任务
+            try:
+                # 获取事件循环但不直接操作它
+                loop = asyncio.get_event_loop()
+                
+                # 检查事件循环是否在运行
+                if loop.is_running():
+                    logger.info("事件循环正在运行，跳过异步任务取消")
+                else:
+                    logger.info("正在关闭异步任务...")
+                    
+                    # 获取所有正在运行的任务
+                    tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                    
+                    if tasks:
+                        logger.info(f"取消 {len(tasks)} 个正在运行的异步任务")
+                        
+                        # 取消所有任务
+                        for task in tasks:
+                            task.cancel()
+                        
+                        # 设置超时，防止无限等待
+                        try:
+                            loop.run_until_complete(asyncio.wait(tasks, timeout=2.0))
+                            logger.info("所有异步任务已取消或完成")
+                        except Exception as e:
+                            logger.warning(f"取消任务时发生异常: {e}")
+            except RuntimeError as e:
+                logger.info(f"跳过异步任务取消: {e}")
+            except Exception as e:
+                logger.error(f"处理事件循环时出错: {e}")
+            
+            logger.info("异步资源清理完成")
+        except Exception as e:
+            logger.error(f"清理异步资源时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+        
+        # 强制退出应用程序
+        import sys
+        sys.exit(0)
 
     def _on_config_saved(self, updated_config=None):
         """处理配置保存信号"""
