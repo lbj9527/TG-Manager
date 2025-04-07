@@ -14,7 +14,6 @@ from PySide6.QtCore import QObject, Signal, QSettings
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from src.utils.logger import get_logger
-from src.utils.config_manager import ConfigManager
 from src.utils.theme_manager import get_theme_manager
 from src.utils.ui_config_manager import UIConfigManager
 from src.utils.ui_config_models import UIConfig
@@ -53,8 +52,7 @@ class TGManagerApp(QObject):
         self.theme_manager = get_theme_manager()
         self.theme_manager.initialize(self.app)
         
-        # 初始化配置管理器
-        self.config_manager = ConfigManager()
+        # 初始化配置
         self.config = {}
         
         # 初始化UI配置管理器
@@ -325,14 +323,14 @@ class TGManagerApp(QObject):
             if not save_theme and current_theme and save_success:
                 try:
                     # 尝试从文件重新读取配置并修改主题
-                    with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                    with open(self.ui_config_manager.config_path, 'r', encoding='utf-8') as f:
                         file_config = json.load(f)
                         if 'UI' in file_config:
                             file_config['UI']['theme'] = current_theme
                             logger.debug(f"恢复配置文件中的主题: {current_theme}")
                             
                             # 重新保存文件
-                            with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                            with open(self.ui_config_manager.config_path, 'w', encoding='utf-8') as f:
                                 json.dump(file_config, f, ensure_ascii=False, indent=2)
                 except PermissionError:
                     # 恢复主题时的权限错误同样向上传递
@@ -509,7 +507,7 @@ class TGManagerApp(QObject):
                     # 仅保存窗口布局相关的配置项，不修改其他配置
                     try:
                         # 从文件读取当前配置
-                        with open(self.config_manager.config_path, 'r', encoding='utf-8') as f:
+                        with open(self.ui_config_manager.config_path, 'r', encoding='utf-8') as f:
                             file_config = json.load(f)
                         
                         # 确保UI部分存在
@@ -521,7 +519,7 @@ class TGManagerApp(QObject):
                         file_config['UI']['window_state'] = self.config['UI']['window_state']
                         
                         # 保存回文件
-                        with open(self.config_manager.config_path, 'w', encoding='utf-8') as f:
+                        with open(self.ui_config_manager.config_path, 'w', encoding='utf-8') as f:
                             json.dump(file_config, f, ensure_ascii=False, indent=2)
                         
                         logger.debug("窗口布局状态已单独保存")
