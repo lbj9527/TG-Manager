@@ -15,8 +15,9 @@ from src.utils.ui_config_models import (
     UIDownloadSettingItem, UITextFilterItem, MediaType, ProxyType,
     create_default_config
 )
-from src.utils.config_manager import ConfigManager
+
 from src.utils.logger import get_logger
+from src.utils.config_utils import convert_ui_config_to_dict, get_proxy_settings_from_config
 
 logger = get_logger()
 
@@ -589,47 +590,6 @@ class UIConfigManager:
             
             return False
     
-    def create_config_manager(self) -> ConfigManager:
-        """
-        创建原始ConfigManager实例
-        
-        将UI配置转换为原始配置并创建ConfigManager实例
-        
-        Returns:
-            ConfigManager: 配置管理器实例
-        """
-        # 保存UI配置
-        self.save_config()
-        
-        # 创建ConfigManager实例
-        return ConfigManager(self.config_path)
-    
-    def update_from_config_manager(self, config_manager: ConfigManager) -> bool:
-        """
-        从ConfigManager更新UI配置
-        
-        Args:
-            config_manager: ConfigManager实例
-        
-        Returns:
-            bool: 更新是否成功
-        """
-        try:
-            # 从ConfigManager获取配置并转换为UI配置
-            config_data = {
-                "GENERAL": config_manager.get_general_config().dict(),
-                "DOWNLOAD": config_manager.get_download_config().dict(),
-                "UPLOAD": config_manager.get_upload_config().dict(),
-                "FORWARD": config_manager.get_forward_config().dict(),
-                "MONITOR": config_manager.get_monitor_config().dict()
-            }
-            
-            self.ui_config = self._convert_to_ui_config(config_data)
-            return True
-        
-        except Exception as e:
-            logger.error(f"从ConfigManager更新配置失败：{e}")
-            return False
     
     def validate_config(self) -> List[str]:
         """
@@ -684,16 +644,3 @@ class UIConfigManager:
             errors.append(f"验证配置时发生错误：{e}")
         
         return errors
-
-
-def create_ui_config_manager(config_path: str = "config.json") -> UIConfigManager:
-    """
-    创建UI配置管理器实例
-    
-    Args:
-        config_path: 配置文件路径
-    
-    Returns:
-        UIConfigManager: UI配置管理器实例
-    """
-    return UIConfigManager(config_path) 

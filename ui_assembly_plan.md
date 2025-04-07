@@ -13,220 +13,122 @@
 - `config_manager.py`: 命令行程序使用，基于原始的配置模型
 - `ui_config_manager.py`: 界面程序使用，基于 UI 优化的配置模型
 
-### 1.2 迁移步骤
+### 1.2 配置统一思路
 
-#### 步骤 1: 确保`ui_config_manager.py`包含所有必要功能
+配置系统统一的目标是使所有模块统一使用 `UIConfigManager` 进行配置管理，不再使用 `ConfigManager`。这将简化配置架构，提高代码可维护性，并确保 UI 界面与核心功能模块之间的配置一致性。
 
-检查并确保`UIConfigManager`类提供与`ConfigManager`相同的关键方法：
+配置统一后的架构如下：
 
-- `get_general_config()`
-- `get_download_config()`
-- `get_upload_config()`
-- `get_forward_config()`
-- `get_monitor_config()`
-- `get_proxy_settings()`
+```
+UIConfigManager (统一配置管理器)
+   │
+   ├── 提供所有配置相关方法和属性
+   │     - get_ui_config()
+   │
+   ├── 配置转换工具 (config_utils.py)
+   │     - convert_ui_config_to_dict()：将 UI 配置对象转换为字典
+   │     - get_proxy_settings_from_config()：提取代理设置
+   │
+   └── 所有功能模块：downloader.py, uploader.py, forwarder.py, monitor.py, client_manager.py
+```
 
-如果缺少，添加相应方法：
+### 1.3 已完成的配置统一工作
+
+#### 配置工具模块 (config_utils.py)
+
+我们已经创建了 `config_utils.py` 模块，提供 UI 配置和字典之间的转换工具。该模块包含以下关键功能：
+
+- `convert_ui_config_to_dict(ui_config)`: 将 UI 配置对象转换为字典格式
+- `get_proxy_settings_from_config(config)`: 从配置字典中提取代理设置
+
+这些工具函数使各模块能够以统一的方式处理配置数据。
+
+#### UIConfigManager 配置访问模式更新
+
+在最初的配置统一计划中，我们曾考虑为 `UIConfigManager` 添加与 `ConfigManager` 兼容的方法。但经过实践，我们发现更直接、更清晰的方式是统一使用以下模式访问配置：
 
 ```python
-# 为UIConfigManager添加兼容方法
-def get_general_config(self) -> UIGeneralConfig:
-    """获取通用配置"""
-    return self.ui_config.GENERAL
+# 从UIConfigManager获取UI配置并转换为字典
+ui_config = ui_config_manager.get_ui_config()
+config = convert_ui_config_to_dict(ui_config)
 
-def get_download_config(self) -> UIDownloadConfig:
-    """获取下载配置"""
-    return self.ui_config.DOWNLOAD
+# 获取特定部分的配置
+download_config = config.get('DOWNLOAD', {})
+general_config = config.get('GENERAL', {})
 
-def get_upload_config(self) -> UIUploadConfig:
-    """获取上传配置"""
-    return self.ui_config.UPLOAD
-
-def get_forward_config(self) -> UIForwardConfig:
-    """获取转发配置"""
-    return self.ui_config.FORWARD
-
-def get_monitor_config(self) -> UIMonitorConfig:
-    """获取监听配置"""
-    return self.ui_config.MONITOR
-
-def get_proxy_settings(self) -> Dict[str, Any]:
-    """获取代理设置"""
-    general_config = self.get_general_config()
-    proxy_settings = {}
-
-    if general_config.proxy_enabled:
-        proxy_type = general_config.proxy_type.lower()
-        proxy_settings[f"{proxy_type}_hostname"] = general_config.proxy_addr
-        proxy_settings[f"{proxy_type}_port"] = general_config.proxy_port
-
-        if general_config.proxy_username:
-            proxy_settings[f"{proxy_type}_username"] = general_config.proxy_username
-        if general_config.proxy_password:
-            proxy_settings[f"{proxy_type}_password"] = general_config.proxy_password
-
-    return proxy_settings
+# 使用字典方式访问配置项
+download_path = download_config.get('download_path', 'downloads')
 ```
 
-#### 步骤 2: 修改 ClientManager 以接受 UIConfigManager
+#### 模块迁移情况
 
-修改`ClientManager`初始化方法，使其同时支持`ConfigManager`和`UIConfigManager`：
+- **已完成**:
 
-```python
-def __init__(self, config_manager=None, session_name="tg_forwarder",
-             api_id=None, api_hash=None, phone_number=None, **proxy_settings):
-    """
-    初始化客户端管理器，支持两种初始化方式：
-    1. 使用ConfigManager或UIConfigManager
-    2. 直接提供API参数
+  - **下载模块 (downloader.py)**: 已完成从 `ConfigManager` 到 `UIConfigManager` 的迁移
+  - **客户端管理器 (client_manager.py)**: 已完成迁移，支持 UIConfigManager 和配置工具
 
-    Args:
-        config_manager: 配置管理器实例，可选
-        session_name: 会话名称，默认为'tg_forwarder'
-        api_id: API ID，当不使用config_manager时必须提供
-        api_hash: API Hash，当不使用config_manager时必须提供
-        phone_number: 电话号码，可选
-        **proxy_settings: 代理设置
-    """
-    self.session_name = session_name
-    self.client = None
-    self.phone_number = phone_number
+- **待完成**:
+  - **上传模块 (uploader.py)**: 需要重新修改，之前的修改存在问题
+  - **转发模块 (forwarder.py)**: 需要重新修改，之前的修改存在问题
+  - **监听模块 (monitor.py)**: 需要重新修改，之前的修改存在问题
 
-    # 使用配置管理器初始化
-    if config_manager:
-        self.config_manager = config_manager
-        general_config = self.config_manager.get_general_config()
-        self.api_id = general_config.api_id
-        self.api_hash = general_config.api_hash
-        # 获取手机号码(如果存在于配置中)
-        if hasattr(general_config, 'phone_number'):
-            self.phone_number = general_config.phone_number
-        self.proxy_settings = self.config_manager.get_proxy_settings()
-        logger.info("使用配置管理器初始化ClientManager")
-    # 直接使用传入的参数初始化
-    else:
-        self.config_manager = None
-        self.api_id = api_id
-        self.api_hash = api_hash
-        self.proxy_settings = proxy_settings
-        logger.info("使用直接参数初始化ClientManager")
+### 1.4 下载模块迁移详情
 
-    if not self.api_id or not self.api_hash:
-        raise ValueError("API ID和API Hash不能为空")
-```
+下载模块成功地完成了从 `ConfigManager` 到 `UIConfigManager` 的迁移。主要修改包括：
 
-#### 步骤 3: 为 ClientManager 添加验证码和两步验证处理方法
+1. 修改导入语句：
 
-```python
-async def send_code(self, phone_number=None):
-    """
-    发送验证码
+   ```python
+   # 旧的导入
+   from src.utils.config_manager import ConfigManager
 
-    Args:
-        phone_number: 手机号码，如果为None则使用配置中的手机号码
+   # 新的导入
+   from src.utils.ui_config_manager import UIConfigManager
+   from src.utils.config_utils import convert_ui_config_to_dict
+   ```
 
-    Returns:
-        Dict: 包含sent_code_info信息的字典
-    """
-    if not self.client:
-        self.client = self.create_client()
+2. 修改初始化方法：
 
-    phone = phone_number or self.phone_number
-    if not phone:
-        raise ValueError("没有提供手机号码")
+   ```python
+   # 旧的初始化
+   def __init__(self, client: Client, config_manager: ConfigManager, ...):
+       self.config_manager = config_manager
+       self.download_config = config_manager.get_download_config()
+       self.general_config = config_manager.get_general_config()
 
-    try:
-        logger.info(f"向手机号 {phone} 发送验证码")
-        sent_code = await self.client.send_code(phone)
-        return sent_code
-    except Exception as e:
-        logger.error(f"发送验证码失败: {e}")
-        raise
+   # 新的初始化
+   def __init__(self, client: Client, ui_config_manager: UIConfigManager, ...):
+       self.ui_config_manager = ui_config_manager
 
-async def sign_in(self, phone_code, phone_number=None):
-    """
-    使用验证码登录
+       # 获取UI配置并转换为字典
+       ui_config = self.ui_config_manager.get_ui_config()
+       self.config = convert_ui_config_to_dict(ui_config)
 
-    Args:
-        phone_code: 手机验证码
-        phone_number: 手机号码，如果为None则使用配置中的手机号码
+       # 获取下载配置和通用配置
+       self.download_config = self.config.get('DOWNLOAD', {})
+       self.general_config = self.config.get('GENERAL', {})
+   ```
 
-    Returns:
-        User: 登录成功后的用户对象
-    """
-    if not self.client:
-        self.client = self.create_client()
+3. 修改配置访问方式：
 
-    phone = phone_number or self.phone_number
-    if not phone:
-        raise ValueError("没有提供手机号码")
+   ```python
+   # 旧的访问方式（直接属性访问）
+   download_path = self.download_config.download_path
 
-    try:
-        logger.info(f"使用验证码 {phone_code} 登录账号 {phone}")
-        user = await self.client.sign_in(phone, phone_code)
-        logger.info(f"登录成功: {user.first_name} (@{user.username})")
-        return user
-    except Exception as e:
-        logger.error(f"登录失败: {e}")
-        raise
+   # 新的访问方式（字典访问）
+   download_path = self.download_config.get('download_path', 'downloads')
+   ```
 
-async def check_password(self, password):
-    """
-    检查两步验证密码
+### 1.5 后续迁移计划
 
-    Args:
-        password: 两步验证密码
+对于尚未完成迁移的模块（上传、转发、监听），将采用与下载模块相同的迁移策略：
 
-    Returns:
-        User: 登录成功后的用户对象
-    """
-    if not self.client:
-        raise ValueError("客户端未初始化")
+1. 修改导入语句，使用 `UIConfigManager` 和 `convert_ui_config_to_dict`
+2. 修改初始化方法，接受 `UIConfigManager` 而非 `ConfigManager`
+3. 使用 `convert_ui_config_to_dict` 将 UI 配置转换为字典格式
+4. 修改所有配置访问方式，从直接属性访问改为字典访问
 
-    try:
-        logger.info("使用两步验证密码登录")
-        user = await self.client.check_password(password)
-        logger.info(f"两步验证登录成功: {user.first_name} (@{user.username})")
-        return user
-    except Exception as e:
-        logger.error(f"两步验证登录失败: {e}")
-        raise
-
-async def get_me(self):
-    """
-    获取当前登录用户信息
-
-    Returns:
-        User: 当前登录的用户对象，如未登录则返回None
-    """
-    if not self.client or not self.client.is_connected:
-        return None
-
-    try:
-        return await self.client.get_me()
-    except Exception as e:
-        logger.error(f"获取用户信息失败: {e}")
-        return None
-```
-
-#### 步骤 4: 替换所有项目中对 ConfigManager 的引用
-
-遍历所有模块，使用 UIConfigManager 替换 ConfigManager：
-
-1. 搜索模式: `from src.utils.config_manager import ConfigManager`
-2. 替换为: `from src.utils.ui_config_manager import UIConfigManager`
-3. 搜索模式: `config_manager = ConfigManager(`
-4. 替换为: `config_manager = UIConfigManager(`
-
-注意：对于每个替换，确保根据文件具体情况进行适当调整。
-
-#### 步骤 5: 最终删除 config_manager.py 文件
-
-确认所有替换完成后，删除原始配置管理器：
-
-```bash
-rm src/utils/config_manager.py
-```
+这些迁移工作将在后续单独完成，以确保各模块能够正确使用统一的配置系统。
 
 ## 二、集成 Qt 事件循环和 asyncio
 
@@ -1952,54 +1854,6 @@ fi
 
 修改项目 README.md，移除命令行用法说明，更新为 UI 界面的使用指南：
 
-````markdown
-# TG-Manager
-
-TG-Manager 是一个用于管理 Telegram 消息的图形界面工具，提供下载、上传、转发和监听等功能。
-
-## 安装
-
-```bash
-pip install -r requirements.txt
-```
-````
-
-## 启动方式
-
-```bash
-python run_ui.py
-```
-
-## 使用方法
-
-1. 启动应用程序后，首先在设置中配置 API 凭据和手机号码
-2. 通过"登录"按钮登录到 Telegram 账号
-3. 使用各功能模块（下载、上传、转发、监听）进行操作
-
-## 功能模块
-
-### 下载模块
-
-...
-
-### 上传模块
-
-...
-
-### 转发模块
-
-...
-
-### 监听模块
-
-...
-
-```
-
-### 10.5 项目结构调整
-
-完成命令行代码删除后，项目的最终结构应如下：
-
 ```
 
 TG-Manager/
@@ -2038,5 +1892,8 @@ TG-Manager/
 
 ```
 
-以上结构确保项目完全面向UI界面，同时保留了所有核心功能模块。
+以上结构确保项目完全面向 UI 界面，同时保留了所有核心功能模块。
+
+```
+
 ```

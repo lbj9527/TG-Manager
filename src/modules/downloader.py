@@ -17,7 +17,8 @@ from pyrogram import Client
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
 
-from src.utils.config_manager import ConfigManager
+from src.utils.ui_config_manager import UIConfigManager
+from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
@@ -33,13 +34,13 @@ class Downloader(EventEmitter):
     下载模块，负责下载历史消息的媒体文件
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
         """
         初始化下载模块
         
         Args:
             client: Pyrogram客户端实例
-            config_manager: 配置管理器实例
+            ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
         """
@@ -47,19 +48,23 @@ class Downloader(EventEmitter):
         super().__init__()
         
         self.client = client
-        self.config_manager = config_manager
+        self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
         # 创建日志事件适配器
         self.log = LoggerEventAdapter(self)
         
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
         # 获取下载配置
-        self.download_config = self.config_manager.get_download_config()
-        self.general_config = self.config_manager.get_general_config()
+        self.download_config = self.config.get('DOWNLOAD', {})
+        self.general_config = self.config.get('GENERAL', {})
         
         # 创建下载目录
-        self.download_path = Path(self.download_config.download_path)
+        self.download_path = Path(self.download_config.get('download_path', 'downloads'))
         self.download_path.mkdir(exist_ok=True)
         
         # 创建下载队列和线程
@@ -72,7 +77,7 @@ class Downloader(EventEmitter):
         self.writer_pool_size = min(32, os.cpu_count() * 2)  # 写入线程池大小：CPU核心数的2倍，最大32
         
         # 设置并行下载数量
-        self.max_concurrent_downloads = self.download_config.max_concurrent_downloads  # 从配置读取最大并行下载数
+        self.max_concurrent_downloads = self.download_config.get('max_concurrent_downloads', 10)  # 从配置读取最大并行下载数
         self.active_downloads = 0  # 当前活跃下载数
         self.download_semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
         
@@ -136,7 +141,7 @@ class Downloader(EventEmitter):
             self.file_writer_thread.start()
             
             # 获取下载设置列表
-            download_settings = self.download_config.downloadSetting
+            download_settings = self.download_config.get('downloadSetting', [])
             
             if len(download_settings) == 0:
                 self.log.warning("未配置任何下载设置，请在config.json的DOWNLOAD.downloadSetting数组中添加配置")
@@ -154,11 +159,11 @@ class Downloader(EventEmitter):
                     self.log.status("下载任务已取消")
                     return
                 
-                source_channel = setting.source_channels
-                start_id = setting.start_id
-                end_id = setting.end_id
-                media_types = setting.media_types
-                keywords = setting.keywords if self.use_keywords else []
+                source_channel = setting.get('source_channels', [])
+                start_id = setting.get('start_id', 0)
+                end_id = setting.get('end_id', 0)
+                media_types = setting.get('media_types', [])
+                keywords = setting.get('keywords', []) if self.use_keywords else []
                 
                 if self.use_keywords:
                     self.log.info(f"准备从频道 {source_channel} 下载媒体文件，关键词: {keywords}")
@@ -883,7 +888,7 @@ class Downloader(EventEmitter):
         Returns:
             Optional[str]: 媒体类型，如果没有支持的媒体类型则返回None
         """
-        media_types = self.download_config.media_types
+        media_types = self.download_config.get('media_types', [])
         
         if message.photo and "photo" in media_types:
             return "photo"

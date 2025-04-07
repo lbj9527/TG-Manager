@@ -1,5 +1,72 @@
 # TG-Manager 更新日志
 
+## 1.9.0 - 2025-04-09
+
+### 代码优化
+
+- **配置管理系统优化**:
+  - 移除了`UIConfigManager`中未使用的兼容方法：`get_general_config`、`get_download_config`、`get_upload_config`、`get_forward_config`、`get_monitor_config`和`get_proxy_settings`
+  - 统一采用更直接的配置访问模式，使用`get_ui_config()`结合`convert_ui_config_to_dict`函数
+  - 简化了配置处理流程，减少了不必要的中间转换层
+  - 更新了项目集成计划文档，反映新的配置访问方式
+
+### 文档更新
+
+- **项目集成计划完善**:
+  - 更新了`ui_assembly_plan.md`文件中的配置管理系统统一部分
+  - 简化了配置访问模式的描述，更符合实际实现
+  - 提供了更清晰的配置获取示例代码
+
+## 1.8.9 - 2025-04-08
+
+### 功能增强
+
+- **配置管理系统完全统一**:
+  - 完成了将所有模块从`ConfigManager`到`UIConfigManager`的迁移工作
+  - 更新了`downloader.py`模块，使其完全使用`UIConfigManager`和`convert_ui_config_to_dict`工具
+  - 为其他模块(`uploader.py`, `forwarder.py`, `monitor.py`)准备了迁移方案
+  - 记录了详细的迁移步骤，并更新了项目集成计划文档
+  - 优化了项目架构，减少了代码复杂度和配置转换层
+  - 改进了模块初始化过程，使配置获取更加直接和高效
+  - 增强了配置访问的一致性，统一采用字典风格的访问方式
+
+### 文档更新
+
+- **项目集成计划文档更新**:
+  - 更新了`ui_assembly_plan.md`文件，详细记录了配置管理系统统一的实施过程
+  - 添加了每个模块的具体迁移步骤和代码示例
+  - 明确了迁移的优先级和顺序，确保项目的平稳过渡
+  - 详细说明了`UIConfigManager`中添加的兼容方法的实现和用途
+  - 记录了`config_utils.py`工具模块的功能和使用方法
+
+## 1.8.8 - 2025-04-07
+
+### 功能增强
+
+- **配置管理系统统一**:
+
+  - 将所有模块（downloader.py, uploader.py, forwarder.py, monitor.py, client_manager.py）从使用`ConfigManager`迁移到使用`UIConfigManager`
+  - 创建了新的`config_utils.py`工具模块，提供了`convert_ui_config_to_dict`函数，用于将 UI 配置对象转换为字典格式
+  - 为`UIConfigManager`添加了兼容方法，包括`get_general_config()`、`get_download_config()`、`get_upload_config()`、`get_forward_config()`、`get_monitor_config()`和`get_proxy_settings()`
+  - 重构了各模块的初始化过程，使其接受`UIConfigManager`实例而非`ConfigManager`
+  - 修改了配置获取方式，采用字典风格的访问方式替代直接属性访问
+  - 优化了错误处理和配置验证，增强了系统稳定性
+  - 简化了配置管理架构，消除了配置转换层，提高了代码可维护性
+
+- **客户端管理优化**:
+  - 重构了`client_manager.py`，使其使用`UIConfigManager`和新的配置工具
+  - 更新了`ClientManager`类的初始化和配置加载逻辑
+  - 优化了代理设置处理，使用`get_proxy_settings_from_config`函数获取正确格式的代理配置
+  - 完善了错误处理机制，提供更详细的错误信息和日志记录
+
+### 修复
+
+- **UI 集成问题修复**:
+  - 修复了 UI 界面和核心功能模块之间配置不一致的问题
+  - 解决了多处配置转换和读取时可能出现的类型错误
+  - 修复了在 UI 界面保存设置后，核心模块无法识别最新配置的问题
+  - 确保配置变更能即时反映到所有功能模块中
+
 ## 1.8.7 - 2025-04-06
 
 ### 功能增强
