@@ -1,5 +1,25 @@
 # TG-Manager 更新日志
 
+## 1.9.1 - 2025-04-10
+
+### 功能增强
+
+- **配置管理系统完全统一**:
+  - 完成了所有模块从`ConfigManager`到`UIConfigManager`的迁移工作，包括:
+    - 更新`uploader.py`模块，使其完全使用`UIConfigManager`和`convert_ui_config_to_dict`工具
+    - 更新`forwarder.py`模块，使其完全使用`UIConfigManager`和`convert_ui_config_to_dict`工具
+    - 更新`monitor.py`模块，使其完全使用`UIConfigManager`和`convert_ui_config_to_dict`工具
+  - 统一所有模块的配置访问方式为字典风格访问，同时保持原有逻辑不变
+  - 完善配置转换工具，确保配置数据格式转换的准确性和一致性
+
+### 代码优化
+
+- **模块初始化过程重构**:
+  - 优化各模块的初始化过程，统一接收`UIConfigManager`实例
+  - 重构配置获取方式，使用`get_ui_config()`和`convert_ui_config_to_dict()`方法
+  - 提高代码可读性和可维护性，减少代码冗余
+  - 简化配置处理流程，消除不必要的中间转换层
+
 ## 1.9.0 - 2025-04-09
 
 ### 代码优化

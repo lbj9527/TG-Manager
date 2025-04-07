@@ -18,7 +18,8 @@ from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
 from pyrogram.errors import FloodWait, ChatForwardsRestricted, ChannelPrivate
 
-from src.utils.config_manager import ConfigManager
+from src.utils.ui_config_manager import UIConfigManager
+from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.modules.downloader import Downloader
@@ -47,13 +48,13 @@ class Forwarder(EventEmitter):
     转发模块，负责将消息从源频道转发到目标频道
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, downloader: Downloader, uploader: Uploader):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, downloader: Downloader, uploader: Uploader):
         """
         初始化转发模块
         
         Args:
             client: Pyrogram客户端实例
-            config_manager: 配置管理器实例
+            ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
             downloader: 下载模块实例
@@ -63,7 +64,7 @@ class Forwarder(EventEmitter):
         super().__init__()
         
         self.client = client
-        self.config_manager = config_manager
+        self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         self.downloader = downloader
@@ -72,12 +73,16 @@ class Forwarder(EventEmitter):
         # 创建日志事件适配器
         self.log = LoggerEventAdapter(self)
         
-        # 获取转发配置
-        self.forward_config = self.config_manager.get_forward_config()
-        self.general_config = self.config_manager.get_general_config()
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
+        # 获取转发配置和通用配置
+        self.forward_config = self.config.get('FORWARD', {})
+        self.general_config = self.config.get('GENERAL', {})
         
         # 创建临时目录
-        self.tmp_path = Path(self.forward_config.tmp_path)
+        self.tmp_path = Path(self.forward_config.get('tmp_path', 'tmp'))
         self.tmp_path.mkdir(exist_ok=True)
         
         # 创建下载完成的媒体组队列
@@ -115,7 +120,7 @@ class Forwarder(EventEmitter):
         temp_dir = self.ensure_temp_dir()
         
         # 获取频道对列表
-        channel_pairs = self.forward_config.forward_channel_pairs
+        channel_pairs = self.forward_config.get('forward_channel_pairs', [])
         info_message = f"配置的频道对数量: {len(channel_pairs)}"
         _logger.info(info_message)
         self.emit("info", info_message)

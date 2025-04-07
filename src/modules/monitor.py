@@ -14,7 +14,9 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, ChatForwardsRestricted, ChannelPrivate
 from pyrogram.handlers import MessageHandler
 
-from src.utils.config_manager import ConfigManager, MonitorChannelPair
+from src.utils.config_manager import MonitorChannelPair
+from src.utils.ui_config_manager import UIConfigManager
+from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.logger import get_logger
 from src.utils.events import EventEmitter
@@ -30,13 +32,13 @@ class Monitor(EventEmitter):
     监听模块，监听源频道的新消息，并实时转发到目标频道
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: Optional[HistoryManager] = None):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: Optional[HistoryManager] = None):
         """
         初始化监听模块
         
         Args:
             client: Pyrogram客户端实例
-            config_manager: 配置管理器实例
+            ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例，可选
         """
@@ -44,15 +46,19 @@ class Monitor(EventEmitter):
         super().__init__()
         
         self.client = client
-        self.config_manager = config_manager
+        self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
         # 创建日志事件适配器
         self.log = LoggerEventAdapter(self)
         
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
         # 获取监听配置
-        self.monitor_config = self.config_manager.get_monitor_config()
+        self.monitor_config = self.config.get('MONITOR', {})
         
         # 控制变量
         self.should_stop = False
@@ -67,21 +73,21 @@ class Monitor(EventEmitter):
         # 移除标题选项字典，使用源频道ID作为键
         self.channel_remove_captions = {}
         
-        for pair in self.monitor_config.monitor_channel_pairs:
-            source_channel = pair.source_channel
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            source_channel = pair.get('source_channel', '')
             
             # 加载文本替换规则
             text_replacements = {}
-            if pair.text_filter:
-                for item in pair.text_filter:
+            if pair.get('text_filter'):
+                for item in pair.get('text_filter', []):
                     # 只有当original_text不为空时才添加替换规则
-                    if item.original_text:
-                        text_replacements[item.original_text] = item.target_text
+                    if item.get('original_text'):
+                        text_replacements[item.get('original_text')] = item.get('target_text', '')
                         total_text_filter_rules += 1
             
             # 存储每个源频道的配置
             self.channel_text_replacements[source_channel] = text_replacements
-            self.channel_remove_captions[source_channel] = pair.remove_captions
+            self.channel_remove_captions[source_channel] = pair.get('remove_captions', False)
             
             if text_replacements:
                 self.log.debug(f"频道 {source_channel} 已加载 {len(text_replacements)} 条文本替换规则")
@@ -128,8 +134,8 @@ class Monitor(EventEmitter):
         # 解析监听频道ID
         self.monitored_channels = set()
         
-        for pair in self.monitor_config.monitor_channel_pairs:
-            source_channel = pair.source_channel
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            source_channel = pair.get('source_channel', '')
             try:
                 channel_id = await self.channel_resolver.get_channel_id(source_channel)
                 if channel_id:
@@ -165,13 +171,13 @@ class Monitor(EventEmitter):
                     self.emit("message_received", message.id, source_info_str)
                     
                     # 检查关键词过滤
-                    if self.monitor_config.keywords and not any(re.search(keyword, message.text or "", re.IGNORECASE) for keyword in self.monitor_config.keywords):
+                    if self.monitor_config.get('keywords', []) and not any(re.search(keyword, message.text or "", re.IGNORECASE) for keyword in self.monitor_config.get('keywords', [])):
                         self.log.debug(f"消息 [ID: {message.id}] 不包含任何关键词，忽略")
                         return
                     
                     # 如果包含关键词，记录并发送事件
-                    if self.monitor_config.keywords:
-                        matched_keywords = [keyword for keyword in self.monitor_config.keywords if re.search(keyword, message.text or "", re.IGNORECASE)]
+                    if self.monitor_config.get('keywords', []):
+                        matched_keywords = [keyword for keyword in self.monitor_config.get('keywords', []) if re.search(keyword, message.text or "", re.IGNORECASE)]
                         if matched_keywords:
                             keywords_str = ", ".join(matched_keywords)
                             self.log.info(f"消息 [ID: {message.id}] 匹配关键词: {keywords_str}")

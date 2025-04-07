@@ -14,7 +14,8 @@ from pyrogram import Client
 from pyrogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, Message
 from pyrogram.errors import FloodWait, MediaEmpty, MediaInvalid
 
-from src.utils.config_manager import ConfigManager
+from src.utils.ui_config_manager import UIConfigManager
+from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
@@ -31,13 +32,13 @@ class Uploader(EventEmitter):
     上传模块，负责将本地文件上传到目标频道
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
         """
         初始化上传模块
         
         Args:
             client: Pyrogram客户端实例
-            config_manager: 配置管理器实例
+            ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
         """
@@ -45,16 +46,20 @@ class Uploader(EventEmitter):
         super().__init__()
         
         self.client = client
-        self.config_manager = config_manager
+        self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
         # 创建日志事件适配器
         self.log = LoggerEventAdapter(self)
         
-        # 获取上传配置
-        self.upload_config = self.config_manager.get_upload_config()
-        self.general_config = self.config_manager.get_general_config()
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
+        # 获取上传配置和通用配置
+        self.upload_config = self.config.get('UPLOAD', {})
+        self.general_config = self.config.get('GENERAL', {})
         
         # 初始化MIME类型
         mimetypes.init()
@@ -79,7 +84,7 @@ class Uploader(EventEmitter):
         self.log.status(status_message)
         
         # 获取目标频道列表
-        target_channels = self.upload_config.target_channels
+        target_channels = self.upload_config.get('target_channels', [])
         if not target_channels:
             self.log.error("未配置目标频道，无法上传文件", error_type="CONFIG", recoverable=False)
             return
@@ -87,7 +92,7 @@ class Uploader(EventEmitter):
         self.log.info(f"配置的目标频道数量: {len(target_channels)}")
         
         # 获取上传目录
-        upload_dir = Path(self.upload_config.directory)
+        upload_dir = Path(self.upload_config.get('directory', 'uploads'))
         if not upload_dir.exists() or not upload_dir.is_dir():
             self.log.error(f"上传目录不存在或不是目录: {upload_dir}", error_type="DIRECTORY", recoverable=False)
             return

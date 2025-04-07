@@ -60,23 +60,25 @@ general_config = config.get('GENERAL', {})
 download_path = download_config.get('download_path', 'downloads')
 ```
 
+这种方式更加直观，减少了不必要的中间转换层，并且与 Python 字典操作的常见模式保持一致。
+
 #### 模块迁移情况
 
-- **已完成**:
+所有模块均已完成从 `ConfigManager` 到 `UIConfigManager` 的迁移：
 
-  - **下载模块 (downloader.py)**: 已完成从 `ConfigManager` 到 `UIConfigManager` 的迁移
-  - **客户端管理器 (client_manager.py)**: 已完成迁移，支持 UIConfigManager 和配置工具
+- **下载模块 (downloader.py)**: 已完成迁移
+- **上传模块 (uploader.py)**: 已完成迁移
+- **转发模块 (forwarder.py)**: 已完成迁移
+- **监听模块 (monitor.py)**: 已完成迁移
+- **客户端管理器 (client_manager.py)**: 已完成迁移
 
-- **待完成**:
-  - **上传模块 (uploader.py)**: 需要重新修改，之前的修改存在问题
-  - **转发模块 (forwarder.py)**: 需要重新修改，之前的修改存在问题
-  - **监听模块 (monitor.py)**: 需要重新修改，之前的修改存在问题
+所有模块都使用统一的配置访问模式，通过 `get_ui_config()` 和 `convert_ui_config_to_dict()` 获取配置，并使用字典风格的访问方式。
 
-### 1.4 下载模块迁移详情
+### 1.4 配置迁移技术细节
 
-下载模块成功地完成了从 `ConfigManager` 到 `UIConfigManager` 的迁移。主要修改包括：
+每个模块的迁移都遵循以下一致的模式：
 
-1. 修改导入语句：
+1. **修改导入语句**:
 
    ```python
    # 旧的导入
@@ -87,13 +89,13 @@ download_path = download_config.get('download_path', 'downloads')
    from src.utils.config_utils import convert_ui_config_to_dict
    ```
 
-2. 修改初始化方法：
+2. **修改初始化方法**:
 
    ```python
    # 旧的初始化
    def __init__(self, client: Client, config_manager: ConfigManager, ...):
        self.config_manager = config_manager
-       self.download_config = config_manager.get_download_config()
+       self.xxx_config = config_manager.get_xxx_config()
        self.general_config = config_manager.get_general_config()
 
    # 新的初始化
@@ -104,31 +106,22 @@ download_path = download_config.get('download_path', 'downloads')
        ui_config = self.ui_config_manager.get_ui_config()
        self.config = convert_ui_config_to_dict(ui_config)
 
-       # 获取下载配置和通用配置
-       self.download_config = self.config.get('DOWNLOAD', {})
+       # 获取特定配置
+       self.xxx_config = self.config.get('XXX', {})
        self.general_config = self.config.get('GENERAL', {})
    ```
 
-3. 修改配置访问方式：
+3. **修改配置访问方式**:
 
    ```python
    # 旧的访问方式（直接属性访问）
-   download_path = self.download_config.download_path
+   value = self.xxx_config.some_property
 
    # 新的访问方式（字典访问）
-   download_path = self.download_config.get('download_path', 'downloads')
+   value = self.xxx_config.get('some_property', 'default_value')
    ```
 
-### 1.5 后续迁移计划
-
-对于尚未完成迁移的模块（上传、转发、监听），将采用与下载模块相同的迁移策略：
-
-1. 修改导入语句，使用 `UIConfigManager` 和 `convert_ui_config_to_dict`
-2. 修改初始化方法，接受 `UIConfigManager` 而非 `ConfigManager`
-3. 使用 `convert_ui_config_to_dict` 将 UI 配置转换为字典格式
-4. 修改所有配置访问方式，从直接属性访问改为字典访问
-
-这些迁移工作将在后续单独完成，以确保各模块能够正确使用统一的配置系统。
+通过这种一致的模式，我们成功地完成了配置管理系统的统一，简化了配置架构，提高了代码可维护性，并确保 UI 界面与核心功能模块之间的配置一致性。
 
 ## 二、集成 Qt 事件循环和 asyncio
 
@@ -488,9 +481,9 @@ def _show_verification_code_dialog(self, future):
     layout.addWidget(info_label)
 
     # 添加验证码输入框
-    code_input = QLineEdit()
-    code_input.setPlaceholderText("验证码")
-    layout.addWidget(code_input)
+    self.code_input = QLineEdit()
+    self.code_input.setPlaceholderText("验证码")
+    layout.addWidget(self.code_input)
 
     # 添加按钮
     button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -502,8 +495,8 @@ def _show_verification_code_dialog(self, future):
     result = dialog.exec_()
 
     # 处理结果
-    if result == QDialog.Accepted and code_input.text():
-        future.set_result(code_input.text().strip())
+    if result == QDialog.Accepted and self.code_input.text():
+        future.set_result(self.code_input.text().strip())
     else:
         future.set_result(None)
 ```
@@ -1855,7 +1848,6 @@ fi
 修改项目 README.md，移除命令行用法说明，更新为 UI 界面的使用指南：
 
 ```
-
 TG-Manager/
 ├── run_ui.py # UI 程序入口点
 ├── config.json # 配置文件
