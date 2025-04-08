@@ -428,8 +428,11 @@ class Eratosthenes(QObject):
         """
         super().__init__()
         self.num = num
+        # 标记数组：索引对应数字-1，即sieve[0]表示数字1，sieve[1]表示数字2
         self.sieve = [True] * self.num  # 标记数组
-        self.base = 0  # 当前处理的素数基础
+        # 设置1不是素数 (索引0)
+        self.sieve[0] = False
+        self.base = 1  # 从数字2开始处理（索引1）
         self.window = window  # 窗口引用
         self.tick = tick  # 协程切换间隔
         self.coroutines = []  # 协程计数
@@ -476,13 +479,23 @@ class Eratosthenes(QObject):
                     raise asyncio.CancelledError()
                 
                 # 查找下一个素数
-                for i in range(self.base + 1, self.num):
-                    if self.sieve[i - 1]:  # 索引从0开始，但数字从1开始
-                        self.base = i
+                next_prime_found = False
+                for i in range(self.base + 1, self.num + 1):  # 从base+1到num的数字
+                    # 转换为索引（减1）
+                    idx = i - 1
+                    if self.sieve[idx]:  # 如果未被标记为非素数
+                        # 找到下一个素数，记录它的数值（而非索引）
+                        prime_number = i
+                        self.base = i  # 更新base为当前找到的素数值
+                        next_prime_found = True
                         break
                 
-                # 创建并启动标记任务
-                mark_task = get_loop().create_task(self.mark_number(self.base))
+                # 如果找不到下一个素数，退出循环
+                if not next_prime_found:
+                    break
+                    
+                # 创建并启动标记任务，传入实际的素数值
+                mark_task = get_loop().create_task(self.mark_number(prime_number))
                 self.tasks.append(mark_task)
             
             # 等待所有标记任务完成
@@ -498,6 +511,10 @@ class Eratosthenes(QObject):
             
             # 确保文本更新任务有机会显示最终消息
             await asyncio.sleep(self.tick * 2)
+            
+            # 高亮显示所有未被标记的数字（素数）
+            if not self.cancelled:
+                await self.highlight_primes()
             
             # 重置UI状态
             self.window.is_eratosthenes_running = False
@@ -521,11 +538,11 @@ class Eratosthenes(QObject):
             # 确保任务列表被清空
             self.tasks.clear()
     
-    async def mark_number(self, base):
+    async def mark_number(self, prime):
         """标记特定素数的所有倍数
         
         Args:
-            base: 素数基础
+            prime: 素数值（不是索引）
         """
         # 注册协程
         id = len(self.coroutines)
@@ -539,27 +556,52 @@ class Eratosthenes(QObject):
                 random.randint(64, 192)
             )
             
-            # 标记该素数的所有倍数为非素数
-            for i in range(2 * base, self.num + 1, base):
+            # 标记该素数的所有倍数为非素数，从2*prime开始
+            for i in range(2 * prime, self.num + 1, prime):
                 # 检查是否被取消
                 if self.cancelled or asyncio.current_task().cancelled():
                     raise asyncio.CancelledError()
                 
-                if self.sieve[i - 1]:
-                    self.sieve[i - 1] = False
-                    # 使用信号更新UI
+                # 获取数字i的索引
+                idx = i - 1
+                
+                if self.sieve[idx]:  # 如果还没被标记为非素数
+                    self.sieve[idx] = False  # 标记为非素数
+                    # 使用信号更新UI，传入实际数字值（非索引）
                     self.window.set_num.emit(i, color)
                 
                 # 让出控制权，避免长时间占用
                 await asyncio.sleep(self.tick)
                 
         except asyncio.CancelledError:
-            logger.info(f"标记数字 {base} 的任务被取消")
+            logger.info(f"标记数字 {prime} 的倍数任务被取消")
             raise
         finally:
             # 标记协程完成
             if id < len(self.coroutines):
                 self.coroutines[id] = 0
+    
+    async def highlight_primes(self):
+        """在算法完成后，高亮显示所有素数"""
+        # 使用特殊颜色显示素数
+        prime_color = QColor(0, 120, 215)  # 蓝色
+        
+        # 遍历所有数字
+        for i in range(2, self.num + 1):  # 从2开始
+            # 检查是否被取消
+            if self.cancelled:
+                break
+                
+            # 获取索引
+            idx = i - 1
+            
+            # 如果是素数（未被标记为非素数）
+            if self.sieve[idx]:
+                # 高亮显示
+                self.window.set_num.emit(i, prime_color)
+                
+                # 短暂等待，使视觉效果更明显
+                await asyncio.sleep(self.tick / 5)  # 使用更短的等待时间
     
     async def update_text(self):
         """更新UI文本"""
@@ -581,7 +623,7 @@ class Eratosthenes(QObject):
             # 当算法完成时，显示结束消息
             if not self.cancelled:
                 self.window.prime_status_label.setText(
-                    "🎉 计算完成！素数已被标记 🎉"
+                    "🎉 计算完成！蓝色数字为素数 🎉"
                 )
         
         except asyncio.CancelledError:
