@@ -13,7 +13,8 @@ from pyrogram import Client
 from pyrogram.types import Message
 from pyrogram.errors import FloodWait
 
-from src.utils.config_manager import ConfigManager
+from src.utils.ui_config_manager import UIConfigManager
+from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
@@ -29,13 +30,13 @@ class DownloaderSerial(EventEmitter):
     下载模块（顺序版本），负责按顺序下载历史消息的媒体文件
     """
     
-    def __init__(self, client: Client, config_manager: ConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
         """
         初始化下载模块
         
         Args:
             client: Pyrogram客户端实例
-            config_manager: 配置管理器实例
+            ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
         """
@@ -43,19 +44,23 @@ class DownloaderSerial(EventEmitter):
         super().__init__()
         
         self.client = client
-        self.config_manager = config_manager
+        self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
         # 创建日志事件适配器
         self.log = LoggerEventAdapter(self)
         
-        # 获取下载配置
-        self.download_config = self.config_manager.get_download_config()
-        self.general_config = self.config_manager.get_general_config()
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
+        # 获取下载配置和通用配置
+        self.download_config = self.config.get('DOWNLOAD', {})
+        self.general_config = self.config.get('GENERAL', {})
         
         # 创建下载目录
-        self.download_path = Path(self.download_config.download_path)
+        self.download_path = Path(self.download_config.get('download_path', 'downloads'))
         self.download_path.mkdir(exist_ok=True)
         
         # 是否使用关键词下载模式
@@ -74,29 +79,36 @@ class DownloaderSerial(EventEmitter):
         self.log.status("开始从频道下载媒体文件")
         
         # 获取下载频道列表
-        download_channels = self.download_config.download_channels
-        if not download_channels:
-            self.log.error("未配置下载频道，无法开始下载", error_type="CONFIG", recoverable=False)
+        download_settings = self.download_config.get('downloadSetting', [])
+        if not download_settings:
+            self.log.error("未配置下载设置，无法开始下载", error_type="CONFIG", recoverable=False)
             return
+        
+        # 获取全局限制值
+        global_limit = self.general_config.get('limit', 50)
         
         # 根据最大并发数和每个频道的下载量计算总下载量
         total_download_count = 0
-        for channel in download_channels:
+        for setting in download_settings:
             # 获取该频道的下载数量设置，默认为全局配置
-            channel_limit = channel.limit if channel.limit is not None else self.download_config.limit
-            total_download_count += channel_limit if channel_limit > 0 else 1000  # 假设默认最多1000条
+            setting_limit = setting.get('start_id') and setting.get('end_id') and abs(setting.get('end_id') - setting.get('start_id')) or global_limit
+            total_download_count += setting_limit if setting_limit > 0 else 1000  # 假设默认最多1000条
         
         # 已完成的下载数量
         completed_count = 0
         
-        # 遍历所有下载频道
-        for channel in download_channels:
+        # 遍历所有下载设置
+        for setting in download_settings:
             # 获取下载配置
-            channel_name = channel.channel
-            limit = channel.limit if channel.limit is not None else self.download_config.limit
-            download_path = Path(channel.download_path if channel.download_path else self.download_config.download_path)
+            channel_name = setting.get('source_channels', '')
+            start_id = setting.get('start_id', 0)
+            end_id = setting.get('end_id', 0)
+            
+            # 计算限制
+            limit = abs(end_id - start_id) if start_id and end_id else global_limit
             
             # 确保下载目录存在
+            download_path = Path(self.download_config.get('download_path', 'downloads'))
             download_path.mkdir(parents=True, exist_ok=True)
             
             # 如果设置了限制为0，则跳过
@@ -149,16 +161,11 @@ class DownloaderSerial(EventEmitter):
                             self.log.debug(f"消息ID: {media_id} 已下载，跳过")
                             continue
                         
-                        # 检查文件类型是否被配置为排除
+                        # 检查文件类型是否符合允许的媒体类型
                         file_type = self._get_media_type(message)
-                        if file_type in self.download_config.exclude_types:
-                            self.log.debug(f"消息ID: {media_id} 的文件类型 {file_type} 被配置为排除，跳过")
-                            continue
-                        
-                        # 检查文件是否超过大小限制
-                        file_size = self._get_media_size(message)
-                        if file_size and self.download_config.max_file_size > 0 and file_size > self.download_config.max_file_size * 1024 * 1024:
-                            self.log.warning(f"消息ID: {media_id} 的文件大小 {file_size/1024/1024:.2f}MB 超过限制 {self.download_config.max_file_size}MB，跳过")
+                        media_types = setting.get('media_types', [])
+                        if media_types and file_type not in media_types:
+                            self.log.debug(f"消息ID: {media_id} 的文件类型 {file_type} 不在允许的媒体类型列表中，跳过")
                             continue
                         
                         # 获取文件名
@@ -213,11 +220,7 @@ class DownloaderSerial(EventEmitter):
                                 progress_percentage = (completed_count / total_download_count) * 100 if total_download_count > 0 else 0
                                 self.emit("download_progress", completed_count, total_download_count, progress_percentage)
                                 
-                                # 限制下载速率
-                                if self.download_config.download_delay > 0:
-                                    delay_time = self.download_config.download_delay
-                                    self.log.debug(f"等待 {delay_time} 秒后继续下载")
-                                    await asyncio.sleep(delay_time)
+
                             else:
                                 self.log.error(f"下载失败: {file_name}", error_type="DOWNLOAD_FAIL", recoverable=True)
                         

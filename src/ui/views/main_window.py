@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QLabel, QCheckBox, QToolBar, QStatusBar,
     QHBoxLayout, QStackedWidget, QScrollArea, QMenu, QSystemTrayIcon
 )
-from PySide6.QtCore import Qt, Slot, Signal, QByteArray, QSize, QTimer
-from PySide6.QtGui import QAction, QIcon, QResizeEvent, QPixmap
+from PySide6.QtCore import Qt, Slot, Signal, QByteArray, QSize, QTimer, QRegularExpression
+from PySide6.QtGui import QAction, QIcon, QResizeEvent, QPixmap, QRegularExpressionValidator
 
 
 class MainWindow(QMainWindow):
@@ -924,16 +924,22 @@ class MainWindow(QMainWindow):
                 
                 phone = self.config['GENERAL']['phone_number']
                 
-                # 显示登录成功消息
-                QMessageBox.information(
-                    self,
-                    "登录开始",
-                    f"正在使用以下手机号登录: {phone}",
-                    QMessageBox.Ok
-                )
-                
-                # 更新状态栏
+                # 显示登录进行中的消息
                 self.statusBar().showMessage(f"登录中: {phone}")
+                
+                # 显示验证码输入对话框
+                code = self._show_verification_code_dialog()
+                
+                if code:
+                    # 显示登录成功消息，这里只是界面展示，实际登录逻辑后续实现
+                    QMessageBox.information(
+                        self,
+                        "验证码已提交",
+                        f"已接收验证码: {code}\n\n实际登录功能将在后续实现。",
+                        QMessageBox.Ok
+                    )
+                else:
+                    self.statusBar().showMessage("登录已取消")
                 
                 # 这里可以添加实际的登录逻辑
                 # ...
@@ -946,6 +952,74 @@ class MainWindow(QMainWindow):
                 f"登录过程中发生错误: {str(e)}",
                 QMessageBox.Ok
             )
+            
+    def _show_verification_code_dialog(self):
+        """显示验证码输入对话框
+        
+        Returns:
+            str: 用户输入的验证码，如果用户取消则返回None
+        """
+        try:
+            # 创建验证码输入对话框
+            code_dialog = QDialog(self)
+            code_dialog.setWindowTitle("输入验证码")
+            code_dialog.setMinimumWidth(350)
+            
+            # 创建布局
+            layout = QVBoxLayout(code_dialog)
+            
+            # 添加说明标签
+            info_label = QLabel("Telegram已向您的手机或Telegram应用发送了一个验证码，请在下方输入该验证码：")
+            info_label.setWordWrap(True)
+            layout.addWidget(info_label)
+            
+            # 创建验证码输入框
+            code_input = QLineEdit()
+            code_input.setPlaceholderText("请输入验证码")
+            code_input.setMaxLength(5)  # 验证码通常为5位数字
+            
+            # 设置输入验证 - 只允许输入数字
+            validator = QRegularExpressionValidator(QRegularExpression("\\d+"))
+            code_input.setValidator(validator)
+            
+            layout.addWidget(code_input)
+            
+            # 添加验证码提示
+            hint_label = QLabel("提示: 验证码通常为5位数字，请检查您的Telegram应用或手机短信。")
+            hint_label.setStyleSheet("color: gray; font-size: 10pt;")
+            hint_label.setWordWrap(True)
+            layout.addWidget(hint_label)
+            
+            # 创建按钮
+            button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            button_box.accepted.connect(code_dialog.accept)
+            button_box.rejected.connect(code_dialog.reject)
+            layout.addWidget(button_box)
+            
+            # 设置默认按钮
+            ok_button = button_box.button(QDialogButtonBox.Ok)
+            ok_button.setDefault(True)
+            
+            # 禁用OK按钮，直到输入了验证码
+            ok_button.setEnabled(False)
+            
+            # 连接输入变化信号
+            def on_text_changed(text):
+                ok_button.setEnabled(len(text) > 0)
+            
+            code_input.textChanged.connect(on_text_changed)
+            
+            # 显示对话框
+            result = code_dialog.exec_()
+            
+            if result == QDialog.Accepted:
+                return code_input.text()
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"显示验证码对话框时出错: {e}")
+            return None
     
     def _open_settings(self):
         """打开设置界面"""
