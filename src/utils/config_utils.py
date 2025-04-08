@@ -61,7 +61,167 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             
         config_dict['GENERAL'] = general_dict
         
-        # 可以添加其他配置部分的处理（DOWNLOAD, UPLOAD等）
+        # 添加下载配置的处理
+        if hasattr(ui_config, 'DOWNLOAD'):
+            download_dict = {}
+            
+            # 处理基本属性
+            for field in ["download_path", "parallel_download", "max_concurrent_downloads"]:
+                if hasattr(ui_config.DOWNLOAD, field):
+                    download_dict[field] = getattr(ui_config.DOWNLOAD, field)
+            
+            # 处理downloadSetting字段
+            if hasattr(ui_config.DOWNLOAD, 'downloadSetting'):
+                download_settings = []
+                
+                for item in ui_config.DOWNLOAD.downloadSetting:
+                    setting_dict = {}
+                    
+                    # 提取基本属性
+                    if hasattr(item, 'source_channels'):
+                        setting_dict['source_channels'] = item.source_channels
+                    if hasattr(item, 'start_id'):
+                        setting_dict['start_id'] = item.start_id
+                    if hasattr(item, 'end_id'):
+                        setting_dict['end_id'] = item.end_id
+                    if hasattr(item, 'keywords'):
+                        setting_dict['keywords'] = item.keywords
+                    
+                    # 处理媒体类型，转换枚举为字符串
+                    if hasattr(item, 'media_types'):
+                        media_types = []
+                        for media_type in item.media_types:
+                            if hasattr(media_type, 'value'):
+                                media_types.append(media_type.value)
+                            else:
+                                media_types.append(media_type)
+                        setting_dict['media_types'] = media_types
+                    
+                    download_settings.append(setting_dict)
+                
+                download_dict['downloadSetting'] = download_settings
+            
+            config_dict['DOWNLOAD'] = download_dict
+        
+        # 添加上传配置的处理
+        if hasattr(ui_config, 'UPLOAD'):
+            upload_dict = {}
+            upload = ui_config.UPLOAD
+            
+            # 添加基本字段
+            for field in ["directory", "caption_template", "delay_between_uploads"]:
+                if hasattr(upload, field):
+                    upload_dict[field] = getattr(upload, field)
+            
+            # 处理target_channels字段，保留字符串格式
+            if hasattr(upload, 'target_channels'):
+                upload_dict['target_channels'] = upload.target_channels
+            
+            # 处理options字段
+            if hasattr(upload, 'options'):
+                options = {}
+                for option_field in ["auto_thumbnail", "read_title_txt", "use_custom_template", "use_folder_name"]:
+                    if hasattr(upload.options, option_field):
+                        options[option_field] = getattr(upload.options, option_field)
+                upload_dict['options'] = options
+            
+            config_dict['UPLOAD'] = upload_dict
+        
+        # 添加转发配置的处理
+        if hasattr(ui_config, 'FORWARD'):
+            forward_dict = {}
+            forward = ui_config.FORWARD
+            
+            # 添加基本字段
+            for field in ["remove_captions", "hide_author", "forward_delay", "start_id", "end_id", "tmp_path"]:
+                if hasattr(forward, field):
+                    forward_dict[field] = getattr(forward, field)
+            
+            # 处理media_types字段，转换枚举为字符串
+            if hasattr(forward, 'media_types'):
+                media_types = []
+                for media_type in forward.media_types:
+                    if hasattr(media_type, 'value'):
+                        media_types.append(media_type.value)
+                    else:
+                        media_types.append(media_type)
+                forward_dict['media_types'] = media_types
+            
+            # 处理forward_channel_pairs字段
+            if hasattr(forward, 'forward_channel_pairs'):
+                channel_pairs = []
+                for pair in forward.forward_channel_pairs:
+                    pair_dict = {}
+                    if hasattr(pair, 'source_channel'):
+                        pair_dict['source_channel'] = pair.source_channel
+                    if hasattr(pair, 'target_channels'):
+                        pair_dict['target_channels'] = pair.target_channels
+                    channel_pairs.append(pair_dict)
+                forward_dict['forward_channel_pairs'] = channel_pairs
+            
+            config_dict['FORWARD'] = forward_dict
+        
+        # 添加监听配置的处理
+        if hasattr(ui_config, 'MONITOR'):
+            monitor_dict = {}
+            monitor = ui_config.MONITOR
+            
+            # 添加基本字段
+            for field in ["duration", "forward_delay"]:
+                if hasattr(monitor, field):
+                    monitor_dict[field] = getattr(monitor, field)
+            
+            # 处理media_types字段，转换枚举为字符串
+            if hasattr(monitor, 'media_types'):
+                media_types = []
+                for media_type in monitor.media_types:
+                    if hasattr(media_type, 'value'):
+                        media_types.append(media_type.value)
+                    else:
+                        media_types.append(media_type)
+                monitor_dict['media_types'] = media_types
+            
+            # 处理monitor_channel_pairs字段
+            if hasattr(monitor, 'monitor_channel_pairs'):
+                channel_pairs = []
+                for pair in monitor.monitor_channel_pairs:
+                    pair_dict = {}
+                    if hasattr(pair, 'source_channel'):
+                        pair_dict['source_channel'] = pair.source_channel
+                    if hasattr(pair, 'target_channels'):
+                        pair_dict['target_channels'] = pair.target_channels
+                    if hasattr(pair, 'remove_captions'):
+                        pair_dict['remove_captions'] = pair.remove_captions
+                    
+                    # 处理text_filter字段
+                    if hasattr(pair, 'text_filter'):
+                        text_filters = []
+                        for filter_item in pair.text_filter:
+                            filter_dict = {}
+                            if hasattr(filter_item, 'original_text'):
+                                filter_dict['original_text'] = filter_item.original_text
+                            if hasattr(filter_item, 'target_text'):
+                                filter_dict['target_text'] = filter_item.target_text
+                            text_filters.append(filter_dict)
+                        pair_dict['text_filter'] = text_filters
+                    
+                    channel_pairs.append(pair_dict)
+                monitor_dict['monitor_channel_pairs'] = channel_pairs
+            
+            config_dict['MONITOR'] = monitor_dict
+        
+        # 添加UI配置的处理
+        if hasattr(ui_config, 'UI'):
+            ui_dict = {}
+            ui = ui_config.UI
+            
+            # 添加所有UI配置字段
+            for field in ["theme", "confirm_exit", "minimize_to_tray", "start_minimized", 
+                         "enable_notifications", "notification_sound", "window_geometry", "window_state"]:
+                if hasattr(ui, field):
+                    ui_dict[field] = getattr(ui, field)
+            
+            config_dict['UI'] = ui_dict
         
         return config_dict
     
@@ -249,57 +409,33 @@ def get_proxy_settings_from_config(config: Dict[str, Any]) -> Optional[Dict[str,
     
     # 检查旧版配置结构中的代理设置（PROXY部分）
     proxy_config = config.get('PROXY', {})
-    
-    # 检查代理是否启用
-    if not proxy_config.get('enabled', False):
-        return proxy_settings
-    
-    # 获取代理类型
-    proxy_type = proxy_config.get('type', '').lower()
-    if not proxy_type:
-        return proxy_settings
-    
-    # 获取代理主机和端口
-    proxy_host = proxy_config.get('host', '')
-    proxy_port = proxy_config.get('port')
-    
-    if not proxy_host or not proxy_port:
-        return proxy_settings
-    
-    # 构建代理参数
-    if proxy_type == 'socks4':
-        proxy_settings['proxy'] = {
-            'scheme': 'socks4',
-            'hostname': proxy_host,
-            'port': int(proxy_port)
-        }
-    elif proxy_type == 'socks5':
-        proxy_settings['proxy'] = {
-            'scheme': 'socks5',
-            'hostname': proxy_host,
-            'port': int(proxy_port)
-        }
+    if proxy_config and proxy_config.get('enabled', False):
+        proxy_type = proxy_config.get('type', 'SOCKS5').upper()
+        proxy_host = proxy_config.get('host', '')
+        proxy_port = proxy_config.get('port', 0)
+        proxy_username = proxy_config.get('username', '')
+        proxy_password = proxy_config.get('password', '')
         
-        # 检查是否有用户名和密码
-        username = proxy_config.get('username', '')
-        password = proxy_config.get('password', '')
-        
-        if username and password:
-            proxy_settings['proxy']['username'] = username
-            proxy_settings['proxy']['password'] = password
-    elif proxy_type == 'http':
-        proxy_settings['proxy'] = {
-            'scheme': 'http',
-            'hostname': proxy_host,
-            'port': int(proxy_port)
-        }
-        
-        # 检查是否有用户名和密码
-        username = proxy_config.get('username', '')
-        password = proxy_config.get('password', '')
-        
-        if username and password:
-            proxy_settings['proxy']['username'] = username
-            proxy_settings['proxy']['password'] = password
+        if proxy_host and proxy_port:
+            if proxy_type == 'SOCKS5' or proxy_type == 'SOCKS4':
+                proxy_settings['proxy'] = {
+                    'scheme': proxy_type.lower(),
+                    'hostname': proxy_host,
+                    'port': int(proxy_port)
+                }
+                
+                if proxy_username and proxy_password:
+                    proxy_settings['proxy']['username'] = proxy_username
+                    proxy_settings['proxy']['password'] = proxy_password
+            elif proxy_type == 'HTTP' or proxy_type == 'HTTPS':
+                proxy_settings['proxy'] = {
+                    'scheme': proxy_type.lower(),
+                    'hostname': proxy_host,
+                    'port': int(proxy_port)
+                }
+                
+                if proxy_username and proxy_password:
+                    proxy_settings['proxy']['username'] = proxy_username
+                    proxy_settings['proxy']['password'] = proxy_password
     
     return proxy_settings 

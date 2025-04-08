@@ -5,6 +5,7 @@
 import os
 import time
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Union, Any, Optional, Set
@@ -38,9 +39,6 @@ class DownloaderSerial():
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
         """
-        # 初始化事件发射器
-        super().__init__()
-        
         self.client = client
         self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
@@ -50,13 +48,29 @@ class DownloaderSerial():
         ui_config = self.ui_config_manager.get_ui_config()
         self.config = convert_ui_config_to_dict(ui_config)
         
+        # 添加详细日志输出，显示整个配置结构
+        logger.debug(f"加载的UI配置类型: {type(ui_config)}")
+        logger.debug(f"配置字典键: {self.config.keys()}")
+        
         # 获取下载配置和通用配置
         self.download_config = self.config.get('DOWNLOAD', {})
         self.general_config = self.config.get('GENERAL', {})
         
+        # 详细打印下载配置的结构和内容
+        logger.debug(f"下载配置内容: {json.dumps(self.download_config, indent=2, ensure_ascii=False, default=str)}")
+        
+        # 检查downloadSetting是否存在
+        if 'downloadSetting' in self.download_config:
+            logger.info(f"发现下载设置，共 {len(self.download_config['downloadSetting'])} 项")
+            for idx, setting in enumerate(self.download_config['downloadSetting']):
+                logger.debug(f"下载设置 #{idx+1}: {json.dumps(setting, indent=2, ensure_ascii=False, default=str)}")
+        else:
+            logger.warning("下载配置中不存在downloadSetting字段")
+        
         # 创建下载目录
         self.download_path = Path(self.download_config.get('download_path', 'downloads'))
         self.download_path.mkdir(exist_ok=True)
+        logger.info(f"下载目录: {self.download_path}")
         
         # 是否使用关键词下载模式
         self.use_keywords = False
@@ -70,12 +84,21 @@ class DownloaderSerial():
         
         # 获取下载频道列表
         download_settings = self.download_config.get('downloadSetting', [])
+        logger.info(f"获取到 {len(download_settings)} 个下载设置")
+        
+        # 详细打印每个下载设置
+        for idx, setting in enumerate(download_settings):
+            logger.info(f"下载设置 #{idx+1}: 源频道={setting.get('source_channels', '')}, "
+                       f"起始ID={setting.get('start_id', 0)}, 结束ID={setting.get('end_id', 0)}, "
+                       f"媒体类型={setting.get('media_types', [])}")
+        
         if not download_settings:
             logger.error("未配置下载设置，无法开始下载", error_type="CONFIG", recoverable=False)
             return
         
         # 获取全局限制值
         global_limit = self.general_config.get('limit', 50)
+        logger.info(f"全局限制值: {global_limit} 条消息")
         
         # 根据最大并发数和每个频道的下载量计算总下载量
         total_download_count = 0
@@ -83,6 +106,8 @@ class DownloaderSerial():
             # 获取该频道的下载数量设置，默认为全局配置
             setting_limit = setting.get('start_id') and setting.get('end_id') and abs(setting.get('end_id') - setting.get('start_id')) or global_limit
             total_download_count += setting_limit if setting_limit > 0 else 1000  # 假设默认最多1000条
+        
+        logger.info(f"预计总下载消息数: {total_download_count} 条")
         
         # 已完成的下载数量
         completed_count = 0
@@ -94,8 +119,11 @@ class DownloaderSerial():
             start_id = setting.get('start_id', 0)
             end_id = setting.get('end_id', 0)
             
+            logger.info(f"处理频道 {channel_name}, 开始ID: {start_id}, 结束ID: {end_id}")
+            
             # 计算限制
             limit = abs(end_id - start_id) if start_id and end_id else global_limit
+            logger.info(f"消息限制: {limit if limit > 0 else '无限制'}")
             
             # 确保下载目录存在
             download_path = Path(self.download_config.get('download_path', 'downloads'))
@@ -107,21 +135,19 @@ class DownloaderSerial():
                 continue
             
             # 解析频道ID
-            try:
-                # 检查任务是否取消
-                if self.task_context.cancel_token.is_cancelled:
-                    logger.status("下载任务已取消")
-                    return
+            try:              
+                # 解析频道标识符，获取纯频道ID（去除消息ID部分）
+                channel_id_info, message_id = await self.channel_resolver.resolve_channel(channel_name)
+                logger.debug(f"解析频道标识符 {channel_name} 的结果: {channel_id_info}, 消息ID: {message_id}")
                 
-                # 等待暂停恢复
-                await self.task_context.wait_if_paused()
-                
-                channel_id = await self.channel_resolver.resolve_channel(channel_name)
-                if not channel_id:
+                # 获取真实的频道ID（数字ID）
+                real_channel_id = await self.channel_resolver.get_channel_id(channel_id_info)
+                if not real_channel_id:
                     logger.error(f"无法解析频道 {channel_name}", error_type="CHANNEL_RESOLVE", recoverable=True)
                     continue
                 
-                channel_info_str, (channel_title, _) = await self.channel_resolver.format_channel_info(channel_id)
+                # 获取频道信息用于显示
+                channel_info_str, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
                 logger.info(f"开始从频道 {channel_info_str} 下载媒体，限制 {limit if limit > 0 else '无'} 条")
                 
                 # 创建频道专用下载目录
@@ -134,20 +160,12 @@ class DownloaderSerial():
                 downloaded_count = 0
                 
                 # 获取消息
-                async for message in self.client.get_chat_history(channel_id, limit=limit):
-                    # 检查任务是否取消
-                    if self.task_context.cancel_token.is_cancelled:
-                        logger.status("下载任务已取消")
-                        return
-                    
-                    # 等待暂停恢复
-                    await self.task_context.wait_if_paused()
-                    
+                async for message in self.client.get_chat_history(real_channel_id, limit=limit):        
                     # 检查消息是否包含媒体，且未下载过
                     if message.media:
                         # 检查是否已经下载过该消息的媒体
                         media_id = message.id
-                        if self.history_manager.is_downloaded(channel_id, media_id):
+                        if self.history_manager.is_message_downloaded(real_channel_id, media_id):
                             logger.debug(f"消息ID: {media_id} 已下载，跳过")
                             continue
                         
@@ -166,11 +184,11 @@ class DownloaderSerial():
                         if file_path.exists():
                             logger.debug(f"文件已存在: {file_path}，跳过下载")
                             # 标记为已下载
-                            self.history_manager.mark_as_downloaded(channel_id, media_id)
+                            self.history_manager.add_download_record(real_channel_id, media_id)
                             continue
                         
                         # 下载媒体
-                        logger.status(f"正在下载: {file_name}")
+                        logger.info(f"正在下载: {file_name}")
                         try:
                             # 开始时间
                             start_time = time.time()
@@ -197,31 +215,24 @@ class DownloaderSerial():
                                     f"下载完成: {file_name} ({file_size_mb:.2f}MB, {download_time:.2f}s, {speed_mbps:.2f}MB/s)")
                                 
                                 # 标记为已下载
-                                self.history_manager.mark_as_downloaded(channel_id, media_id)
-                                
-                                # 发出下载完成事件
-                                self.emit("download_complete", media_id, file_name, file_size_mb)
+                                self.history_manager.add_download_record(real_channel_id, media_id)
                                 
                                 # 增加下载计数
                                 downloaded_count += 1
                                 completed_count += 1
                                 
-                                # 发出进度事件
+                                # 计算进度百分比
                                 progress_percentage = (completed_count / total_download_count) * 100 if total_download_count > 0 else 0
-                                self.emit("download_progress", completed_count, total_download_count, progress_percentage)
-                                
-
+                                logger.info(f"总进度: {completed_count}/{total_download_count} ({progress_percentage:.2f}%)")
                             else:
                                 logger.error(f"下载失败: {file_name}", error_type="DOWNLOAD_FAIL", recoverable=True)
                         
                         except FloodWait as e:
                             logger.warning(f"下载受限，等待 {e.x} 秒")
-                            self.emit("download_limited", e.x)
                             await asyncio.sleep(e.x)
                             
                         except Exception as e:
                             logger.error(f"下载异常: {str(e)}", error_type="DOWNLOAD_ERROR", recoverable=True)
-                            self.emit("download_error", media_id, file_name, str(e))
                     
                     # 检查是否达到限制
                     if limit > 0 and downloaded_count >= limit:
@@ -229,19 +240,16 @@ class DownloaderSerial():
                         break
                 
                 # 完成一个频道的下载
-                logger.status(f"完成频道 {channel_info_str} 的下载，共下载 {downloaded_count} 个文件")
-                self.emit("channel_complete", channel_id, channel_info_str, downloaded_count)
+                logger.info(f"完成频道 {channel_info_str} 的下载，共下载 {downloaded_count} 个文件")
                 
             except Exception as e:
                 logger.error(f"处理频道 {channel_name} 时出错: {str(e)}", error_type="CHANNEL_PROCESS", recoverable=True)
                 import traceback
                 error_details = traceback.format_exc()
                 logger.error(error_details)
-                self.emit("channel_error", channel_name, str(e), error_details)
         
         # 所有频道处理完成
-        logger.status(f"所有下载任务完成，共下载 {completed_count} 个文件")
-        self.emit("all_complete", completed_count)
+        logger.info(f"所有下载任务完成，共下载 {completed_count} 个文件")
     
     def _download_progress_callback(self, message_id, file_name):
         """
@@ -258,18 +266,7 @@ class DownloaderSerial():
         last_percentage = 0
         
         async def progress(current, total):
-            nonlocal start_time, last_percentage
-            
-            # 检查任务是否已取消
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                # 这里不能直接取消，需要抛出异常才能中断下载
-                raise asyncio.CancelledError("下载任务已取消")
-            
-            # 检查任务是否已暂停
-            if self.task_context and self.task_context.pause_token.is_paused:
-                # 如果暂停了，阻塞直到恢复或取消
-                await self.task_context.pause_token.wait_for_resume()
-            
+            nonlocal start_time, last_percentage           
             # 计算百分比
             if total > 0:
                 percentage = int((current / total) * 100)
@@ -296,9 +293,6 @@ class DownloaderSerial():
                             time_text = f"{int(mins)}分{int(secs)}秒"
                         else:
                             time_text = "计算中..."
-                        
-                        # 发送进度事件
-                        self.emit("file_progress", message_id, file_name, current, total, percentage, speed_text, time_text)
                         
                         # 日志显示进度
                         logger.debug(

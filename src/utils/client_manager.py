@@ -5,7 +5,6 @@
 import os
 import asyncio
 from typing import Optional, Dict, Any, Union
-from dotenv import load_dotenv
 
 from pyrogram import Client
 from pyrogram.types import User
@@ -22,31 +21,19 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
-# 加载环境变量
-load_dotenv()
-
 class ClientManager:
     """
     Pyrogram客户端管理器
     负责创建、初始化和管理Telegram客户端连接
     """
     
-    def __init__(self, ui_config_manager: UIConfigManager = None, session_name: str = "tg_manager", 
-                 api_id: int = None, api_hash: str = None, phone_number: str = None):
+    def __init__(self, ui_config_manager: UIConfigManager, session_name: str = "tg_manager"):
         """
         初始化客户端管理器
         
-        可以通过两种方式初始化：
-        1. 提供UIConfigManager实例，从配置中加载API凭据
-        2. 直接提供api_id、api_hash和phone_number参数
-        3. 如果以上两种方式都未提供凭据，从环境变量加载
-        
         Args:
-            ui_config_manager: UI配置管理器实例，可选
+            ui_config_manager: UI配置管理器实例，用于加载API凭据
             session_name: 会话名称，默认为"tg_manager"
-            api_id: Telegram API ID，可选
-            api_hash: Telegram API Hash，可选
-            phone_number: 电话号码，可选
         """
         self.ui_config_manager = ui_config_manager
         self.session_name = session_name
@@ -54,138 +41,45 @@ class ClientManager:
         self.me = None  # 用户信息
         self.is_authorized = False
         
-        # 如果直接提供了API凭据，使用直接提供的参数
-        if api_id and api_hash:
-            logger.info(f"使用直接提供的API凭据 (api_id: {api_id})")
-            self.api_id = api_id
-            self.api_hash = api_hash
-            self.phone_number = phone_number
-        # 否则从配置管理器加载
-        elif ui_config_manager:
-            logger.info("从配置管理器加载API凭据")
-            # 获取UI配置并转换为字典
-            ui_config = self.ui_config_manager.get_ui_config()
-            logger.debug(f"UI配置类型: {type(ui_config)}")
-            logger.debug(f"UI配置属性: {dir(ui_config)}")
-            
-            self.config = convert_ui_config_to_dict(ui_config)
-            logger.debug(f"转换后的配置: {self.config.keys()}")
-            
-            # 获取通用配置
-            general_config = self.config.get('GENERAL', {})
-            logger.debug(f"GENERAL配置: {general_config}")
-            
-            # 获取API凭据
-            self.api_id = general_config.get('api_id')
-            self.api_hash = general_config.get('api_hash')
-            self.phone_number = general_config.get('phone_number')
-            
-            # 输出API凭据信息(注意不要输出完整信息，保护安全)
-            logger.info(f"从配置中读取到API ID: {self.api_id}")
-            if self.api_hash:
-                # 只显示API Hash的前4位和后4位
-                api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
-                logger.info(f"从配置中读取到API Hash: {api_hash_masked}")
-            else:
-                logger.warning("未能从配置中读取到API Hash")
-            
-            if self.phone_number:
-                # 只显示电话号码的前4位和后2位
-                masked_phone = self.phone_number[:4] + '****' + self.phone_number[-2:] if len(self.phone_number) > 6 else "***"
-                logger.info(f"从配置中读取到电话号码: {masked_phone}")
-            else:
-                logger.warning("未能从配置中读取到电话号码")
-            
-            # 检查API凭据是否有效
-            if not self.api_id or not self.api_hash:
-                logger.error("配置中的API凭据无效或缺失，尝试从环境变量加载...")
-                # 尝试从环境变量加载
-                env_api_id = os.getenv('API_ID')
-                env_api_hash = os.getenv('API_HASH')
-                env_phone = os.getenv('PHONE_NUMBER')
-                
-                if env_api_id and env_api_hash:
-                    try:
-                        self.api_id = int(env_api_id)
-                        self.api_hash = env_api_hash
-                        self.phone_number = env_phone if env_phone else self.phone_number
-                        
-                        logger.info(f"从环境变量读取到API ID: {self.api_id}")
-                        if self.api_hash:
-                            api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
-                            logger.info(f"从环境变量读取到API Hash: {api_hash_masked}")
-                    except (ValueError, TypeError) as e:
-                        logger.error(f"从环境变量加载API凭据失败: {e}")
-                        raise ValueError("API ID必须是有效的整数")
-                else:
-                    raise ValueError("无法获取有效的API凭据，请检查配置文件或环境变量")
-            
-            # 获取代理设置
-            self.proxy_settings = get_proxy_settings_from_config(self.config)
-            logger.debug(f"代理设置: {self.proxy_settings}")
-        # 从环境变量加载
+        # 从配置管理器加载API凭据
+        logger.info("从配置管理器加载API凭据")
+        # 获取UI配置并转换为字典
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
+        # 获取通用配置
+        general_config = self.config.get('GENERAL', {})
+        
+        # 获取API凭据
+        self.api_id = general_config.get('api_id')
+        self.api_hash = general_config.get('api_hash')
+        self.phone_number = general_config.get('phone_number')
+        
+        # 输出API凭据信息(注意不要输出完整信息，保护安全)
+        logger.info(f"从配置中读取到API ID: {self.api_id}")
+        if self.api_hash:
+            # 只显示API Hash的前4位和后4位
+            api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
+            logger.info(f"从配置中读取到API Hash: {api_hash_masked}")
         else:
-            logger.info("尝试从环境变量加载API凭据")
-            try:
-                env_api_id = os.getenv('API_ID')
-                env_api_hash = os.getenv('API_HASH')
-                env_phone = os.getenv('PHONE_NUMBER')
-                
-                if not env_api_id or not env_api_hash:
-                    raise ValueError("环境变量中未设置API_ID或API_HASH")
-                
-                self.api_id = int(env_api_id)
-                self.api_hash = env_api_hash
-                self.phone_number = env_phone
-                
-                logger.info(f"从环境变量读取到API ID: {self.api_id}")
-                if self.api_hash:
-                    api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
-                    logger.info(f"从环境变量读取到API Hash: {api_hash_masked}")
-                
-                # 如果环境变量中有代理设置，使用它们
-                proxy_enabled = os.getenv('PROXY_ENABLED', 'false').lower() == 'true'
-                proxy_settings = {}
-                
-                if proxy_enabled:
-                    proxy_type = os.getenv('PROXY_TYPE', 'SOCKS5')
-                    proxy_addr = os.getenv('PROXY_ADDR', '127.0.0.1')
-                    proxy_port = int(os.getenv('PROXY_PORT', '1080'))
-                    proxy_username = os.getenv('PROXY_USERNAME', '')
-                    proxy_password = os.getenv('PROXY_PASSWORD', '')
-                    
-                    if proxy_type.upper() == 'SOCKS5':
-                        proxy_settings = {
-                            "proxy": {
-                                "scheme": "socks5",
-                                "hostname": proxy_addr,
-                                "port": proxy_port
-                            }
-                        }
-                        
-                        if proxy_username and proxy_password:
-                            proxy_settings["proxy"]["username"] = proxy_username
-                            proxy_settings["proxy"]["password"] = proxy_password
-                            
-                    elif proxy_type.upper() == 'HTTP':
-                        proxy_settings = {
-                            "proxy": {
-                                "scheme": "http",
-                                "hostname": proxy_addr,
-                                "port": proxy_port
-                            }
-                        }
-                        
-                        if proxy_username and proxy_password:
-                            proxy_settings["proxy"]["username"] = proxy_username
-                            proxy_settings["proxy"]["password"] = proxy_password
-                
-                self.proxy_settings = proxy_settings
-                logger.debug(f"从环境变量读取的代理设置: {self.proxy_settings}")
-                
-            except ValueError as e:
-                logger.error(f"从环境变量加载API凭据失败: {e}")
-                raise ValueError("必须提供UIConfigManager实例或直接提供API凭据或在环境变量中设置有效的API凭据")
+            logger.warning("未能从配置中读取到API Hash")
+        
+        if self.phone_number:
+            # 只显示电话号码的前4位和后2位
+            masked_phone = self.phone_number[:4] + '****' + self.phone_number[-2:] if len(self.phone_number) > 6 else "***"
+            logger.info(f"从配置中读取到电话号码: {masked_phone}")
+        else:
+            logger.warning("未能从配置中读取到电话号码")
+        
+        # 检查API凭据是否有效
+        if not self.api_id or not self.api_hash:
+            error_msg = "配置中的API凭据无效或缺失，请在设置中配置有效的API凭据"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # 获取代理设置
+        self.proxy_settings = get_proxy_settings_from_config(self.config)
+        logger.debug(f"代理设置: {self.proxy_settings}")
     
     async def create_client(self):
         """
@@ -250,54 +144,74 @@ class ClientManager:
         if not self.client:
             await self.create_client()
         
-        # 如果客户端已连接，直接返回
-        if self.client.is_connected:
-            return self.client
-        
         try:
+            # 启动客户端
+            logger.info("正在启动客户端...")
             await self.client.start()
+            
+            # 获取用户信息
             self.me = await self.client.get_me()
             self.is_authorized = True
-            logger.info(f"客户端已启动：{self.me.first_name} (@{self.me.username})")
+            
+            # 显示用户信息
+            user_info = f"{self.me.first_name}"
+            if self.me.last_name:
+                user_info += f" {self.me.last_name}"
+            user_info += f" (@{self.me.username})" if self.me.username else ""
+            
+            logger.info(f"客户端已启动：{user_info}")
+            
             return self.client
             
         except FloodWait as e:
-            logger.warning(f"请求过于频繁，需要等待 {e.value} 秒")
-            await asyncio.sleep(e.value)
+            logger.warning(f"启动客户端时遇到FloodWait，需要等待 {e.x} 秒")
+            await asyncio.sleep(e.x)
+            # 递归重试
             return await self.start_client()
             
-        except AuthKeyUnregistered:
-            logger.error("授权密钥未注册，需要重新登录")
-            self.is_authorized = False
-            raise
-            
-        except UserDeactivated:
-            logger.error("用户账号已被停用")
-            self.is_authorized = False
-            raise
-            
-        except Unauthorized:
-            logger.error("未授权，需要登录")
-            self.is_authorized = False
+        except Exception as e:
+            logger.error(f"启动客户端时出错: {str(e)}")
             raise
     
     async def stop_client(self):
-        """停止客户端"""
-        if self.client and self.client.is_connected:
-            await self.client.stop()
-            logger.info("客户端已停止")
+        """
+        停止客户端
+        
+        Returns:
+            bool: 是否成功停止
+        """
+        if self.client:
+            try:
+                await self.client.stop()
+                self.client = None
+                self.is_authorized = False
+                logger.info("客户端已停止")
+                return True
+            except Exception as e:
+                logger.error(f"停止客户端时出错: {e}")
+                return False
+        return True
     
     async def restart_client(self):
-        """重启客户端"""
+        """
+        重启客户端
+        
+        Returns:
+            Client: 重启后的客户端实例
+        """
         await self.stop_client()
         return await self.start_client()
     
-    async def send_code(self):
+    async def send_code(self, phone_number: str = None):
         """
-        发送登录验证码
+        发送验证码
         
+        Args:
+            phone_number: 电话号码，可选。如果未提供，则使用配置中的电话号码
+            
         Returns:
-            dict: 发送验证码的结果
+            str: 手机号，用于确认
+            bool: 是否已经发送过验证码
             
         Raises:
             FloodWait: 发送请求过于频繁
@@ -305,21 +219,31 @@ class ClientManager:
         if not self.client:
             await self.create_client()
         
+        # 如果提供了新电话号码，使用新号码
+        if phone_number:
+            self.phone_number = phone_number
+            # 更新客户端设置
+            self.client.phone_number = phone_number
+        
         try:
             sent_code = await self.client.send_code(self.phone_number)
-            logger.info(f"验证码已发送到 {self.phone_number}")
-            return sent_code
+            return self.phone_number, sent_code.type
         except FloodWait as e:
-            logger.warning(f"请求过于频繁，需要等待 {e.value} 秒")
-            await asyncio.sleep(e.value)
+            logger.warning(f"发送验证码遇到FloodWait，需要等待 {e.x} 秒")
+            await asyncio.sleep(e.x)
+            # 递归重试
             return await self.send_code()
+        except Exception as e:
+            logger.error(f"发送验证码时出错: {e}")
+            raise
     
-    async def sign_in(self, phone_code: str):
+    async def sign_in(self, code: str, password: str = None):
         """
         使用验证码登录
         
         Args:
-            phone_code: 验证码
+            code: 验证码
+            password: 两步验证密码，如果启用了两步验证，则需要提供
             
         Returns:
             User: 用户信息
@@ -330,38 +254,58 @@ class ClientManager:
             SessionPasswordNeeded: 需要两步验证密码
         """
         if not self.client:
-            raise ValueError("客户端未创建，请先调用send_code")
+            await self.create_client()
         
         try:
-            self.me = await self.client.sign_in(self.phone_number, phone_code)
+            # 尝试用验证码登录
+            signed_in = await self.client.sign_in(self.phone_number, code)
+            # 更新用户信息
+            self.me = await self.client.get_me()
             self.is_authorized = True
-            logger.info(f"登录成功：{self.me.first_name} (@{self.me.username})")
-            return self.me
-        except (PhoneCodeInvalid, PhoneCodeExpired) as e:
-            logger.error(f"验证码错误：{str(e)}")
-            raise
+            
+            return signed_in
+            
         except SessionPasswordNeeded:
-            logger.info("需要两步验证密码")
+            # 如果启用了两步验证，尝试用密码登录
+            if password:
+                try:
+                    signed_in = await self.client.check_password(password)
+                    # 更新用户信息
+                    self.me = await self.client.get_me()
+                    self.is_authorized = True
+                    
+                    return signed_in
+                except Exception as e:
+                    logger.error(f"两步验证密码验证失败: {e}")
+                    raise
+            else:
+                # 没有提供密码但需要两步验证
+                logger.warning("需要两步验证密码，但未提供")
+                raise SessionPasswordNeeded()
+                
+        except Exception as e:
+            logger.error(f"登录时出错: {e}")
             raise
     
-    async def check_password(self, password: str):
+    async def is_client_authorized(self) -> bool:
         """
-        验证两步验证密码
+        检查客户端是否已授权
         
-        Args:
-            password: 两步验证密码
-            
         Returns:
-            User: 用户信息
+            bool: 是否已授权
         """
         if not self.client:
-            raise ValueError("客户端未创建，请先调用send_code")
+            return False
         
         try:
-            self.me = await self.client.check_password(password)
-            self.is_authorized = True
-            logger.info(f"密码验证成功：{self.me.first_name} (@{self.me.username})")
-            return self.me
+            # 尝试获取用户信息
+            self.me = await self.client.get_me()
+            self.is_authorized = bool(self.me)
+            return self.is_authorized
+        except Unauthorized:
+            self.is_authorized = False
+            return False
         except Exception as e:
-            logger.error(f"密码验证失败：{str(e)}")
-            raise 
+            logger.error(f"检查授权状态时出错: {e}")
+            self.is_authorized = False
+            return False 
