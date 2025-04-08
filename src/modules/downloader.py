@@ -22,14 +22,11 @@ from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
-from src.utils.events import EventEmitter
-from src.utils.controls import CancelToken, PauseToken, TaskContext
-from src.utils.logger_event_adapter import LoggerEventAdapter
 
 # 仅用于内部调试，不再用于UI输出
-_logger = get_logger()
+logger = get_logger()
 
-class Downloader(EventEmitter):
+class Downloader():
     """
     下载模块，负责下载历史消息的媒体文件
     """
@@ -52,8 +49,6 @@ class Downloader(EventEmitter):
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
-        # 创建日志事件适配器
-        self.log = LoggerEventAdapter(self)
         
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
@@ -101,24 +96,26 @@ class Downloader(EventEmitter):
         self.use_keywords = False
         
         # 任务控制
-        self.task_context = None
+        self.is_cancelled = False
+        self.is_paused = False
     
-    async def download_media_from_channels(self, task_context: Optional[TaskContext] = None):
+    async def download_media_from_channels(self, task_context=None):
         """
         从配置的源频道下载媒体文件
         
         Args:
-            task_context: 任务上下文，用于控制任务执行
+            task_context: 移除了任务上下文参数类型
         """
-        # 初始化任务上下文
-        self.task_context = task_context or TaskContext()
+        # 初始化状态
+        self.is_cancelled = False
+        self.is_paused = False
         
         mode = "关键词下载" if self.use_keywords else "普通下载"
         status_message = f"开始从频道下载媒体文件（并行下载模式 - {mode}）"
-        self.log.status(status_message)
+        logger.status(status_message)
         
         info_message = f"最大并行下载数: {self.max_concurrent_downloads}, 写入线程数: {self.writer_pool_size}"
-        self.log.info(info_message)
+        logger.info(info_message)
         
         # 重置统计信息
         self.download_start_time = time.time()
@@ -144,10 +141,10 @@ class Downloader(EventEmitter):
             download_settings = self.download_config.get('downloadSetting', [])
             
             if len(download_settings) == 0:
-                self.log.warning("未配置任何下载设置，请在config.json的DOWNLOAD.downloadSetting数组中添加配置")
+                logger.warning("未配置任何下载设置，请在config.json的DOWNLOAD.downloadSetting数组中添加配置")
                 return
                 
-            self.log.info(f"配置的下载设置数量: {len(download_settings)}")
+            logger.info(f"配置的下载设置数量: {len(download_settings)}")
             
             # 创建所有下载任务的集合
             all_download_tasks = []
@@ -155,9 +152,13 @@ class Downloader(EventEmitter):
             # 遍历每个下载设置
             for setting in download_settings:
                 # 检查是否已取消
-                if not await self.task_context.check_continue():
-                    self.log.status("下载任务已取消")
+                if self.is_cancelled:
+                    logger.status("下载任务已取消")
                     return
+                
+                # 等待暂停恢复
+                while self.is_paused and not self.is_cancelled:
+                    await asyncio.sleep(0.5)
                 
                 source_channel = setting.get('source_channels', [])
                 start_id = setting.get('start_id', 0)
@@ -166,19 +167,19 @@ class Downloader(EventEmitter):
                 keywords = setting.get('keywords', []) if self.use_keywords else []
                 
                 if self.use_keywords:
-                    self.log.info(f"准备从频道 {source_channel} 下载媒体文件，关键词: {keywords}")
+                    logger.info(f"准备从频道 {source_channel} 下载媒体文件，关键词: {keywords}")
                 else:
-                    self.log.info(f"准备从频道 {source_channel} 下载媒体文件")
+                    logger.info(f"准备从频道 {source_channel} 下载媒体文件")
                 
                 await self._process_channel_for_download(source_channel, start_id, end_id, media_types, keywords, all_download_tasks)
             
             # 使用批量处理的方式并行下载
             total_messages = len(all_download_tasks)
             if total_messages == 0:
-                self.log.info("没有符合条件的消息需要下载")
+                logger.info("没有符合条件的消息需要下载")
                 return
             
-            self.log.status(f"开始下载 {total_messages} 条消息中的媒体文件")
+            logger.status(f"开始下载 {total_messages} 条消息中的媒体文件")
             
             # 创建下载工作者协程
             num_workers = min(self.max_concurrent_downloads, total_messages)
@@ -202,7 +203,7 @@ class Downloader(EventEmitter):
             
             # 等待队列中的所有文件写入完成
             while not self.download_queue.empty():
-                self.log.info(f"队列中还有 {self.download_queue.qsize()} 个文件等待写入")
+                logger.info(f"队列中还有 {self.download_queue.qsize()} 个文件等待写入")
                 self.emit("progress", -1, self.download_count, total_messages, remaining=self.download_queue.qsize())
                 await asyncio.sleep(1)
                 
@@ -215,21 +216,21 @@ class Downloader(EventEmitter):
             total_time = time.time() - self.download_start_time
             avg_speed_kb = self.total_downloaded_bytes / (total_time * 1024) if total_time > 0 else 0
             summary = f"下载完成 | 总文件: {self.download_count}个 | 总大小: {self.total_downloaded_bytes/1024/1024:.2f}MB | 总耗时: {total_time:.2f}秒 | 平均速度: {avg_speed_kb:.2f}KB/s"
-            self.log.info(summary)
+            logger.info(summary)
             self.emit("complete", True, {
                 "total_files": self.download_count,
                 "total_size": self.total_downloaded_bytes,
                 "total_time": total_time,
                 "avg_speed": avg_speed_kb
             })
-            self.log.status("所有频道的媒体文件下载完成")
+            logger.status("所有频道的媒体文件下载完成")
             
         except Exception as e:
-            self.log.error(f"下载过程中发生错误: {e}")
+            logger.error(f"下载过程中发生错误: {e}")
             import traceback
             error_details = traceback.format_exc()
             _logger.error(error_details)  # 记录到内部日志
-            self.log.error(str(e), error_type="DOWNLOAD", recoverable=False, details=error_details)
+            logger.error(str(e), error_type="DOWNLOAD", recoverable=False, details=error_details)
             self.is_running = False
     
     async def _download_worker(self, worker_id: int, queue: asyncio.Queue):
@@ -241,17 +242,17 @@ class Downloader(EventEmitter):
             queue: 下载任务队列
         """
         worker_info = f"下载工作协程-{worker_id}"
-        self.log.info(f"{worker_info} 启动")
+        logger.info(f"{worker_info} 启动")
         
         while True:
             # 检查是否已取消
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                self.log.info(f"{worker_info} 检测到取消信号，退出")
+            if self.is_cancelled:
+                logger.info(f"{worker_info} 检测到取消信号，退出")
                 break
                 
             # 等待暂停恢复
-            if self.task_context:
-                await self.task_context.wait_if_paused()
+            if self.is_paused:
+                await asyncio.sleep(0.5)
             
             try:
                 # 获取下一个下载任务
@@ -261,7 +262,7 @@ class Downloader(EventEmitter):
                     # 获取媒体类型
                     media_type = self._get_media_type(message)
                     if not media_type:
-                        self.log.warning(f"{worker_info} 消息没有支持的媒体类型: {message.id}")
+                        logger.warning(f"{worker_info} 消息没有支持的媒体类型: {message.id}")
                         queue.task_done()
                         continue
                     
@@ -272,7 +273,7 @@ class Downloader(EventEmitter):
                         self.active_downloads += 1
                         
                         worker_status = f"{worker_info} 开始下载: {media_type} - {message.id}"
-                        self.log.debug(worker_status)
+                        logger.debug(worker_status)
                         
                         # 下载文件
                         download_start_time = time.time()
@@ -298,7 +299,7 @@ class Downloader(EventEmitter):
                                     speed_kb = (file_size / download_time / 1024) if download_time > 0 else 0
                                     
                                     log_msg = f"{worker_info} 下载完成: {file_path} | 大小: {file_size/1024:.2f}KB | 耗时: {download_time:.2f}秒 | 速度: {speed_kb:.2f}KB/s"
-                                    self.log.debug(log_msg)
+                                    logger.debug(log_msg)
                                     
                                     # 发射媒体下载完成事件
                                     self.emit("media_download", message.id, media_type, file_path, file_size, download_time, speed_kb)
@@ -306,18 +307,18 @@ class Downloader(EventEmitter):
                                     # 更新下载历史
                                     self.history_manager.add_download_record(channel, message.id, channel_id)
                                 else:
-                                    self.log.warning(f"{worker_info} 下载失败或无需下载: message_id={message.id}")
+                                    logger.warning(f"{worker_info} 下载失败或无需下载: message_id={message.id}")
                                     self.emit("media_download_failed", message.id, media_type, "下载失败或无需下载")
                                     
                             except asyncio.TimeoutError:
-                                self.log.error(f"{worker_info} 下载超时: message_id={message.id}，超过{download_timeout}秒")
+                                logger.error(f"{worker_info} 下载超时: message_id={message.id}，超过{download_timeout}秒")
                                 self.emit("media_download_failed", message.id, media_type, "下载超时")
                             except Exception as e:
-                                self.log.error(f"{worker_info} 下载出错: {e}")
+                                logger.error(f"{worker_info} 下载出错: {e}")
                                 self.emit("error", str(e), error_type="DOWNLOAD", recoverable=True, message_id=message.id)
                             
                         except FloodWait as e:
-                            self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                            logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                             self.emit("error", f"触发FloodWait，等待 {e.x} 秒", error_type="FLOOD_WAIT", recoverable=True, wait_time=e.x)
                             await self._handle_flood_wait(e.x)
                             continue
@@ -326,7 +327,7 @@ class Downloader(EventEmitter):
                             self.active_downloads -= 1
                             
                 except Exception as e:
-                    self.log.error(f"{worker_info} 处理消息时出错: {e}")
+                    logger.error(f"{worker_info} 处理消息时出错: {e}")
                     self.emit("error", str(e), error_type="MESSAGE_PROCESSING", recoverable=True)
                     
                 finally:
@@ -335,21 +336,21 @@ class Downloader(EventEmitter):
                     
             except asyncio.CancelledError:
                 # 协程被取消
-                self.log.info(f"{worker_info} 协程被取消")
+                logger.info(f"{worker_info} 协程被取消")
                 break
                 
             except Exception as e:
-                self.log.error(f"{worker_info} 发生未预期错误: {e}")
+                logger.error(f"{worker_info} 发生未预期错误: {e}")
                 self.emit("error", str(e), error_type="WORKER", recoverable=True)
                 # 继续循环，尝试下一个任务
                 
-        self.log.info(f"{worker_info} 退出")
+        logger.info(f"{worker_info} 退出")
 
     def _file_writer_worker(self):
         """
         文件写入线程，从队列中取出内存中的媒体数据并写入文件
         """
-        self.log.status("文件写入线程启动")
+        logger.status("文件写入线程启动")
         
         # 创建写入线程池
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.writer_pool_size) as executor:
@@ -376,13 +377,13 @@ class Downloader(EventEmitter):
                     futures = [f for f in futures if not f.done()]
                     
                 except Exception as e:
-                    self.log.error(f"文件写入线程处理队列项时出错: {e}", error_type="FILE_WRITER", recoverable=True)
+                    logger.error(f"文件写入线程处理队列项时出错: {e}", error_type="FILE_WRITER", recoverable=True)
             
             # 等待所有未完成的任务
-            self.log.status(f"等待 {len(futures)} 个文件写入任务完成...")
+            logger.status(f"等待 {len(futures)} 个文件写入任务完成...")
             concurrent.futures.wait(futures)
         
-        self.log.status("文件写入线程退出")
+        logger.status("文件写入线程退出")
     
     def _write_file(self, file_path, data, message_id, channel_id, media_type):
         """
@@ -429,7 +430,7 @@ class Downloader(EventEmitter):
             self.history_manager.add_download_record(channel_id, message_id, channel_id)
             
         except Exception as e:
-            self.log.error(f"写入文件失败: {file_path} - {e}", error_type="FILE_WRITE", recoverable=True, file_path=file_path)
+            logger.error(f"写入文件失败: {file_path} - {e}", error_type="FILE_WRITE", recoverable=True, file_path=file_path)
 
     async def _download_message_media_to_memory(self, message: Message, download_path: Path, chat_id: int, channel: str) -> bool:
         """
@@ -445,12 +446,12 @@ class Downloader(EventEmitter):
             bool: 是否成功下载
         """
         # 检查是否已取消
-        if self.task_context and self.task_context.cancel_token.is_cancelled:
+        if self.is_cancelled:
             return False
             
         # 等待暂停恢复
-        if self.task_context:
-            await self.task_context.wait_if_paused()
+        if self.is_paused:
+            await asyncio.sleep(0.5)
         
         try:
             # 检查消息类型
@@ -460,7 +461,7 @@ class Downloader(EventEmitter):
                 
             # 检查是否已经下载过该消息
             if self.history_manager.is_downloaded(chat_id, message.id):
-                self.log.debug(f"消息已下载过: {channel} {message.id}")
+                logger.debug(f"消息已下载过: {channel} {message.id}")
                 self.emit("media_skipped", message.id, media_type, "already_downloaded")
                 return False
                 
@@ -489,7 +490,7 @@ class Downloader(EventEmitter):
                     with open(media_path / "title.txt", "w", encoding="utf-8") as f:
                         f.write(caption)
                 except Exception as e:
-                    self.log.error(f"保存消息文本失败: {e}")
+                    logger.error(f"保存消息文本失败: {e}")
                     self.emit("error", str(e), error_type="FILE_WRITE", recoverable=True)
             
             # 构建完整的文件路径
@@ -505,7 +506,7 @@ class Downloader(EventEmitter):
                 # 从消息下载媒体文件
                 download_result = await self._download_media_to_memory(message, media_type)
                 if not download_result:
-                    self.log.warning(f"下载失败: {channel} {message.id} - {file_name}")
+                    logger.warning(f"下载失败: {channel} {message.id} - {file_name}")
                     self.emit("media_download_failed", message.id, media_type, "download_failed")
                     return False
                 
@@ -517,7 +518,7 @@ class Downloader(EventEmitter):
                 
                 # 验证文件大小
                 if not media_data or file_size == 0:
-                    self.log.warning(f"下载的媒体文件大小为0: {channel} {message.id} - {file_name}")
+                    logger.warning(f"下载的媒体文件大小为0: {channel} {message.id} - {file_name}")
                     self.emit("media_download_failed", message.id, media_type, "zero_size")
                     return False
                 
@@ -526,23 +527,23 @@ class Downloader(EventEmitter):
                 
                 # 计算下载速度
                 speed = file_size / (download_time * 1024) if download_time > 0 else 0  # KB/s
-                self.log.debug(f"下载成功: {file_name} | 大小: {file_size/1024:.2f}KB | 耗时: {download_time:.2f}秒 | 速度: {speed:.2f}KB/s")
+                logger.debug(f"下载成功: {file_name} | 大小: {file_size/1024:.2f}KB | 耗时: {download_time:.2f}秒 | 速度: {speed:.2f}KB/s")
                 
                 return True
                 
             except FloodWait as e:
-                self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                 self.emit("error", f"触发FloodWait，等待 {e.x} 秒", error_type="FLOOD_WAIT", recoverable=True, wait_time=e.x)
                 await self._handle_flood_wait(e.x)
                 return False
                 
             except Exception as e:
-                self.log.error(f"下载媒体文件时出错: {e}")
+                logger.error(f"下载媒体文件时出错: {e}")
                 self.emit("error", str(e), error_type="DOWNLOAD", recoverable=True, message_id=message.id)
                 return False
                 
         except Exception as e:
-            self.log.error(f"处理媒体消息时出错: {e}")
+            logger.error(f"处理媒体消息时出错: {e}")
             self.emit("error", str(e), error_type="MESSAGE_PROCESSING", recoverable=True, message_id=message.id)
             return False
 
@@ -563,12 +564,12 @@ class Downloader(EventEmitter):
         
         # 如果无法获取有效范围，则直接返回
         if actual_start_id is None or actual_end_id is None:
-            self.log.error(f"无法获取有效的消息ID范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+            logger.error(f"无法获取有效的消息ID范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
             return
             
         # 计算需要获取的消息数量
         total_messages = actual_end_id - actual_start_id + 1
-        self.log.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
+        logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
         try:
             # 收集指定范围内的所有消息
@@ -600,7 +601,7 @@ class Downloader(EventEmitter):
                 # 由于Telegram API是获取"小于offset_id"的消息，需要加1
                 current_offset_id = max(message_ids_to_fetch) + 1
                 
-                self.log.info(f"尝试获取消息批次 (第{attempt_count}次): chat_id={chat_id}, offset_id={current_offset_id}, 剩余未获取消息数={len(message_ids_to_fetch)}")
+                logger.info(f"尝试获取消息批次 (第{attempt_count}次): chat_id={chat_id}, offset_id={current_offset_id}, 剩余未获取消息数={len(message_ids_to_fetch)}")
                 
                 # 记录此批次成功获取的消息数
                 batch_success_count = 0
@@ -620,28 +621,28 @@ class Downloader(EventEmitter):
                         
                         # 如果消息ID小于我们要获取的最小ID，可以停止这一批次的获取
                         if message.id < min(message_ids_to_fetch, default=actual_start_id):
-                            self.log.debug(f"消息ID {message.id} 小于当前需要获取的最小ID {min(message_ids_to_fetch, default=actual_start_id)}，停止当前批次获取")
+                            logger.debug(f"消息ID {message.id} 小于当前需要获取的最小ID {min(message_ids_to_fetch, default=actual_start_id)}，停止当前批次获取")
                             break
                 except FloodWait as e:
                     # 使用全局FloodWait处理机制
-                    self.log.warning(f"获取消息批次时遇到FloodWait, offset_id={current_offset_id}, limit={batch_size}")
+                    logger.warning(f"获取消息批次时遇到FloodWait, offset_id={current_offset_id}, limit={batch_size}")
                     await self._handle_flood_wait(e.x)
                     continue
                 
-                self.log.info(f"已获取 {batch_success_count} 条消息，剩余 {len(message_ids_to_fetch)} 条消息待获取")
+                logger.info(f"已获取 {batch_success_count} 条消息，剩余 {len(message_ids_to_fetch)} 条消息待获取")
                 
                 # 如果此批次没有获取到任何消息，说明可能有些消息不存在或已被删除
                 if batch_success_count == 0:
                     # 检查是否需要缩小获取范围，尝试一条一条地获取
                     if batch_size > 1:
-                        self.log.info(f"未获取到任何消息，尝试减小批次大小")
+                        logger.info(f"未获取到任何消息，尝试减小批次大小")
                         max_batch_size = max(1, max_batch_size // 2)
                     else:
                         # 如果已经是最小批次大小，且仍未获取到消息，记录并移除前一部分消息ID
                         # 这些可能是不存在或已删除的消息
                         if message_ids_to_fetch:
                             ids_to_skip = message_ids_to_fetch[:min(10, len(message_ids_to_fetch))]
-                            self.log.warning(f"无法获取以下消息ID，可能不存在或已被删除：{ids_to_skip}")
+                            logger.warning(f"无法获取以下消息ID，可能不存在或已被删除：{ids_to_skip}")
                             for id_to_skip in ids_to_skip:
                                 message_ids_to_fetch.remove(id_to_skip)
                 
@@ -650,11 +651,11 @@ class Downloader(EventEmitter):
             
             # 检查是否还有未获取的消息
             if message_ids_to_fetch:
-                self.log.warning(f"以下消息ID无法获取，将被跳过：{message_ids_to_fetch}")
+                logger.warning(f"以下消息ID无法获取，将被跳过：{message_ids_to_fetch}")
             
             # 将获取到的消息按ID升序排序（从旧到新）
             all_messages = [fetched_messages_map[msg_id] for msg_id in sorted(fetched_messages_map.keys())]
-            self.log.info(f"消息获取完成，共获取{len(all_messages)}/{total_messages}条消息，已按ID升序排序（从旧到新）")
+            logger.info(f"消息获取完成，共获取{len(all_messages)}/{total_messages}条消息，已按ID升序排序（从旧到新）")
             
             # 逐个返回排序后的消息
             for message in all_messages:
@@ -664,8 +665,8 @@ class Downloader(EventEmitter):
             # 使用全局FloodWait处理机制
             await self._handle_flood_wait(e.x)
         except Exception as e:
-            self.log.error(f"获取消息失败: {e}")
-            self.log.exception("详细错误信息")
+            logger.error(f"获取消息失败: {e}")
+            logger.exception("详细错误信息")
     
     def _sanitize_filename(self, filename: str) -> str:
         """
@@ -714,23 +715,23 @@ class Downloader(EventEmitter):
             if self.consecutive_floods > 1:
                 # 连续触发，大幅增加延迟
                 self.adaptive_delay = min(5.0, self.adaptive_delay * 2.0)
-                self.log.warning(f"连续触发FloodWait ({self.consecutive_floods}次)，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
+                logger.warning(f"连续触发FloodWait ({self.consecutive_floods}次)，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
             elif wait_time > 5:
                 # 长时间的FloodWait表示较严重的限制，增加延迟
                 self.adaptive_delay = min(3.0, self.adaptive_delay * 1.5)
-                self.log.warning(f"收到长时间FloodWait ({wait_time}秒)，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
+                logger.warning(f"收到长时间FloodWait ({wait_time}秒)，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
             elif self.flood_wait_count > 5:
                 # 触发次数过多，逐渐增加延迟
                 self.adaptive_delay = min(2.0, self.adaptive_delay * 1.2)
-                self.log.warning(f"已触发 {self.flood_wait_count} 次FloodWait，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
+                logger.warning(f"已触发 {self.flood_wait_count} 次FloodWait，将全局延迟增加至 {self.adaptive_delay:.1f}秒")
                 
             # 每50次FloodWait，记录一次统计信息
             if self.flood_wait_count % 50 == 0:
-                self.log.warning(f"FloodWait统计: 总计{self.flood_wait_count}次，当前全局延迟{self.adaptive_delay:.1f}秒")
+                logger.warning(f"FloodWait统计: 总计{self.flood_wait_count}次，当前全局延迟{self.adaptive_delay:.1f}秒")
             
             # 记录详细日志
             info = f"消息ID: {message_id}" if message_id else ""
-            self.log.warning(f"触发Telegram速率限制，等待 {wait_time} 秒 {info} (第{self.flood_wait_count}次)")
+            logger.warning(f"触发Telegram速率限制，等待 {wait_time} 秒 {info} (第{self.flood_wait_count}次)")
         
         # 等待Telegram要求的时间
         await asyncio.sleep(wait_time)
@@ -758,7 +759,7 @@ class Downloader(EventEmitter):
             real_channel_id = await self.channel_resolver.get_channel_id(channel)
             # 获取频道信息
             channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
-            self.log.info(f"解析频道: {channel_info}")
+            logger.info(f"解析频道: {channel_info}")
             
             # 确定目录组织方式
             organize_by_chat = not self.use_keywords
@@ -780,7 +781,7 @@ class Downloader(EventEmitter):
             
             # 获取已下载的消息ID列表
             downloaded_messages = self.history_manager.get_downloaded_messages(channel)
-            self.log.info(f"已下载的消息数量: {len(downloaded_messages)}")
+            logger.info(f"已下载的消息数量: {len(downloaded_messages)}")
             
             # 先整理所有消息，按照媒体组进行分组
             messages_by_group = {}  # 媒体组ID -> 消息列表
@@ -794,18 +795,18 @@ class Downloader(EventEmitter):
                     all_messages.append(message)
             except Exception as e:
                 if "PEER_ID_INVALID" in str(e):
-                    self.log.error(f"无法获取频道 {channel} 的消息: 频道ID无效或未加入该频道")
+                    logger.error(f"无法获取频道 {channel} 的消息: 频道ID无效或未加入该频道")
                     return
                 else:
-                    self.log.error(f"获取频道 {channel} 的消息失败: {e}")
+                    logger.error(f"获取频道 {channel} 的消息失败: {e}")
                     import traceback
-                    self.log.error(traceback.format_exc())
+                    logger.error(traceback.format_exc())
                     return
             
             # 处理收集到的所有消息
             for message in all_messages:
                 if message.id in downloaded_messages:
-                    self.log.info(f"消息 {message.id} 已下载，跳过")
+                    logger.info(f"消息 {message.id} 已下载，跳过")
                     continue
                 
                 # 确定媒体组ID
@@ -826,7 +827,7 @@ class Downloader(EventEmitter):
                             if keyword.lower() in text.lower():
                                 matched_groups.add(group_id)
                                 matched_keywords[group_id] = keyword
-                                self.log.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配关键词: {keyword}")
+                                logger.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配关键词: {keyword}")
                                 break
             
             # 准备下载任务
@@ -836,7 +837,7 @@ class Downloader(EventEmitter):
             for group_id, messages in messages_by_group.items():
                 # 如果是关键词模式且没有匹配关键词，则跳过整个媒体组
                 if self.use_keywords and keywords and group_id not in matched_groups:
-                    self.log.debug(f"媒体组 {group_id} 不包含任何关键词，跳过")
+                    logger.debug(f"媒体组 {group_id} 不包含任何关键词，跳过")
                     continue
                 
                 current_channel_path = channel_path
@@ -866,17 +867,17 @@ class Downloader(EventEmitter):
                 
                 # 如果是媒体组，记录日志
                 if group_id.startswith("single_"):
-                    self.log.info(f"准备下载单条消息: ID={messages[0].id}")
+                    logger.info(f"准备下载单条消息: ID={messages[0].id}")
                 else:
-                    self.log.info(f"准备下载媒体组 {group_id}: 包含 {len(messages)} 条消息, IDs={[m.id for m in messages]}")
+                    logger.info(f"准备下载媒体组 {group_id}: 包含 {len(messages)} 条消息, IDs={[m.id for m in messages]}")
             
-            self.log.info(f"找到 {len(messages_to_download)} 条需要下载的消息")
+            logger.info(f"找到 {len(messages_to_download)} 条需要下载的消息")
             all_download_tasks.extend(messages_to_download)
             
         except Exception as e:
-            self.log.error(f"处理频道 {channel} 下载失败: {e}")
+            logger.error(f"处理频道 {channel} 下载失败: {e}")
             import traceback
-            self.log.error(traceback.format_exc()) 
+            logger.error(traceback.format_exc()) 
 
     def _get_media_type(self, message: Message) -> Optional[str]:
         """
@@ -1023,17 +1024,17 @@ class Downloader(EventEmitter):
         while retry_count <= max_retries:
             try:
                 # 检查取消和暂停
-                if self.task_context:
-                    if self.task_context.cancel_token.is_cancelled:
-                        return None
-                    await self.task_context.wait_if_paused()
+                if self.is_cancelled:
+                    return None
+                if self.is_paused:
+                    await asyncio.sleep(0.5)
                 
                 # 执行下载
                 file_id = None
                 if media_type == "photo":
                     # 选择最大尺寸的照片
                     photo = message.photo
-                    self.log.debug(f"Photo对象类型: {type(photo)}, 值: {photo}")
+                    logger.debug(f"Photo对象类型: {type(photo)}, 值: {photo}")
                     
                     # 修复photo处理逻辑
                     if photo:
@@ -1041,16 +1042,16 @@ class Downloader(EventEmitter):
                             # 如果是列表，选择最后一个（最高质量）
                             photo_obj = photo[-1]
                             file_id = photo_obj.file_id
-                            self.log.debug(f"从列表中获取photo file_id: {file_id}")
+                            logger.debug(f"从列表中获取photo file_id: {file_id}")
                         else:
                             # 如果不是列表，可能是单个对象
                             file_id = getattr(photo, 'file_id', None)
-                            self.log.debug(f"从非列表对象获取photo file_id: {file_id}")
+                            logger.debug(f"从非列表对象获取photo file_id: {file_id}")
                             
                             # 如果无法获取file_id，直接使用photo本身作为file_id
                             if not file_id and isinstance(photo, str):
                                 file_id = photo
-                                self.log.debug(f"直接使用photo字符串作为file_id: {file_id}")
+                                logger.debug(f"直接使用photo字符串作为file_id: {file_id}")
                 elif media_type == "video":
                     file_id = message.video.file_id
                 elif media_type == "document":
@@ -1067,30 +1068,30 @@ class Downloader(EventEmitter):
                     file_id = message.video_note.file_id
                 
                 if not file_id:
-                    self.log.warning(f"无法获取文件ID: {message.id} - {media_type}")
+                    logger.warning(f"无法获取文件ID: {message.id} - {media_type}")
                     return None
                 
                 # 下载媒体文件
                 try:
-                    self.log.debug(f"尝试下载媒体，file_id: {file_id}")
+                    logger.debug(f"尝试下载媒体，file_id: {file_id}")
                     file_data = await self.client.download_media(file_id, in_memory=True)
                 except Exception as e:
-                    self.log.error(f"下载媒体file_id={file_id}时出错: {e}")
+                    logger.error(f"下载媒体file_id={file_id}时出错: {e}")
                     if retry_count < max_retries:
                         retry_count += 1
                         wait_time = 2 ** retry_count
-                        self.log.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
+                        logger.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
                         await asyncio.sleep(wait_time)
                         continue
                     return None
                 
                 # 验证文件数据
                 if not file_data:
-                    self.log.warning(f"下载返回空数据: {message.id} - {media_type}")
+                    logger.warning(f"下载返回空数据: {message.id} - {media_type}")
                     if retry_count < max_retries:
                         retry_count += 1
                         wait_time = 2 ** retry_count  # 指数退避
-                        self.log.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
+                        logger.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
                         await asyncio.sleep(wait_time)
                         continue
                     return None
@@ -1098,20 +1099,20 @@ class Downloader(EventEmitter):
                 return file_data, file_id
                 
             except FloodWait as e:
-                self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                 await self._handle_flood_wait(e.x)
                 # FloodWait不计入重试次数
                 continue
                 
             except Exception as e:
-                self.log.error(f"下载媒体时出错: {message.id} - {media_type} - {e}")
+                logger.error(f"下载媒体时出错: {message.id} - {media_type} - {e}")
                 if retry_count < max_retries:
                     retry_count += 1
                     wait_time = 2 ** retry_count  # 指数退避
-                    self.log.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
+                    logger.info(f"重试下载 {message.id}，第 {retry_count}/{max_retries} 次，等待 {wait_time}秒")
                     await asyncio.sleep(wait_time)
                 else:
-                    self.log.error(f"下载失败，已达到最大重试次数: {message.id}")
+                    logger.error(f"下载失败，已达到最大重试次数: {message.id}")
                     return None
         
         return None 
@@ -1159,11 +1160,11 @@ class Downloader(EventEmitter):
                 if hasattr(media_data, 'getvalue'):
                     # 如果是BytesIO或类似IO对象，获取其值
                     f.write(media_data.getvalue())
-                    self.log.debug(f"处理BytesIO对象并写入文件 {temp_path}")
+                    logger.debug(f"处理BytesIO对象并写入文件 {temp_path}")
                 else:
                     # 如果已经是bytes对象，直接写入
                     f.write(media_data)
-                    self.log.debug(f"直接写入bytes数据到文件 {temp_path}")
+                    logger.debug(f"直接写入bytes数据到文件 {temp_path}")
                 
             # 重命名为最终文件名
             if os.path.exists(file_path):
@@ -1174,6 +1175,6 @@ class Downloader(EventEmitter):
             return file_path
             
         except Exception as e:
-            self.log.error(f"下载文件失败: {e}")
+            logger.error(f"下载文件失败: {e}")
             self.emit("error", str(e), error_type="FILE_DOWNLOAD", recoverable=True, file_path=file_path)
             return None 

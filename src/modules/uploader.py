@@ -20,14 +20,11 @@ from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
 from src.utils.video_processor import VideoProcessor
-from src.utils.events import EventEmitter
-from src.utils.controls import CancelToken, PauseToken, TaskContext
-from src.utils.logger_event_adapter import LoggerEventAdapter
 
 # 仅用于内部调试，不再用于UI输出
-_logger = get_logger()
+logger = get_logger()
 
-class Uploader(EventEmitter):
+class Uploader():
     """
     上传模块，负责将本地文件上传到目标频道
     """
@@ -50,9 +47,6 @@ class Uploader(EventEmitter):
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
-        # 创建日志事件适配器
-        self.log = LoggerEventAdapter(self)
-        
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
         self.config = convert_ui_config_to_dict(ui_config)
@@ -67,34 +61,36 @@ class Uploader(EventEmitter):
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
         
-        # 任务控制
-        self.task_context = None
+        # 任务控制 - 移除TaskContext类型的引用
+        self.is_cancelled = False
+        self.is_paused = False
     
-    async def upload_local_files(self, task_context: Optional[TaskContext] = None):
+    async def upload_local_files(self, task_context=None):
         """
         上传本地文件到目标频道
         
         Args:
-            task_context: 任务上下文，用于控制任务执行
+            task_context: 移除了任务上下文参数类型
         """
-        # 初始化任务上下文
-        self.task_context = task_context or TaskContext()
+        # 初始化状态
+        self.is_cancelled = False
+        self.is_paused = False
         
         status_message = "开始上传本地文件到目标频道"
-        self.log.status(status_message)
+        logger.status(status_message)
         
         # 获取目标频道列表
         target_channels = self.upload_config.get('target_channels', [])
         if not target_channels:
-            self.log.error("未配置目标频道，无法上传文件", error_type="CONFIG", recoverable=False)
+            logger.error("未配置目标频道，无法上传文件", error_type="CONFIG", recoverable=False)
             return
         
-        self.log.info(f"配置的目标频道数量: {len(target_channels)}")
+        logger.info(f"配置的目标频道数量: {len(target_channels)}")
         
         # 获取上传目录
         upload_dir = Path(self.upload_config.get('directory', 'uploads'))
         if not upload_dir.exists() or not upload_dir.is_dir():
-            self.log.error(f"上传目录不存在或不是目录: {upload_dir}", error_type="DIRECTORY", recoverable=False)
+            logger.error(f"上传目录不存在或不是目录: {upload_dir}", error_type="DIRECTORY", recoverable=False)
             return
         
         # 上传计数
@@ -105,16 +101,16 @@ class Uploader(EventEmitter):
         media_groups = [d for d in upload_dir.iterdir() if d.is_dir()]
         
         if not media_groups:
-            self.log.warning(f"上传目录中没有子文件夹: {upload_dir}")
-            self.log.info("将上传目录下的所有文件作为单独的消息")
+            logger.warning(f"上传目录中没有子文件夹: {upload_dir}")
+            logger.info("将上传目录下的所有文件作为单独的消息")
             
             # 如果没有子文件夹，将上传目录下的文件直接上传
             files = [f for f in upload_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
             if not files:
-                self.log.warning(f"上传目录中没有有效的媒体文件: {upload_dir}")
+                logger.warning(f"上传目录中没有有效的媒体文件: {upload_dir}")
                 return
             
-            self.log.info(f"找到 {len(files)} 个文件准备上传")
+            logger.info(f"找到 {len(files)} 个文件准备上传")
             
             # 验证目标频道
             valid_targets = []
@@ -123,16 +119,16 @@ class Uploader(EventEmitter):
                     target_id = await self.channel_resolver.get_channel_id(target)
                     channel_info, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                     valid_targets.append((target, target_id, channel_info))
-                    self.log.info(f"目标频道: {channel_info}")
+                    logger.info(f"目标频道: {channel_info}")
                 except Exception as e:
-                    self.log.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                    logger.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
             
             if not valid_targets:
-                self.log.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
+                logger.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
                 return
             
             # 开始上传
-            self.log.status(f"开始上传 {len(files)} 个文件...")
+            logger.status(f"开始上传 {len(files)} 个文件...")
             
             # 使用批量上传
             start_time = time.time()
@@ -141,18 +137,18 @@ class Uploader(EventEmitter):
             
             if uploaded_count > 0:
                 upload_time = end_time - start_time
-                self.log.info(f"上传完成: 成功上传 {uploaded_count} 个文件，耗时 {upload_time:.2f} 秒")
+                logger.info(f"上传完成: 成功上传 {uploaded_count} 个文件，耗时 {upload_time:.2f} 秒")
                 self.emit("complete", True, {
                     "total_files": uploaded_count,
                     "total_time": upload_time
                 })
             else:
-                self.log.warning("没有文件被成功上传")
+                logger.warning("没有文件被成功上传")
             
             return
             
         # 处理子文件夹作为媒体组的情况
-        self.log.info(f"找到 {len(media_groups)} 个媒体组文件夹")
+        logger.info(f"找到 {len(media_groups)} 个媒体组文件夹")
         
         # 验证目标频道
         valid_targets = []
@@ -161,12 +157,12 @@ class Uploader(EventEmitter):
                 target_id = await self.channel_resolver.get_channel_id(target)
                 channel_info, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                 valid_targets.append((target, target_id, channel_info))
-                self.log.info(f"目标频道: {channel_info}")
+                logger.info(f"目标频道: {channel_info}")
             except Exception as e:
-                self.log.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                logger.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
         
         if not valid_targets:
-            self.log.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
+            logger.error("没有有效的目标频道，无法上传文件", error_type="CHANNEL", recoverable=False)
             return
         
         # 开始上传
@@ -176,29 +172,29 @@ class Uploader(EventEmitter):
         
         for idx, group_dir in enumerate(media_groups):
             # 检查任务是否已取消
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                self.log.status("上传任务已取消")
+            if self.is_cancelled:
+                logger.status("上传任务已取消")
                 break
                 
             # 等待暂停恢复
-            if self.task_context:
-                await self.task_context.wait_if_paused()
+            while self.is_paused and not self.is_cancelled:
+                await asyncio.sleep(0.5)
             
             # 更新进度
             progress = (idx / total_media_groups) * 100
             self.emit("progress", progress, idx, total_media_groups)
             
             group_name = group_dir.name
-            self.log.status(f"处理媒体组 [{group_name}] ({idx+1}/{total_media_groups})")
+            logger.status(f"处理媒体组 [{group_name}] ({idx+1}/{total_media_groups})")
             
             # 获取媒体组中的文件
             media_files = [f for f in group_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
             
             if not media_files:
-                self.log.warning(f"媒体组文件夹 {group_name} 中没有有效的媒体文件")
+                logger.warning(f"媒体组文件夹 {group_name} 中没有有效的媒体文件")
                 continue
             
-            self.log.info(f"媒体组 {group_name} 包含 {len(media_files)} 个文件")
+            logger.info(f"媒体组 {group_name} 包含 {len(media_files)} 个文件")
             
             # 检查是否有caption.txt文件
             caption_file = group_dir / "caption.txt"
@@ -207,22 +203,22 @@ class Uploader(EventEmitter):
                 try:
                     with open(caption_file, 'r', encoding='utf-8') as f:
                         caption = f.read().strip()
-                    self.log.info(f"已读取媒体组 {group_name} 的说明文本，长度：{len(caption)} 字符")
+                    logger.info(f"已读取媒体组 {group_name} 的说明文本，长度：{len(caption)} 字符")
                 except Exception as e:
-                    self.log.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
+                    logger.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
             
             # 上传到所有目标频道
             for target, target_id, target_info in valid_targets:
                 # 检查任务是否已取消
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    self.log.status("上传任务已取消")
+                if self.is_cancelled:
+                    logger.status("上传任务已取消")
                     break
                     
                 # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
+                while self.is_paused and not self.is_cancelled:
+                    await asyncio.sleep(0.5)
                 
-                self.log.status(f"上传媒体组 [{group_name}] 到 {target_info}")
+                logger.status(f"上传媒体组 [{group_name}] 到 {target_info}")
                 
                 # 上传媒体组
                 if len(media_files) == 1:
@@ -246,16 +242,16 @@ class Uploader(EventEmitter):
         upload_time = end_time - start_time
         
         if upload_count > 0:
-            self.log.info(f"上传完成: 成功上传 {upload_count} 个媒体组，共 {total_files} 个文件，耗时 {upload_time:.2f} 秒")
+            logger.info(f"上传完成: 成功上传 {upload_count} 个媒体组，共 {total_files} 个文件，耗时 {upload_time:.2f} 秒")
             self.emit("complete", True, {
                 "total_groups": upload_count,
                 "total_files": total_files,
                 "total_time": upload_time
             })
         else:
-            self.log.warning("没有媒体组被成功上传")
+            logger.warning("没有媒体组被成功上传")
         
-        self.log.status("所有媒体文件上传完成")
+        logger.status("所有媒体文件上传完成")
     
     def _is_valid_media_file(self, file_path: Path) -> bool:
         """
@@ -311,7 +307,7 @@ class Uploader(EventEmitter):
         # 最多支持10个媒体文件作为一个组
         if len(files) > 10:
             # 分组上传
-            self.log.warning(f"媒体组包含 {len(files)} 个文件，超过最大限制(10)，将分批上传")
+            logger.warning(f"媒体组包含 {len(files)} 个文件，超过最大限制(10)，将分批上传")
             chunks = [files[i:i+10] for i in range(0, len(files), 10)]
             success = True
             for i, chunk in enumerate(chunks):
@@ -355,9 +351,9 @@ class Uploader(EventEmitter):
                         thumbnail = await self.video_processor.extract_thumbnail(str(file))
                         if thumbnail:
                             thumbnails.append(thumbnail)
-                            self.log.debug(f"已生成视频缩略图: {thumbnail}")
+                            logger.debug(f"已生成视频缩略图: {thumbnail}")
                     except Exception as e:
-                        self.log.warning(f"生成视频缩略图失败: {e}")
+                        logger.warning(f"生成视频缩略图失败: {e}")
                     
                     media = InputMediaVideo(
                         media=str(file),
@@ -382,11 +378,11 @@ class Uploader(EventEmitter):
                     media_group.append(media)
                 
                 else:
-                    self.log.warning(f"不支持的媒体类型: {file}")
+                    logger.warning(f"不支持的媒体类型: {file}")
                     continue
             
             if not media_group:
-                self.log.warning("没有有效的媒体文件可以上传")
+                logger.warning("没有有效的媒体文件可以上传")
                 return False
             
             # 上传媒体组
@@ -394,7 +390,7 @@ class Uploader(EventEmitter):
             for retry in range(max_retries):
                 try:
                     # 捕获任何上传问题
-                    self.log.status(f"上传媒体组 ({len(media_group)} 个文件)...")
+                    logger.status(f"上传媒体组 ({len(media_group)} 个文件)...")
                     
                     start_time = time.time()
                     result = await self.client.send_media_group(
@@ -404,7 +400,7 @@ class Uploader(EventEmitter):
                     end_time = time.time()
                     
                     upload_time = end_time - start_time
-                    self.log.info(f"媒体组上传成功，耗时 {upload_time:.2f} 秒")
+                    logger.info(f"媒体组上传成功，耗时 {upload_time:.2f} 秒")
                     
                     # 保存上传历史记录
                     for msg in result:
@@ -420,17 +416,17 @@ class Uploader(EventEmitter):
                     return True
                     
                 except FloodWait as e:
-                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                     await asyncio.sleep(e.x)
                 except (MediaEmpty, MediaInvalid) as e:
-                    self.log.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
                     return False
                 except Exception as e:
                     if retry < max_retries - 1:
-                        self.log.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
                         await asyncio.sleep((retry + 1) * 2)
                     else:
-                        self.log.error(f"上传媒体组失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
+                        logger.error(f"上传媒体组失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
                         return False
             
             return False
@@ -441,9 +437,9 @@ class Uploader(EventEmitter):
                 try:
                     if os.path.exists(thumb):
                         os.remove(thumb)
-                        self.log.debug(f"已删除缩略图: {thumb}")
+                        logger.debug(f"已删除缩略图: {thumb}")
                 except Exception as e:
-                    self.log.warning(f"删除缩略图失败: {e}")
+                    logger.warning(f"删除缩略图失败: {e}")
     
     async def _upload_single_file(self, file: Path, chat_id: int, caption: Optional[str] = None) -> bool:
         """
@@ -460,7 +456,7 @@ class Uploader(EventEmitter):
         media_type = self._get_media_type(file)
         
         if not media_type:
-            self.log.warning(f"不支持的媒体类型: {file}")
+            logger.warning(f"不支持的媒体类型: {file}")
             return False
         
         # 缩略图文件路径
@@ -472,15 +468,15 @@ class Uploader(EventEmitter):
                 try:
                     thumbnail = await self.video_processor.extract_thumbnail(str(file))
                     if thumbnail:
-                        self.log.debug(f"已生成视频缩略图: {thumbnail}")
+                        logger.debug(f"已生成视频缩略图: {thumbnail}")
                 except Exception as e:
-                    self.log.warning(f"生成视频缩略图失败: {e}")
+                    logger.warning(f"生成视频缩略图失败: {e}")
             
             # 上传文件
             max_retries = 3
             for retry in range(max_retries):
                 try:
-                    self.log.status(f"上传文件: {file.name}...")
+                    logger.status(f"上传文件: {file.name}...")
                     
                     start_time = time.time()
                     
@@ -511,13 +507,13 @@ class Uploader(EventEmitter):
                             caption=caption
                         )
                     else:
-                        self.log.warning(f"不支持的媒体类型: {media_type}")
+                        logger.warning(f"不支持的媒体类型: {media_type}")
                         return False
                     
                     end_time = time.time()
                     upload_time = end_time - start_time
                     
-                    self.log.info(f"文件 {file.name} 上传成功，耗时 {upload_time:.2f} 秒")
+                    logger.info(f"文件 {file.name} 上传成功，耗时 {upload_time:.2f} 秒")
                     
                     # 保存上传历史记录
                     if result:
@@ -534,17 +530,17 @@ class Uploader(EventEmitter):
                     return True
                     
                 except FloodWait as e:
-                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                     await asyncio.sleep(e.x)
                 except (MediaEmpty, MediaInvalid) as e:
-                    self.log.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
                     return False
                 except Exception as e:
                     if retry < max_retries - 1:
-                        self.log.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
                         await asyncio.sleep((retry + 1) * 2)
                     else:
-                        self.log.error(f"上传 {file.name} 失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
+                        logger.error(f"上传 {file.name} 失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
                         return False
             
             return False
@@ -554,9 +550,9 @@ class Uploader(EventEmitter):
             if thumbnail and os.path.exists(thumbnail):
                 try:
                     os.remove(thumbnail)
-                    self.log.debug(f"已删除缩略图: {thumbnail}")
+                    logger.debug(f"已删除缩略图: {thumbnail}")
                 except Exception as e:
-                    self.log.warning(f"删除缩略图失败: {e}")
+                    logger.warning(f"删除缩略图失败: {e}")
     
     def _get_media_type(self, file_path: Path) -> Optional[str]:
         """
@@ -611,33 +607,33 @@ class Uploader(EventEmitter):
         
         for idx, file in enumerate(files):
             # 检查任务是否已取消
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                self.log.status("上传任务已取消")
+            if self.is_cancelled:
+                logger.status("上传任务已取消")
                 break
                 
             # 等待暂停恢复
-            if self.task_context:
-                await self.task_context.wait_if_paused()
+            while self.is_paused and not self.is_cancelled:
+                await asyncio.sleep(0.5)
             
             # 更新进度
             progress = (idx / total_files) * 100
             self.emit("progress", progress, idx, total_files)
             
-            self.log.status(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
+            logger.status(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
             
             # 上传到所有目标频道
             file_uploaded = False
             for target, target_id, target_info in targets:
                 # 检查任务是否已取消
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    self.log.status("上传任务已取消")
+                if self.is_cancelled:
+                    logger.status("上传任务已取消")
                     break
                     
                 # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
+                while self.is_paused and not self.is_cancelled:
+                    await asyncio.sleep(0.5)
                 
-                self.log.status(f"上传文件 [{file.name}] 到 {target_info}")
+                logger.status(f"上传文件 [{file.name}] 到 {target_info}")
                 
                 # 上传文件
                 if await self._upload_single_file(file, target_id):

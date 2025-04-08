@@ -20,6 +20,7 @@ from src.modules.downloader_serial import DownloaderSerial
 from src.modules.uploader import Uploader
 from src.modules.forwarder import Forwarder
 from src.modules.monitor import Monitor
+from src.utils.ui_config_manager import UIConfigManager
 
 logger = get_logger()
 
@@ -35,13 +36,13 @@ async def main():
     
     try:
         # 初始化配置
-        config_manager = ConfigManager()
+        ui_config_manager = UIConfigManager()
         
         # 初始化历史记录管理器
         history_manager = HistoryManager()
         
         # 初始化客户端管理器
-        client_manager = ClientManager(config_manager)
+        client_manager = ClientManager(ui_config_manager)
         
         # 启动客户端
         client = await client_manager.start_client()
@@ -50,21 +51,21 @@ async def main():
         channel_resolver = ChannelResolver(client)
         
         # 初始化下载模块 - 根据配置选择并行或顺序下载
-        download_config = config_manager.get_download_config()
+        download_config = ui_config_manager.get_download_config()
         if download_config.parallel_download:
             logger.info("使用并行下载模式")
             # 设置并行下载器实例，并传入最大并发下载数
-            downloader = Downloader(client, config_manager, channel_resolver, history_manager)
+            downloader = Downloader(client, ui_config_manager, channel_resolver, history_manager)
             downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
         else:
             logger.info("使用顺序下载模式")
-            downloader = DownloaderSerial(client, config_manager, channel_resolver, history_manager)
+            downloader = DownloaderSerial(client, ui_config_manager, channel_resolver, history_manager)
         
         # 初始化上传模块
-        uploader = Uploader(client, config_manager, channel_resolver, history_manager)
+        uploader = Uploader(client, ui_config_manager, channel_resolver, history_manager)
         
         # 初始化转发模块
-        forwarder = Forwarder(client, config_manager, channel_resolver, history_manager, downloader, uploader)
+        forwarder = Forwarder(client, ui_config_manager, channel_resolver, history_manager, downloader, uploader)
         
         # 根据命令执行相应功能
         if args.command == 'forward':
@@ -88,7 +89,7 @@ async def main():
         elif args.command == 'startmonitor':
             logger.info("启动消息监听转发")
             # 初始化监听模块，不再传递history_manager参数
-            monitor = Monitor(client, config_manager, channel_resolver)
+            monitor = Monitor(client, ui_config_manager, channel_resolver)
             # 开始监听
             await monitor.start_monitoring()
             

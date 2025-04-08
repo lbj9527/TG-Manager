@@ -19,15 +19,12 @@ from src.utils.ui_config_manager import UIConfigManager
 from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.logger import get_logger
-from src.utils.events import EventEmitter
-from src.utils.controls import CancelToken, PauseToken, TaskContext
-from src.utils.logger_event_adapter import LoggerEventAdapter
 from src.utils.history_manager import HistoryManager
 
 # 仅用于内部调试，不再用于UI输出
-_logger = get_logger()
+logger = get_logger()
 
-class Monitor(EventEmitter):
+class Monitor():
     """
     监听模块，监听源频道的新消息，并实时转发到目标频道
     """
@@ -50,8 +47,6 @@ class Monitor(EventEmitter):
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
         
-        # 创建日志事件适配器
-        self.log = LoggerEventAdapter(self)
         
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
@@ -90,9 +85,9 @@ class Monitor(EventEmitter):
             self.channel_remove_captions[source_channel] = pair.get('remove_captions', False)
             
             if text_replacements:
-                self.log.debug(f"频道 {source_channel} 已加载 {len(text_replacements)} 条文本替换规则")
+                logger.debug(f"频道 {source_channel} 已加载 {len(text_replacements)} 条文本替换规则")
         
-        self.log.info(f"总共加载 {total_text_filter_rules} 条文本替换规则")
+        logger.info(f"总共加载 {total_text_filter_rules} 条文本替换规则")
         
         # 消息处理器字典，用于跟踪每个源频道的消息处理器
         self.message_handlers = []
@@ -117,19 +112,14 @@ class Monitor(EventEmitter):
             handler_func: 消息处理函数，接收Message对象作为参数
         """
         self.message_handlers.append(handler_func)
-        self.log.info(f"添加了新的消息处理器: {handler_func.__name__}")
+        logger.info(f"添加了新的消息处理器: {handler_func.__name__}")
     
-    async def start_monitoring(self, task_context: Optional[TaskContext] = None):
+    async def start_monitoring(self):
         """
         开始监听所有配置的频道
-        
-        Args:
-            task_context: 任务上下文，用于控制任务执行
         """
-        # 初始化任务上下文
-        self.task_context = task_context or TaskContext()
         
-        self.log.status("开始监听源频道的新消息")
+        logger.status("开始监听源频道的新消息")
         
         # 解析监听频道ID
         self.monitored_channels = set()
@@ -141,14 +131,14 @@ class Monitor(EventEmitter):
                 if channel_id:
                     self.monitored_channels.add(channel_id)
                     source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(channel_id)
-                    self.log.info(f"将监听频道: {source_info_str}")
+                    logger.info(f"将监听频道: {source_info_str}")
                 else:
-                    self.log.warning(f"无法解析频道: {source_channel}")
+                    logger.warning(f"无法解析频道: {source_channel}")
             except Exception as e:
-                self.log.error(f"解析频道 {source_channel} 失败: {str(e)}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                logger.error(f"解析频道 {source_channel} 失败: {str(e)}", error_type="CHANNEL_RESOLVE", recoverable=True)
         
         if not self.monitored_channels:
-            self.log.error("没有有效的监听频道，监听任务无法启动", error_type="NO_CHANNELS", recoverable=False)
+            logger.error("没有有效的监听频道，监听任务无法启动", error_type="NO_CHANNELS", recoverable=False)
             return
         
         # 设置处理中标志
@@ -167,12 +157,12 @@ class Monitor(EventEmitter):
                     source_info_str, (source_title, source_username) = await self.channel_resolver.format_channel_info(source_id)
                     
                     # 发送消息接收事件
-                    self.log.info(f"收到来自 {source_info_str} 的新消息 [ID: {message.id}]")
+                    logger.info(f"收到来自 {source_info_str} 的新消息 [ID: {message.id}]")
                     self.emit("message_received", message.id, source_info_str)
                     
                     # 检查关键词过滤
                     if self.monitor_config.get('keywords', []) and not any(re.search(keyword, message.text or "", re.IGNORECASE) for keyword in self.monitor_config.get('keywords', [])):
-                        self.log.debug(f"消息 [ID: {message.id}] 不包含任何关键词，忽略")
+                        logger.debug(f"消息 [ID: {message.id}] 不包含任何关键词，忽略")
                         return
                     
                     # 如果包含关键词，记录并发送事件
@@ -180,7 +170,7 @@ class Monitor(EventEmitter):
                         matched_keywords = [keyword for keyword in self.monitor_config.get('keywords', []) if re.search(keyword, message.text or "", re.IGNORECASE)]
                         if matched_keywords:
                             keywords_str = ", ".join(matched_keywords)
-                            self.log.info(f"消息 [ID: {message.id}] 匹配关键词: {keywords_str}")
+                            logger.info(f"消息 [ID: {message.id}] 匹配关键词: {keywords_str}")
                             self.emit("keyword_matched", message.id, keywords_str)
                     
                     # 调用所有注册的消息处理器
@@ -196,26 +186,26 @@ class Monitor(EventEmitter):
                                 handler(message)
                                 
                         except Exception as handler_error:
-                            self.log.error(f"消息处理器 {handler.__name__} 处理消息 [ID: {message.id}] 失败: {str(handler_error)}", 
+                            logger.error(f"消息处理器 {handler.__name__} 处理消息 [ID: {message.id}] 失败: {str(handler_error)}", 
                                           error_type="HANDLER_ERROR", recoverable=True)
                     
                     # 发送消息处理完成事件
-                    self.log.debug(f"消息 [ID: {message.id}] 处理完成")
+                    logger.debug(f"消息 [ID: {message.id}] 处理完成")
                     self.emit("message_processed", message.id)
                     
                 except Exception as e:
-                    self.log.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
+                    logger.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
             
-            self.log.status(f"正在监听 {len(self.monitored_channels)} 个频道的新消息")
+            logger.status(f"正在监听 {len(self.monitored_channels)} 个频道的新消息")
             
             # 等待取消信号
             while not self.task_context.cancel_token.is_cancelled:
                 await asyncio.sleep(1)
                 
-            self.log.status("监听任务已取消")
+            logger.status("监听任务已取消")
             
         except Exception as e:
-            self.log.error(f"监听任务发生异常: {str(e)}", error_type="MONITOR_TASK", recoverable=False)
+            logger.error(f"监听任务发生异常: {str(e)}", error_type="MONITOR_TASK", recoverable=False)
         finally:
             # 重置处理中标志
             self.is_processing = False
@@ -224,7 +214,7 @@ class Monitor(EventEmitter):
         """
         停止监听所有频道
         """
-        self.log.status("正在停止所有监听任务...")
+        logger.status("正在停止所有监听任务...")
         
         # 设置停止标志
         self.should_stop = True
@@ -237,7 +227,7 @@ class Monitor(EventEmitter):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                self.log.error(f"取消清理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
+                logger.error(f"取消清理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
             
             self.cleanup_task = None
         
@@ -245,9 +235,9 @@ class Monitor(EventEmitter):
         for source_id in self.monitored_channels:
             try:
                 self.client.remove_handler(self.message_handlers[source_id])
-                self.log.debug(f"已移除频道 {source_id} 的消息处理器")
+                logger.debug(f"已移除频道 {source_id} 的消息处理器")
             except Exception as e:
-                self.log.error(f"移除频道 {source_id} 的消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
+                logger.error(f"移除频道 {source_id} 的消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
         
         # 清空处理器字典
         self.message_handlers.clear()
@@ -255,9 +245,9 @@ class Monitor(EventEmitter):
         # 清空已处理消息集合
         previous_count = len(self.processed_messages)
         self.processed_messages.clear()
-        self.log.info(f"已清理 {previous_count} 条已处理消息记录")
+        logger.info(f"已清理 {previous_count} 条已处理消息记录")
         
-        self.log.status("所有监听任务已停止")
+        logger.status("所有监听任务已停止")
     
     async def _cleanup_processed_messages(self):
         """
@@ -277,12 +267,12 @@ class Monitor(EventEmitter):
                 previous_count = len(self.processed_messages)
                 if previous_count > 10000:  # 如果超过10000条消息，则清空
                     self.processed_messages.clear()
-                    self.log.info(f"已清理 {previous_count} 条已处理消息记录")
+                    logger.info(f"已清理 {previous_count} 条已处理消息记录")
         except asyncio.CancelledError:
             # 任务被取消，正常退出
             pass
         except Exception as e:
-            self.log.error(f"清理已处理消息时异常: {str(e)}", error_type="CLEANUP", recoverable=True)
+            logger.error(f"清理已处理消息时异常: {str(e)}", error_type="CLEANUP", recoverable=True)
     
     async def _monitor_channel(self, channel_pair: MonitorChannelPair):
         """
@@ -294,14 +284,14 @@ class Monitor(EventEmitter):
         source_channel = channel_pair.source_channel
         target_channels = channel_pair.target_channels
         
-        self.log.status(f"开始监听源频道: {source_channel}")
+        logger.status(f"开始监听源频道: {source_channel}")
         
         try:
             # 解析源频道ID
             source_id = await self.channel_resolver.get_channel_id(source_channel)
             source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_id)
             
-            self.log.info(f"源频道: {source_info_str}")
+            logger.info(f"源频道: {source_info_str}")
             
             # 解析所有目标频道ID
             valid_target_channels = []
@@ -310,7 +300,7 @@ class Monitor(EventEmitter):
                 try:
                     # 检查是否已取消任务
                     if self.task_context and self.task_context.cancel_token.is_cancelled:
-                        self.log.debug(f"解析目标频道时任务已取消")
+                        logger.debug(f"解析目标频道时任务已取消")
                         return
                     
                     # 等待暂停恢复
@@ -320,24 +310,24 @@ class Monitor(EventEmitter):
                     target_id = await self.channel_resolver.get_channel_id(target)
                     target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                     valid_target_channels.append((target, target_id, target_info_str))
-                    self.log.info(f"目标频道: {target_info_str}")
+                    logger.info(f"目标频道: {target_info_str}")
                 except Exception as e:
-                    self.log.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                    logger.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
             
             if not valid_target_channels:
-                self.log.warning(f"源频道 {source_channel} 没有有效的目标频道，停止监听")
+                logger.warning(f"源频道 {source_channel} 没有有效的目标频道，停止监听")
                 return
             
             # 检查源频道是否允许转发
-            self.log.status(f"检查源频道 {source_title} 转发权限...")
+            logger.status(f"检查源频道 {source_title} 转发权限...")
             
             source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
             
-            self.log.info(f"源频道 {source_title} 允许转发: {source_can_forward}")
+            logger.info(f"源频道 {source_title} 允许转发: {source_can_forward}")
             
             # 如果源频道禁止转发，直接报错并跳过
             if not source_can_forward:
-                self.log.error(f"源频道 {source_title} 禁止转发消息，跳过此频道的监听", error_type="CHANNEL_FORBID_FORWARD", recoverable=False)
+                logger.error(f"源频道 {source_title} 禁止转发消息，跳过此频道的监听", error_type="CHANNEL_FORBID_FORWARD", recoverable=False)
                 return
             
             # 获取这个源频道的文本替换规则
@@ -346,10 +336,10 @@ class Monitor(EventEmitter):
             remove_captions = self.channel_remove_captions.get(source_channel, False)
             
             if text_replacements:
-                self.log.info(f"源频道 {source_title} 启用了 {len(text_replacements)} 条文本替换规则")
+                logger.info(f"源频道 {source_title} 启用了 {len(text_replacements)} 条文本替换规则")
             
             if remove_captions:
-                self.log.info(f"源频道 {source_title} 启用了移除标题功能")
+                logger.info(f"源频道 {source_title} 启用了移除标题功能")
             
             # 定义消息处理函数
             async def message_handler(client, message):
@@ -401,12 +391,12 @@ class Monitor(EventEmitter):
             # 存储处理器引用以便后续移除
             self.message_handlers.append(handler)
             
-            self.log.status(f"成功注册源频道 {source_title} 的消息处理器，开始监听新消息")
+            logger.status(f"成功注册源频道 {source_title} 的消息处理器，开始监听新消息")
             
             # 等待直到应该停止
             while not self.should_stop:
                 if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    self.log.status(f"监听源频道 {source_title} 的任务已取消")
+                    logger.status(f"监听源频道 {source_title} 的任务已取消")
                     break
                 
                 # 等待暂停恢复
@@ -419,15 +409,15 @@ class Monitor(EventEmitter):
             try:
                 # 尝试移除消息处理器
                 self.message_handlers.remove(handler)
-                self.log.debug(f"已清理频道 {source_title} 的消息处理器")
+                logger.debug(f"已清理频道 {source_title} 的消息处理器")
             except Exception as e:
-                self.log.error(f"清理频道 {source_title} 的消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
+                logger.error(f"清理频道 {source_title} 的消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
                 
         except Exception as e:
-            self.log.error(f"监听源频道 {source_channel} 失败: {str(e)}", error_type="MONITOR_CHANNEL", recoverable=False)
+            logger.error(f"监听源频道 {source_channel} 失败: {str(e)}", error_type="MONITOR_CHANNEL", recoverable=False)
             import traceback
             error_details = traceback.format_exc()
-            self.log.error(f"详细错误: {error_details}", error_type="MONITOR_CHANNEL", recoverable=False, details=error_details)
+            logger.error(f"详细错误: {error_details}", error_type="MONITOR_CHANNEL", recoverable=False, details=error_details)
             
             # 尝试清理注册的处理器
             if handler in self.message_handlers:
@@ -470,11 +460,11 @@ class Monitor(EventEmitter):
                         message_ids=source_message_id
                     )
                     
-                    self.log.debug(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                    logger.debug(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
                     self.emit("forward", source_message_id, source_chat_id, target_id, True)
                     
                 except FloodWait as e:
-                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
                     await asyncio.sleep(e.x)
                     # 重试转发
                     try:
@@ -483,29 +473,29 @@ class Monitor(EventEmitter):
                             from_chat_id=source_chat_id,
                             message_ids=source_message_id
                         )
-                        self.log.debug(f"重试成功：已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                        logger.debug(f"重试成功：已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
                         self.emit("forward", source_message_id, source_chat_id, target_id, True)
                     except Exception as retry_e:
-                        self.log.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
+                        logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
                         self.emit("forward", source_message_id, source_chat_id, target_id, False)
                         
                 except ChatForwardsRestricted:
-                    self.log.error(f"目标频道 {target_info} 禁止转发消息", error_type="FORWARD_RESTRICTED", recoverable=True)
+                    logger.error(f"目标频道 {target_info} 禁止转发消息", error_type="FORWARD_RESTRICTED", recoverable=True)
                     self.emit("forward", source_message_id, source_chat_id, target_id, False)
                     
                 except ChannelPrivate:
-                    self.log.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
+                    logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
                     self.emit("forward", source_message_id, source_chat_id, target_id, False)
                     
                 except Exception as e:
-                    self.log.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
+                    logger.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
                     self.emit("forward", source_message_id, source_chat_id, target_id, False)
                 
                 # 转发间隔
                 await asyncio.sleep(0.5)
                 
         except Exception as e:
-            self.log.error(f"处理消息转发时发生异常: {str(e)}", error_type="FORWARD_PROCESS", recoverable=True)
+            logger.error(f"处理消息转发时发生异常: {str(e)}", error_type="FORWARD_PROCESS", recoverable=True)
     
     async def _send_modified_message(self, original_message: Message, new_text: str, target_channels: List[Tuple[str, int, str]], remove_caption: bool = False):
         """
@@ -600,23 +590,23 @@ class Monitor(EventEmitter):
                         )
                     
                     if sent_message:
-                        self.log.debug(f"已将修改后的消息从 {source_title} 发送到 {target_info}")
+                        logger.debug(f"已将修改后的消息从 {source_title} 发送到 {target_info}")
                         self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                     
                 except FloodWait as e:
-                    self.log.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
                     await asyncio.sleep(e.x)
                     # 重试发送不再实现，以简化代码
                     
                 except Exception as e:
-                    self.log.error(f"发送修改后的消息到 {target_info} 失败: {str(e)}", error_type="SEND_MODIFIED", recoverable=True)
+                    logger.error(f"发送修改后的消息到 {target_info} 失败: {str(e)}", error_type="SEND_MODIFIED", recoverable=True)
                     self.emit("forward", source_message_id, source_chat_id, target_id, False, modified=True)
                 
                 # 发送间隔
                 await asyncio.sleep(0.5)
                 
         except Exception as e:
-            self.log.error(f"处理修改后消息发送时发生异常: {str(e)}", error_type="MODIFIED_PROCESS", recoverable=True)
+            logger.error(f"处理修改后消息发送时发生异常: {str(e)}", error_type="MODIFIED_PROCESS", recoverable=True)
     
     def _apply_text_replacements(self, text: str, text_replacements: Dict[str, str]) -> str:
         """
@@ -643,10 +633,10 @@ class Monitor(EventEmitter):
                 if old_text != modified_text:
                     replacement_made = True
                     replacements.append((original, replacement))
-                    self.log.debug(f"文本替换: '{original}' -> '{replacement}'")
+                    logger.debug(f"文本替换: '{original}' -> '{replacement}'")
         
         if replacement_made:
-            self.log.info(f"已应用文本替换，原文本: '{text}'，新文本: '{modified_text}'")
+            logger.info(f"已应用文本替换，原文本: '{text}'，新文本: '{modified_text}'")
             self.emit("text_replaced", text, modified_text, replacements)
         
         return modified_text
@@ -662,40 +652,40 @@ class Monitor(EventEmitter):
         Returns:
             获取到的消息列表
         """
-        self.log.status(f"正在获取频道 {channel} 的历史消息")
+        logger.status(f"正在获取频道 {channel} 的历史消息")
         
         try:
             channel_id = await self.channel_resolver.resolve_channel(channel)
             if not channel_id:
-                self.log.error(f"无法解析频道: {channel}", error_type="CHANNEL_RESOLVE", recoverable=False)
+                logger.error(f"无法解析频道: {channel}", error_type="CHANNEL_RESOLVE", recoverable=False)
                 return []
                 
             channel_info_str, _ = await self.channel_resolver.format_channel_info(channel_id)
-            self.log.info(f"获取 {channel_info_str} 的历史消息，限制 {limit} 条")
+            logger.info(f"获取 {channel_info_str} 的历史消息，限制 {limit} 条")
             
             messages = []
             async for message in self.client.get_chat_history(channel_id, limit=limit):
                 if self.task_context.cancel_token.is_cancelled:
-                    self.log.warning("历史消息获取任务已取消")
+                    logger.warning("历史消息获取任务已取消")
                     break
                     
                 messages.append(message)
                 
                 # 每20条消息发出一次进度事件
                 if len(messages) % 20 == 0:
-                    self.log.debug(f"已获取 {len(messages)} 条消息")
+                    logger.debug(f"已获取 {len(messages)} 条消息")
                     self.emit("history_progress", len(messages), limit)
                     
-            self.log.status(f"完成获取 {channel_info_str} 的历史消息，共 {len(messages)} 条")
+            logger.status(f"完成获取 {channel_info_str} 的历史消息，共 {len(messages)} 条")
             self.emit("history_complete", len(messages))
             return messages
             
         except FloodWait as e:
-            self.log.warning(f"获取历史消息时遇到限制，需要等待 {e.x} 秒")
+            logger.warning(f"获取历史消息时遇到限制，需要等待 {e.x} 秒")
             await asyncio.sleep(e.x)
             # 递归重试
             return await self.get_message_history(channel, limit)
             
         except Exception as e:
-            self.log.error(f"获取历史消息失败: {str(e)}", error_type="GET_HISTORY", recoverable=True)
+            logger.error(f"获取历史消息失败: {str(e)}", error_type="GET_HISTORY", recoverable=True)
             return []

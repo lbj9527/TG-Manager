@@ -14,7 +14,6 @@ import threading
 import weakref
 
 from src.utils.logger import get_logger
-from src.utils.controls import TaskContext
 
 logger = get_logger()
 
@@ -432,12 +431,10 @@ class ResourceManager:
         logger.info(f"过期资源清理完成，共清理 {cleanup_count} 项")
         return cleanup_count
     
-    async def start_cleanup_task(self, task_context: Optional[TaskContext] = None):
+    async def start_cleanup_task(self):
         """
         启动定期清理任务
         
-        Args:
-            task_context: 任务上下文，用于控制任务停止
         """
         if self._cleanup_task is not None:
             logger.warning("清理任务已在运行")
@@ -447,24 +444,13 @@ class ResourceManager:
         
         async def cleanup_loop():
             try:
-                while True:
-                    # 检查是否应该停止
-                    if task_context and task_context.cancel_token.is_cancelled:
-                        logger.info("资源清理任务被取消")
-                        break
-                    
+                while True:                 
                     # 执行清理
                     await self.cleanup_expired_resources()
                     
                     # 等待下一次清理
                     for _ in range(self._cleanup_interval):
-                        # 每秒检查一次是否取消
-                        if task_context and task_context.cancel_token.is_cancelled:
-                            break
                         await asyncio.sleep(1)
-                    
-                    if task_context and task_context.cancel_token.is_cancelled:
-                        break
             except Exception as e:
                 logger.error(f"资源清理任务异常: {e}")
             finally:

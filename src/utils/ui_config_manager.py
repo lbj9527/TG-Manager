@@ -545,6 +545,54 @@ class UIConfigManager:
             self.ui_config = create_default_config()
         return self.ui_config
     
+    def get_download_config(self) -> UIDownloadConfig:
+        """
+        获取下载配置对象
+        
+        Returns:
+            UIDownloadConfig: 下载配置对象
+        """
+        if self.ui_config is None:
+            logger.warning("UI配置对象为空，创建默认配置")
+            self.ui_config = create_default_config()
+        return self.ui_config.DOWNLOAD
+    
+    def get_upload_config(self) -> UIUploadConfig:
+        """
+        获取上传配置对象
+        
+        Returns:
+            UIUploadConfig: 上传配置对象
+        """
+        if self.ui_config is None:
+            logger.warning("UI配置对象为空，创建默认配置")
+            self.ui_config = create_default_config()
+        return self.ui_config.UPLOAD
+    
+    def get_forward_config(self) -> UIForwardConfig:
+        """
+        获取转发配置对象
+        
+        Returns:
+            UIForwardConfig: 转发配置对象
+        """
+        if self.ui_config is None:
+            logger.warning("UI配置对象为空，创建默认配置")
+            self.ui_config = create_default_config()
+        return self.ui_config.FORWARD
+    
+    def get_monitor_config(self) -> UIMonitorConfig:
+        """
+        获取监听配置对象
+        
+        Returns:
+            UIMonitorConfig: 监听配置对象
+        """
+        if self.ui_config is None:
+            logger.warning("UI配置对象为空，创建默认配置")
+            self.ui_config = create_default_config()
+        return self.ui_config.MONITOR
+    
     def set_ui_config(self, ui_config: UIConfig) -> None:
         """
         设置UI配置对象

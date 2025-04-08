@@ -16,6 +16,56 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
     """
     config_dict = {}
     
+    # 检查配置对象是否已经是字典
+    if isinstance(ui_config, dict):
+        return ui_config
+    
+    # 检查是否有新结构的配置对象（大写部分名称）
+    if hasattr(ui_config, 'GENERAL'):
+        # 使用新结构转换
+        # 通用配置
+        general_dict = {}
+        
+        if hasattr(ui_config.GENERAL, 'api_id'):
+            general_dict['api_id'] = ui_config.GENERAL.api_id
+        if hasattr(ui_config.GENERAL, 'api_hash'):
+            general_dict['api_hash'] = ui_config.GENERAL.api_hash
+        if hasattr(ui_config.GENERAL, 'phone_number'):
+            general_dict['phone_number'] = ui_config.GENERAL.phone_number
+        if hasattr(ui_config.GENERAL, 'limit'):
+            general_dict['limit'] = ui_config.GENERAL.limit
+        if hasattr(ui_config.GENERAL, 'pause_time'):
+            general_dict['pause_time'] = ui_config.GENERAL.pause_time
+        if hasattr(ui_config.GENERAL, 'timeout'):
+            general_dict['timeout'] = ui_config.GENERAL.timeout
+        if hasattr(ui_config.GENERAL, 'max_retries'):
+            general_dict['max_retries'] = ui_config.GENERAL.max_retries
+        if hasattr(ui_config.GENERAL, 'proxy_enabled'):
+            general_dict['proxy_enabled'] = ui_config.GENERAL.proxy_enabled
+        if hasattr(ui_config.GENERAL, 'proxy_type'):
+            # 处理枚举类型
+            if hasattr(ui_config.GENERAL.proxy_type, 'value'):
+                general_dict['proxy_type'] = ui_config.GENERAL.proxy_type.value
+            else:
+                general_dict['proxy_type'] = ui_config.GENERAL.proxy_type
+        if hasattr(ui_config.GENERAL, 'proxy_addr'):
+            general_dict['proxy_addr'] = ui_config.GENERAL.proxy_addr
+        if hasattr(ui_config.GENERAL, 'proxy_port'):
+            general_dict['proxy_port'] = ui_config.GENERAL.proxy_port
+        if hasattr(ui_config.GENERAL, 'proxy_username'):
+            general_dict['proxy_username'] = ui_config.GENERAL.proxy_username
+        if hasattr(ui_config.GENERAL, 'proxy_password'):
+            general_dict['proxy_password'] = ui_config.GENERAL.proxy_password
+        if hasattr(ui_config.GENERAL, 'auto_restart_session'):
+            general_dict['auto_restart_session'] = ui_config.GENERAL.auto_restart_session
+            
+        config_dict['GENERAL'] = general_dict
+        
+        # 可以添加其他配置部分的处理（DOWNLOAD, UPLOAD等）
+        
+        return config_dict
+    
+    # 旧结构的配置转换逻辑（保留以兼容旧代码）
     # 通用配置
     if hasattr(ui_config, 'general'):
         general_dict = {}
@@ -162,7 +212,42 @@ def get_proxy_settings_from_config(config: Dict[str, Any]) -> Optional[Dict[str,
     """
     proxy_settings = {}
     
-    # 获取代理配置
+    # 检查新版配置结构中的代理设置（GENERAL部分）
+    general_config = config.get('GENERAL', {})
+    if general_config:
+        proxy_enabled = general_config.get('proxy_enabled', False)
+        if proxy_enabled:
+            proxy_type = general_config.get('proxy_type', '').upper()
+            proxy_addr = general_config.get('proxy_addr', '')
+            proxy_port = general_config.get('proxy_port', 0)
+            proxy_username = general_config.get('proxy_username', '')
+            proxy_password = general_config.get('proxy_password', '')
+            
+            if proxy_addr and proxy_port:
+                if proxy_type == 'SOCKS5' or proxy_type == 'SOCKS4':
+                    proxy_settings['proxy'] = {
+                        'scheme': proxy_type.lower(),
+                        'hostname': proxy_addr,
+                        'port': int(proxy_port)
+                    }
+                    
+                    if proxy_username and proxy_password:
+                        proxy_settings['proxy']['username'] = proxy_username
+                        proxy_settings['proxy']['password'] = proxy_password
+                elif proxy_type == 'HTTP' or proxy_type == 'HTTPS':
+                    proxy_settings['proxy'] = {
+                        'scheme': proxy_type.lower(),
+                        'hostname': proxy_addr,
+                        'port': int(proxy_port)
+                    }
+                    
+                    if proxy_username and proxy_password:
+                        proxy_settings['proxy']['username'] = proxy_username
+                        proxy_settings['proxy']['password'] = proxy_password
+                
+                return proxy_settings
+    
+    # 检查旧版配置结构中的代理设置（PROXY部分）
     proxy_config = config.get('PROXY', {})
     
     # 检查代理是否启用

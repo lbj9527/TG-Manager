@@ -26,9 +26,6 @@ from src.modules.downloader import Downloader
 from src.modules.uploader import Uploader
 from src.utils.logger import get_logger
 from src.utils.video_processor import VideoProcessor
-from src.utils.events import EventEmitter
-from src.utils.controls import CancelToken, PauseToken, TaskContext
-from src.utils.logger_event_adapter import LoggerEventAdapter
 
 # 仅用于内部调试，不再用于UI输出
 _logger = get_logger()
@@ -43,7 +40,7 @@ class MediaGroupDownload:
     downloaded_files: List[Tuple[Path, str]]
     caption: Optional[str] = None
 
-class Forwarder(EventEmitter):
+class Forwarder():
     """
     转发模块，负责将消息从源频道转发到目标频道
     """
@@ -70,8 +67,6 @@ class Forwarder(EventEmitter):
         self.downloader = downloader
         self.uploader = uploader
         
-        # 创建日志事件适配器
-        self.log = LoggerEventAdapter(self)
         
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
@@ -100,17 +95,12 @@ class Forwarder(EventEmitter):
         # 任务控制
         self.task_context = None
     
-    async def forward_messages(self, task_context: Optional[TaskContext] = None):
+    async def forward_messages(self):
         """
         从源频道转发消息到目标频道
-        
-        Args:
-            task_context: 任务上下文，用于控制任务执行
         """
-        # 初始化任务上下文
-        self.task_context = task_context or TaskContext()
         
-        self.log.status("开始转发消息")
+        _logger.status("开始转发消息")
         
         # 获取配置的源频道和目标频道
         # source_channels = self.forward_config.source_channels
