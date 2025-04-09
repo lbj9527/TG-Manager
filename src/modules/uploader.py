@@ -77,7 +77,7 @@ class Uploader():
         self.is_paused = False
         
         status_message = "开始上传本地文件到目标频道"
-        logger.status(status_message)
+        logger.info(status_message)
         
         # 获取目标频道列表
         target_channels = self.upload_config.get('target_channels', [])
@@ -128,7 +128,7 @@ class Uploader():
                 return
             
             # 开始上传
-            logger.status(f"开始上传 {len(files)} 个文件...")
+            logger.info(f"开始上传 {len(files)} 个文件...")
             
             # 使用批量上传
             start_time = time.time()
@@ -173,7 +173,7 @@ class Uploader():
         for idx, group_dir in enumerate(media_groups):
             # 检查任务是否已取消
             if self.is_cancelled:
-                logger.status("上传任务已取消")
+                logger.info("上传任务已取消")
                 break
                 
             # 等待暂停恢复
@@ -185,7 +185,7 @@ class Uploader():
             self.emit("progress", progress, idx, total_media_groups)
             
             group_name = group_dir.name
-            logger.status(f"处理媒体组 [{group_name}] ({idx+1}/{total_media_groups})")
+            logger.info(f"处理媒体组 [{group_name}] ({idx+1}/{total_media_groups})")
             
             # 获取媒体组中的文件
             media_files = [f for f in group_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
@@ -211,14 +211,14 @@ class Uploader():
             for target, target_id, target_info in valid_targets:
                 # 检查任务是否已取消
                 if self.is_cancelled:
-                    logger.status("上传任务已取消")
+                    logger.info("上传任务已取消")
                     break
                     
                 # 等待暂停恢复
                 while self.is_paused and not self.is_cancelled:
                     await asyncio.sleep(0.5)
                 
-                logger.status(f"上传媒体组 [{group_name}] 到 {target_info}")
+                logger.info(f"上传媒体组 [{group_name}] 到 {target_info}")
                 
                 # 上传媒体组
                 if len(media_files) == 1:
@@ -251,7 +251,7 @@ class Uploader():
         else:
             logger.warning("没有媒体组被成功上传")
         
-        logger.status("所有媒体文件上传完成")
+        logger.info("所有媒体文件上传完成")
     
     def _is_valid_media_file(self, file_path: Path) -> bool:
         """
@@ -390,7 +390,7 @@ class Uploader():
             for retry in range(max_retries):
                 try:
                     # 捕获任何上传问题
-                    logger.status(f"上传媒体组 ({len(media_group)} 个文件)...")
+                    logger.info(f"上传媒体组 ({len(media_group)} 个文件)...")
                     
                     start_time = time.time()
                     result = await self.client.send_media_group(
@@ -476,7 +476,7 @@ class Uploader():
             max_retries = 3
             for retry in range(max_retries):
                 try:
-                    logger.status(f"上传文件: {file.name}...")
+                    logger.info(f"上传文件: {file.name}...")
                     
                     start_time = time.time()
                     
@@ -608,7 +608,7 @@ class Uploader():
         for idx, file in enumerate(files):
             # 检查任务是否已取消
             if self.is_cancelled:
-                logger.status("上传任务已取消")
+                logger.info("上传任务已取消")
                 break
                 
             # 等待暂停恢复
@@ -619,21 +619,21 @@ class Uploader():
             progress = (idx / total_files) * 100
             self.emit("progress", progress, idx, total_files)
             
-            logger.status(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
+            logger.info(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
             
             # 上传到所有目标频道
             file_uploaded = False
             for target, target_id, target_info in targets:
                 # 检查任务是否已取消
                 if self.is_cancelled:
-                    logger.status("上传任务已取消")
+                    logger.info("上传任务已取消")
                     break
                     
                 # 等待暂停恢复
                 while self.is_paused and not self.is_cancelled:
                     await asyncio.sleep(0.5)
                 
-                logger.status(f"上传文件 [{file.name}] 到 {target_info}")
+                logger.info(f"上传文件 [{file.name}] 到 {target_info}")
                 
                 # 上传文件
                 if await self._upload_single_file(file, target_id):

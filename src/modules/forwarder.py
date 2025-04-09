@@ -100,7 +100,7 @@ class Forwarder():
         从源频道转发消息到目标频道
         """
         
-        _logger.status("开始转发消息")
+        _logger.info("开始转发消息")
         
         # 获取配置的源频道和目标频道
         # source_channels = self.forward_config.source_channels

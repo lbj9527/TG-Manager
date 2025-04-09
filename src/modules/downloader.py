@@ -112,7 +112,7 @@ class Downloader():
         
         mode = "关键词下载" if self.use_keywords else "普通下载"
         status_message = f"开始从频道下载媒体文件（并行下载模式 - {mode}）"
-        logger.status(status_message)
+        logger.info(status_message)
         
         info_message = f"最大并行下载数: {self.max_concurrent_downloads}, 写入线程数: {self.writer_pool_size}"
         logger.info(info_message)
@@ -153,7 +153,7 @@ class Downloader():
             for setting in download_settings:
                 # 检查是否已取消
                 if self.is_cancelled:
-                    logger.status("下载任务已取消")
+                    logger.info("下载任务已取消")
                     return
                 
                 # 等待暂停恢复
@@ -179,7 +179,7 @@ class Downloader():
                 logger.info("没有符合条件的消息需要下载")
                 return
             
-            logger.status(f"开始下载 {total_messages} 条消息中的媒体文件")
+            logger.info(f"开始下载 {total_messages} 条消息中的媒体文件")
             
             # 创建下载工作者协程
             num_workers = min(self.max_concurrent_downloads, total_messages)
@@ -204,7 +204,6 @@ class Downloader():
             # 等待队列中的所有文件写入完成
             while not self.download_queue.empty():
                 logger.info(f"队列中还有 {self.download_queue.qsize()} 个文件等待写入")
-                self.emit("progress", -1, self.download_count, total_messages, remaining=self.download_queue.qsize())
                 await asyncio.sleep(1)
                 
             # 停止文件写入线程
@@ -217,19 +216,13 @@ class Downloader():
             avg_speed_kb = self.total_downloaded_bytes / (total_time * 1024) if total_time > 0 else 0
             summary = f"下载完成 | 总文件: {self.download_count}个 | 总大小: {self.total_downloaded_bytes/1024/1024:.2f}MB | 总耗时: {total_time:.2f}秒 | 平均速度: {avg_speed_kb:.2f}KB/s"
             logger.info(summary)
-            self.emit("complete", True, {
-                "total_files": self.download_count,
-                "total_size": self.total_downloaded_bytes,
-                "total_time": total_time,
-                "avg_speed": avg_speed_kb
-            })
-            logger.status("所有频道的媒体文件下载完成")
+            logger.info("所有频道的媒体文件下载完成")
             
         except Exception as e:
             logger.error(f"下载过程中发生错误: {e}")
             import traceback
             error_details = traceback.format_exc()
-            _logger.error(error_details)  # 记录到内部日志
+            logger.error(error_details)  # 记录到内部日志
             logger.error(str(e), error_type="DOWNLOAD", recoverable=False, details=error_details)
             self.is_running = False
     
@@ -253,18 +246,22 @@ class Downloader():
             # 等待暂停恢复
             if self.is_paused:
                 await asyncio.sleep(0.5)
+                continue  # 添加continue以避免在暂停状态时处理任务
+            
+            # 定义task变量，确保即使出错也能正确标记任务完成
+            task = None
             
             try:
                 # 获取下一个下载任务
-                message, save_path, channel_id, channel = await queue.get()
+                task = await queue.get()
+                message, save_path, channel_id, channel = task
                 
                 try:
                     # 获取媒体类型
                     media_type = self._get_media_type(message)
                     if not media_type:
                         logger.warning(f"{worker_info} 消息没有支持的媒体类型: {message.id}")
-                        queue.task_done()
-                        continue
+                        continue  # 移除此处的queue.task_done()，在finally块中统一处理
                     
                     # 获取媒体组ID
                     group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
@@ -278,9 +275,6 @@ class Downloader():
                         # 下载文件
                         download_start_time = time.time()
                         estimated_size = self._estimate_media_size(message)
-                        
-                        # 发射媒体下载开始事件
-                        self.emit("media_download_start", message.id, media_type, str(save_path), estimated_size)
                         
                         try:
                             # 设置超时机制
@@ -301,25 +295,18 @@ class Downloader():
                                     log_msg = f"{worker_info} 下载完成: {file_path} | 大小: {file_size/1024:.2f}KB | 耗时: {download_time:.2f}秒 | 速度: {speed_kb:.2f}KB/s"
                                     logger.debug(log_msg)
                                     
-                                    # 发射媒体下载完成事件
-                                    self.emit("media_download", message.id, media_type, file_path, file_size, download_time, speed_kb)
-                                    
                                     # 更新下载历史
                                     self.history_manager.add_download_record(channel, message.id, channel_id)
                                 else:
                                     logger.warning(f"{worker_info} 下载失败或无需下载: message_id={message.id}")
-                                    self.emit("media_download_failed", message.id, media_type, "下载失败或无需下载")
                                     
                             except asyncio.TimeoutError:
                                 logger.error(f"{worker_info} 下载超时: message_id={message.id}，超过{download_timeout}秒")
-                                self.emit("media_download_failed", message.id, media_type, "下载超时")
                             except Exception as e:
                                 logger.error(f"{worker_info} 下载出错: {e}")
-                                self.emit("error", str(e), error_type="DOWNLOAD", recoverable=True, message_id=message.id)
                             
                         except FloodWait as e:
                             logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                            self.emit("error", f"触发FloodWait，等待 {e.x} 秒", error_type="FLOOD_WAIT", recoverable=True, wait_time=e.x)
                             await self._handle_flood_wait(e.x)
                             continue
                             
@@ -328,11 +315,11 @@ class Downloader():
                             
                 except Exception as e:
                     logger.error(f"{worker_info} 处理消息时出错: {e}")
-                    self.emit("error", str(e), error_type="MESSAGE_PROCESSING", recoverable=True)
                     
                 finally:
-                    # 标记任务完成
-                    queue.task_done()
+                    # 只有在成功获取任务后才标记任务完成
+                    if task is not None:
+                        queue.task_done()
                     
             except asyncio.CancelledError:
                 # 协程被取消
@@ -341,7 +328,6 @@ class Downloader():
                 
             except Exception as e:
                 logger.error(f"{worker_info} 发生未预期错误: {e}")
-                self.emit("error", str(e), error_type="WORKER", recoverable=True)
                 # 继续循环，尝试下一个任务
                 
         logger.info(f"{worker_info} 退出")
@@ -350,7 +336,7 @@ class Downloader():
         """
         文件写入线程，从队列中取出内存中的媒体数据并写入文件
         """
-        logger.status("文件写入线程启动")
+        logger.info("文件写入线程启动")
         
         # 创建写入线程池
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.writer_pool_size) as executor:
@@ -380,10 +366,10 @@ class Downloader():
                     logger.error(f"文件写入线程处理队列项时出错: {e}", error_type="FILE_WRITER", recoverable=True)
             
             # 等待所有未完成的任务
-            logger.status(f"等待 {len(futures)} 个文件写入任务完成...")
+            logger.info(f"等待 {len(futures)} 个文件写入任务完成...")
             concurrent.futures.wait(futures)
         
-        logger.status("文件写入线程退出")
+        logger.info("文件写入线程退出")
     
     def _write_file(self, file_path, data, message_id, channel_id, media_type):
         """
@@ -407,11 +393,11 @@ class Downloader():
                 if hasattr(data, 'getvalue'):
                     # 如果是BytesIO或类似IO对象，获取其值
                     f.write(data.getvalue())
-                    _logger.debug(f"处理BytesIO对象并写入文件 {temp_path}")
+                    logger.debug(f"处理BytesIO对象并写入文件 {temp_path}")
                 else:
                     # 如果已经是bytes对象，直接写入
                     f.write(data)
-                    _logger.debug(f"直接写入bytes数据到文件 {temp_path}")
+                    logger.debug(f"直接写入bytes数据到文件 {temp_path}")
                 
             # 重命名为最终文件名
             if os.path.exists(file_path):
@@ -423,8 +409,7 @@ class Downloader():
             self.download_count += 1
             self.total_downloaded_bytes += file_size
             
-            _logger.debug(f"文件写入成功: {file_path} (大小: {file_size/1024:.2f}KB)")
-            self.emit("file_written", file_path, file_size, message_id, channel_id, media_type)
+            logger.debug(f"文件写入成功: {file_path} (大小: {file_size/1024:.2f}KB)")
             
             # 更新下载历史
             self.history_manager.add_download_record(channel_id, message_id, channel_id)
@@ -462,7 +447,6 @@ class Downloader():
             # 检查是否已经下载过该消息
             if self.history_manager.is_downloaded(chat_id, message.id):
                 logger.debug(f"消息已下载过: {channel} {message.id}")
-                self.emit("media_skipped", message.id, media_type, "already_downloaded")
                 return False
                 
             # 获取媒体文件名
@@ -491,13 +475,9 @@ class Downloader():
                         f.write(caption)
                 except Exception as e:
                     logger.error(f"保存消息文本失败: {e}")
-                    self.emit("error", str(e), error_type="FILE_WRITE", recoverable=True)
             
             # 构建完整的文件路径
             file_path = media_path / file_name
-            
-            # 发出媒体发现事件
-            self.emit("media_found", message.id, media_type, str(file_path), media_group_id)
             
             # 尝试下载媒体
             start_time = time.time()
@@ -507,7 +487,6 @@ class Downloader():
                 download_result = await self._download_media_to_memory(message, media_type)
                 if not download_result:
                     logger.warning(f"下载失败: {channel} {message.id} - {file_name}")
-                    self.emit("media_download_failed", message.id, media_type, "download_failed")
                     return False
                 
                 media_data, file_id = download_result
@@ -519,7 +498,6 @@ class Downloader():
                 # 验证文件大小
                 if not media_data or file_size == 0:
                     logger.warning(f"下载的媒体文件大小为0: {channel} {message.id} - {file_name}")
-                    self.emit("media_download_failed", message.id, media_type, "zero_size")
                     return False
                 
                 # 放入文件写入队列
@@ -533,18 +511,15 @@ class Downloader():
                 
             except FloodWait as e:
                 logger.warning(f"触发FloodWait，等待 {e.x} 秒")
-                self.emit("error", f"触发FloodWait，等待 {e.x} 秒", error_type="FLOOD_WAIT", recoverable=True, wait_time=e.x)
                 await self._handle_flood_wait(e.x)
                 return False
                 
             except Exception as e:
                 logger.error(f"下载媒体文件时出错: {e}")
-                self.emit("error", str(e), error_type="DOWNLOAD", recoverable=True, message_id=message.id)
                 return False
                 
         except Exception as e:
             logger.error(f"处理媒体消息时出错: {e}")
-            self.emit("error", str(e), error_type="MESSAGE_PROCESSING", recoverable=True, message_id=message.id)
             return False
 
     async def _iter_messages(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0):
@@ -809,6 +784,16 @@ class Downloader():
                     logger.info(f"消息 {message.id} 已下载，跳过")
                     continue
                 
+                # 获取媒体类型并检查是否在允许的类型列表中
+                message_media_type = self._get_media_type(message)
+                if not message_media_type:
+                    continue
+                    
+                # 如果指定了媒体类型列表，检查当前媒体是否符合要求
+                if media_types and message_media_type not in media_types:
+                    logger.debug(f"消息ID: {message.id} 的文件类型 {message_media_type} 不在允许的媒体类型列表中，跳过")
+                    continue
+                
                 # 确定媒体组ID
                 group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
                 
@@ -887,28 +872,39 @@ class Downloader():
             message: 消息对象
             
         Returns:
-            Optional[str]: 媒体类型，如果没有支持的媒体类型则返回None
+            Optional[str]: 媒体类型，如果没有媒体则返回None
         """
-        media_types = self.download_config.get('media_types', [])
-        
-        if message.photo and "photo" in media_types:
-            return "photo"
-        elif message.video and "video" in media_types:
-            return "video"
-        elif message.document and "document" in media_types:
-            return "document"
-        elif message.audio and "audio" in media_types:
-            return "audio"
-        elif message.animation and "animation" in media_types:
-            return "animation"
-        elif message.sticker and "sticker" in media_types:
-            return "sticker"
-        elif message.voice and "voice" in media_types:
-            return "voice"
-        elif message.video_note and "video_note" in media_types:
-            return "video_note"
-        
-        return None
+        try:
+            if message.photo:
+                logger.debug(f"检测到媒体类型: photo, message_id={message.id}")
+                return "photo"
+            elif message.video:
+                logger.debug(f"检测到媒体类型: video, message_id={message.id}")
+                return "video"
+            elif message.document:
+                logger.debug(f"检测到媒体类型: document, message_id={message.id}")
+                return "document"
+            elif message.audio:
+                logger.debug(f"检测到媒体类型: audio, message_id={message.id}")
+                return "audio"
+            elif message.animation:
+                logger.debug(f"检测到媒体类型: animation, message_id={message.id}")
+                return "animation"
+            elif message.sticker:
+                logger.debug(f"检测到媒体类型: sticker, message_id={message.id}")
+                return "sticker"
+            elif message.voice:
+                logger.debug(f"检测到媒体类型: voice, message_id={message.id}")
+                return "voice"
+            elif message.video_note:
+                logger.debug(f"检测到媒体类型: video_note, message_id={message.id}")
+                return "video_note"
+            else:
+                logger.debug(f"消息 {message.id} 没有支持的媒体类型")
+                return None
+        except Exception as e:
+            logger.error(f"确定媒体类型时出错: {e}, message_id={message.id}")
+            return None
     
     def _get_media_file_name(self, message: Message, media_type: str) -> Optional[str]:
         """
@@ -1176,5 +1172,4 @@ class Downloader():
             
         except Exception as e:
             logger.error(f"下载文件失败: {e}")
-            self.emit("error", str(e), error_type="FILE_DOWNLOAD", recoverable=True, file_path=file_path)
             return None 

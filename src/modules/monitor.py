@@ -119,7 +119,7 @@ class Monitor():
         开始监听所有配置的频道
         """
         
-        logger.status("开始监听源频道的新消息")
+        logger.info("开始监听源频道的新消息")
         
         # 解析监听频道ID
         self.monitored_channels = set()
@@ -196,13 +196,13 @@ class Monitor():
                 except Exception as e:
                     logger.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
             
-            logger.status(f"正在监听 {len(self.monitored_channels)} 个频道的新消息")
+            logger.info(f"正在监听 {len(self.monitored_channels)} 个频道的新消息")
             
             # 等待取消信号
             while not self.task_context.cancel_token.is_cancelled:
                 await asyncio.sleep(1)
                 
-            logger.status("监听任务已取消")
+            logger.info("监听任务已取消")
             
         except Exception as e:
             logger.error(f"监听任务发生异常: {str(e)}", error_type="MONITOR_TASK", recoverable=False)
@@ -214,7 +214,7 @@ class Monitor():
         """
         停止监听所有频道
         """
-        logger.status("正在停止所有监听任务...")
+        logger.info("正在停止所有监听任务...")
         
         # 设置停止标志
         self.should_stop = True
@@ -247,7 +247,7 @@ class Monitor():
         self.processed_messages.clear()
         logger.info(f"已清理 {previous_count} 条已处理消息记录")
         
-        logger.status("所有监听任务已停止")
+        logger.info("所有监听任务已停止")
     
     async def _cleanup_processed_messages(self):
         """
@@ -284,7 +284,7 @@ class Monitor():
         source_channel = channel_pair.source_channel
         target_channels = channel_pair.target_channels
         
-        logger.status(f"开始监听源频道: {source_channel}")
+        logger.info(f"开始监听源频道: {source_channel}")
         
         try:
             # 解析源频道ID
@@ -319,7 +319,7 @@ class Monitor():
                 return
             
             # 检查源频道是否允许转发
-            logger.status(f"检查源频道 {source_title} 转发权限...")
+            logger.info(f"检查源频道 {source_title} 转发权限...")
             
             source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
             
@@ -391,12 +391,12 @@ class Monitor():
             # 存储处理器引用以便后续移除
             self.message_handlers.append(handler)
             
-            logger.status(f"成功注册源频道 {source_title} 的消息处理器，开始监听新消息")
+            logger.info(f"成功注册源频道 {source_title} 的消息处理器，开始监听新消息")
             
             # 等待直到应该停止
             while not self.should_stop:
                 if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    logger.status(f"监听源频道 {source_title} 的任务已取消")
+                    logger.info(f"监听源频道 {source_title} 的任务已取消")
                     break
                 
                 # 等待暂停恢复
@@ -652,7 +652,7 @@ class Monitor():
         Returns:
             获取到的消息列表
         """
-        logger.status(f"正在获取频道 {channel} 的历史消息")
+        logger.info(f"正在获取频道 {channel} 的历史消息")
         
         try:
             channel_id = await self.channel_resolver.resolve_channel(channel)
@@ -676,7 +676,7 @@ class Monitor():
                     logger.debug(f"已获取 {len(messages)} 条消息")
                     self.emit("history_progress", len(messages), limit)
                     
-            logger.status(f"完成获取 {channel_info_str} 的历史消息，共 {len(messages)} 条")
+            logger.info(f"完成获取 {channel_info_str} 的历史消息，共 {len(messages)} 条")
             self.emit("history_complete", len(messages))
             return messages
             
