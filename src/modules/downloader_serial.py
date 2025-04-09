@@ -75,12 +75,23 @@ class DownloaderSerial():
         # 是否使用关键词下载模式
         self.use_keywords = False
     
+    def set_keywords_mode(self, enabled: bool = False):
+        """
+        设置是否使用关键词下载模式
+        
+        Args:
+            enabled: 是否启用关键词模式
+        """
+        self.use_keywords = enabled
+        logger.info(f"关键词下载模式: {'开启' if enabled else '关闭'}")
+    
     async def download_media_from_channels(self):
         """
         从配置的频道下载媒体文件
         """
         
-        logger.info("开始从频道下载媒体文件")
+        mode = "关键词下载" if self.use_keywords else "普通下载"
+        logger.info(f"开始从频道下载媒体文件 ({mode}模式)")
         
         # 获取下载频道列表
         download_settings = self.download_config.get('downloadSetting', [])
@@ -91,6 +102,14 @@ class DownloaderSerial():
             logger.info(f"下载设置 #{idx+1}: 源频道={setting.get('source_channels', '')}, "
                        f"起始ID={setting.get('start_id', 0)}, 结束ID={setting.get('end_id', 0)}, "
                        f"媒体类型={setting.get('media_types', [])}")
+            
+            # 如果是关键词模式，显示关键词列表
+            if self.use_keywords:
+                keywords = setting.get('keywords', [])
+                if keywords:
+                    logger.info(f"下载设置 #{idx+1} 关键词: {keywords}")
+                else:
+                    logger.warning(f"下载设置 #{idx+1} 未设置关键词，关键词模式下可能无法下载任何内容")
         
         if not download_settings:
             logger.error("未配置下载设置，无法开始下载", error_type="CONFIG", recoverable=False)
@@ -168,6 +187,19 @@ class DownloaderSerial():
                 channel_download_path = download_path / self._sanitize_filename(channel_title)
                 channel_download_path.mkdir(parents=True, exist_ok=True)
                 
+                # 关键词下载模式下，记录频道信息
+                if self.use_keywords:
+                    # 在频道目录下创建一个频道信息文件
+                    try:
+                        channel_info_file = channel_download_path / "channel_info.txt"
+                        with open(channel_info_file, "w", encoding="utf-8") as f:
+                            f.write(f"频道名称: {channel_title}\n")
+                            f.write(f"频道ID: {real_channel_id}\n")
+                            f.write(f"频道链接: {channel_name}\n")
+                            f.write(f"下载时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    except Exception as e:
+                        logger.error(f"保存频道信息文件失败: {e}")
+                
                 logger.info(f"下载目录: {channel_download_path}")
                 
                 # 获取该频道的历史记录，使用原始频道名称作为键
@@ -175,6 +207,20 @@ class DownloaderSerial():
                 logger.info(f"已下载的消息数量: {len(downloaded_messages)}")
                 
                 downloaded_count = 0
+                
+                # 关键词列表，仅在关键词模式下使用
+                keywords = setting.get('keywords', []) if self.use_keywords else []
+                if self.use_keywords and not keywords:
+                    logger.warning(f"频道 {channel_name} 未设置关键词，关键词模式下将跳过该频道")
+                    continue
+                elif self.use_keywords:
+                    logger.info(f"使用关键词筛选: {keywords}")
+                    # 在频道目录下创建关键词目录
+                    for keyword in keywords:
+                        keyword_dir = self._sanitize_filename(keyword)
+                        keyword_path = channel_download_path / keyword_dir
+                        keyword_path.mkdir(exist_ok=True)
+                        logger.debug(f"创建关键词目录: {keyword_path}")
                 
                 # 获取消息，使用_iter_messages按照从旧到新的顺序获取
                 async for message in self._iter_messages(real_channel_id, start_id, end_id, limit):
@@ -188,6 +234,41 @@ class DownloaderSerial():
                         # 获取消息ID
                         media_id = message.id
                         
+                        # 在关键词模式下，检查消息文本是否包含关键词
+                        if self.use_keywords and keywords:
+                            # 获取消息文本内容
+                            message_text = message.text or message.caption or ""
+                            if not message_text:
+                                logger.debug(f"消息ID: {media_id} 没有文本内容，关键词模式下跳过")
+                                continue
+                                
+                            # 检查是否包含任何关键词
+                            keyword_matched = False
+                            matched_keyword = ""
+                            for keyword in keywords:
+                                if keyword.lower() in message_text.lower():
+                                    keyword_matched = True
+                                    matched_keyword = keyword
+                                    break
+                                    
+                            if not keyword_matched:
+                                logger.debug(f"消息ID: {media_id} 不包含任何关键词，跳过")
+                                continue
+                            else:
+                                logger.info(f"消息ID: {media_id} 匹配关键词: {matched_keyword}")
+                                
+                                # 为关键词创建子目录
+                                if self.use_keywords:
+                                    keyword_dir = self._sanitize_filename(matched_keyword)
+                                    keyword_path = channel_download_path / keyword_dir
+                                    keyword_path.mkdir(exist_ok=True)
+                                    # 使用关键词目录作为下载路径
+                                    file_path_base = keyword_path
+                                else:
+                                    file_path_base = channel_download_path
+                        else:
+                            file_path_base = channel_download_path
+                        
                         # 检查文件类型是否符合允许的媒体类型
                         file_type = self._get_media_type(message)
                         media_types = setting.get('media_types', [])
@@ -197,7 +278,7 @@ class DownloaderSerial():
                         
                         # 获取文件名
                         file_name = self._generate_filename(message, channel_title)
-                        file_path = channel_download_path / file_name
+                        file_path = file_path_base / file_name
                         
                         # 检查文件是否已存在
                         if file_path.exists():
@@ -211,6 +292,20 @@ class DownloaderSerial():
                         try:
                             # 开始时间
                             start_time = time.time()
+                            
+                            # 如果是关键词匹配，记录关键词信息到标题文件
+                            if self.use_keywords and 'matched_keyword' in locals() and matched_keyword:
+                                # 保存消息文本和关键词到标题文件
+                                title_file_path = file_path_base / "title.txt"
+                                try:
+                                    message_text = message.text or message.caption or ""
+                                    with open(title_file_path, "a", encoding="utf-8") as f:
+                                        f.write(f"消息ID: {media_id}\n")
+                                        f.write(f"关键词: {matched_keyword}\n")
+                                        f.write(f"消息文本:\n{message_text}\n")
+                                        f.write("-" * 50 + "\n")
+                                except Exception as e:
+                                    logger.error(f"保存标题文件失败: {e}")
                             
                             # 下载文件
                             download_path = await self.client.download_media(
