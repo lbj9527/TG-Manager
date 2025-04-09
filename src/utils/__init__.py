@@ -3,7 +3,6 @@
 """
 
 from .logger import get_logger
-from .config_manager import ConfigManager
 from .client_manager import ClientManager
 from .channel_resolver import ChannelResolver
 from .history_manager import HistoryManager

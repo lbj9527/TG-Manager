@@ -10,7 +10,6 @@ import argparse
 from pathlib import Path
 
 from src.utils.logger import get_logger
-from src.utils.config_manager import ConfigManager
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.client_manager import ClientManager
