@@ -345,32 +345,35 @@ class DownloaderSerial():
                     else:
                         media_group_path = current_channel_path
                     
-                    # 如果是关键词匹配，记录关键词信息到标题文件
-                    if self.use_keywords and matched_keyword:
-                        # 保存消息文本和关键词到标题文件
-                        try:
-                            title_file_path = media_group_path / "title.txt"
-                            with open(title_file_path, "a", encoding="utf-8") as f:
+                    # 记录消息文本到标题文件(无论是否关键词模式)
+                    try:
+                        title_file_path = media_group_path / "title.txt"
+                        with open(title_file_path, "a", encoding="utf-8") as f:
+                            # 如果是关键词匹配模式，添加关键词信息
+                            if self.use_keywords and matched_keyword:
                                 f.write(f"关键词: {matched_keyword}\n")
-                                f.write(f"媒体组ID: {group_id}\n")
-                                f.write(f"消息IDs: {[m.id for m in messages]}\n")
-                                
-                                # 尝试获取包含最多文本的消息
-                                best_message = None
-                                best_text_length = 0
-                                for msg in messages:
-                                    text = msg.text or msg.caption or ""
-                                    if len(text) > best_text_length:
-                                        best_text_length = len(text)
-                                        best_message = msg
-                                
-                                if best_message:
-                                    text = best_message.text or best_message.caption or ""
-                                    f.write(f"消息文本:\n{text}\n")
-                                
-                                f.write("-" * 50 + "\n")
-                        except Exception as e:
-                            logger.error(f"保存标题文件失败: {e}")
+                            
+                            f.write(f"媒体组ID: {group_id}\n")
+                            f.write(f"消息IDs: {[m.id for m in messages]}\n")
+                            
+                            # 尝试获取包含最多文本的消息
+                            best_message = None
+                            best_text_length = 0
+                            for msg in messages:
+                                text = msg.text or msg.caption or ""
+                                if len(text) > best_text_length:
+                                    best_text_length = len(text)
+                                    best_message = msg
+                            
+                            if best_message:
+                                text = best_message.text or best_message.caption or ""
+                                f.write(f"消息文本:\n{text}\n")
+                            
+                            # 记录当前时间
+                            f.write(f"下载时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                            f.write("-" * 50 + "\n")
+                    except Exception as e:
+                        logger.error(f"保存标题文件失败: {e}")
                     
                     # 下载媒体组中的所有消息
                     for message in messages:
