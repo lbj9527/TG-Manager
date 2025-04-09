@@ -21,6 +21,8 @@ from src.modules.forwarder import Forwarder
 from src.modules.monitor import Monitor
 from src.utils.ui_config_manager import UIConfigManager
 
+import pyrogram
+
 logger = get_logger()
 
 async def main():
@@ -32,6 +34,10 @@ async def main():
                         help="执行的命令：forward(转发历史消息), download(下载媒体文件), downloadKeywords(根据关键字下载媒体文件), upload(上传本地文件), startmonitor(监听新消息)")
     
     args = parser.parse_args()
+    
+    # 初始化组件变量
+    client_manager = None
+    client = None
     
     try:
         # 初始化配置
@@ -66,6 +72,32 @@ async def main():
         # 初始化转发模块
         forwarder = Forwarder(client, ui_config_manager, channel_resolver, history_manager, downloader, uploader)
         
+        # 注册全局未捕获的异常处理器
+        async def check_uncaught_exceptions():
+            while True:
+                try:
+                    for task in asyncio.all_tasks():
+                        if task.done() and not task.cancelled():
+                            try:
+                                # 尝试获取异常
+                                exc = task.exception()
+                                if exc:
+                                    logger.warning(f"发现未捕获的异常: {type(exc).__name__}: {exc}, 任务名称: {task.get_name()}")
+                            except asyncio.CancelledError:
+                                pass  # 忽略已取消的任务
+                            except asyncio.InvalidStateError:
+                                pass  # 忽略还未完成的任务
+                    await asyncio.sleep(5)  # 每5秒检查一次
+                except asyncio.CancelledError:
+                    logger.info("异常检查任务已取消")
+                    break
+                except Exception as e:
+                    logger.error(f"检查未捕获异常时出错: {e}")
+                    await asyncio.sleep(5)
+                
+        # 启动异常检查任务
+        exception_checker = asyncio.create_task(check_uncaught_exceptions())
+        
         # 根据命令执行相应功能
         if args.command == 'forward':
             logger.info("执行历史消息转发")
@@ -74,6 +106,7 @@ async def main():
         elif args.command == 'download':
             logger.info("执行媒体文件下载")
             downloader.use_keywords = False
+            
             await downloader.download_media_from_channels()
             
         elif args.command == 'downloadKeywords':
@@ -104,9 +137,18 @@ async def main():
         else:
             logger.error(f"未知命令: {args.command}")
             parser.print_help()
+            
+        # 取消异常检查任务
+        if exception_checker and not exception_checker.done():
+            exception_checker.cancel()
+            try:
+                await exception_checker
+            except asyncio.CancelledError:
+                pass
         
         # 关闭客户端
-        await client_manager.stop_client()
+        if client_manager:
+            await client_manager.stop_client()
         
     except KeyboardInterrupt:
         logger.info("用户中断程序")
@@ -115,6 +157,32 @@ async def main():
         import traceback
         logger.error(traceback.format_exc())
     finally:
+        # 确保清理所有资源
+        try:
+            # 取消所有未完成的任务
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            if tasks:
+                logger.info(f"取消 {len(tasks)} 个未完成的任务...")
+                for task in tasks:
+                    task.cancel()
+                
+                try:
+                    # 等待任务取消，设置超时避免无限等待
+                    await asyncio.wait(tasks, timeout=5)
+                except Exception as e:
+                    logger.error(f"等待任务取消时出错: {e}")
+                
+            # 确保客户端已关闭
+            if client_manager and client_manager.client:
+                try:
+                    await client_manager.stop_client()
+                except Exception as e:
+                    logger.error(f"关闭客户端时出错: {e}")
+                    
+            logger.info("所有资源已清理")
+        except Exception as cleanup_error:
+            logger.error(f"清理资源时出错: {cleanup_error}")
+            
         logger.info("程序退出")
 
 

@@ -182,13 +182,48 @@ class ClientManager:
         """
         if self.client:
             try:
+                logger.info("正在停止客户端...")
+                
+                # 尝试停止客户端的所有相关任务
+                for task in asyncio.all_tasks():
+                    task_name = task.get_name()
+                    # 寻找与pyrogram相关的任务
+                    if 'pyrogram' in task_name.lower() or 'client' in task_name.lower():
+                        if not task.done() and not task.cancelled():
+                            logger.info(f"尝试取消未完成的客户端任务: {task_name}")
+                            task.cancel()
+                
+                # 停止客户端
                 await self.client.stop()
+                
+                # 再次检查并等待所有相关任务完成
+                pending_tasks = [t for t in asyncio.all_tasks() 
+                                if ('pyrogram' in t.get_name().lower() or 'client' in t.get_name().lower()) 
+                                and not t.done() and not t.cancelled()]
+                
+                if pending_tasks:
+                    logger.info(f"等待 {len(pending_tasks)} 个客户端相关任务完成...")
+                    try:
+                        # 设置超时，避免无限等待
+                        await asyncio.wait(pending_tasks, timeout=5)
+                    except Exception as e:
+                        logger.warning(f"等待客户端任务完成时出错: {e}")
+                
                 self.client = None
                 self.is_authorized = False
-                logger.info("客户端已停止")
+                logger.info("客户端已完全停止")
                 return True
             except Exception as e:
                 logger.error(f"停止客户端时出错: {e}")
+                # 尝试强制停止客户端
+                try:
+                    if self.client:
+                        self.client.disconnect()
+                        self.client = None
+                        self.is_authorized = False
+                        logger.info("客户端已强制断开连接")
+                except Exception as forced_stop_error:
+                    logger.error(f"强制停止客户端时出错: {forced_stop_error}")
                 return False
         return True
     

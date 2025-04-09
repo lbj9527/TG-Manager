@@ -130,6 +130,9 @@ class Downloader():
         self.adaptive_delay = 0.5
         self.api_errors = {}
         
+        # 保存工作协程引用
+        workers = []
+        
         try:
             # 启动文件写入线程
             self.is_running = True
@@ -199,7 +202,14 @@ class Downloader():
                 workers.append(worker)
                 
             # 等待所有工作协程完成
-            await asyncio.gather(*workers)
+            try:
+                await asyncio.gather(*workers)
+            except Exception as e:
+                logger.error(f"等待工作协程时发生错误: {e}")
+                # 取消所有未完成的工作协程
+                for worker in workers:
+                    if not worker.done():
+                        worker.cancel()
             
             # 等待队列中的所有文件写入完成
             while not self.download_queue.empty():
@@ -224,7 +234,35 @@ class Downloader():
             error_details = traceback.format_exc()
             logger.error(error_details)  # 记录到内部日志
             logger.error(str(e), error_type="DOWNLOAD", recoverable=False, details=error_details)
+        finally:
+            # 确保清理所有资源
             self.is_running = False
+            
+            # 取消所有未完成的工作协程
+            for worker in workers:
+                if not worker.done():
+                    worker.cancel()
+                    logger.info(f"取消未完成的工作协程")
+            
+            # 等待取消的工作协程完成
+            if workers:
+                try:
+                    # 设置超时，防止无限等待
+                    await asyncio.wait(workers, timeout=5)
+                except Exception as e:
+                    logger.error(f"等待工作协程取消时出错: {e}")
+            
+            # 清空下载队列
+            try:
+                while not self.download_queue.empty():
+                    try:
+                        self.download_queue.get_nowait()
+                    except:
+                        pass
+            except Exception as e:
+                logger.error(f"清空下载队列时出错: {e}")
+                
+            logger.info("下载任务已完全清理")
     
     async def _download_worker(self, worker_id: int, queue: asyncio.Queue):
         """
