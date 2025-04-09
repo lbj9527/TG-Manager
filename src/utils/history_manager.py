@@ -223,6 +223,20 @@ class HistoryManager:
         
         return channels[channel_id].get("downloaded_messages", [])
     
+    # 为了兼容性添加别名
+    def is_downloaded(self, channel_id: str, message_id: int) -> bool:
+        """
+        检查消息是否已下载，是is_message_downloaded的别名
+        
+        Args:
+            channel_id: 频道ID或用户名
+            message_id: 消息ID
+            
+        Returns:
+            bool: 是否已下载
+        """
+        return self.is_message_downloaded(channel_id, message_id)
+    
     # 上传历史记录方法
     def is_file_uploaded(self, file_path: str, target_channel: str) -> bool:
         """
