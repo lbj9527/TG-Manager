@@ -563,3 +563,19 @@ class TaskView(QWidget):
             index = self.view_mode_combo.findText(show_mode, Qt.MatchFixedString)
             if index >= 0:
                 self.view_mode_combo.setCurrentIndex(index) 
+    
+    def set_task_manager(self, task_manager):
+        """设置任务管理器实例
+        
+        Args:
+            task_manager: 任务管理器实例
+        """
+        if not task_manager:
+            logger.warning("任务管理器实例为空，无法设置")
+            return
+            
+        self.task_manager = task_manager
+        logger.debug("任务视图已接收任务管理器实例")
+        
+        # 设置任务监控定时器
+        self._setup_task_monitor() 

@@ -1670,3 +1670,26 @@ class MainWindow(QMainWindow):
                         2000
                     ) 
 
+    def get_view(self, view_name):
+        """获取指定名称的视图组件
+        
+        Args:
+            view_name: 视图名称，可选值: 'download', 'upload', 'forward', 'listen', 'task', 'log', 'help'
+            
+        Returns:
+            视图组件实例，如果不存在则返回None
+        """
+        view_map = {
+            'download': self.download_view,
+            'upload': self.upload_view,
+            'forward': self.forward_view,
+            'listen': self.listen_view,
+            'task': self.task_view,
+            'log': self.log_viewer,
+            'help': self.help_doc_view,
+            'settings': self.settings_view,
+            'qt_asyncio_test': self.qt_asyncio_test_view
+        }
+        
+        return view_map.get(view_name)
+

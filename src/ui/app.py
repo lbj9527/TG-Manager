@@ -17,6 +17,17 @@ from src.utils.logger import get_logger
 from src.utils.theme_manager import get_theme_manager
 from src.utils.ui_config_manager import UIConfigManager
 from src.utils.ui_config_models import UIConfig
+from src.utils.channel_resolver import ChannelResolver
+from src.utils.history_manager import HistoryManager
+from src.utils.client_manager import ClientManager
+from src.utils.async_utils import create_task, safe_sleep, AsyncTaskManager
+
+# 导入功能模块
+from src.modules.downloader import Downloader
+from src.modules.downloader_serial import DownloaderSerial
+from src.modules.uploader import Uploader
+from src.modules.forwarder import Forwarder
+from src.modules.monitor import Monitor
 
 # 导入主窗口
 from src.ui.views.main_window import MainWindow
@@ -120,6 +131,19 @@ class TGManagerApp(QObject):
             # 使用默认主题
             self.theme_manager.apply_theme("深色主题")
         
+        # 初始化任务管理器
+        self.task_manager = AsyncTaskManager()
+        
+        # 实例化功能模块变量
+        self.client = None
+        self.client_manager = None
+        self.channel_resolver = None
+        self.history_manager = None
+        self.downloader = None
+        self.uploader = None
+        self.forwarder = None
+        self.monitor = None
+        
         # 初始化主窗口
         try:
             self.main_window = MainWindow(self.config)
@@ -194,6 +218,171 @@ class TGManagerApp(QObject):
         # 连接主题变更信号
         self.theme_changed.connect(self._on_theme_changed)
     
+    async def async_run(self):
+        """异步运行应用程序"""
+        try:
+            # 初始化异步服务
+            await self._init_async_services()
+            
+            # 将功能模块传递给视图组件
+            self._initialize_views()
+            
+            # 启动全局异常处理器
+            self.task_manager.add_task("global_exception_handler", self.global_exception_handler())
+            
+            # 执行正常的 Qt 事件循环
+            return self.app.exec()
+        except Exception as e:
+            logger.error(f"异步运行出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return 1
+    
+    async def _init_async_services(self):
+        """初始化需要的异步服务"""
+        try:
+            # 初始化历史记录管理器
+            self.history_manager = HistoryManager()
+            logger.info("历史记录管理器初始化成功")
+            
+            # 初始化客户端管理器
+            self.client_manager = ClientManager(self.ui_config_manager)
+            logger.info("客户端管理器初始化成功")
+            
+            # 启动Telegram客户端
+            try:
+                self.client = await self.client_manager.start_client()
+                logger.info("Telegram客户端启动成功")
+            except Exception as e:
+                logger.error(f"Telegram客户端启动失败: {e}")
+                # 显示错误但继续运行，允许用户稍后通过登录按钮登录
+                # 这样可以在API ID或API Hash错误的情况下也能启动应用
+                self.client = None
+            
+            # 初始化频道解析器
+            self.channel_resolver = ChannelResolver(self.client)
+            logger.info("频道解析器初始化成功")
+            
+            # 初始化下载模块 - 根据配置选择并行或顺序下载
+            download_config = self.ui_config_manager.get_download_config()
+            if download_config.parallel_download:
+                logger.info("使用并行下载模式")
+                self.downloader = Downloader(
+                    self.client, 
+                    self.ui_config_manager, 
+                    self.channel_resolver, 
+                    self.history_manager
+                )
+                self.downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
+            else:
+                logger.info("使用顺序下载模式")
+                self.downloader = DownloaderSerial(
+                    self.client, 
+                    self.ui_config_manager, 
+                    self.channel_resolver, 
+                    self.history_manager
+                )
+            
+            # 初始化上传模块
+            self.uploader = Uploader(
+                self.client, 
+                self.ui_config_manager, 
+                self.channel_resolver, 
+                self.history_manager
+            )
+            logger.info("上传模块初始化成功")
+            
+            # 初始化转发模块
+            self.forwarder = Forwarder(
+                self.client, 
+                self.ui_config_manager, 
+                self.channel_resolver, 
+                self.history_manager, 
+                self.downloader, 
+                self.uploader
+            )
+            logger.info("转发模块初始化成功")
+            
+            # 初始化监听模块
+            self.monitor = Monitor(
+                self.client, 
+                self.ui_config_manager, 
+                self.channel_resolver
+            )
+            logger.info("监听模块初始化成功")
+            
+            logger.info("所有异步服务初始化成功")
+        except Exception as e:
+            logger.error(f"初始化异步服务时出错: {e}")
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}")
+            raise  # 重新抛出异常以便上层处理
+    
+    def _initialize_views(self):
+        """初始化所有视图组件，传递功能模块实例"""
+        if not hasattr(self, 'main_window'):
+            logger.warning("主窗口未初始化，无法设置视图组件")
+            return
+        
+        # 获取视图引用
+        try:
+            # 下载视图
+            download_view = self.main_window.get_view("download")
+            if download_view:
+                download_view.set_downloader(self.downloader)
+                logger.debug("下载视图设置了下载器实例")
+            
+            # 上传视图
+            upload_view = self.main_window.get_view("upload")
+            if upload_view:
+                upload_view.set_uploader(self.uploader)
+                logger.debug("上传视图设置了上传器实例")
+            
+            # 转发视图
+            forward_view = self.main_window.get_view("forward")
+            if forward_view:
+                forward_view.set_forwarder(self.forwarder)
+                logger.debug("转发视图设置了转发器实例")
+            
+            # 监听视图
+            listen_view = self.main_window.get_view("listen")
+            if listen_view:
+                listen_view.set_monitor(self.monitor)
+                logger.debug("监听视图设置了监听器实例")
+            
+            # 任务视图 - 将任务管理器传递给任务视图
+            task_view = self.main_window.get_view("task")
+            if task_view:
+                task_view.set_task_manager(self.task_manager)
+                logger.debug("任务视图设置了任务管理器实例")
+            
+            logger.info("所有视图组件初始化完成")
+        except Exception as e:
+            logger.error(f"初始化视图组件时出错: {e}")
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}")
+    
+    async def global_exception_handler(self):
+        """全局异常处理函数"""
+        while True:
+            try:
+                for task in asyncio.all_tasks():
+                    if task.done() and not task.cancelled():
+                        try:
+                            # 尝试获取异常
+                            exc = task.exception()
+                            if exc:
+                                logger.warning(f"发现未捕获的异常: {type(exc).__name__}: {exc}, 任务名称: {task.get_name()}")
+                        except (asyncio.CancelledError, asyncio.InvalidStateError):
+                            pass  # 忽略已取消的任务和无效状态
+                await safe_sleep(5)  # 每5秒检查一次
+            except asyncio.CancelledError:
+                logger.info("全局异常处理器已取消")
+                break
+            except Exception as e:
+                logger.error(f"全局异常处理器出错: {e}")
+                await safe_sleep(5)  # 出错后等待5秒再继续
+
     def _apply_theme_from_config(self):
         """从配置中应用主题设置"""
         if not self.config:
@@ -398,21 +587,18 @@ class TGManagerApp(QObject):
         return None
     
     def run(self):
-        """运行应用程序"""
+        """运行应用程序 
+        
+        注意: 新版本应使用async_run方法，此方法仅作为兼容保留
+        """
+        logger.warning("调用了传统的run方法，应使用async_run方法")
         try:
-            # 尝试使用 QtAsyncio 运行应用程序
-            try:
-                import PySide6.QtAsyncio as QtAsyncio
-                logger.info("使用 QtAsyncio 运行应用程序")
-                
-                # QtAsyncio.run() 会接管事件循环，无需调用 app.exec()
-                return QtAsyncio.run(handle_sigint=True)
-            except (ImportError, AttributeError) as e:
-                # 如果没有 QtAsyncio，使用传统方式运行
-                logger.info(f"QtAsyncio 不可用 ({e})，使用传统方式运行")
-                return self.app.exec()
+            # 导入QtAsyncio
+            import PySide6.QtAsyncio as QtAsyncio
+            # 使用QtAsyncio运行async_run方法
+            return QtAsyncio.run(self.async_run(), handle_sigint=True)
         except Exception as e:
-            logger.error(f"应用程序运行失败: {e}")
+            logger.error(f"运行应用程序时出错: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return 1

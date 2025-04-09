@@ -745,9 +745,9 @@ class ListenView(QWidget):
             self.channel_message_views[channel].append(formatted_msg)
         
         # 自动滚动到底部
-            self.main_message_view.moveCursor(QTextCursor.End)
-            if channel in self.channel_message_views:
-                self.channel_message_views[channel].moveCursor(QTextCursor.End)
+        self.main_message_view.moveCursor(QTextCursor.End)
+        if channel in self.channel_message_views:
+            self.channel_message_views[channel].moveCursor(QTextCursor.End)
         
         # 限制消息数量 - 使用固定值200条
         max_messages = 200
@@ -918,4 +918,258 @@ class ListenView(QWidget):
             
             # 最大消息数
             max_messages = notifications.get('max_messages', 200)
-            self.max_messages.setValue(max_messages) 
+            self.max_messages.setValue(max_messages)
+    
+    def set_monitor(self, monitor):
+        """设置监听器实例
+        
+        Args:
+            monitor: 监听器实例
+        """
+        if not monitor:
+            logger.warning("监听器实例为空，无法设置")
+            return
+            
+        self.monitor = monitor
+        logger.debug("监听视图已接收监听器实例")
+        
+        # 连接信号
+        self._connect_monitor_signals()
+    
+    def _connect_monitor_signals(self):
+        """连接监听器信号到UI更新"""
+        if not hasattr(self, 'monitor') or self.monitor is None:
+            logger.warning("监听器不存在，无法连接信号")
+            return
+            
+        # 连接监听器事件处理器
+        try:
+            # 状态更新事件
+            self.monitor.on("status", self._update_status)
+            
+            # 新消息事件
+            self.monitor.on("new_message", self._on_new_message)
+            
+            # 监听开始事件
+            self.monitor.on("monitoring_started", self._on_monitoring_started)
+            
+            # 监听停止事件
+            self.monitor.on("monitoring_stopped", self._on_monitoring_stopped)
+            
+            # 转发完成事件
+            self.monitor.on("forward_complete", self._on_forward_complete)
+            
+            # 错误事件
+            self.monitor.on("error", self._on_monitor_error)
+            
+            logger.debug("监听器信号连接成功")
+        except Exception as e:
+            logger.error(f"连接监听器信号时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _update_status(self, status):
+        """更新状态信息
+        
+        Args:
+            status: 状态信息
+        """
+        self.overall_status_label.setText(status)
+        logger.debug(f"监听状态更新: {status}")
+    
+    def _on_new_message(self, message, channel_id=None, channel_title=None):
+        """新消息处理
+        
+        Args:
+            message: 消息对象
+            channel_id: 频道ID(可选)
+            channel_title: 频道标题(可选)
+        """
+        # 获取消息内容和发送者信息
+        try:
+            # 构建消息显示内容
+            content = ""
+            if hasattr(message, 'text') and message.text:
+                content = message.text[:100]  # 限制长度
+                if len(message.text) > 100:
+                    content += "..."
+            elif hasattr(message, 'caption') and message.caption:
+                content = f"[带附件] {message.caption[:100]}"
+                if len(message.caption) > 100:
+                    content += "..."
+            else:
+                # 确定媒体类型
+                media_type = "未知类型"
+                if hasattr(message, 'photo') and message.photo:
+                    media_type = "图片"
+                elif hasattr(message, 'video') and message.video:
+                    media_type = "视频"
+                elif hasattr(message, 'document') and message.document:
+                    media_type = "文档"
+                elif hasattr(message, 'audio') and message.audio:
+                    media_type = "音频"
+                elif hasattr(message, 'animation') and message.animation:
+                    media_type = "动画"
+                elif hasattr(message, 'sticker') and message.sticker:
+                    media_type = "贴纸"
+                elif hasattr(message, 'voice') and message.voice:
+                    media_type = "语音消息"
+                elif hasattr(message, 'video_note') and message.video_note:
+                    media_type = "视频笔记"
+                
+                content = f"[{media_type}]"
+            
+            # 获取频道/发送者信息
+            from_info = f"消息ID: {message.id}"
+            if channel_title:
+                from_info = f"{channel_title} [消息ID: {message.id}]"
+            elif channel_id:
+                from_info = f"频道ID: {channel_id} [消息ID: {message.id}]"
+            elif hasattr(message, 'chat') and message.chat:
+                chat = message.chat
+                if hasattr(chat, 'title') and chat.title:
+                    from_info = f"{chat.title} [消息ID: {message.id}]"
+                elif hasattr(chat, 'username') and chat.username:
+                    from_info = f"@{chat.username} [消息ID: {message.id}]"
+                elif hasattr(chat, 'id') and chat.id:
+                    from_info = f"聊天ID: {chat.id} [消息ID: {message.id}]"
+            
+            # 添加到消息列表
+            self._add_message_item(from_info, content)
+            
+            logger.debug(f"收到新消息: {from_info} - {content}")
+        except Exception as e:
+            logger.error(f"处理新消息时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _on_monitoring_started(self, channel_ids=None):
+        """监听开始处理
+        
+        Args:
+            channel_ids: 监听的频道ID列表(可选)
+        """
+        # 更新UI状态
+        self.overall_status_label.setText("正在监听中...")
+        
+        # 禁用开始按钮，启用停止按钮
+        self.start_listen_button.setEnabled(False)
+        self.stop_listen_button.setEnabled(True)
+        
+        # 显示正在监听的频道
+        if channel_ids:
+            channels_str = ", ".join(str(c) for c in channel_ids)
+            self.overall_status_label.setText(f"正在监听: {channels_str}")
+        
+        logger.info("监听已开始")
+    
+    def _on_monitoring_stopped(self):
+        """监听停止处理"""
+        # 更新UI状态
+        self.overall_status_label.setText("监听已停止")
+        
+        # 启用开始按钮，禁用停止按钮
+        self.start_listen_button.setEnabled(True)
+        self.stop_listen_button.setEnabled(False)
+        
+        logger.info("监听已停止")
+    
+    def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
+        """转发完成处理
+        
+        Args:
+            msg_id: 消息ID
+            source_channel: 源频道(可选)
+            target_channel: 目标频道(可选)
+        """
+        # 构建转发信息
+        forward_info = f"消息ID: {msg_id}"
+        if source_channel and target_channel:
+            forward_info = f"消息ID: {msg_id}, 从 {source_channel} 到 {target_channel}"
+        elif source_channel:
+            forward_info = f"消息ID: {msg_id}, 来自 {source_channel}"
+        elif target_channel:
+            forward_info = f"消息ID: {msg_id}, 转发到 {target_channel}"
+        
+        # 添加到转发列表
+        self._add_forward_item(forward_info)
+        
+        logger.debug(f"消息转发完成: {forward_info}")
+    
+    def _on_monitor_error(self, error, message=None):
+        """监听错误处理
+        
+        Args:
+            error: 错误信息
+            message: 额外的消息(可选)
+        """
+        # 更新UI状态
+        error_msg = f"监听出错: {error}"
+        if message:
+            error_msg += f"\n{message}"
+            
+        self.overall_status_label.setText(error_msg)
+        
+        # 恢复按钮状态
+        self.start_listen_button.setEnabled(True)
+        self.stop_listen_button.setEnabled(False)
+        
+        # 显示错误对话框
+        self._show_error_dialog("监听错误", error_msg)
+        
+        logger.error(f"监听错误: {error}")
+        if message:
+            logger.debug(f"错误详情: {message}")
+    
+    def _add_message_item(self, from_info, content):
+        """添加消息项到列表
+        
+        Args:
+            from_info: 来源信息
+            content: 消息内容
+        """
+        from PySide6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(f"{from_info}: {content}")
+        
+        # 添加到消息列表
+        self.message_list.addItem(item)
+        
+        # 保持最新消息可见
+        self.message_list.scrollToBottom()
+        
+        # 限制显示的消息数量，避免占用过多内存
+        while self.message_list.count() > 100:  # 保留最新的100条消息
+            self.message_list.takeItem(0)  # 移除最早的消息
+    
+    def _add_forward_item(self, forward_info):
+        """添加转发项到列表
+        
+        Args:
+            forward_info: 转发信息
+        """
+        from PySide6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(forward_info)
+        
+        # 添加到转发列表
+        self.forward_list.addItem(item)
+        
+        # 保持最新项可见
+        self.forward_list.scrollToBottom()
+        
+        # 限制显示的转发数量
+        while self.forward_list.count() > 50:  # 保留最新的50条转发记录
+            self.forward_list.takeItem(0)  # 移除最早的记录
+    
+    def _show_error_dialog(self, title, message):
+        """显示错误对话框
+        
+        Args:
+            title: 对话框标题
+            message: 错误消息
+        """
+        from PySide6.QtWidgets import QMessageBox
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec() 

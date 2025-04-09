@@ -6,7 +6,7 @@ TG-Manager 异步操作工具模块
 import asyncio
 import PySide6.QtAsyncio as QtAsyncio
 from functools import wraps
-from typing import Callable, Any, Coroutine, TypeVar
+from typing import Callable, Any, Coroutine, TypeVar, Optional, Dict, Union
 from loguru import logger
 
 T = TypeVar('T')
@@ -96,6 +96,118 @@ async def safe_sleep(seconds: float) -> None:
     except asyncio.CancelledError:
         # 静默处理取消
         raise
+
+class AsyncTaskManager:
+    """异步任务管理器，用于管理和控制异步任务"""
+    
+    def __init__(self):
+        """初始化任务管理器"""
+        self.tasks: Dict[str, asyncio.Task] = {}
+        self.active = True
+    
+    def add_task(self, name: str, coro: Coroutine) -> asyncio.Task:
+        """添加并启动一个新任务
+        
+        Args:
+            name: 任务名称
+            coro: 协程对象
+        
+        Returns:
+            asyncio.Task: 创建的任务
+        """
+        # 如果同名任务已存在，先取消它
+        self.cancel_task(name)
+        
+        # 创建新任务
+        task = create_task(coro)
+        # 设置任务名称（如果可用）
+        try:
+            task.set_name(name)
+        except AttributeError:
+            # Python 3.7以下版本不支持set_name
+            pass
+            
+        self.tasks[name] = task
+        
+        # 添加完成回调以自动清理
+        task.add_done_callback(lambda t: self._on_task_done(name, t))
+        
+        return task
+    
+    def cancel_task(self, name: str) -> bool:
+        """取消指定名称的任务
+        
+        Args:
+            name: 任务名称
+        
+        Returns:
+            bool: 是否成功取消任务
+        """
+        if name in self.tasks:
+            task = self.tasks[name]
+            if not task.done() and not task.cancelled():
+                task.cancel()
+                return True
+        return False
+    
+    def cancel_all_tasks(self) -> None:
+        """取消所有任务"""
+        for name in list(self.tasks.keys()):
+            self.cancel_task(name)
+    
+    def get_task(self, name: str) -> Optional[asyncio.Task]:
+        """获取指定名称的任务
+        
+        Args:
+            name: 任务名称
+        
+        Returns:
+            Optional[asyncio.Task]: 任务对象，如果不存在则返回None
+        """
+        return self.tasks.get(name)
+    
+    def is_task_running(self, name: str) -> bool:
+        """检查指定任务是否正在运行
+        
+        Args:
+            name: 任务名称
+        
+        Returns:
+            bool: 任务是否正在运行
+        """
+        task = self.get_task(name)
+        return task is not None and not task.done() and not task.cancelled()
+    
+    def _on_task_done(self, name: str, task: asyncio.Task) -> None:
+        """任务完成回调函数
+        
+        Args:
+            name: 任务名称
+            task: 完成的任务
+        """
+        # 从字典中移除任务
+        if name in self.tasks:
+            del self.tasks[name]
+        
+        # 检查任务是否有异常
+        if not task.cancelled():
+            try:
+                exc = task.exception()
+                if exc:
+                    logger.error(f"任务 '{name}' 执行出错: {exc}")
+                    # 导入traceback模块
+                    import traceback
+                    formatted_tb = traceback.format_exc()
+                    logger.debug(f"错误详情:\n{formatted_tb}")
+            except asyncio.CancelledError:
+                pass  # 忽略已取消的任务
+            except asyncio.InvalidStateError:
+                pass  # 忽略无效状态
+    
+    def shutdown(self) -> None:
+        """关闭任务管理器，取消所有任务"""
+        self.active = False
+        self.cancel_all_tasks()
 
 class AsyncTimer:
     """异步定时器

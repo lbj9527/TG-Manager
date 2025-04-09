@@ -780,4 +780,247 @@ class UploadView(QWidget):
             # 自动缩略图选项
             self.auto_thumbnail_check.setChecked(options.get('auto_thumbnail', True))
             
-        logger.debug("上传配置已成功加载") 
+        logger.debug("上传配置已成功加载")
+
+    def set_uploader(self, uploader):
+        """设置上传器实例
+        
+        Args:
+            uploader: 上传器实例
+        """
+        if not uploader:
+            logger.warning("上传器实例为空，无法设置")
+            return
+            
+        self.uploader = uploader
+        logger.debug("上传视图已接收上传器实例")
+        
+        # 连接信号
+        self._connect_uploader_signals()
+    
+    def _connect_uploader_signals(self):
+        """连接上传器信号到UI更新"""
+        if not hasattr(self, 'uploader') or self.uploader is None:
+            logger.warning("上传器不存在，无法连接信号")
+            return
+            
+        # 连接上传器事件处理器
+        try:
+            # 状态更新事件
+            self.uploader.on("status", self._update_status)
+            
+            # 上传进度事件
+            self.uploader.on("progress", self._update_progress)
+            
+            # 上传完成事件
+            self.uploader.on("upload_complete", self._on_upload_complete)
+            
+            # 所有上传完成事件
+            self.uploader.on("all_uploads_complete", self._on_all_uploads_complete)
+            
+            # 错误事件
+            self.uploader.on("error", self._on_upload_error)
+            
+            logger.debug("上传器信号连接成功")
+        except Exception as e:
+            logger.error(f"连接上传器信号时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _update_status(self, status):
+        """更新状态信息
+        
+        Args:
+            status: 状态信息
+        """
+        self.status_label.setText(status)
+        logger.debug(f"上传状态更新: {status}")
+    
+    def _update_progress(self, current, total, filename=None, speed=None, estimated_time=None):
+        """更新上传进度
+        
+        Args:
+            current: 当前进度(字节)
+            total: 总大小(字节)
+            filename: 文件名(可选)
+            speed: 上传速度(字节/秒，可选)
+            estimated_time: 预计剩余时间(秒，可选)
+        """
+        # 更新进度条
+        if total > 0:
+            percentage = min(int((current / total) * 100), 100)
+            self.progress_bar.setValue(percentage)
+            
+            # 格式化显示
+            progress_text = f"上传进度: {percentage}%"
+            
+            if filename:
+                progress_text = f"上传中: {filename} - {percentage}%"
+            
+            # 如果有速度信息，添加到显示中
+            if speed is not None:
+                speed_str = self._format_speed(speed)
+                progress_text += f" • 速度: {speed_str}"
+            
+            # 如果有预计时间，添加到显示中
+            if estimated_time is not None:
+                time_str = self._format_time(estimated_time)
+                progress_text += f" • 剩余: {time_str}"
+                
+            self.progress_label.setText(progress_text)
+        else:
+            # 不确定的进度，使用循环进度条
+            self.progress_bar.setRange(0, 0)
+            if filename:
+                self.progress_label.setText(f"正在上传: {filename}")
+            else:
+                self.progress_label.setText("正在上传...")
+    
+    def _on_upload_complete(self, file_path, message_id):
+        """上传完成处理
+        
+        Args:
+            file_path: 文件路径
+            message_id: 消息ID
+        """
+        # 更新上传完成列表
+        import os
+        filename = os.path.basename(file_path)
+        self._add_uploaded_item(filename)
+        
+        # 重置进度条
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("准备上传下一个文件...")
+        
+        logger.debug(f"文件上传完成: {filename}, 消息ID: {message_id}")
+    
+    def _on_all_uploads_complete(self):
+        """所有上传完成处理"""
+        # 更新UI状态
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.progress_label.setText("所有上传已完成")
+        self.status_label.setText("上传任务已完成")
+        
+        # 恢复按钮状态
+        self.upload_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        
+        # 显示提示消息
+        self._show_completion_message("上传完成", "所有文件已上传完成")
+        
+        logger.info("所有文件上传完成")
+    
+    def _on_upload_error(self, error, message=None):
+        """上传错误处理
+        
+        Args:
+            error: 错误信息
+            message: 额外的消息(可选)
+        """
+        # 更新UI状态
+        error_msg = f"上传出错: {error}"
+        if message:
+            error_msg += f"\n{message}"
+            
+        self.status_label.setText(error_msg)
+        self.progress_label.setText("上传过程中出现错误")
+        
+        # 恢复进度条状态
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        
+        # 恢复按钮状态
+        self.upload_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        
+        # 显示错误对话框
+        self._show_error_dialog("上传错误", error_msg)
+        
+        logger.error(f"上传错误: {error}")
+        if message:
+            logger.debug(f"错误详情: {message}")
+    
+    def _add_uploaded_item(self, filename):
+        """添加上传完成项目到列表
+        
+        Args:
+            filename: 文件名
+        """
+        from PySide6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(filename)
+        
+        # 添加到已完成列表
+        self.uploaded_list.addItem(item)
+        
+        # 保持最新项可见
+        self.uploaded_list.scrollToBottom()
+    
+    def _format_speed(self, bytes_per_sec):
+        """格式化上传速度
+        
+        Args:
+            bytes_per_sec: 每秒字节数
+            
+        Returns:
+            str: 格式化后的速度
+        """
+        # 速度单位
+        units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+        
+        # 计算合适的单位
+        i = 0
+        speed = float(bytes_per_sec)
+        while speed >= 1024 and i < len(units) - 1:
+            speed /= 1024
+            i += 1
+        
+        # 格式化输出
+        return f"{speed:.2f} {units[i]}"
+    
+    def _format_time(self, seconds):
+        """格式化时间
+        
+        Args:
+            seconds: 时间(秒)
+            
+        Returns:
+            str: 格式化后的时间
+        """
+        if seconds < 60:
+            return f"{seconds:.0f}秒"
+        elif seconds < 3600:
+            minutes = seconds / 60
+            return f"{minutes:.1f}分钟"
+        else:
+            hours = seconds / 3600
+            return f"{hours:.1f}小时"
+    
+    def _show_completion_message(self, title, message):
+        """显示完成提示消息
+        
+        Args:
+            title: 标题
+            message: 消息内容
+        """
+        from PySide6.QtWidgets import QMessageBox
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec()
+    
+    def _show_error_dialog(self, title, message):
+        """显示错误对话框
+        
+        Args:
+            title: 对话框标题
+            message: 错误消息
+        """
+        from PySide6.QtWidgets import QMessageBox
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec() 

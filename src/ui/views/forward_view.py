@@ -671,4 +671,193 @@ class ForwardView(QWidget):
                 
         self.start_id.setValue(forward_config.get('start_id', 1))
         self.end_id.setValue(forward_config.get('end_id', 0))
-        self.tmp_path.setText(forward_config.get('tmp_path', 'tmp')) 
+        self.tmp_path.setText(forward_config.get('tmp_path', 'tmp'))
+
+    def set_forwarder(self, forwarder):
+        """设置转发器实例
+        
+        Args:
+            forwarder: 转发器实例
+        """
+        if not forwarder:
+            logger.warning("转发器实例为空，无法设置")
+            return
+            
+        self.forwarder = forwarder
+        logger.debug("转发视图已接收转发器实例")
+        
+        # 连接信号
+        self._connect_forwarder_signals()
+    
+    def _connect_forwarder_signals(self):
+        """连接转发器信号到UI更新"""
+        if not hasattr(self, 'forwarder') or self.forwarder is None:
+            logger.warning("转发器不存在，无法连接信号")
+            return
+            
+        # 连接转发器事件处理器
+        try:
+            # 状态更新事件
+            self.forwarder.on("status", self._update_status)
+            
+            # 进度更新事件
+            self.forwarder.on("progress", self._update_progress)
+            
+            # 转发完成事件
+            self.forwarder.on("forward_complete", self._on_forward_complete)
+            
+            # 所有转发完成事件
+            self.forwarder.on("all_forwards_complete", self._on_all_forwards_complete)
+            
+            # 错误事件
+            self.forwarder.on("error", self._on_forward_error)
+            
+            logger.debug("转发器信号连接成功")
+        except Exception as e:
+            logger.error(f"连接转发器信号时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _update_status(self, status):
+        """更新状态信息
+        
+        Args:
+            status: 状态信息
+        """
+        self.overall_status_label.setText(status)
+        logger.debug(f"转发状态更新: {status}")
+    
+    def _update_progress(self, current, total, message_info=None):
+        """更新转发进度
+        
+        Args:
+            current: 当前处理消息索引
+            total: 总消息数
+            message_info: 消息信息(可选)
+        """
+        # 更新进度条
+        if total > 0:
+            percentage = min(int((current / total) * 100), 100)
+            self.progress_bar.setValue(percentage)
+            
+            # 更新进度文本
+            if message_info:
+                self.progress_bar.setFormat(f"{message_info} - {percentage}%")
+            else:
+                self.progress_bar.setFormat("正在转发...")
+        else:
+            # 不确定的进度，使用循环进度条
+            self.progress_bar.setRange(0, 0)
+            if message_info:
+                self.progress_bar.setFormat(f"正在转发: {message_info}")
+            else:
+                self.progress_bar.setFormat("正在转发...")
+    
+    def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
+        """转发完成处理
+        
+        Args:
+            msg_id: 消息ID
+            source_channel: 源频道(可选)
+            target_channel: 目标频道(可选)
+        """
+        # 构建转发信息
+        forward_info = f"消息ID: {msg_id}"
+        if source_channel and target_channel:
+            forward_info = f"消息ID: {msg_id}, 从 {source_channel} 到 {target_channel}"
+        elif source_channel:
+            forward_info = f"消息ID: {msg_id}, 来自 {source_channel}"
+        elif target_channel:
+            forward_info = f"消息ID: {msg_id}, 转发到 {target_channel}"
+        
+        # 添加到列表
+        self._add_forwarded_item(forward_info)
+        
+        logger.debug(f"消息转发完成: {forward_info}")
+    
+    def _on_all_forwards_complete(self):
+        """所有转发完成处理"""
+        # 更新UI状态
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("所有转发已完成")
+        self.overall_status_label.setText("转发任务已完成")
+        
+        # 恢复按钮状态
+        self.start_forward_button.setEnabled(True)
+        self.stop_forward_button.setEnabled(False)
+        
+        # 显示提示消息
+        self._show_completion_message("转发完成", "所有消息已转发完成")
+        
+        logger.info("所有消息转发完成")
+    
+    def _on_forward_error(self, error, message=None):
+        """转发错误处理
+        
+        Args:
+            error: 错误信息
+            message: 额外的消息(可选)
+        """
+        # 更新UI状态
+        error_msg = f"转发出错: {error}"
+        if message:
+            error_msg += f"\n{message}"
+            
+        self.overall_status_label.setText(error_msg)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        
+        # 恢复按钮状态
+        self.start_forward_button.setEnabled(True)
+        self.stop_forward_button.setEnabled(False)
+        
+        # 显示错误对话框
+        self._show_error_dialog("转发错误", error_msg)
+        
+        logger.error(f"转发错误: {error}")
+        if message:
+            logger.debug(f"错误详情: {message}")
+    
+    def _add_forwarded_item(self, forward_info):
+        """添加转发完成项目到列表
+        
+        Args:
+            forward_info: 转发信息
+        """
+        from PySide6.QtWidgets import QListWidgetItem
+        item = QListWidgetItem(forward_info)
+        
+        # 添加到已完成列表
+        self.pairs_list.addItem(item)
+        
+        # 保持最新项可见
+        self.pairs_list.scrollToBottom()
+    
+    def _show_completion_message(self, title, message):
+        """显示完成提示消息
+        
+        Args:
+            title: 标题
+            message: 消息内容
+        """
+        from PySide6.QtWidgets import QMessageBox
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec()
+        
+    def _show_error_dialog(self, title, message):
+        """显示错误对话框
+        
+        Args:
+            title: 对话框标题
+            message: 错误消息
+        """
+        from PySide6.QtWidgets import QMessageBox
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.exec() 

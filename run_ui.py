@@ -9,6 +9,7 @@ from loguru import logger
 import os
 from pathlib import Path
 import datetime
+import PySide6.QtAsyncio as QtAsyncio
 
 # 导入应用程序类
 from src.ui.app import TGManagerApp
@@ -66,13 +67,19 @@ def setup_logger():
         print(f"警告: 同步日志文件时出错: {e}")
 
 
-def main():
-    """主程序入口"""
+def parse_arguments():
+    """解析命令行参数"""
     parser = argparse.ArgumentParser(description="TG-Manager GUI - Telegram 消息管理工具图形界面版本")
     parser.add_argument("--debug", action="store_true", help="启用调试模式")
     parser.add_argument("--verbose", action="store_true", help="显示详细日志信息")
     
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main():
+    """主程序入口"""
+    # 解析命令行参数
+    args = parse_arguments()
     
     # 设置日志系统
     setup_logger()
@@ -99,8 +106,11 @@ def main():
         logger.debug("已启用详细日志模式")
     
     try:
+        # 创建应用实例
         app = TGManagerApp(verbose=args.verbose)
-        sys.exit(app.run())
+        
+        # 使用 QtAsyncio.run 而不是直接执行
+        sys.exit(QtAsyncio.run(app.async_run(), handle_sigint=True))
     except Exception as e:
         logger.error(f"程序运行出错: {e}")
         import traceback
