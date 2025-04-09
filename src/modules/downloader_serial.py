@@ -100,14 +100,28 @@ class DownloaderSerial():
         global_limit = self.general_config.get('limit', 50)
         logger.info(f"全局限制值: {global_limit} 条消息")
         
-        # 根据最大并发数和每个频道的下载量计算总下载量
+        # 根据下载设置计算总下载量
         total_download_count = 0
         for setting in download_settings:
-            # 获取该频道的下载数量设置，默认为全局配置
-            setting_limit = setting.get('start_id') and setting.get('end_id') and abs(setting.get('end_id') - setting.get('start_id')) or global_limit
-            total_download_count += setting_limit if setting_limit > 0 else 1000  # 假设默认最多1000条
+            start_id = setting.get('start_id', 0)
+            end_id = setting.get('end_id', 0)
+            
+            # 如果指定了start_id但end_id为0，暂时使用全局限制或默认值
+            # 实际数量会在下载过程中根据最新消息ID进行调整
+            if start_id > 0 and end_id == 0:
+                setting_limit = global_limit if global_limit > 0 else 50
+            # 如果指定了明确的ID范围
+            elif start_id > 0 and end_id > 0:
+                setting_limit = abs(end_id - start_id) + 1
+                if global_limit > 0 and setting_limit > global_limit:
+                    setting_limit = global_limit
+            # 没有指定任何ID范围，使用全局限制
+            else:
+                setting_limit = global_limit if global_limit > 0 else 50
+                
+            total_download_count += setting_limit
         
-        logger.info(f"预计总下载消息数: {total_download_count} 条")
+        logger.info(f"预计总下载消息数估计: {total_download_count} 条")
         
         # 已完成的下载数量
         completed_count = 0
@@ -156,18 +170,23 @@ class DownloaderSerial():
                 
                 logger.info(f"下载目录: {channel_download_path}")
                 
-                # 获取该频道的历史记录
+                # 获取该频道的历史记录，使用原始频道名称作为键
+                downloaded_messages = self.history_manager.get_downloaded_messages(channel_name)
+                logger.info(f"已下载的消息数量: {len(downloaded_messages)}")
+                
                 downloaded_count = 0
                 
-                # 获取消息
-                async for message in self.client.get_chat_history(real_channel_id, limit=limit):        
-                    # 检查消息是否包含媒体，且未下载过
+                # 获取消息，使用_iter_messages按照从旧到新的顺序获取
+                async for message in self._iter_messages(real_channel_id, start_id, end_id, limit):
+                    # 首先检查消息是否已下载
+                    if message.id in downloaded_messages:
+                        logger.info(f"消息 {message.id} 已下载，跳过")
+                        continue
+                    
+                    # 检查消息是否包含媒体
                     if message.media:
-                        # 检查是否已经下载过该消息的媒体
+                        # 获取消息ID
                         media_id = message.id
-                        if self.history_manager.is_message_downloaded(real_channel_id, media_id):
-                            logger.debug(f"消息ID: {media_id} 已下载，跳过")
-                            continue
                         
                         # 检查文件类型是否符合允许的媒体类型
                         file_type = self._get_media_type(message)
@@ -183,8 +202,8 @@ class DownloaderSerial():
                         # 检查文件是否已存在
                         if file_path.exists():
                             logger.debug(f"文件已存在: {file_path}，跳过下载")
-                            # 标记为已下载
-                            self.history_manager.add_download_record(real_channel_id, media_id)
+                            # 标记为已下载，使用原始频道名称作为键
+                            self.history_manager.add_download_record(channel_name, media_id, real_channel_id)
                             continue
                         
                         # 下载媒体
@@ -214,8 +233,8 @@ class DownloaderSerial():
                                 logger.info(
                                     f"下载完成: {file_name} ({file_size_mb:.2f}MB, {download_time:.2f}s, {speed_mbps:.2f}MB/s)")
                                 
-                                # 标记为已下载
-                                self.history_manager.add_download_record(real_channel_id, media_id)
+                                # 标记为已下载，使用原始频道名称作为键
+                                self.history_manager.add_download_record(channel_name, media_id, real_channel_id)
                                 
                                 # 增加下载计数
                                 downloaded_count += 1
@@ -468,4 +487,149 @@ class DownloaderSerial():
             "unknown": "bin"
         }
         
-        return extension_map.get(media_type, "bin") 
+        return extension_map.get(media_type, "bin")
+
+    async def _iter_messages(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0, limit: int = 0):
+        """
+        迭代获取频道消息，按从旧到新的顺序返回
+        
+        Args:
+            chat_id: 频道ID
+            start_id: 起始消息ID
+            end_id: 结束消息ID，如果为0则表示获取到最新消息
+            limit: 最大消息数量限制
+            
+        Yields:
+            Message: 消息对象，按照从旧到新的顺序
+        """
+        logger.info(f"调用_iter_messages获取消息: chat_id={chat_id}, start_id={start_id}, end_id={end_id}, limit={limit}")
+        
+        # 如果start_id有效，但end_id为0，需要获取最新的消息ID
+        if start_id > 0 and end_id == 0:
+            try:
+                # 尝试获取最新的一条消息，以确定最大ID
+                async for latest_message in self.client.get_chat_history(chat_id, limit=1):
+                    end_id = latest_message.id
+                    logger.info(f"已获取最新消息ID: {end_id}，将获取范围设置为 {start_id} 到 {end_id}")
+                    break
+                
+                if end_id == 0:
+                    logger.warning(f"无法获取最新消息ID，将仅获取指定限制的消息")
+                    # 如果无法获取最新消息ID，使用一个较大的默认值
+                    end_id = start_id + (limit if limit > 0 else 1000)
+            except Exception as e:
+                logger.error(f"获取最新消息ID时出错: {e}")
+                if limit <= 0:
+                    limit = 50  # 如果没有设置limit，使用一个默认值
+        
+        # 如果都没设置，使用limit控制获取数量
+        if start_id == 0 and end_id == 0 and limit > 0:
+            logger.info(f"未指定ID范围，将获取最新的 {limit} 条消息")
+            messages = []
+            try:
+                # 获取最新的消息
+                async for message in self.client.get_chat_history(chat_id, limit=limit):
+                    messages.append(message)
+                
+                # 按ID从小到大排序（从旧到新）
+                messages.sort(key=lambda msg: msg.id)
+                
+                logger.info(f"获取到 {len(messages)} 条消息，已按ID从旧到新排序")
+                
+                # 逐个返回排序后的消息
+                for message in messages:
+                    yield message
+            except Exception as e:
+                logger.error(f"获取消息历史时出错: {e}")
+            return
+        
+        # 处理有明确ID范围的情况
+        if start_id > 0:
+            logger.info(f"按ID范围获取消息: start_id={start_id}, end_id={end_id}")
+            
+            # 确保start_id小于end_id
+            if start_id > end_id and end_id > 0:
+                start_id, end_id = end_id, start_id
+                logger.info(f"调整ID顺序，现在获取范围为 {start_id} 到 {end_id}")
+            
+            # 计算需要获取的消息数量
+            msg_count = end_id - start_id + 1 if end_id > 0 else (limit if limit > 0 else 1000)
+            if limit > 0 and limit < msg_count:
+                msg_count = limit
+                
+            logger.info(f"计划获取约 {msg_count} 条消息")
+            
+            # 收集所有符合条件的消息
+            all_messages = {}  # 使用字典避免重复消息，键为消息ID
+            
+            # 分批次获取消息，考虑到Telegram API的限制
+            batch_size = 100  # 每批次获取的消息数
+            
+            try:
+                # 从最新的消息开始获取，直到获取到start_id
+                current_id = end_id + 1 if end_id > 0 else 0
+                remaining_attempts = 10  # 最多尝试10次，避免无限循环
+                
+                while remaining_attempts > 0:
+                    batch_messages = []
+                    
+                    if current_id > 0:
+                        logger.info(f"获取小于ID {current_id} 的消息，批次大小 {batch_size}")
+                        async for message in self.client.get_chat_history(chat_id, limit=batch_size, offset_id=current_id):
+                            batch_messages.append(message)
+                    else:
+                        logger.info(f"获取最新的 {batch_size} 条消息")
+                        async for message in self.client.get_chat_history(chat_id, limit=batch_size):
+                            batch_messages.append(message)
+                    
+                    if not batch_messages:
+                        logger.warning(f"未获取到任何消息，可能已到达频道起始位置")
+                        break
+                    
+                    # 找到本批次中最小的消息ID，用于下一次查询
+                    min_id_in_batch = min(message.id for message in batch_messages)
+                    
+                    # 只保留在范围内的消息
+                    for message in batch_messages:
+                        if start_id <= message.id <= (end_id if end_id > 0 else float('inf')):
+                            all_messages[message.id] = message
+                    
+                    # 判断是否已经获取到足够旧的消息
+                    if min_id_in_batch <= start_id:
+                        logger.info(f"已获取到起始ID {start_id} 的消息，停止获取")
+                        break
+                    
+                    # 更新下一次获取的起始ID
+                    current_id = min_id_in_batch
+                    
+                    # 检查是否已经获取到足够多的消息（考虑limit限制）
+                    if limit > 0 and len(all_messages) >= limit:
+                        logger.info(f"已获取到 {len(all_messages)} 条消息，达到限制 {limit}，停止获取")
+                        break
+                    
+                    # 减少尝试次数
+                    remaining_attempts -= 1
+                    
+                    # 添加短暂延迟，避免API限制
+                    await asyncio.sleep(0.5)
+                
+                # 将收集到的消息按ID排序（从旧到新）
+                sorted_messages = [all_messages[msg_id] for msg_id in sorted(all_messages.keys())]
+                
+                # 如果设置了limit，只返回前limit条消息
+                if limit > 0 and len(sorted_messages) > limit:
+                    sorted_messages = sorted_messages[:limit]
+                
+                logger.info(f"最终获取到 {len(sorted_messages)} 条消息，ID范围: {sorted_messages[0].id if sorted_messages else 'N/A'} 到 {sorted_messages[-1].id if sorted_messages else 'N/A'}")
+                
+                # 逐个返回排序后的消息
+                for message in sorted_messages:
+                    yield message
+                    
+            except FloodWait as e:
+                logger.warning(f"获取消息时触发FloodWait，等待 {e.x} 秒")
+                await asyncio.sleep(e.x)
+            except Exception as e:
+                logger.error(f"获取消息时出错: {e}")
+                import traceback
+                logger.error(traceback.format_exc()) 
