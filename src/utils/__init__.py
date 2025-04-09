@@ -8,4 +8,3 @@ from .channel_resolver import ChannelResolver
 from .history_manager import HistoryManager
 from .video_processor import VideoProcessor
 from .resource_manager import ResourceManager, TempFile, TempDir, ResourceSession
-from .error_handler import ErrorHandler 
