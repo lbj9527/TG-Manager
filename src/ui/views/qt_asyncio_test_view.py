@@ -14,8 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QSize, QObject
 from PySide6.QtGui import QColor, QFont, QPalette
 
-# 移除对不存在的task_panel模块的导入
-# from src.ui.components.task_panel import TaskPanel
+# 导入QtAsyncio模块
 import PySide6.QtAsyncio as QtAsyncio
 
 
@@ -201,42 +200,16 @@ class AsyncTestView(QWidget):
         self.update_button.setEnabled(False)
         self.status_label.setText("任务执行中...")
         
-        # 修改异步任务创建方式，避免"no running event loop"错误
-        try:
-            # 获取或创建事件循环
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # 如果没有运行中的事件循环，使用现有的全局事件循环
-                loop = asyncio.get_event_loop_policy().get_event_loop()
-            
-            # 使用create_task创建任务
-            task = loop.create_task(self._async_update_text())
-        except Exception as e:
-            logger.error(f"创建异步任务失败: {e}")
-            self.status_label.setText(f"任务创建失败: {str(e)}")
-            self.update_button.setEnabled(True)
+        # 使用QtAsyncio.asyncio创建任务
+        task = QtAsyncio.asyncio.create_task(self._async_update_text())
     
     def _on_multiple_update_button_clicked(self):
         """处理多次更新按钮点击事件"""
         self.multiple_update_button.setEnabled(False)
         self.status_label.setText("任务执行中...")
         
-        # 修改异步任务创建方式，避免"no running event loop"错误
-        try:
-            # 获取或创建事件循环
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # 如果没有运行中的事件循环，使用现有的全局事件循环
-                loop = asyncio.get_event_loop_policy().get_event_loop()
-            
-            # 使用create_task创建任务
-            task = loop.create_task(self._async_multiple_updates())
-        except Exception as e:
-            logger.error(f"创建异步任务失败: {e}")
-            self.status_label.setText(f"任务创建失败: {str(e)}")
-            self.multiple_update_button.setEnabled(True)
+        # 使用QtAsyncio.asyncio创建任务
+        task = QtAsyncio.asyncio.create_task(self._async_multiple_updates())
     
     def _on_start_prime_button_clicked(self):
         """处理开始素数演示按钮点击事件"""
@@ -248,46 +221,17 @@ class AsyncTestView(QWidget):
             # 重置UI状态
             self._reset_grid()
             
-            # 修改异步任务创建方式，避免"no running event loop"错误
-            try:
-                # 获取或创建事件循环
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    # 如果没有运行中的事件循环，使用现有的全局事件循环
-                    loop = asyncio.get_event_loop_policy().get_event_loop()
-                
-                # 创建并启动埃拉托斯特尼筛法实例
-                eratosthenes = Eratosthenes(self.num, self, tick=0.1)
-                task = loop.create_task(eratosthenes.start())
-                self.current_tasks.append(task)
-            except Exception as e:
-                logger.error(f"创建素数演示任务失败: {e}")
-                self.prime_status_label.setText(f"任务创建失败: {str(e)}")
-                self.is_eratosthenes_running = False
-                self.start_prime_button.setEnabled(True)
-                self.stop_prime_button.setEnabled(False)
+            # 创建并启动埃拉托斯特尼筛法实例
+            eratosthenes = Eratosthenes(self.num, self, tick=0.1)
+            
+            # 使用QtAsyncio创建任务
+            task = QtAsyncio.asyncio.create_task(eratosthenes.start())
+            self.current_tasks.append(task)
     
     def _on_stop_prime_button_clicked(self):
         """处理停止素数演示按钮点击事件"""
         if self.is_eratosthenes_running:
             logger.info("停止素数演示...")
-            
-            # 首先获取所有任务
-            all_tasks = set()
-            
-            # 获取事件循环
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.get_event_loop_policy().get_event_loop()
-            
-            # 收集所有未完成的任务
-            try:
-                all_tasks = {t for t in asyncio.all_tasks(loop) if not t.done()}
-                logger.debug(f"找到 {len(all_tasks)} 个正在运行的任务")
-            except Exception as e:
-                logger.error(f"获取所有异步任务时出错: {e}")
             
             # 取消记录的主任务
             for task in self.current_tasks:
@@ -297,12 +241,6 @@ class AsyncTestView(QWidget):
                         task.cancel()
                 except Exception as e:
                     logger.error(f"取消主任务时出错: {e}")
-            
-            # 短暂等待，确保取消信号已传播
-            try:
-                loop.call_later(0.1, lambda: None)
-            except Exception as e:
-                logger.error(f"设置延迟回调时出错: {e}")
             
             # 清空任务列表
             self.current_tasks.clear()
@@ -437,13 +375,12 @@ class Eratosthenes(QObject):
         self.tick = tick  # 协程切换间隔
         self.coroutines = []  # 协程计数
         self.done = False  # 完成标志
-        self.loop = None  # 事件循环引用
         self.tasks = []   # 存储所有创建的任务
         self.cancelled = False  # 取消标志
     
     def get_tick(self):
         """获取当前tick时间"""
-        return self.loop.time() + self.tick
+        return QtAsyncio.asyncio.get_event_loop().time() + self.tick
     
     def cancel_all_tasks(self):
         """取消所有任务"""
@@ -457,17 +394,8 @@ class Eratosthenes(QObject):
     async def start(self):
         """开始执行筛法算法"""
         try:
-            self.loop = asyncio.get_event_loop()
-            
-            # 获取事件循环的方法
-            def get_loop():
-                try:
-                    return asyncio.get_running_loop()
-                except RuntimeError:
-                    return self.loop
-            
             # 创建更新文本的任务
-            text_task = get_loop().create_task(self.update_text())
+            text_task = QtAsyncio.asyncio.create_task(self.update_text())
             self.tasks.append(text_task)
             
             # 主循环 - 找到素数并启动标记任务
@@ -495,7 +423,7 @@ class Eratosthenes(QObject):
                     break
                     
                 # 创建并启动标记任务，传入实际的素数值
-                mark_task = get_loop().create_task(self.mark_number(prime_number))
+                mark_task = QtAsyncio.asyncio.create_task(self.mark_number(prime_number))
                 self.tasks.append(mark_task)
             
             # 等待所有标记任务完成
@@ -606,13 +534,15 @@ class Eratosthenes(QObject):
     async def update_text(self):
         """更新UI文本"""
         try:
+            loop = QtAsyncio.asyncio.get_event_loop()
+            
             while not self.done and not self.cancelled:
                 # 检查是否被取消
                 if asyncio.current_task().cancelled():
                     raise asyncio.CancelledError()
                 
                 # 交替显示不同的文本，产生动画效果
-                if int(self.loop.time() + self.tick) % 2:
+                if int(loop.time() + self.tick) % 2:
                     text = "⚙️ ...计算素数中... ⚙️"
                 else:
                     text = "👩‍💻 ...分析数据中... 👩‍💻"
