@@ -14,8 +14,8 @@ from pyrogram.types import Message
 from pyrogram.errors import FloodWait, ChatForwardsRestricted, ChannelPrivate
 from pyrogram.handlers import MessageHandler
 
-from src.utils.config_manager import MonitorChannelPair
 from src.utils.ui_config_manager import UIConfigManager
+from src.utils.ui_config_models import UIMonitorChannelPair
 from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.logger import get_logger
@@ -274,7 +274,7 @@ class Monitor():
         except Exception as e:
             logger.error(f"清理已处理消息时异常: {str(e)}", error_type="CLEANUP", recoverable=True)
     
-    async def _monitor_channel(self, channel_pair: MonitorChannelPair):
+    async def _monitor_channel(self, channel_pair: UIMonitorChannelPair):
         """
         监听单个频道的消息
         
