@@ -4,9 +4,16 @@ TG-Manager 是一个功能强大的 Telegram 消息管理工具，支持频道�
 
 ## 近期更新
 
+### 1.9.8 (2025-04-17)
+
+- **从 QtAsyncio 迁移到 qasync**：移除对 PySide6.QtAsyncio 的依赖，改用 qasync 库实现 Qt 与 asyncio 的集成，修复了网络连接功能（`QAsyncioEventLoop.create_connection()`）未实现的问题
+- **重构异步工具模块**：优化`async_utils.py`，提供更稳定的 Qt 和 asyncio 集成，完善事件循环初始化和运行逻辑
+- **增强错误处理**：添加更完善的事件循环管理和异常处理机制，确保系统在各种情况下的稳定运行
+- **添加测试工具**：提供`test_qasync.py`测试脚本，验证异步任务创建和网络请求功能
+
 ### 1.9.7 (2025-04-15)
 
-- **核心服务集成**：将`run.py`中的核心服务（客户端管理、配置系统、日志等）完全集成到图形界面程序中，确保所有核心服务支持QtAsyncio
+- **核心服务集成**：将`run.py`中的核心服务（客户端管理、配置系统、日志等）完全集成到图形界面程序中，确保所有核心服务支持 QtAsyncio
 - **功能组件集成**：在`TGManagerApp`类中集成了所有核心功能组件，实现了下载、上传、转发和监听模块的完整功能，并将这些功能模块连接到相应的视图组件
 - **应用初始化优化**：重构异步运行流程，确保各服务以正确的顺序启动，提高应用稳定性和响应性
 
@@ -297,35 +304,43 @@ TG-Manager/
 └── README.md             # 项目说明
 ```
 
-## 安装
+## 安装与运行
 
-1. 克隆项目并进入目录：
-
-```bash
-git clone https://github.com/yourusername/TG-Manager.git
-cd TG-Manager
-```
-
-2. 安装依赖（推荐使用虚拟环境）：
+### 安装依赖
 
 ```bash
+# 使用清华大学镜像源加速下载
 pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-3. 配置 Telegram API：
-
-   - 访问 https://my.telegram.org/apps 获取 API ID 和 API Hash
-   - 将获取的凭据填入配置文件或通过设置界面配置
-
-4. 运行应用：
+### 运行 GUI 版本
 
 ```bash
-# 启动图形界面
 python run_ui.py
-
-# 或使用命令行模式
-python -m src.modules.downloader --help
 ```
+
+### 运行 qasync 测试
+
+如果需要测试 qasync 与 Qt 的集成情况，可以运行：
+
+```bash
+python test_qasync.py
+```
+
+这将启动一个简单的测试窗口，可以验证 Qt 与 asyncio 事件循环的集成情况，以及测试网络请求是否能正常工作。
+
+### 重要更新说明
+
+本项目已从使用 QtAsyncio 迁移到 qasync，主要原因是 QtAsyncio 没有完全实现网络连接功能（`QAsyncioEventLoop.create_connection()`未实现）。qasync 库提供了更完整的 Qt 与 asyncio 集成支持。
+
+更新内容包括：
+
+1. 将所有 QtAsyncio 引用替换为 qasync
+2. 重构异步工具模块，提供更稳定的 Qt 和 asyncio 集成
+3. 优化事件循环初始化和运行逻辑
+4. 增强错误处理和回退机制
+
+如果您在使用过程中遇到任何问题，请参考测试脚本或查阅 qasync 文档。
 
 ## 核心组件
 

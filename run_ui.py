@@ -9,10 +9,12 @@ from loguru import logger
 import os
 from pathlib import Path
 import datetime
-import PySide6.QtAsyncio as QtAsyncio
+import qasync
 
 # 导入应用程序类
 from src.ui.app import TGManagerApp
+# 导入我们的异步工具
+from src.utils.async_utils import run_qt_asyncio
 
 
 def setup_logger():
@@ -109,8 +111,8 @@ def main():
         # 创建应用实例
         app = TGManagerApp(verbose=args.verbose)
         
-        # 使用 QtAsyncio.run 而不是直接执行
-        sys.exit(QtAsyncio.run(app.async_run(), handle_sigint=True))
+        # 使用我们的 run_qt_asyncio 函数代替 QtAsyncio.run
+        sys.exit(run_qt_asyncio(app, app.async_run))
     except Exception as e:
         logger.error(f"程序运行出错: {e}")
         import traceback

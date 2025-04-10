@@ -4,17 +4,46 @@ TG-Manager 异步操作工具模块
 """
 
 import asyncio
-import PySide6.QtAsyncio as QtAsyncio
+import sys
 from functools import wraps
 from typing import Callable, Any, Coroutine, TypeVar, Optional, Dict, Union
 from loguru import logger
 
+# 删除QtAsyncio，导入qasync
+import qasync
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication
+
 T = TypeVar('T')
+
+# 保存qasync的事件循环引用
+_loop = None
+
+def get_event_loop():
+    """获取事件循环
+    
+    获取qasync事件循环，如果不可用则回退到标准asyncio
+    
+    Returns:
+        事件循环
+    """
+    global _loop
+    try:
+        if _loop is not None:
+            return _loop
+        _loop = qasync.QEventLoop()
+        return _loop
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"qasync获取事件循环失败，退回到标准asyncio: {e}")
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.get_event_loop()
 
 def create_task(coro: Coroutine) -> asyncio.Task:
     """创建异步任务
     
-    使用QtAsyncio创建异步任务，并添加全局异常处理
+    使用qasync创建异步任务，并添加全局异常处理
     
     Args:
         coro: 协程对象
@@ -23,12 +52,13 @@ def create_task(coro: Coroutine) -> asyncio.Task:
         asyncio.Task: 已创建的任务
     """
     try:
-        task = QtAsyncio.asyncio.create_task(coro)
+        loop = get_event_loop()
+        task = loop.create_task(coro)
         task.add_done_callback(_handle_task_exception)
         return task
     except AttributeError as e:
-        # 如果QtAsyncio不可用，退回到标准asyncio
-        logger.warning(f"QtAsyncio创建任务失败，退回到标准asyncio: {e}")
+        # 如果qasync事件循环不可用，退回到标准asyncio
+        logger.warning(f"qasync创建任务失败，退回到标准asyncio: {e}")
         try:
             task = asyncio.create_task(coro)
             task.add_done_callback(_handle_task_exception)
@@ -286,23 +316,6 @@ async def gather_with_concurrency(n: int, *tasks):
     
     return await asyncio.gather(*(sem_task(task) for task in tasks))
 
-def get_event_loop():
-    """获取事件循环
-    
-    尝试获取QtAsyncio事件循环，如果不可用则回退到标准asyncio
-    
-    Returns:
-        事件循环
-    """
-    try:
-        return QtAsyncio.asyncio.get_event_loop()
-    except (ImportError, AttributeError) as e:
-        logger.warning(f"QtAsyncio获取事件循环失败，退回到标准asyncio: {e}")
-        try:
-            return asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.get_event_loop()
-
 def time() -> float:
     """获取时间
     
@@ -312,9 +325,66 @@ def time() -> float:
         浮点型时间
     """
     try:
-        return QtAsyncio.asyncio.get_event_loop().time()
+        return get_event_loop().time()
     except (ImportError, AttributeError):
         try:
             return asyncio.get_running_loop().time()
         except RuntimeError:
-            return asyncio.get_event_loop().time() 
+            return asyncio.get_event_loop().time()
+
+# 新增函数：初始化qasync事件循环
+def init_qasync_loop():
+    """初始化qasync事件循环
+    
+    在Qt应用程序启动前调用此函数初始化qasync事件循环
+    """
+    global _loop
+    try:
+        _loop = qasync.QEventLoop()
+        asyncio.set_event_loop(_loop)
+        return _loop
+    except Exception as e:
+        logger.error(f"初始化qasync事件循环失败: {e}")
+        raise
+
+# 新增函数：运行Qt应用和asyncio事件循环
+def run_qt_asyncio(app, main_coro_func):
+    """运行Qt应用和asyncio事件循环
+    
+    Args:
+        app: Qt应用实例或包含app属性的应用程序对象
+        main_coro_func: 主协程函数（不是协程对象）
+        
+    Returns:
+        应用退出代码
+    """
+    try:
+        # 检查app是否为QApplication实例，如果不是，尝试获取其app属性
+        if not isinstance(app, QApplication) and hasattr(app, 'app') and isinstance(app.app, QApplication):
+            qt_app = app.app
+            logger.debug("使用app对象的app属性作为QApplication实例")
+        else:
+            qt_app = app
+            logger.debug("直接使用传入的对象作为QApplication实例")
+        
+        # 创建qasync事件循环
+        loop = qasync.QEventLoop(qt_app)
+        asyncio.set_event_loop(loop)
+        
+        # 设置全局_loop变量
+        global _loop
+        _loop = loop
+        
+        # 创建关闭事件
+        app_close_event = asyncio.Event()
+        qt_app.aboutToQuit.connect(app_close_event.set)
+        
+        # 创建主任务
+        loop.create_task(main_coro_func())
+        
+        # 运行事件循环直到应用关闭
+        with loop:
+            return loop.run_until_complete(app_close_event.wait())
+    except Exception as e:
+        logger.error(f"运行qasync事件循环失败: {e}")
+        raise 

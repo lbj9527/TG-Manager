@@ -20,7 +20,7 @@ from src.utils.ui_config_models import UIConfig
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.client_manager import ClientManager
-from src.utils.async_utils import create_task, safe_sleep, AsyncTaskManager
+from src.utils.async_utils import create_task, safe_sleep, AsyncTaskManager, init_qasync_loop, get_event_loop
 
 # 导入功能模块
 from src.modules.downloader import Downloader
@@ -87,9 +87,16 @@ class TGManagerApp(QObject):
             self.ui_config_manager.ui_config = create_default_config()
             logger.info("已创建默认UI配置")
         
-        # 设置事件循环
-        self.event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.event_loop)
+        # 初始化qasync事件循环
+        try:
+            self.event_loop = init_qasync_loop()
+            logger.info("qasync事件循环初始化成功")
+        except Exception as e:
+            logger.error(f"qasync事件循环初始化失败: {e}")
+            # 如果qasync初始化失败，退回到标准asyncio
+            self.event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.event_loop)
+            logger.info("已退回到标准asyncio事件循环")
         
         # 加载配置
         try:
@@ -230,8 +237,10 @@ class TGManagerApp(QObject):
             # 启动全局异常处理器
             self.task_manager.add_task("global_exception_handler", self.global_exception_handler())
             
-            # 执行正常的 Qt 事件循环
-            return self.app.exec()
+            # 不需要在这里执行Qt事件循环，qasync会处理
+            # 只需要保持协程运行
+            while True:
+                await safe_sleep(0.5)  # 保持协程运行
         except Exception as e:
             logger.error(f"异步运行出错: {e}")
             import traceback
