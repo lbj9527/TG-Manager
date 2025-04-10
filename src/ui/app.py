@@ -258,10 +258,28 @@ class TGManagerApp(QObject):
             self.client_manager = ClientManager(self.ui_config_manager)
             logger.info("客户端管理器初始化成功")
             
+            # 连接客户端状态变化信号
+            if hasattr(self.client_manager, 'connection_status_changed'):
+                self.client_manager.connection_status_changed.connect(self._on_client_connection_status_changed)
+                logger.debug("已连接客户端状态变化信号")
+            
             # 启动Telegram客户端
             try:
                 self.client = await self.client_manager.start_client()
                 logger.info("Telegram客户端启动成功")
+                
+                # 更新主窗口客户端状态
+                if hasattr(self, 'main_window') and self.client_manager.me:
+                    # 获取用户信息并格式化
+                    me = self.client_manager.me
+                    user_info = f"{me.first_name}"
+                    if me.last_name:
+                        user_info += f" {me.last_name}"
+                    user_info += f" (@{me.username})" if me.username else ""
+                    
+                    # 更新主窗口状态栏
+                    self.main_window._update_client_status(True, user_info)
+                    logger.debug(f"已更新状态栏客户端状态: {user_info}")
             except Exception as e:
                 logger.error(f"Telegram客户端启动失败: {e}")
                 # 显示错误但继续运行，允许用户稍后通过登录按钮登录
@@ -856,6 +874,32 @@ class TGManagerApp(QObject):
                 self.config['UI'] = {'theme': theme_name}
         else:
             logger.debug(f"忽略主题变更请求，当前已是 {theme_name} 主题")
+
+    def _on_client_connection_status_changed(self, connected, user_obj):
+        """处理客户端连接状态变化信号
+        
+        Args:
+            connected: 是否已连接
+            user_obj: Pyrogram用户对象
+        """
+        if not hasattr(self, 'main_window'):
+            logger.warning("主窗口未初始化，无法更新客户端状态")
+            return
+            
+        if connected and user_obj:
+            # 获取用户信息并格式化
+            user_info = f"{user_obj.first_name}"
+            if user_obj.last_name:
+                user_info += f" {user_obj.last_name}"
+            user_info += f" (@{user_obj.username})" if user_obj.username else ""
+            
+            logger.info(f"客户端已连接：{user_info}")
+            # 更新主窗口状态栏
+            self.main_window._update_client_status(True, user_info)
+        else:
+            logger.info("客户端已断开连接")
+            # 更新主窗口状态栏为断开状态
+            self.main_window._update_client_status(False)
 
 
 def main():

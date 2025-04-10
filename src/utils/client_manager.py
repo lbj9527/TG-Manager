@@ -5,6 +5,7 @@
 import os
 import asyncio
 from typing import Optional, Dict, Any, Union
+from PySide6.QtCore import QObject, Signal
 
 from pyrogram import Client
 from pyrogram.types import User
@@ -21,11 +22,14 @@ from src.utils.logger import get_logger
 
 logger = get_logger()
 
-class ClientManager:
+class ClientManager(QObject):
     """
     Pyrogram客户端管理器
     负责创建、初始化和管理Telegram客户端连接
     """
+    
+    # 添加信号
+    connection_status_changed = Signal(bool, object)  # 连接状态，用户信息
     
     def __init__(self, ui_config_manager: UIConfigManager, session_name: str = "tg_manager"):
         """
@@ -35,6 +39,7 @@ class ClientManager:
             ui_config_manager: UI配置管理器实例，用于加载API凭据
             session_name: 会话名称，默认为"tg_manager"
         """
+        super().__init__()  # 调用QObject的初始化
         self.ui_config_manager = ui_config_manager
         self.session_name = session_name
         self.client = None
@@ -161,6 +166,9 @@ class ClientManager:
             
             logger.info(f"客户端已启动：{user_info}")
             
+            # 发出信号
+            self.connection_status_changed.emit(True, self.me)
+            
             return self.client
             
         except FloodWait as e:
@@ -212,6 +220,10 @@ class ClientManager:
                 self.client = None
                 self.is_authorized = False
                 logger.info("客户端已完全停止")
+                
+                # 发出信号
+                self.connection_status_changed.emit(False, None)
+                
                 return True
             except Exception as e:
                 logger.error(f"停止客户端时出错: {e}")
@@ -222,6 +234,9 @@ class ClientManager:
                         self.client = None
                         self.is_authorized = False
                         logger.info("客户端已强制断开连接")
+                        
+                        # 发出信号
+                        self.connection_status_changed.emit(False, None)
                 except Exception as forced_stop_error:
                     logger.error(f"强制停止客户端时出错: {forced_stop_error}")
                 return False
@@ -298,6 +313,9 @@ class ClientManager:
             self.me = await self.client.get_me()
             self.is_authorized = True
             
+            # 发出信号
+            self.connection_status_changed.emit(True, self.me)
+            
             return signed_in
             
         except SessionPasswordNeeded:
@@ -308,6 +326,9 @@ class ClientManager:
                     # 更新用户信息
                     self.me = await self.client.get_me()
                     self.is_authorized = True
+                    
+                    # 发出信号
+                    self.connection_status_changed.emit(True, self.me)
                     
                     return signed_in
                 except Exception as e:

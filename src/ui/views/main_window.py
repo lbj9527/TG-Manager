@@ -355,31 +355,37 @@ class MainWindow(QMainWindow):
         
         # 2. 客户端状态
         self.client_status_label = QLabel("客户端: 未连接")
+        self.client_status_label.setMinimumWidth(150)
         self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
-        self.client_status_label.setToolTip("Telegram客户端连接状态")
-        status_bar.addPermanentWidget(self.client_status_label)
+        self.statusBar().addPermanentWidget(self.client_status_label)
         
         # 3. 网络状态
         self.network_status_label = QLabel("网络: 未知")
+        self.network_status_label.setMinimumWidth(150)
         self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
-        self.network_status_label.setToolTip("网络连接状态")
-        status_bar.addPermanentWidget(self.network_status_label)
+        self.statusBar().addPermanentWidget(self.network_status_label)
         
         # 4. CPU/内存使用率
-        self.resource_usage_label = QLabel("CPU: 0% | 内存: 0MB")
-        self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #757575;")
-        self.resource_usage_label.setToolTip("系统资源使用情况")
-        status_bar.addPermanentWidget(self.resource_usage_label)
+        self.resource_usage_label = QLabel("CPU: -- | 内存: --")
+        self.resource_usage_label.setMinimumWidth(200)
+        self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
+        self.statusBar().addPermanentWidget(self.resource_usage_label)
+        
+        # 添加任务统计标签
+        self.task_stats_label = QLabel("任务: 0 运行中 | 0 等待中 | 0 已完成")
+        self.task_stats_label.setMinimumWidth(250)
+        self.task_stats_label.setStyleSheet("padding: 0 8px; color: #2196F3;")
+        self.statusBar().addPermanentWidget(self.task_stats_label)
         
         # 设置定时器，定期更新资源使用率
         self.resource_timer = QTimer(self)
         self.resource_timer.timeout.connect(self._update_resource_usage)
-        self.resource_timer.start(2000)  # 每2秒更新一次
+        self.resource_timer.start(5000)  # 每5秒更新一次
         
         # 设置网络状态检查定时器
         self.network_timer = QTimer(self)
         self.network_timer.timeout.connect(self._check_network_status)
-        self.network_timer.start(5000)  # 每5秒检查一次
+        self.network_timer.start(30000)  # 每30秒检查一次
         
         # 立即更新一次状态
         self._update_resource_usage()
@@ -554,6 +560,11 @@ class MainWindow(QMainWindow):
             if hasattr(view, 'config_saved'):
                 view.config_saved.connect(self.config_saved)
                 
+            # 连接任务相关信号（如适用）
+            if function_name in ['download', 'upload', 'forward'] and hasattr(view, 'tasks_updated'):
+                view.tasks_updated.connect(self._update_task_statistics)
+                logger.debug(f"已连接 {function_name} 视图的任务统计信号")
+                
             # 添加视图到中心区域并记录
             self.central_layout.addWidget(view)
             self.opened_views[item_id] = view
@@ -719,11 +730,23 @@ class MainWindow(QMainWindow):
                 return
         
         # 停止所有计时器
-        if hasattr(self, 'resource_timer') and self.resource_timer.isActive():
-            self.resource_timer.stop()
-            
-        if hasattr(self, 'network_timer') and self.network_timer.isActive():
-            self.network_timer.stop()
+        for timer_attr in ['resource_timer', 'network_timer']:
+            if hasattr(self, timer_attr):
+                timer = getattr(self, timer_attr)
+                if timer.isActive():
+                    logger.debug(f"停止计时器: {timer_attr}")
+                    timer.stop()
+        
+        # 取消所有运行中的任务
+        try:
+            # 通知任务管理器停止所有任务
+            if "task_manager" in self.opened_views:
+                task_view = self.opened_views["task_manager"]
+                if hasattr(task_view, 'cancel_all_tasks'):
+                    logger.debug("请求任务管理器取消所有任务")
+                    task_view.cancel_all_tasks()
+        except Exception as e:
+            logger.error(f"停止任务时出错: {e}")
         
         # 如果系统托盘图标存在，则隐藏
         if hasattr(self, 'tray_icon'):
@@ -978,6 +1001,8 @@ class MainWindow(QMainWindow):
                 task_manager.task_cancel.connect(self._cancel_task)
             if hasattr(task_manager, 'task_remove'):
                 task_manager.task_remove.connect(self._remove_task)
+            if hasattr(task_manager, 'tasks_updated'):
+                task_manager.tasks_updated.connect(self._update_task_statistics)
             
             logger.info("成功打开任务管理器视图")
             
@@ -1036,6 +1061,9 @@ class MainWindow(QMainWindow):
         # 更新任务计数
         self.task_overview.update_counters(3, 12, 2, 1)
         
+        # 更新任务统计信息
+        self._update_task_statistics(3, 2, 12)
+        
         # 添加示例任务
         self.task_overview.add_task(
             "task1", "下载", "频道媒体下载", "运行中", 45
@@ -1046,6 +1074,38 @@ class MainWindow(QMainWindow):
         self.task_overview.add_task(
             "task3", "转发", "频道消息转发", "等待中", 0
         )
+    
+    def _update_task_statistics(self, running=0, waiting=0, completed=0):
+        """更新状态栏中的任务统计信息
+        
+        Args:
+            running: 运行中的任务数量
+            waiting: 等待中的任务数量
+            completed: 已完成的任务数量
+        """
+        try:
+            # 更新任务统计文本
+            self.task_stats_label.setText(f"任务: {running} 运行中 | {waiting} 等待中 | {completed} 已完成")
+            
+            # 根据任务状态设置颜色
+            if running > 0:
+                # 有运行中的任务，使用蓝色
+                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #2196F3;") 
+            elif waiting > 0:
+                # 有等待中的任务，使用橙色
+                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #FF9800;")
+            else:
+                # 没有活动任务，使用绿色
+                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
+                
+            # 同时更新任务概览中的统计信息，如果存在
+            if hasattr(self, 'task_overview') and self.task_overview:
+                self.task_overview.update_counters(running, completed, waiting, 0)
+                
+        except Exception as e:
+            logger.error(f"更新任务统计信息失败: {e}")
+            self.task_stats_label.setText("任务: 统计错误")
+            self.task_stats_label.setStyleSheet("padding: 0 8px; color: #F44336;")
     
     def _import_config(self):
         """导入配置文件"""
@@ -1305,6 +1365,9 @@ class MainWindow(QMainWindow):
                 task_data = task_view.tasks[task_id]
                 task_data['status'] = "已暂停"
                 task_view.add_task(task_data)  # 更新任务状态
+        
+        # 刷新任务统计
+        self._refresh_task_statistics()
     
     def _resume_task(self, task_id):
         """恢复任务
@@ -1328,6 +1391,9 @@ class MainWindow(QMainWindow):
                 task_data = task_view.tasks[task_id]
                 task_data['status'] = "运行中"
                 task_view.add_task(task_data)  # 更新任务状态
+        
+        # 刷新任务统计
+        self._refresh_task_statistics()
     
     def _cancel_task(self, task_id):
         """取消任务
@@ -1348,54 +1414,79 @@ class MainWindow(QMainWindow):
         
         if reply != QMessageBox.Yes:
             return
-        
+            
         # 这里应该调用业务逻辑层的任务取消方法
         # 示例代码：self.task_manager.cancel_task(task_id)
         
         # 暂时使用任务概览组件更新状态
         if hasattr(self, 'task_overview') and self.task_overview:
             self.task_overview.update_task_status(task_id, "已取消")
+            # 在短暂延迟后从概览中移除任务
+            QTimer.singleShot(3000, lambda: self.task_overview.remove_task(task_id))
         
         # 更新任务视图
         if "task_manager" in self.opened_views:
             task_view = self.opened_views["task_manager"]
             if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
-                task_data = task_view.tasks[task_id]
-                task_data['status'] = "已取消"
-                task_view.add_task(task_data)  # 更新任务状态
+                # 从任务管理器中移除任务
+                task_view.remove_task(task_id)
+        
+        # 刷新任务统计
+        self._refresh_task_statistics()
     
     def _remove_task(self, task_id):
-        """移除任务
+        """从界面移除已完成的任务
         
         Args:
             task_id: 任务ID
         """
         logger.info(f"移除任务: {task_id}")
         
-        # 确认移除
-        reply = QMessageBox.question(
-            self,
-            "确认移除",
-            f"确定要从列表中移除任务 {task_id} 吗？",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply != QMessageBox.Yes:
-            return
-        
-        # 这里应该调用业务逻辑层的任务移除方法
-        # 示例代码：self.task_manager.remove_task(task_id)
-        
-        # 从任务概览组件中移除
+        # 暂时使用任务概览组件移除任务
         if hasattr(self, 'task_overview') and self.task_overview:
             self.task_overview.remove_task(task_id)
         
-        # 从任务视图中移除
+        # 更新任务视图
         if "task_manager" in self.opened_views:
             task_view = self.opened_views["task_manager"]
-            if hasattr(task_view, 'remove_task'):
+            if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
+                # 从任务管理器中移除任务
                 task_view.remove_task(task_id)
+        
+        # 刷新任务统计
+        self._refresh_task_statistics()
+    
+    def _refresh_task_statistics(self):
+        """刷新任务统计信息，从当前打开的视图和任务管理器中获取最新数据"""
+        try:
+            # 默认初始值
+            running = 0
+            waiting = 0
+            completed = 0
+            
+            # 从任务管理视图获取数据（如果已打开）
+            if "task_manager" in self.opened_views:
+                task_view = self.opened_views["task_manager"]
+                if hasattr(task_view, 'get_task_statistics'):
+                    # 首选：任务管理器提供专门的统计方法
+                    running, waiting, completed = task_view.get_task_statistics()
+                elif hasattr(task_view, 'tasks'):
+                    # 备选：手动统计任务数量
+                    tasks = task_view.tasks
+                    for task in tasks.values():
+                        status = task.get('status', '').lower()
+                        if status in ['运行中', 'running']:
+                            running += 1
+                        elif status in ['等待中', 'waiting', '排队中', 'queued']:
+                            waiting += 1
+                        elif status in ['已完成', 'completed', 'finished']:
+                            completed += 1
+            
+            # 更新状态栏中的任务统计信息
+            self._update_task_statistics(running, waiting, completed)
+            
+        except Exception as e:
+            logger.error(f"刷新任务统计信息失败: {e}")
     
     def _update_resource_usage(self):
         """更新资源使用情况"""
