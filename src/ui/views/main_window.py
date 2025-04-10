@@ -48,6 +48,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("TG-Manager")
         self.setWindowIcon(self._get_icon("app"))
         self.opened_views = {}  # 跟踪已打开的视图
+        
+        # 添加_is_window_state_loaded属性，用于跟踪窗口状态是否已加载
+        self._is_window_state_loaded = False
 
         # 设置中心窗口部件
         self.central_widget = QWidget()
@@ -100,6 +103,9 @@ class MainWindow(QMainWindow):
         
         # 添加示例任务（仅用于UI布局展示）
         self._add_sample_tasks()
+        
+        # 延迟初始化网络状态检查，确保事件循环已经启动
+        QTimer.singleShot(2000, self._check_network_status)
         
         logger.info("主窗口初始化完成")
     
@@ -464,14 +470,23 @@ class MainWindow(QMainWindow):
         self.window_state_changed.emit(window_state)
 
     def showEvent(self, event):
-        """窗口显示事件
+        """窗口显示事件处理
+        
+        当窗口首次显示时，我们需要初始化一些UI元素
         
         Args:
-            event: 窗口显示事件
+            event: 显示事件对象
         """
+        # 调用父类方法
         super().showEvent(event)
-        # 保留原本的窗口状态保存，但延长延迟时间，确保布局完全稳定
-        QTimer.singleShot(1000, self._save_current_state)
+        
+        # 如果是第一次显示窗口，执行一些初始化
+        if not self._is_window_state_loaded and self.isVisible():
+            self._init_splitter_sizes()
+            self._is_window_state_loaded = True
+        
+        # 显示窗口时立即检查网络状态，确保状态栏显示最新信息
+        self._check_network_status()
     
     def _toggle_sidebar(self, checked):
         """切换侧边栏的可见性
@@ -1550,12 +1565,36 @@ class MainWindow(QMainWindow):
     
     def _check_network_status(self):
         """检查网络连接状态"""
-        # 正确导入和使用create_task函数
-        from src.utils.async_utils import create_task
-        create_task(self._check_network_status_async())
+        try:
+            # 先确保事件循环可用
+            from src.utils.async_utils import get_event_loop, create_task
+            
+            # 获取事件循环，如果不可用则不执行检查
+            loop = get_event_loop()
+            if loop is None or not loop.is_running():
+                logger.warning("事件循环不可用，跳过网络检查")
+                # 显示未知状态
+                self.network_status_label.setText("网络：未检测")
+                self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
+                # 延迟再次尝试
+                QTimer.singleShot(3000, self._check_network_status)
+                return
+                
+            # 创建异步任务
+            create_task(self._check_network_status_async())
+        except Exception as e:
+            logger.warning(f"创建网络检查任务失败: {e}")
+            # 显示未知状态
+            self.network_status_label.setText("网络：未检测")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
+            # 延迟再次尝试
+            QTimer.singleShot(3000, self._check_network_status)
     
     async def _check_network_status_async(self):
         """异步检查网络连接状态和延时"""
+        # 网络检测超时(秒)
+        NETWORK_CHECK_TIMEOUT = 2.0
+        
         try:
             # 获取代理设置
             proxy_settings = None
@@ -1575,84 +1614,119 @@ class MainWindow(QMainWindow):
                             proxy_url = f"socks5://{proxy_username}:{proxy_password}@{proxy_addr}:{proxy_port}"
                         proxy_settings = proxy_url
 
-            # 优化测试URL选择 - 选择更快的本地测试URL
-            test_url = 'http://www.baidu.com'  # 使用HTTP而不是HTTPS可能更快
-            fallback_url = 'http://www.qq.com'  # 备用URL
+            # 选择测试URL - 使用国内知名网站进行测试
+            test_url = 'http://www.qq.com'  # 通常比百度更稳定且HTML更小
+            fallback_url = 'http://www.baidu.com'  # 备用URL
             
-            # 如果使用代理，使用特定的测试URL
+            # 如果使用代理，使用谷歌测试
             if use_proxy:
-                # 代理模式下使用特定测试站点
-                test_url = 'http://www.google.com'  # 使用谷歌网站进行测试
+                test_url = 'http://www.google.com'
             
             # 记录开始时间
             start_time = time.time()
             
-            # 创建会话但不使用timeout参数，而是在get请求中使用timeout
-            connector = aiohttp.TCPConnector(ssl=False)  # 禁用SSL验证以加速
-            async with aiohttp.ClientSession(connector=connector) as session:
-                request_kwargs = {}
-                if proxy_settings:
-                    request_kwargs['proxy'] = proxy_settings
+            # 避免使用aiohttp.ClientSession的timeout参数，而是使用asyncio的超时功能
+            try:
+                # 创建一个简单的connector，禁用SSL验证以加速连接
+                connector = aiohttp.TCPConnector(ssl=False, limit=1)
                 
-                # 使用try来处理第一个URL的请求
+                # 创建客户端会话
+                session = aiohttp.ClientSession(connector=connector)
+                
+                # 使用asyncio.wait_for来管理超时，而不是依赖aiohttp的timeout机制
                 try:
-                    # 为请求单独设置超时，而不是在会话级别设置
-                    request_kwargs['timeout'] = 2.0
-                    async with session.get(test_url, **request_kwargs) as response:
-                        # 计算请求耗时（毫秒）
-                        elapsed_ms = round((time.time() - start_time) * 1000)
-                        if response.status == 200:
-                            # 连接正常，显示延时
-                            self._update_network_status_latency(elapsed_ms)
-                            return  # 成功就直接返回
-                        else:
-                            # 服务器返回了非200状态码
-                            self._update_network_status_latency(elapsed_ms, f"状态码: {response.status}")
-                            return  # 至少收到响应，也直接返回
-                except (aiohttp.ClientConnectorError, asyncio.TimeoutError, aiohttp.ClientError):
-                    # 第一个URL失败时尝试备用URL
+                    # 准备请求参数
+                    req_kwargs = {}
+                    if proxy_settings:
+                        req_kwargs['proxy'] = proxy_settings
+                    
+                    # 使用asyncio.wait_for来管理超时
+                    response = await asyncio.wait_for(
+                        session.get(test_url, **req_kwargs), 
+                        timeout=NETWORK_CHECK_TIMEOUT
+                    )
+                    
+                    try:
+                        async with response:
+                            # 计算请求耗时
+                            elapsed_ms = round((time.time() - start_time) * 1000)
+                            
+                            if response.status == 200:
+                                # 成功获取响应
+                                self._update_network_status_latency(elapsed_ms)
+                            else:
+                                # 非200状态码
+                                self._update_network_status_latency(elapsed_ms, f"状态码: {response.status}")
+                    except Exception as e:
+                        # 处理响应处理过程中的错误
+                        logger.warning(f"处理网络响应时出错: {e}")
+                        raise
+                    
+                except asyncio.TimeoutError:
+                    # 如果主URL超时并且我们没有使用代理，尝试备用URL
                     if not use_proxy and test_url != fallback_url:
+                        # 重置开始时间
+                        start_time = time.time()
+                        
                         try:
-                            # 重置开始时间
-                            start_time = time.time()
-                            async with session.get(fallback_url, timeout=2.0) as response:
+                            # 尝试备用URL
+                            response = await asyncio.wait_for(
+                                session.get(fallback_url, **req_kwargs),
+                                timeout=NETWORK_CHECK_TIMEOUT
+                            )
+                            
+                            async with response:
                                 elapsed_ms = round((time.time() - start_time) * 1000)
                                 if response.status == 200:
                                     self._update_network_status_latency(elapsed_ms, "备用")
-                                    return
                                 else:
                                     self._update_network_status_latency(elapsed_ms, f"备用 状态码: {response.status}")
-                                    return
                         except Exception:
-                            # 两个URL都失败，抛出给外层统一处理
-                            raise
+                            # 如果备用URL也失败，报告超时
+                            self.network_status_label.setText("网络：超时")
+                            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+                            logger.warning("备用URL网络连接测试超时")
                     else:
-                        # 如果没有备用URL可用，直接抛出
-                        raise
+                        # 报告超时
+                        self.network_status_label.setText("网络：超时")
+                        self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+                        logger.warning("网络连接测试超时")
+                
+                except Exception as e:
+                    # 处理请求过程中的其他错误
+                    logger.warning(f"执行网络请求时出错: {e}")
+                    raise
+                
+                finally:
+                    # 确保会话正确关闭
+                    await session.close()
+            
+            except Exception as e:
+                # 创建会话或关闭会话时的错误
+                logger.warning(f"管理网络会话时出错: {e}")
+                raise
         
         except aiohttp.ClientConnectorError:
             # 无法连接到服务器
             self.network_status_label.setText("网络：未连接")
             self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning("无法连接到测试服务器")  # 降级为warning，避免频繁error日志
-            
+            logger.warning("无法连接到测试服务器")
+        
         except asyncio.TimeoutError:
-            # 连接超时
+            # 连接超时(这里通常不会触发，因为内部已经处理了超时)
             self.network_status_label.setText("网络：超时")
             self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
             logger.warning("网络连接测试超时")
-            
-        except aiohttp.ClientError as e:
-            # aiohttp客户端错误（包括代理错误等）
-            self.network_status_label.setText("网络：错误")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning(f"网络请求客户端错误: {e}")
-            
+        
+        except asyncio.CancelledError:
+            # 任务被取消，忽略
+            pass
+        
         except Exception as e:
-            # 其他异常
+            # 所有其他异常
             self.network_status_label.setText("网络：未连接")
             self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning(f"网络连接检查失败: {e}")  # 降级为warning，避免频繁error日志
+            logger.warning(f"网络连接检查失败: {type(e).__name__}: {e}")
     
     def _update_network_status_latency(self, latency_ms, details=None):
         """更新网络延时状态
