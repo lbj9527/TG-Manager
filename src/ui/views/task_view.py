@@ -28,6 +28,7 @@ class TaskView(QWidget):
     task_resume = Signal(str)  # 任务ID
     task_cancel = Signal(str)  # 任务ID
     task_remove = Signal(str)  # 任务ID
+    tasks_updated = Signal(int, int, int)  # 运行中任务数, 等待中任务数, 已完成任务数
     
     def __init__(self, config=None, parent=None):
         """初始化任务管理界面
@@ -305,6 +306,11 @@ class TaskView(QWidget):
         self.task_tabs.setTabText(0, f"激活任务 ({active_count})")
         self.task_tabs.setTabText(1, f"已完成任务 ({completed_count})")
         self.task_tabs.setTabText(2, f"失败任务 ({failed_count})")
+        
+        # 发送任务更新信号，供状态栏更新
+        running_count = sum(1 for task in self.tasks.values() if task['status'] == "运行中")
+        waiting_count = sum(1 for task in self.tasks.values() if task['status'] in ["等待中", "暂停"])
+        self.tasks_updated.emit(running_count, waiting_count, completed_count)
     
     def add_task(self, task_data):
         """添加新任务或更新现有任务
@@ -343,6 +349,10 @@ class TaskView(QWidget):
         else:
             # 添加新行
             self._add_task_row(task_data, table)
+            
+        # 任务状态发生变化，发送信号
+        if old_status != task_data['status']:
+            self._refresh_task_stats()
     
     def _get_task_row(self, task_id, table):
         """获取任务在表格中的行索引
@@ -494,6 +504,9 @@ class TaskView(QWidget):
         self._remove_task_from_table(task_id, self.active_tasks_widget)
         self._remove_task_from_table(task_id, self.completed_tasks_widget)
         self._remove_task_from_table(task_id, self.failed_tasks_widget)
+        
+        # 任务被移除，更新统计信息
+        self._refresh_task_stats()
     
     def load_tasks(self, tasks_data):
         """加载任务列表
@@ -578,4 +591,16 @@ class TaskView(QWidget):
         logger.debug("任务视图已接收任务管理器实例")
         
         # 设置任务监控定时器
-        self._setup_task_monitor() 
+        self._setup_task_monitor()
+
+    def get_task_statistics(self):
+        """获取当前任务统计信息
+        
+        Returns:
+            tuple: (运行中任务数, 等待中任务数, 已完成任务数)
+        """
+        running_count = sum(1 for task in self.tasks.values() if task['status'] == "运行中")
+        waiting_count = sum(1 for task in self.tasks.values() if task['status'] in ["等待中", "暂停"])
+        completed_count = sum(1 for task in self.tasks.values() if task['status'] == "已完成")
+        
+        return running_count, waiting_count, completed_count 

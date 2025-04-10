@@ -40,9 +40,8 @@ class TaskOverview(QWidget):
         self.main_layout.setContentsMargins(3, 3, 3, 3)  # 减小边距
         self.main_layout.setSpacing(4)  # 减小间距
         
-        # 创建标题和概览部分
+        # 创建标题和任务列表部分
         self._create_header()
-        self._create_counters()
         self._create_task_list()
         self._create_view_all_button()
         
@@ -52,7 +51,7 @@ class TaskOverview(QWidget):
     def _create_header(self):
         """创建标题部分"""
         # 创建标题标签，使用较大字体并居中
-        self.summary_label = QLabel("当前任务概览")
+        self.summary_label = QLabel("任务列表")
         self.summary_label.setAlignment(Qt.AlignCenter)
         
         # 设置字体和样式
@@ -70,67 +69,6 @@ class TaskOverview(QWidget):
         
         # 添加到主布局
         self.main_layout.addWidget(self.summary_label)
-        self.main_layout.addWidget(separator)
-    
-    def _create_counters(self):
-        """创建计数器部分"""
-        # 使用水平布局，平均分配空间
-        counters_container = QWidget()
-        counters_layout = QHBoxLayout(counters_container)
-        counters_layout.setContentsMargins(0, 2, 0, 2)  # 减小边距
-        
-        # 创建各类型任务的计数显示
-        count_items = [
-            {"label": "活跃任务", "count_attr": "active_count", "color": "#4CAF50"},
-            {"label": "已完成", "count_attr": "completed_count", "color": "#2196F3"},
-            {"label": "等待中", "count_attr": "waiting_count", "color": "#FF9800"},
-            {"label": "失败", "count_attr": "failed_count", "color": "#F44336"}
-        ]
-        
-        for item in count_items:
-            # 创建计数组件容器
-            counter_widget = QWidget()
-            counter_layout = QVBoxLayout(counter_widget)
-            counter_layout.setContentsMargins(2, 2, 2, 2)  # 减小边距
-            counter_layout.setAlignment(Qt.AlignCenter)
-            counter_layout.setSpacing(1)  # 减小间距
-            
-            # 添加数字标签（大字体）
-            count_label = QLabel("0")
-            count_label.setAlignment(Qt.AlignCenter)
-            count_font = QFont()
-            count_font.setBold(True)
-            count_font.setPointSize(16)  # 增加字体大小，从14pt到16pt
-            count_label.setFont(count_font)
-            count_label.setStyleSheet(f"color: {item['color']};")
-            
-            # 添加描述标签（小字体）
-            desc_label = QLabel(item["label"])
-            desc_label.setAlignment(Qt.AlignCenter)
-            desc_font = QFont()
-            desc_font.setBold(True)  # 添加粗体效果
-            desc_label.setFont(desc_font)
-            desc_label.setStyleSheet(f"color: {item['color']}; font-size: 10pt;")  # 增加字体大小，从8pt到10pt，颜色与数字一致
-            
-            # 将标签添加到计数组件布局
-            counter_layout.addWidget(count_label)
-            counter_layout.addWidget(desc_label)
-            
-            # 保存对计数标签的引用
-            setattr(self, item["count_attr"], count_label)
-            
-            # 添加到水平布局
-            counters_layout.addWidget(counter_widget)
-        
-        # 添加计数器容器到主布局
-        self.main_layout.addWidget(counters_container)
-        
-        # 添加分隔线
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("background-color: #E0E0E0;")
-        
         self.main_layout.addWidget(separator)
     
     def _create_task_list(self):
@@ -191,7 +129,7 @@ class TaskOverview(QWidget):
         self.view_all_tasks_clicked.emit()
     
     def update_counters(self, active, completed, waiting, failed):
-        """更新任务计数
+        """更新任务计数 - 保留方法便于兼容，但功能已经迁移到状态栏
         
         Args:
             active: 活跃任务数
@@ -199,10 +137,8 @@ class TaskOverview(QWidget):
             waiting: 等待中任务数
             failed: 失败任务数
         """
-        self.active_count.setText(str(active))
-        self.completed_count.setText(str(completed))
-        self.waiting_count.setText(str(waiting))
-        self.failed_count.setText(str(failed))
+        # 该功能已移至状态栏，此处保留方法便于兼容
+        pass
     
     def add_task(self, task_id, task_type, task_name, status, progress=0):
         """添加任务到概览

@@ -1058,10 +1058,7 @@ class MainWindow(QMainWindow):
     
     def _add_sample_tasks(self):
         """添加示例任务用于展示任务概览布局"""
-        # 更新任务计数
-        self.task_overview.update_counters(3, 12, 2, 1)
-        
-        # 更新任务统计信息
+        # 直接更新状态栏中的任务统计信息
         self._update_task_statistics(3, 2, 12)
         
         # 添加示例任务
