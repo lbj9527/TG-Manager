@@ -12,6 +12,7 @@ from copy import deepcopy
 import psutil
 import aiohttp
 import asyncio
+import time
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QDockWidget, 
@@ -360,9 +361,9 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.client_status_label)
         
         # 3. 网络状态
-        self.network_status_label = QLabel("网络: 未知")
+        self.network_status_label = QLabel("网络：未连接")
         self.network_status_label.setMinimumWidth(150)
-        self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
+        self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
         self.statusBar().addPermanentWidget(self.network_status_label)
         
         # 4. CPU/内存使用率
@@ -385,7 +386,7 @@ class MainWindow(QMainWindow):
         # 设置网络状态检查定时器
         self.network_timer = QTimer(self)
         self.network_timer.timeout.connect(self._check_network_status)
-        self.network_timer.start(30000)  # 每30秒检查一次
+        self.network_timer.start(10000)  # 每10秒检查一次
         
         # 立即更新一次状态
         self._update_resource_usage()
@@ -1547,64 +1548,138 @@ class MainWindow(QMainWindow):
         
         self.client_status_label.setText(text)
     
-    def _update_network_status(self, status="未知", details=None):
-        """更新网络连接状态
-        
-        Args:
-            status: 网络状态，如"已连接"、"受限"、"断开"等
-            details: 网络详情，如"Wi-Fi"、"以太网"、"4G"等
-        """
-        # 根据状态设置不同的颜色和文本
-        if status == "已连接":
-            text = f"网络: {status}" + (f" ({details})" if details else "")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
-        elif status == "受限":
-            text = f"网络: {status}" + (f" ({details})" if details else "")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #FF9800;")  # 橙色
-        elif status == "断开":
-            text = f"网络: {status}"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-        else:
-            text = f"网络: {status}"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
-        
-        self.network_status_label.setText(text)
-        
     def _check_network_status(self):
         """检查网络连接状态"""
-        # 创建异步任务来执行网络检查
-        asyncio.ensure_future(self._check_network_status_async())
+        # 正确导入和使用create_task函数
+        from src.utils.async_utils import create_task
+        create_task(self._check_network_status_async())
     
     async def _check_network_status_async(self):
-        """异步检查网络连接状态"""
+        """异步检查网络连接状态和延时"""
         try:
-            # 使用aiohttp尝试连接到Telegram API服务器
-            connector = aiohttp.TCPConnector(ssl=False)  # 关闭SSL验证以加快连接速度
-            async with aiohttp.ClientSession(connector=connector) as session:
-                # 减少超时时间为1秒，避免等待时间过长
-                timeout = aiohttp.ClientTimeout(total=1)
-                async with session.get('https://api.telegram.org', timeout=timeout) as response:
-                    if response.status == 200:
-                        # 连接正常
-                        self._update_network_status("已连接", "连接良好")
-                    else:
-                        # 服务器返回了非200状态码
-                        self._update_network_status("已连接", f"状态码: {response.status}")
-        
-        except asyncio.TimeoutError:
-            # 连接超时
-            self._update_network_status("超时", "连接缓慢")
-            logger.warning("网络连接检查超时")
+            # 获取代理设置
+            proxy_settings = None
+            use_proxy = False
+            if 'GENERAL' in self.config and self.config['GENERAL'].get('proxy_enabled', False):
+                proxy_type = self.config['GENERAL'].get('proxy_type', '')
+                proxy_addr = self.config['GENERAL'].get('proxy_addr', '')
+                proxy_port = self.config['GENERAL'].get('proxy_port', 0)
+                proxy_username = self.config['GENERAL'].get('proxy_username', '')
+                proxy_password = self.config['GENERAL'].get('proxy_password', '')
+                
+                if proxy_addr and proxy_port:
+                    use_proxy = True
+                    if proxy_type == 'SOCKS5':
+                        proxy_url = f"socks5://{proxy_addr}:{proxy_port}"
+                        if proxy_username and proxy_password:
+                            proxy_url = f"socks5://{proxy_username}:{proxy_password}@{proxy_addr}:{proxy_port}"
+                        proxy_settings = proxy_url
+
+            # 优化测试URL选择 - 选择更快的本地测试URL
+            test_url = 'http://www.baidu.com'  # 使用HTTP而不是HTTPS可能更快
+            fallback_url = 'http://www.qq.com'  # 备用URL
             
+            # 如果使用代理，使用特定的测试URL
+            if use_proxy:
+                # 代理模式下使用特定测试站点
+                test_url = 'http://www.google.com'  # 使用谷歌网站进行测试
+            
+            # 记录开始时间
+            start_time = time.time()
+            
+            # 创建会话但不使用timeout参数，而是在get请求中使用timeout
+            connector = aiohttp.TCPConnector(ssl=False)  # 禁用SSL验证以加速
+            async with aiohttp.ClientSession(connector=connector) as session:
+                request_kwargs = {}
+                if proxy_settings:
+                    request_kwargs['proxy'] = proxy_settings
+                
+                # 使用try来处理第一个URL的请求
+                try:
+                    # 为请求单独设置超时，而不是在会话级别设置
+                    request_kwargs['timeout'] = 2.0
+                    async with session.get(test_url, **request_kwargs) as response:
+                        # 计算请求耗时（毫秒）
+                        elapsed_ms = round((time.time() - start_time) * 1000)
+                        if response.status == 200:
+                            # 连接正常，显示延时
+                            self._update_network_status_latency(elapsed_ms)
+                            return  # 成功就直接返回
+                        else:
+                            # 服务器返回了非200状态码
+                            self._update_network_status_latency(elapsed_ms, f"状态码: {response.status}")
+                            return  # 至少收到响应，也直接返回
+                except (aiohttp.ClientConnectorError, asyncio.TimeoutError, aiohttp.ClientError):
+                    # 第一个URL失败时尝试备用URL
+                    if not use_proxy and test_url != fallback_url:
+                        try:
+                            # 重置开始时间
+                            start_time = time.time()
+                            async with session.get(fallback_url, timeout=2.0) as response:
+                                elapsed_ms = round((time.time() - start_time) * 1000)
+                                if response.status == 200:
+                                    self._update_network_status_latency(elapsed_ms, "备用")
+                                    return
+                                else:
+                                    self._update_network_status_latency(elapsed_ms, f"备用 状态码: {response.status}")
+                                    return
+                        except Exception:
+                            # 两个URL都失败，抛出给外层统一处理
+                            raise
+                    else:
+                        # 如果没有备用URL可用，直接抛出
+                        raise
+        
         except aiohttp.ClientConnectorError:
             # 无法连接到服务器
-            self._update_network_status("断开", "无法连接")
-            logger.warning("无法连接到Telegram服务器")  # 降级为warning，避免频繁error日志
+            self.network_status_label.setText("网络：未连接")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+            logger.warning("无法连接到测试服务器")  # 降级为warning，避免频繁error日志
+            
+        except asyncio.TimeoutError:
+            # 连接超时
+            self.network_status_label.setText("网络：超时")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+            logger.warning("网络连接测试超时")
+            
+        except aiohttp.ClientError as e:
+            # aiohttp客户端错误（包括代理错误等）
+            self.network_status_label.setText("网络：错误")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+            logger.warning(f"网络请求客户端错误: {e}")
             
         except Exception as e:
             # 其他异常
-            self._update_network_status("异常", str(e)[:20])
+            self.network_status_label.setText("网络：未连接")
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
             logger.warning(f"网络连接检查失败: {e}")  # 降级为warning，避免频繁error日志
+    
+    def _update_network_status_latency(self, latency_ms, details=None):
+        """更新网络延时状态
+        
+        Args:
+            latency_ms: 延时，单位为毫秒
+            details: 其他详情信息
+        """
+        # 根据延时设置不同的颜色
+        if latency_ms < 100:
+            text = f"网络：{latency_ms}ms"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
+        elif latency_ms < 300:
+            text = f"网络：{latency_ms}ms"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #2196F3;")  # 蓝色
+        elif latency_ms < 500:
+            text = f"网络：{latency_ms}ms"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #FF9800;")  # 橙色
+        else:
+            text = f"网络：{latency_ms}ms"
+            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+        
+        # 添加额外详情信息
+        if details:
+            text += f" ({details})"
+            
+        self.network_status_label.setText(text)
     
     def _return_to_welcome(self):
         """返回欢迎页面"""
