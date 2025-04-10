@@ -1679,17 +1679,24 @@ class MainWindow(QMainWindow):
         Returns:
             视图组件实例，如果不存在则返回None
         """
-        view_map = {
-            'download': self.download_view,
-            'upload': self.upload_view,
-            'forward': self.forward_view,
-            'listen': self.listen_view,
-            'task': self.task_view,
-            'log': self.log_viewer,
-            'help': self.help_doc_view,
-            'settings': self.settings_view,
-            'qt_asyncio_test': self.qt_asyncio_test_view
+        # 映射视图名称到 opened_views 中的键
+        view_id_map = {
+            'download': 'function.download',
+            'upload': 'function.upload',
+            'forward': 'function.forward',
+            'listen': 'function.monitor',
+            'task': 'function.task_manager',
+            'log': 'function.logs',
+            'help': 'function.help',
+            'settings': 'settings',
+            'qt_asyncio_test': 'function.qt_asyncio_test'
         }
         
-        return view_map.get(view_name)
+        view_id = view_id_map.get(view_name)
+        if view_id and view_id in self.opened_views:
+            return self.opened_views[view_id]
+            
+        # 如果视图尚未打开，返回None
+        logger.debug(f"视图 '{view_name}' 尚未打开，无法获取引用")
+        return None
 
