@@ -1277,8 +1277,8 @@ class MainWindow(QMainWindow):
         self.sidebar_splitter.addWidget(self.nav_tree)
         self.sidebar_splitter.addWidget(self.task_overview)
         
-        # 设置初始分割比例，调整为42%导航树，58%任务概览
-        self.sidebar_splitter.setSizes([420, 580])
+        # 设置初始分割比例，调整为50%导航树，50%任务概览
+        self.sidebar_splitter.setSizes([500, 500])
         
         # 在组件完全初始化后锁定尺寸，防止布局计算导致的高度变化
         QTimer.singleShot(0, lambda: self._init_splitter_sizes())
@@ -1330,8 +1330,8 @@ class MainWindow(QMainWindow):
             
             # 只有当窗口高度大于阈值时才调整，防止在极小的窗口尺寸下产生问题
             if current_height > 400:
-                # 调整为42%导航树，58%任务概览
-                self.sidebar_splitter.setSizes([int(current_height * 0.42), int(current_height * 0.58)])
+                # 调整为50%导航树，50%任务概览
+                self.sidebar_splitter.setSizes([int(current_height * 0.5), int(current_height * 0.5)])
         
         # 发出窗口状态变化信号
         window_state = {
