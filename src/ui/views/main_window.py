@@ -10,9 +10,7 @@ import datetime
 import json
 from copy import deepcopy
 import psutil
-import aiohttp
 import asyncio
-import time
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QDockWidget, 
@@ -103,9 +101,6 @@ class MainWindow(QMainWindow):
         
         # 添加示例任务（仅用于UI布局展示）
         self._add_sample_tasks()
-        
-        # 延迟初始化网络状态检查，确保事件循环已经启动
-        QTimer.singleShot(2000, self._check_network_status)
         
         logger.info("主窗口初始化完成")
     
@@ -366,13 +361,7 @@ class MainWindow(QMainWindow):
         self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
         self.statusBar().addPermanentWidget(self.client_status_label)
         
-        # 3. 网络状态
-        self.network_status_label = QLabel("网络：未连接")
-        self.network_status_label.setMinimumWidth(150)
-        self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-        self.statusBar().addPermanentWidget(self.network_status_label)
-        
-        # 4. CPU/内存使用率
+        # 3. CPU/内存使用率
         self.resource_usage_label = QLabel("CPU: -- | 内存: --")
         self.resource_usage_label.setMinimumWidth(200)
         self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
@@ -389,15 +378,9 @@ class MainWindow(QMainWindow):
         self.resource_timer.timeout.connect(self._update_resource_usage)
         self.resource_timer.start(5000)  # 每5秒更新一次
         
-        # 设置网络状态检查定时器
-        self.network_timer = QTimer(self)
-        self.network_timer.timeout.connect(self._check_network_status)
-        self.network_timer.start(10000)  # 每10秒检查一次
-        
         # 立即更新一次状态
         self._update_resource_usage()
-        self._check_network_status()
-    
+        
     def _create_navigation_tree(self):
         """创建导航树组件"""
         from src.ui.components.navigation_tree import NavigationTree
@@ -746,7 +729,7 @@ class MainWindow(QMainWindow):
                 return
         
         # 停止所有计时器
-        for timer_attr in ['resource_timer', 'network_timer']:
+        for timer_attr in ['resource_timer']:
             if hasattr(self, timer_attr):
                 timer = getattr(self, timer_attr)
                 if timer.isActive():
@@ -1565,195 +1548,18 @@ class MainWindow(QMainWindow):
     
     def _check_network_status(self):
         """检查网络连接状态"""
-        try:
-            # 先确保事件循环可用
-            from src.utils.async_utils import get_event_loop, create_task
-            
-            # 获取事件循环，如果不可用则不执行检查
-            loop = get_event_loop()
-            if loop is None or not loop.is_running():
-                logger.warning("事件循环不可用，跳过网络检查")
-                # 显示未知状态
-                self.network_status_label.setText("网络：未检测")
-                self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
-                # 延迟再次尝试
-                QTimer.singleShot(3000, self._check_network_status)
-                return
-                
-            # 创建异步任务
-            create_task(self._check_network_status_async())
-        except Exception as e:
-            logger.warning(f"创建网络检查任务失败: {e}")
-            # 显示未知状态
-            self.network_status_label.setText("网络：未检测")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
-            # 延迟再次尝试
-            QTimer.singleShot(3000, self._check_network_status)
-    
+        # 该方法已移除，网络延时显示功能已禁用
+        pass
+
     async def _check_network_status_async(self):
         """异步检查网络连接状态和延时"""
-        # 网络检测超时(秒)
-        NETWORK_CHECK_TIMEOUT = 2.0
-        
-        try:
-            # 获取代理设置
-            proxy_settings = None
-            use_proxy = False
-            if 'GENERAL' in self.config and self.config['GENERAL'].get('proxy_enabled', False):
-                proxy_type = self.config['GENERAL'].get('proxy_type', '')
-                proxy_addr = self.config['GENERAL'].get('proxy_addr', '')
-                proxy_port = self.config['GENERAL'].get('proxy_port', 0)
-                proxy_username = self.config['GENERAL'].get('proxy_username', '')
-                proxy_password = self.config['GENERAL'].get('proxy_password', '')
-                
-                if proxy_addr and proxy_port:
-                    use_proxy = True
-                    if proxy_type == 'SOCKS5':
-                        proxy_url = f"socks5://{proxy_addr}:{proxy_port}"
-                        if proxy_username and proxy_password:
-                            proxy_url = f"socks5://{proxy_username}:{proxy_password}@{proxy_addr}:{proxy_port}"
-                        proxy_settings = proxy_url
-
-            # 选择测试URL - 使用国内知名网站进行测试
-            test_url = 'http://www.qq.com'  # 通常比百度更稳定且HTML更小
-            fallback_url = 'http://www.baidu.com'  # 备用URL
-            
-            # 如果使用代理，使用谷歌测试
-            if use_proxy:
-                test_url = 'http://www.google.com'
-            
-            # 记录开始时间
-            start_time = time.time()
-            
-            # 避免使用aiohttp.ClientSession的timeout参数，而是使用asyncio的超时功能
-            try:
-                # 创建一个简单的connector，禁用SSL验证以加速连接
-                connector = aiohttp.TCPConnector(ssl=False, limit=1)
-                
-                # 创建客户端会话
-                session = aiohttp.ClientSession(connector=connector)
-                
-                # 使用asyncio.wait_for来管理超时，而不是依赖aiohttp的timeout机制
-                try:
-                    # 准备请求参数
-                    req_kwargs = {}
-                    if proxy_settings:
-                        req_kwargs['proxy'] = proxy_settings
-                    
-                    # 使用asyncio.wait_for来管理超时
-                    response = await asyncio.wait_for(
-                        session.get(test_url, **req_kwargs), 
-                        timeout=NETWORK_CHECK_TIMEOUT
-                    )
-                    
-                    try:
-                        async with response:
-                            # 计算请求耗时
-                            elapsed_ms = round((time.time() - start_time) * 1000)
-                            
-                            if response.status == 200:
-                                # 成功获取响应
-                                self._update_network_status_latency(elapsed_ms)
-                            else:
-                                # 非200状态码
-                                self._update_network_status_latency(elapsed_ms, f"状态码: {response.status}")
-                    except Exception as e:
-                        # 处理响应处理过程中的错误
-                        logger.warning(f"处理网络响应时出错: {e}")
-                        raise
-                    
-                except asyncio.TimeoutError:
-                    # 如果主URL超时并且我们没有使用代理，尝试备用URL
-                    if not use_proxy and test_url != fallback_url:
-                        # 重置开始时间
-                        start_time = time.time()
-                        
-                        try:
-                            # 尝试备用URL
-                            response = await asyncio.wait_for(
-                                session.get(fallback_url, **req_kwargs),
-                                timeout=NETWORK_CHECK_TIMEOUT
-                            )
-                            
-                            async with response:
-                                elapsed_ms = round((time.time() - start_time) * 1000)
-                                if response.status == 200:
-                                    self._update_network_status_latency(elapsed_ms, "备用")
-                                else:
-                                    self._update_network_status_latency(elapsed_ms, f"备用 状态码: {response.status}")
-                        except Exception:
-                            # 如果备用URL也失败，报告超时
-                            self.network_status_label.setText("网络：超时")
-                            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-                            logger.warning("备用URL网络连接测试超时")
-                    else:
-                        # 报告超时
-                        self.network_status_label.setText("网络：超时")
-                        self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-                        logger.warning("网络连接测试超时")
-                
-                except Exception as e:
-                    # 处理请求过程中的其他错误
-                    logger.warning(f"执行网络请求时出错: {e}")
-                    raise
-                
-                finally:
-                    # 确保会话正确关闭
-                    await session.close()
-            
-            except Exception as e:
-                # 创建会话或关闭会话时的错误
-                logger.warning(f"管理网络会话时出错: {e}")
-                raise
-        
-        except aiohttp.ClientConnectorError:
-            # 无法连接到服务器
-            self.network_status_label.setText("网络：未连接")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning("无法连接到测试服务器")
-        
-        except asyncio.TimeoutError:
-            # 连接超时(这里通常不会触发，因为内部已经处理了超时)
-            self.network_status_label.setText("网络：超时")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning("网络连接测试超时")
-        
-        except asyncio.CancelledError:
-            # 任务被取消，忽略
-            pass
-        
-        except Exception as e:
-            # 所有其他异常
-            self.network_status_label.setText("网络：未连接")
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-            logger.warning(f"网络连接检查失败: {type(e).__name__}: {e}")
+        # 该方法已移除，网络延时显示功能已禁用
+        pass
     
     def _update_network_status_latency(self, latency_ms, details=None):
-        """更新网络延时状态
-        
-        Args:
-            latency_ms: 延时，单位为毫秒
-            details: 其他详情信息
-        """
-        # 根据延时设置不同的颜色
-        if latency_ms < 100:
-            text = f"网络：{latency_ms}ms"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
-        elif latency_ms < 300:
-            text = f"网络：{latency_ms}ms"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #2196F3;")  # 蓝色
-        elif latency_ms < 500:
-            text = f"网络：{latency_ms}ms"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #FF9800;")  # 橙色
-        else:
-            text = f"网络：{latency_ms}ms"
-            self.network_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
-        
-        # 添加额外详情信息
-        if details:
-            text += f" ({details})"
-            
-        self.network_status_label.setText(text)
+        """更新网络延时状态"""
+        # 该方法已移除，网络延时显示功能已禁用
+        pass
     
     def _return_to_welcome(self):
         """返回欢迎页面"""
