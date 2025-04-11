@@ -183,12 +183,10 @@ class WindowStateMixin:
             from PySide6.QtCore import QEvent
             if event.type() == QEvent.MouseButtonRelease:
                 logger.debug("检测到工具栏鼠标释放事件，可能是拖动结束")
-                # 稍微延迟保存，以确保工具栏状态已完全更新
-                QTimer.singleShot(300, self._save_current_state)
-            # 捕获移动事件结束
-            elif event.type() == QEvent.Move:
-                logger.debug("检测到工具栏移动事件")
-                QTimer.singleShot(300, self._save_current_state)
+                # 使用工具栏模块中的状态变化处理器，避免多次保存
+                if hasattr(self, '_on_toolbar_state_changed'):
+                    self._on_toolbar_state_changed()
+            # 注意：移动事件不再单独处理，避免触发过多的保存
             
         # 继续正常事件处理
         return super().eventFilter(obj, event) 

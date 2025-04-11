@@ -8,6 +8,7 @@ import json
 import asyncio
 import signal
 import os
+import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject, Signal, QSettings
@@ -753,6 +754,17 @@ class TGManagerApp(QObject):
             
             # 如果是窗口状态变化，仅保存窗口状态（不保存整个配置）
             if hasattr(self.main_window, 'window_state_changed'):
+                # 检查是否在短时间内多次触发保存
+                current_time = time.time()
+                if hasattr(self, '_last_window_state_save_time'):
+                    # 如果上次保存时间距现在不足500毫秒，则跳过本次保存
+                    if current_time - self._last_window_state_save_time < 0.5:
+                        logger.debug("窗口状态保存请求过于频繁，跳过本次保存")
+                        return
+                
+                # 更新上次保存时间
+                self._last_window_state_save_time = current_time
+                
                 try:
                     # 获取当前窗口状态
                     window_state = {

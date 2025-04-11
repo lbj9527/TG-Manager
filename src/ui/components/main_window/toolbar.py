@@ -22,6 +22,12 @@ class ToolBarMixin:
         self.toolbar.setMovable(True)
         self.toolbar.setAllowedAreas(Qt.TopToolBarArea | Qt.LeftToolBarArea | Qt.RightToolBarArea | Qt.BottomToolBarArea)
         
+        # 为状态改变防抖创建计时器
+        self._toolbar_state_timer = QTimer(self)
+        self._toolbar_state_timer.setSingleShot(True)
+        self._toolbar_state_timer.setInterval(500)  # 500ms防抖延迟
+        self._toolbar_state_timer.timeout.connect(self._save_current_state)
+        
         # 登录按钮
         self.login_action = QAction("登录", self)
         self.login_action.setIcon(self._get_icon("login"))
@@ -78,10 +84,14 @@ class ToolBarMixin:
         self.toolbar.visibilityChanged.connect(self._on_toolbar_state_changed)
     
     def _on_toolbar_state_changed(self, _=None):
-        """工具栏状态改变时触发，保存窗口状态"""
-        # 状态改变后延迟保存窗口状态，确保已完成移动
-        logger.debug("工具栏状态已改变，准备保存")
-        QTimer.singleShot(100, self._save_current_state)
+        """工具栏状态改变时触发，使用防抖延迟保存窗口状态"""
+        # 如果定时器已经在运行，重置它
+        if self._toolbar_state_timer.isActive():
+            self._toolbar_state_timer.stop()
+        
+        # 重新启动定时器，延迟500ms后保存状态
+        logger.debug("工具栏状态已改变，计划500ms后保存")
+        self._toolbar_state_timer.start()
     
     def _toggle_toolbar(self, checked):
         """切换工具栏的可见性
