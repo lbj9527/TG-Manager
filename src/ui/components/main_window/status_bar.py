@@ -106,20 +106,36 @@ class StatusBarMixin:
             connected: 是否已连接
             client_info: 客户端信息，如用户ID、名称等
         """
-        if connected and client_info:
-            # 如果已连接且有客户端信息，显示详细信息
-            text = f"客户端: 已连接 ({client_info})"
-            self.client_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
-        elif connected:
-            # 如果已连接但没有详细信息
-            text = "客户端: 已连接"
-            self.client_status_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")  # 绿色
-        else:
-            # 未连接状态
-            text = "客户端: 未连接"
-            self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")  # 灰色
-        
-        self.client_status_label.setText(text)
+        try:
+            # 确保在UI线程中执行状态更新
+            if connected and client_info:
+                # 如果已连接且有客户端信息，显示详细信息
+                text = f"客户端: 已连接 ({client_info})"
+                self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #4CAF50;")  # 绿色加粗
+            elif connected:
+                # 如果已连接但没有详细信息
+                text = "客户端: 已连接"
+                self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #4CAF50;")  # 绿色加粗
+            else:
+                # 未连接状态
+                text = "客户端: 未连接"
+                self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #F44336;")  # 红色加粗
+            
+            self.client_status_label.setText(text)
+            
+            # 立即更新界面
+            self.client_status_label.repaint()
+            
+            # 记录状态更新日志
+            logger.debug(f"状态栏客户端状态已更新: {text}")
+        except Exception as e:
+            logger.error(f"更新客户端状态标签时出错: {e}")
+            # 尝试恢复显示
+            try:
+                self.client_status_label.setText("客户端: 状态更新错误")
+                self.client_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
+            except:
+                pass
     
     def _update_task_statistics(self, running=0, waiting=0, completed=0):
         """更新状态栏中的任务统计信息

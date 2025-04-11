@@ -31,7 +31,7 @@ class Downloader():
     下载模块，负责下载历史消息的媒体文件
     """
     
-    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, app=None):
         """
         初始化下载模块
         
@@ -40,6 +40,7 @@ class Downloader():
             ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             history_manager: 历史记录管理器实例
+            app: 应用程序实例，用于网络错误时立即检查连接状态
         """
         # 初始化事件发射器
         super().__init__()
@@ -48,7 +49,7 @@ class Downloader():
         self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.history_manager = history_manager
-        
+        self.app = app  # 保存应用程序实例引用
         
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
@@ -1140,6 +1141,13 @@ class Downloader():
                 
             except Exception as e:
                 logger.error(f"下载媒体时出错: {message.id} - {media_type} - {e}")
+                
+                # 检测网络相关错误
+                error_name = type(e).__name__.lower()
+                if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
+                    # 网络相关错误，通知应用程序检查连接状态
+                    await self._handle_network_error(e)
+                
                 if retry_count < max_retries:
                     retry_count += 1
                     wait_time = 2 ** retry_count  # 指数退避
@@ -1211,3 +1219,22 @@ class Downloader():
         except Exception as e:
             logger.error(f"下载文件失败: {e}")
             return None 
+
+    async def _handle_network_error(self, error):
+        """
+        处理网络相关错误
+        
+        当检测到网络错误时，通知主应用程序立即检查连接状态
+        
+        Args:
+            error: 错误对象
+        """
+        logger.error(f"检测到网络错误: {type(error).__name__}: {error}")
+        
+        # 如果有应用程序引用，通知应用程序立即检查连接状态
+        if self.app and hasattr(self.app, 'check_connection_status_now'):
+            try:
+                logger.info("正在触发立即检查连接状态")
+                asyncio.create_task(self.app.check_connection_status_now())
+            except Exception as e:
+                logger.error(f"触发连接状态检查失败: {e}") 

@@ -47,6 +47,10 @@ class ClientManager(QObject):
         self.is_authorized = False
         self.connection_active = False
         
+        # 添加错误追踪列表，记录最近的10个错误
+        self.recent_errors = []
+        self.max_error_history = 10
+        
         # 从配置管理器加载API凭据
         logger.info("从配置管理器加载API凭据")
         # 获取UI配置并转换为字典
@@ -87,6 +91,23 @@ class ClientManager(QObject):
         self.proxy_settings = get_proxy_settings_from_config(self.config)
         logger.debug(f"代理设置: {self.proxy_settings}")
     
+    def _record_error(self, error):
+        """
+        记录错误到最近错误列表
+        
+        Args:
+            error: 错误对象
+        """
+        # 将新错误添加到列表开头
+        self.recent_errors.insert(0, error)
+        
+        # 如果列表超过最大长度，移除最旧的错误
+        if len(self.recent_errors) > self.max_error_history:
+            self.recent_errors.pop()
+        
+        # 记录到日志
+        logger.debug(f"错误已记录到历史: {error}")
+    
     async def create_client(self):
         """
         创建Pyrogram客户端实例
@@ -100,9 +121,16 @@ class ClientManager(QObject):
         # 创建工作目录
         os.makedirs("sessions", exist_ok=True)
         
-        # 获取代理设置
+        # 获取最新的代理设置
+        if not hasattr(self, 'proxy_settings') or self.proxy_settings is None:
+            # 如果没有代理设置或需要刷新，重新加载配置
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            self.proxy_settings = get_proxy_settings_from_config(self.config)
+        
+        # 设置代理参数
         proxy_args = {}
-        if hasattr(self, 'proxy_settings') and self.proxy_settings:
+        if self.proxy_settings:
             proxy_args.update(self.proxy_settings)
             if 'proxy' in proxy_args and 'hostname' in proxy_args['proxy']:
                 proxy_info = f"{proxy_args['proxy'].get('scheme', '')}://{proxy_args['proxy'].get('hostname', '')}:{proxy_args['proxy'].get('port', '')}"
@@ -235,9 +263,27 @@ class ClientManager(QObject):
                     logger.error(f"停止客户端时出错: {e}")
                     # 客户端可能已经断开，继续执行
                 
+                # 释放对客户端的引用
+                old_client = self.client
                 self.client = None
                 self.is_authorized = False
                 self.connection_active = False
+                
+                # 额外步骤：尝试关闭会话数据库连接
+                try:
+                    if hasattr(old_client, 'storage') and hasattr(old_client.storage, 'conn'):
+                        if old_client.storage.conn:
+                            old_client.storage.conn.close()
+                            logger.info("会话数据库连接已关闭")
+                            
+                    # 显式设置为None以帮助垃圾回收
+                    old_client = None
+                    # 强制垃圾回收
+                    import gc
+                    gc.collect()
+                except Exception as db_error:
+                    logger.warning(f"关闭会话数据库连接时出错: {db_error}")
+                
                 logger.info("客户端连接状态已重置")
                 
                 # 发出信号
@@ -270,8 +316,101 @@ class ClientManager(QObject):
         Returns:
             Client: 重启后的客户端实例
         """
+        logger.info("开始重启客户端...")
+        
+        # 先发送未连接状态信号，确保UI立即更新
+        self.connection_active = False
+        self.connection_status_changed.emit(False, None)
+        
+        # 停止当前客户端
         await self.stop_client()
-        return await self.start_client()
+        
+        # 重新加载配置，以获取最新的代理设置
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.proxy_settings = get_proxy_settings_from_config(self.config)
+        
+        # 获取代理信息用于日志
+        if self.proxy_settings and 'proxy' in self.proxy_settings and 'hostname' in self.proxy_settings['proxy']:
+            proxy_info = f"{self.proxy_settings['proxy'].get('scheme', '')}://{self.proxy_settings['proxy'].get('hostname', '')}:{self.proxy_settings['proxy'].get('port', '')}"
+            logger.info(f"重启客户端使用代理: {proxy_info}")
+        
+        try:
+            # 启动新的客户端
+            client = await self.start_client()
+            return client
+        except Exception as e:
+            # 检查是否是数据库锁定错误
+            if "database is locked" in str(e).lower():
+                logger.error(f"重启客户端失败，数据库被锁定: {e}")
+                
+                # 尝试修复数据库锁定问题
+                if await self._fix_locked_session():
+                    # 再次尝试启动客户端
+                    logger.info("会话数据库已重置，重新尝试启动客户端...")
+                    try:
+                        client = await self.start_client()
+                        return client
+                    except Exception as retry_error:
+                        logger.error(f"修复数据库后重启客户端仍然失败: {retry_error}")
+            
+            # 如果启动失败，确保发送未连接状态信号
+            self.connection_active = False
+            self.connection_status_changed.emit(False, None)
+            logger.error(f"重启客户端失败: {e}")
+            raise
+    
+    async def _fix_locked_session(self):
+        """
+        尝试修复被锁定的会话数据库
+        
+        Returns:
+            bool: 是否成功修复
+        """
+        import os
+        import shutil
+        import time
+        
+        session_path = f"sessions/{self.session_name}.session"
+        if not os.path.exists(session_path):
+            logger.warning(f"会话文件不存在: {session_path}")
+            return False
+        
+        try:
+            # 创建备份目录
+            backup_dir = "sessions/backups"
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # 创建带时间戳的备份文件名
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{backup_dir}/{self.session_name}_{timestamp}.session.bak"
+            
+            # 备份当前会话文件
+            shutil.copy2(session_path, backup_path)
+            logger.info(f"已备份会话文件: {backup_path}")
+            
+            # 删除当前会话文件
+            os.remove(session_path)
+            logger.info(f"已删除被锁定的会话文件: {session_path}")
+            
+            # 可能的-wal和-shm文件也需要删除
+            for ext in ['-wal', '-shm']:
+                wal_path = f"{session_path}{ext}"
+                if os.path.exists(wal_path):
+                    os.remove(wal_path)
+                    logger.info(f"已删除会话相关文件: {wal_path}")
+            
+            # 强制执行垃圾回收
+            import gc
+            gc.collect()
+            
+            # 暂停一下，给系统时间释放文件锁
+            await asyncio.sleep(1)
+            
+            return True
+        except Exception as e:
+            logger.error(f"修复会话数据库时出错: {e}")
+            return False
     
     async def send_code(self, phone_number: str = None):
         """
@@ -405,8 +544,14 @@ class ClientManager(QObject):
         
         # 尝试发送一个简单的API请求来检查连接状态
         try:
-            # 使用get_me()方法测试连接
-            me = await self.client.get_me()
+            # 使用get_me()方法测试连接，但添加超时限制避免阻塞
+            # 使用asyncio.wait_for为get_me操作添加3秒超时
+            try:
+                me = await asyncio.wait_for(self.client.get_me(), timeout=3.0)
+            except asyncio.TimeoutError:
+                # 如果超时，视为连接已断开
+                raise ConnectionError("连接检查超时，可能是代理问题或网络不畅")
+            
             # 连接正常
             if not self.connection_active:
                 # 只有状态变化时才发出信号
@@ -415,11 +560,107 @@ class ClientManager(QObject):
                 logger.info("检测到客户端已连接")
             return True
         except Exception as e:
+            # 记录错误到历史
+            self._record_error(e)
+            
             # 连接错误，记录日志
+            error_name = type(e).__name__
+            error_detail = str(e)
+            
+            # 检查是否是数据库锁定错误
+            is_db_locked = "database is locked" in str(e).lower()
+            
+            # 检查是否是代理连接问题
+            is_proxy_error = any(keyword in str(e).lower() for keyword in ['proxy', 'sock', 'connect', 'network', 'timeout', '拒绝', 'refuse', 'reset', 'error'])
+            
             if self.connection_active:
-                # 只有状态变化时才记录错误并发出信号
-                logger.error(f"Telegram客户端连接检查失败: {e}")
+                # 记录所有错误类型，包括网络错误、连接错误、API错误等
+                if is_db_locked:
+                    logger.error(f"检测到会话数据库锁定: {error_name}: {error_detail}")
+                elif is_proxy_error:
+                    logger.error(f"检测到代理连接问题: {error_name}: {error_detail}")
+                else:
+                    logger.error(f"Telegram客户端连接检查失败: {error_name}: {error_detail}")
+                
+                # 发出断开连接信号
                 self.connection_active = False
                 self.connection_status_changed.emit(False, None)
                 logger.info("检测到客户端已断开连接")
+                
+                # 检查是否需要自动重连
+                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                    # 尝试自动重连
+                    logger.info("尝试自动重新连接客户端...")
+                    try:
+                        # 如果是数据库锁定问题，先尝试修复
+                        if is_db_locked:
+                            if await self._fix_locked_session():
+                                logger.info("会话数据库已重置，将重新启动客户端")
+                        
+                        # 如果是代理错误，先刷新一下代理配置
+                        elif is_proxy_error:
+                            # 重新从配置中获取代理设置
+                            ui_config = self.ui_config_manager.get_ui_config()
+                            self.config = convert_ui_config_to_dict(ui_config)
+                            self.proxy_settings = get_proxy_settings_from_config(self.config)
+                            logger.info("已更新代理配置设置")
+                        
+                        # 重新启动客户端
+                        await self.restart_client()
+                        logger.info("客户端自动重连成功")
+                    except Exception as restart_error:
+                        # 记录重启错误
+                        self._record_error(restart_error)
+                        
+                        if "database is locked" in str(restart_error).lower():
+                            logger.error(f"客户端自动重连失败 (数据库锁定): {restart_error}")
+                            # 如果是会话数据库锁定，我们可以尝试退出此次重连，等待下一次检查时重试
+                            # 这时也可以通知用户手动重启应用
+                        else:
+                            logger.error(f"客户端自动重连失败: {restart_error}")
+            elif not self.connection_active:
+                # 如果已经是断开状态，定期尝试重连
+                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                    # 检查最后一次重连尝试时间，避免频繁重试
+                    current_time = asyncio.get_event_loop().time()
+                    last_reconnect_time = getattr(self, '_last_reconnect_attempt', 0)
+                    
+                    # 如果距离上次重连尝试超过30秒，再次尝试
+                    if current_time - last_reconnect_time > 30:
+                        logger.info("客户端仍处于断开状态，尝试重新连接...")
+                        try:
+                            # 如果是数据库锁定问题，尝试修复
+                            if is_db_locked and not getattr(self, '_db_fix_attempted', False):
+                                # 标记已尝试修复，避免反复修复
+                                self._db_fix_attempted = True
+                                if await self._fix_locked_session():
+                                    logger.info("会话数据库已重置，将重新启动客户端")
+                            
+                            # 重新从配置中获取代理设置
+                            ui_config = self.ui_config_manager.get_ui_config()
+                            self.config = convert_ui_config_to_dict(ui_config)
+                            self.proxy_settings = get_proxy_settings_from_config(self.config)
+                            
+                            # 记录重连尝试时间
+                            self._last_reconnect_attempt = current_time
+                            
+                            # 重新启动客户端
+                            await self.restart_client()
+                            # 重置修复尝试标记
+                            self._db_fix_attempted = False
+                            logger.info("客户端成功重新连接")
+                        except Exception as reconnect_error:
+                            # 记录重连错误
+                            self._record_error(reconnect_error)
+                            
+                            if "database is locked" in str(reconnect_error).lower():
+                                logger.error(f"客户端重新连接失败 (数据库锁定): {reconnect_error}")
+                            else:
+                                logger.error(f"客户端重新连接失败: {reconnect_error}")
+                    else:
+                        # 还不到重试时间，只记录调试信息
+                        logger.debug(f"客户端仍处于断开状态，等待重连时间: {e}")
+                else:
+                    # 没有启用自动重连，只记录调试信息
+                    logger.debug(f"客户端仍处于断开状态，且自动重连已禁用: {e}")
             return False 

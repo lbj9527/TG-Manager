@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QSettings, QTimer
+from PySide6.QtCore import QObject, Signal, QSettings, QTimer, QMetaObject
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from src.utils.logger import get_logger
@@ -303,7 +303,8 @@ class TGManagerApp(QObject):
                     self.client, 
                     self.ui_config_manager, 
                     self.channel_resolver, 
-                    self.history_manager
+                    self.history_manager,
+                    app=self  # 传递应用程序实例
                 )
                 self.downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
             else:
@@ -312,7 +313,8 @@ class TGManagerApp(QObject):
                     self.client, 
                     self.ui_config_manager, 
                     self.channel_resolver, 
-                    self.history_manager
+                    self.history_manager,
+                    app=self  # 传递应用程序实例
                 )
             
             # 初始化上传模块
@@ -320,7 +322,8 @@ class TGManagerApp(QObject):
                 self.client, 
                 self.ui_config_manager, 
                 self.channel_resolver, 
-                self.history_manager
+                self.history_manager,
+                app=self  # 传递应用程序实例
             )
             logger.info("上传模块初始化成功")
             
@@ -331,7 +334,8 @@ class TGManagerApp(QObject):
                 self.channel_resolver, 
                 self.history_manager, 
                 self.downloader, 
-                self.uploader
+                self.uploader,
+                app=self  # 传递应用程序实例
             )
             logger.info("转发模块初始化成功")
             
@@ -339,7 +343,9 @@ class TGManagerApp(QObject):
             self.monitor = Monitor(
                 self.client, 
                 self.ui_config_manager, 
-                self.channel_resolver
+                self.channel_resolver,
+                self.history_manager,  # 添加history_manager参数
+                app=self  # 传递应用程序实例
             )
             logger.info("监听模块初始化成功")
             
@@ -966,10 +972,19 @@ class TGManagerApp(QObject):
             logger.info(f"客户端已连接：{user_info}")
             # 更新主窗口状态栏
             self.main_window._update_client_status(True, user_info)
+            
+            # 确保信息被实时处理
+            QApplication.processEvents()
+            
+            # 重置数据库锁定错误计数器
+            self._db_lock_error_count = 0
         else:
             logger.info("客户端已断开连接")
             # 更新主窗口状态栏为断开状态
             self.main_window._update_client_status(False)
+            
+            # 确保信息被实时处理
+            QApplication.processEvents()
 
     async def _check_network_connection_periodically(self):
         """定期检查网络连接状态"""
@@ -981,16 +996,84 @@ class TGManagerApp(QObject):
                     break
                 
                 # 执行连接检查
-                await self.client_manager.check_connection_status()
+                connection_status = await self.client_manager.check_connection_status()
                 
-                # 每30秒检查一次
-                await safe_sleep(30)
+                # 根据连接状态调整检查频率
+                if connection_status:
+                    # 连接正常时，每5秒检查一次
+                    await safe_sleep(5)
+                else:
+                    # 连接异常时，每2秒检查一次，更快发现代理恢复
+                    await safe_sleep(2)
+                
             except asyncio.CancelledError:
                 logger.info("网络连接检查任务已取消")
                 break
             except Exception as e:
                 logger.error(f"网络连接检查出错: {e}")
-                await safe_sleep(30)  # 出错后等待30秒再继续
+                # 出错后减少等待时间，更快重试
+                await safe_sleep(2)
+                
+    async def check_connection_status_now(self):
+        """立即检查网络连接状态，用于响应网络错误事件"""
+        try:
+            if not hasattr(self, 'client_manager') or not self.client_manager:
+                logger.debug("客户端管理器不存在，无法检查连接状态")
+                return False
+            
+            # 立即执行连接检查
+            connection_status = await self.client_manager.check_connection_status()
+            
+            # 检查是否存在数据库锁定的持续错误
+            if not connection_status:
+                # 初始化计数器（如果不存在）
+                if not hasattr(self, '_db_lock_error_count'):
+                    self._db_lock_error_count = 0
+                    
+                # 检查最近的错误日志
+                recent_errors = getattr(self.client_manager, 'recent_errors', [])
+                has_db_lock_error = any("database is locked" in str(err).lower() for err in recent_errors)
+                
+                if has_db_lock_error:
+                    self._db_lock_error_count += 1
+                    
+                    # 连续3次以上数据库锁定错误，显示提示
+                    if self._db_lock_error_count >= 3 and hasattr(self, 'main_window'):
+                        from PySide6.QtWidgets import QMessageBox
+                        
+                        # 只在主线程中显示对话框
+                        def show_db_lock_warning():
+                            if not hasattr(self, '_db_lock_warning_shown'):
+                                self._db_lock_warning_shown = True
+                                QMessageBox.warning(
+                                    self.main_window,
+                                    "数据库锁定错误",
+                                    "检测到会话数据库锁定问题，自动修复失败。\n\n"
+                                    "建议操作：\n"
+                                    "1. 保存您的工作\n"
+                                    "2. 关闭TG-Manager\n"
+                                    "3. 确保没有其他TG-Manager实例运行\n"
+                                    "4. 重新启动应用\n\n"
+                                    "如果问题持续存在，您可能需要手动删除sessions目录中的会话文件。"
+                                )
+                                # 重置标志，5分钟后允许再次显示
+                                def reset_warning_flag():
+                                    self._db_lock_warning_shown = False
+                                # 5分钟后允许再次显示
+                                QTimer.singleShot(300000, reset_warning_flag)
+                                
+                        # 检查是否已显示警告
+                        if not hasattr(self, '_db_lock_warning_shown') or not self._db_lock_warning_shown:
+                            # 使用Qt的线程安全方式调用
+                            QMetaObject.invokeMethod(self.main_window, show_db_lock_warning, Qt.ConnectionType.QueuedConnection)
+                else:
+                    # 如果不是数据库锁定错误，重置计数器
+                    self._db_lock_error_count = 0
+                
+            return connection_status
+        except Exception as e:
+            logger.error(f"立即检查连接状态出错: {e}")
+            return False
 
 
 def main():

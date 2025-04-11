@@ -45,7 +45,7 @@ class Forwarder():
     转发模块，负责将消息从源频道转发到目标频道
     """
     
-    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, downloader: Downloader, uploader: Uploader):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, downloader: Downloader, uploader: Uploader, app=None):
         """
         初始化转发模块
         
@@ -56,6 +56,7 @@ class Forwarder():
             history_manager: 历史记录管理器实例
             downloader: 下载模块实例
             uploader: 上传模块实例
+            app: 应用程序实例，用于网络错误时立即检查连接状态
         """
         # 初始化事件发射器
         super().__init__()
@@ -66,7 +67,7 @@ class Forwarder():
         self.history_manager = history_manager
         self.downloader = downloader
         self.uploader = uploader
-        
+        self.app = app  # 保存应用程序实例引用
         
         # 获取UI配置并转换为字典
         ui_config = self.ui_config_manager.get_ui_config()
@@ -1870,3 +1871,22 @@ class Forwarder():
             safe_str = hashlib.md5(path_str.encode()).hexdigest()
             
         return safe_str
+
+    async def _handle_network_error(self, error):
+        """
+        处理网络相关错误
+        
+        当检测到网络错误时，通知主应用程序立即检查连接状态
+        
+        Args:
+            error: 错误对象
+        """
+        _logger.error(f"检测到网络错误: {type(error).__name__}: {error}")
+        
+        # 如果有应用程序引用，通知应用程序立即检查连接状态
+        if self.app and hasattr(self.app, 'check_connection_status_now'):
+            try:
+                _logger.info("正在触发立即检查连接状态")
+                asyncio.create_task(self.app.check_connection_status_now())
+            except Exception as e:
+                _logger.error(f"触发连接状态检查失败: {e}")
