@@ -45,6 +45,7 @@ class ClientManager(QObject):
         self.client = None
         self.me = None  # 用户信息
         self.is_authorized = False
+        self.connection_active = False
         
         # 从配置管理器加载API凭据
         logger.info("从配置管理器加载API凭据")
@@ -192,34 +193,52 @@ class ClientManager(QObject):
             try:
                 logger.info("正在停止客户端...")
                 
-                # 尝试停止客户端的所有相关任务
-                for task in asyncio.all_tasks():
-                    task_name = task.get_name()
-                    # 寻找与pyrogram相关的任务
-                    if 'pyrogram' in task_name.lower() or 'client' in task_name.lower():
-                        if not task.done() and not task.cancelled():
+                # 安全获取当前任务
+                try:
+                    # 获取当前任务
+                    current_task = asyncio.current_task()
+                    
+                    # 安全地获取所有任务
+                    try:
+                        all_tasks = asyncio.all_tasks()
+                    except RuntimeError:
+                        # 如果无法获取所有任务，使用空列表
+                        logger.warning("无法获取所有任务，跳过任务取消")
+                        all_tasks = []
+                    
+                    # 尝试停止客户端的所有相关任务
+                    for task in all_tasks:
+                        if task is current_task:
+                            continue
+                            
+                        task_name = task.get_name()
+                        # 寻找与pyrogram相关的任务
+                        if ('pyrogram' in task_name.lower() or 'client' in task_name.lower()) and not task.done() and not task.cancelled():
                             logger.info(f"尝试取消未完成的客户端任务: {task_name}")
                             task.cancel()
+                except RuntimeError as e:
+                    logger.warning(f"获取任务时遇到事件循环错误: {e}")
+                except Exception as e:
+                    logger.warning(f"取消客户端任务时出错: {e}")
                 
-                # 停止客户端
-                await self.client.stop()
-                
-                # 再次检查并等待所有相关任务完成
-                pending_tasks = [t for t in asyncio.all_tasks() 
-                                if ('pyrogram' in t.get_name().lower() or 'client' in t.get_name().lower()) 
-                                and not t.done() and not t.cancelled()]
-                
-                if pending_tasks:
-                    logger.info(f"等待 {len(pending_tasks)} 个客户端相关任务完成...")
-                    try:
-                        # 设置超时，避免无限等待
-                        await asyncio.wait(pending_tasks, timeout=5)
-                    except Exception as e:
-                        logger.warning(f"等待客户端任务完成时出错: {e}")
+                # 直接调用客户端的disconnect方法，而不使用stop
+                # 这避免了客户端内部的asyncio.gather调用
+                try:
+                    if hasattr(self.client, 'disconnect'):
+                        await self.client.disconnect()
+                        logger.info("客户端已断开连接")
+                    else:
+                        # 如果没有disconnect方法，尝试使用stop
+                        await self.client.stop()
+                        logger.info("客户端已停止")
+                except Exception as e:
+                    logger.error(f"停止客户端时出错: {e}")
+                    # 客户端可能已经断开，继续执行
                 
                 self.client = None
                 self.is_authorized = False
-                logger.info("客户端已完全停止")
+                self.connection_active = False
+                logger.info("客户端连接状态已重置")
                 
                 # 发出信号
                 self.connection_status_changed.emit(False, None)
@@ -230,9 +249,11 @@ class ClientManager(QObject):
                 # 尝试强制停止客户端
                 try:
                     if self.client:
-                        self.client.disconnect()
+                        if hasattr(self.client, 'disconnect'):
+                            await self.client.disconnect()
                         self.client = None
                         self.is_authorized = False
+                        self.connection_active = False
                         logger.info("客户端已强制断开连接")
                         
                         # 发出信号
@@ -364,4 +385,41 @@ class ClientManager(QObject):
         except Exception as e:
             logger.error(f"检查授权状态时出错: {e}")
             self.is_authorized = False
+            return False
+    
+    async def check_connection_status(self) -> bool:
+        """
+        检查客户端连接状态
+        
+        Returns:
+            bool: 是否连接正常
+        """
+        # 如果客户端为None，肯定是未连接状态
+        if not self.client:
+            if self.connection_active:
+                self.connection_active = False
+                # 如果之前是连接状态，发出断开连接信号
+                self.connection_status_changed.emit(False, None)
+                logger.info("检测到客户端已断开连接")
+            return False
+        
+        # 尝试发送一个简单的API请求来检查连接状态
+        try:
+            # 使用get_me()方法测试连接
+            me = await self.client.get_me()
+            # 连接正常
+            if not self.connection_active:
+                # 只有状态变化时才发出信号
+                self.connection_active = True
+                self.connection_status_changed.emit(True, me)
+                logger.info("检测到客户端已连接")
+            return True
+        except Exception as e:
+            # 连接错误，记录日志
+            if self.connection_active:
+                # 只有状态变化时才记录错误并发出信号
+                logger.error(f"Telegram客户端连接检查失败: {e}")
+                self.connection_active = False
+                self.connection_status_changed.emit(False, None)
+                logger.info("检测到客户端已断开连接")
             return False 

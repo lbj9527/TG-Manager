@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QSettings
+from PySide6.QtCore import QObject, Signal, QSettings, QTimer
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from src.utils.logger import get_logger
@@ -220,8 +220,8 @@ class TGManagerApp(QObject):
             sys.exit(1)
         
         # 设置退出处理
-        self.app.aboutToQuit.connect(self.cleanup)
-        signal.signal(signal.SIGINT, lambda sig, frame: self.cleanup())
+        self.app.aboutToQuit.connect(self._cleanup_sync)
+        signal.signal(signal.SIGINT, lambda sig, frame: self._cleanup_sync())
         
         # 连接主题变更信号
         self.theme_changed.connect(self._on_theme_changed)
@@ -268,6 +268,10 @@ class TGManagerApp(QObject):
             try:
                 self.client = await self.client_manager.start_client()
                 logger.info("Telegram客户端启动成功")
+                
+                # 启动定期检查网络连接状态的任务
+                self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
+                logger.debug("已启动网络连接状态检查定时任务")
                 
                 # 更新主窗口客户端状态
                 if hasattr(self, 'main_window') and self.client_manager.me:
@@ -615,75 +619,129 @@ class TGManagerApp(QObject):
         return None
     
     def run(self):
-        """运行应用程序 
+        """运行应用程序"""
+        logger.info("开始运行应用程序")
         
-        注意: 新版本应使用async_run方法，此方法仅作为兼容保留
-        """
-        logger.warning("调用了传统的run方法，应使用async_run方法")
-        try:
-            # 导入QtAsyncio
-            import PySide6.QtAsyncio as QtAsyncio
-            # 使用QtAsyncio运行async_run方法
-            return QtAsyncio.run(self.async_run(), handle_sigint=True)
-        except Exception as e:
-            logger.error(f"运行应用程序时出错: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return 1
+        # 设置信号处理
+        if hasattr(signal, 'SIGINT'):
+            signal.signal(signal.SIGINT, lambda sig, frame: self._cleanup_sync())
         
-    def cleanup(self):
-        """清理资源"""
-        logger.info("正在关闭应用程序...")
+        # 使用Qt的原生事件循环
+        return self.app.exec()
+    
+    def _cleanup_sync(self):
+        """同步清理入口，用于连接Qt信号"""
+        # 记录正在关闭的状态，避免重复调用
+        if hasattr(self, '_is_closing') and self._is_closing:
+            logger.debug("已经在关闭过程中，忽略重复调用")
+            return
+            
+        self._is_closing = True
+        logger.info("开始同步清理过程")
         
-        # 发送应用程序关闭信号
+        # 发出应用程序关闭信号
         self.app_closing.emit()
         
-        # 确保关闭所有异步任务和事件循环
-        try:
-            import asyncio
+        # 如果主窗口已创建，发送关闭信号
+        if hasattr(self, 'main_window'):
+            # 停止资源监控计时器
+            if hasattr(self.main_window, "resource_timer") and self.main_window.resource_timer:
+                self.main_window.resource_timer.stop()
+                logger.debug("资源监控计时器已停止")
             
-            # 避免"Event loop is already running"错误
-            # 只在没有正在运行的事件循环时尝试取消任务
+            # 隐藏系统托盘图标
+            if hasattr(self.main_window, 'tray_icon') and self.main_window.tray_icon:
+                self.main_window.tray_icon.hide()
+                logger.debug("系统托盘图标已隐藏")
+        
+        # 取消所有定时器和任务
+        if hasattr(self, 'task_manager'):
+            logger.debug("取消网络连接检查任务")
+            self.task_manager.cancel_task("network_connection_check")
+            # 取消所有其他任务
+            self.task_manager.cancel_all_tasks()
+            logger.debug("所有任务已取消")
+        
+        # 创建异步清理任务
+        loop = get_event_loop()
+        if loop and loop.is_running():
             try:
-                # 获取事件循环但不直接操作它
-                loop = asyncio.get_event_loop()
-                
-                # 检查事件循环是否在运行
-                if loop.is_running():
-                    logger.info("事件循环正在运行，跳过异步任务取消")
-                else:
-                    logger.info("正在关闭异步任务...")
-                    
-                    # 获取所有正在运行的任务
-                    tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                    
-                    if tasks:
-                        logger.info(f"取消 {len(tasks)} 个正在运行的异步任务")
-                        
-                        # 取消所有任务
-                        for task in tasks:
-                            task.cancel()
-                        
-                        # 设置超时，防止无限等待
-                        try:
-                            loop.run_until_complete(asyncio.wait(tasks, timeout=2.0))
-                            logger.info("所有异步任务已取消或完成")
-                        except Exception as e:
-                            logger.warning(f"取消任务时发生异常: {e}")
-            except RuntimeError as e:
-                logger.info(f"跳过异步任务取消: {e}")
+                # 使用Qt计时器延迟执行异步清理，避免事件循环冲突
+                from PySide6.QtCore import QTimer
+                timer = QTimer()
+                timer.setSingleShot(True)
+                timer.timeout.connect(lambda: self._execute_async_cleanup(loop))
+                timer.start(10)  # 10毫秒后执行异步清理
+                logger.debug("已安排延迟执行异步清理")
             except Exception as e:
-                logger.error(f"处理事件循环时出错: {e}")
+                logger.error(f"创建清理任务时出错: {e}")
+                # 如果创建任务失败，尝试直接退出
+                self.app.quit()
+        else:
+            # 如果事件循环不存在或未运行，直接退出应用
+            logger.warning("事件循环不可用，直接退出应用")
+            self.app.quit()
+    
+    def _execute_async_cleanup(self, loop):
+        """执行异步清理，作为Qt计时器的回调函数"""
+        try:
+            # 安全创建异步清理任务
+            future = asyncio.run_coroutine_threadsafe(self._async_cleanup(), loop)
+            logger.debug("已创建异步清理任务")
+            
+            # 设置回调函数处理完成
+            future.add_done_callback(lambda f: self._on_cleanup_done(f))
+        except Exception as e:
+            logger.error(f"执行异步清理时出错: {e}")
+            # 出错时直接退出
+            self.app.quit()
+    
+    def _on_cleanup_done(self, future):
+        """异步清理完成后的回调"""
+        try:
+            # 尝试获取结果，检查是否有异常
+            future.result()
+            logger.info("异步清理任务已完成")
+        except Exception as e:
+            logger.error(f"异步清理任务出错: {e}")
+        finally:
+            # 无论如何，确保应用退出
+            self.app.quit()
+            logger.info("应用程序已请求退出")
+    
+    async def _async_cleanup(self):
+        """真正的异步清理操作"""
+        try:
+            # 停止Telegram客户端
+            if hasattr(self, 'client_manager') and self.client_manager:
+                logger.debug("停止Telegram客户端")
+                try:
+                    await self.client_manager.stop_client()
+                    logger.debug("Telegram客户端已停止")
+                except Exception as e:
+                    logger.error(f"停止Telegram客户端时出错: {e}")
+            
+            # 在事件循环中安全地获取和取消任务
+            for task in [t for t in asyncio.all_tasks() 
+                      if t is not asyncio.current_task() and not t.done()]:
+                logger.debug(f"取消任务: {task.get_name()}")
+                task.cancel()
             
             logger.info("异步资源清理完成")
+            return True
         except Exception as e:
-            logger.error(f"清理异步资源时出错: {e}")
+            logger.error(f"异步清理过程出错: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return False
+    
+    async def cleanup(self):
+        """原有的异步清理方法，保持向后兼容
         
-        # 强制退出应用程序
-        import sys
-        sys.exit(0)
+        注意：此方法已被新的清理流程替代，但保留以维持兼容性
+        """
+        logger.warning("使用了已弃用的cleanup方法，应该使用_cleanup_sync")
+        return await self._async_cleanup()
 
     def _on_config_saved(self, updated_config=None):
         """处理配置保存信号"""
@@ -912,6 +970,27 @@ class TGManagerApp(QObject):
             logger.info("客户端已断开连接")
             # 更新主窗口状态栏为断开状态
             self.main_window._update_client_status(False)
+
+    async def _check_network_connection_periodically(self):
+        """定期检查网络连接状态"""
+        while True:
+            try:
+                # 已经关闭应用则停止检查
+                if not hasattr(self, 'client_manager') or not self.client_manager:
+                    logger.debug("客户端管理器不存在，停止网络连接检查")
+                    break
+                
+                # 执行连接检查
+                await self.client_manager.check_connection_status()
+                
+                # 每30秒检查一次
+                await safe_sleep(30)
+            except asyncio.CancelledError:
+                logger.info("网络连接检查任务已取消")
+                break
+            except Exception as e:
+                logger.error(f"网络连接检查出错: {e}")
+                await safe_sleep(30)  # 出错后等待30秒再继续
 
 
 def main():
