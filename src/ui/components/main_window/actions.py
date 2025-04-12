@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QDialogButtonBox, QLabel,
     QFileDialog
 )
-from PySide6.QtCore import QRegularExpression, QTimer
+from PySide6.QtCore import QRegularExpression, QTimer, Signal, Qt
 from PySide6.QtGui import QRegularExpressionValidator, QAction
 
 class ActionsMixin:
@@ -245,19 +245,39 @@ class ActionsMixin:
                 
                 async def login_process():
                     try:
+                        # 导入需要的模块，确保在异步函数中可以使用
+                        import asyncio
+                        
                         # 发送验证码
                         await self.app.client_manager.send_code(phone)
                         
                         # 在主线程中显示验证码输入对话框
                         code_result = [None]  # 使用列表存储结果，以便在嵌套函数中修改
                         
-                        def show_code_dialog():
-                            code_result[0] = self._show_verification_code_dialog()
+                        # 改为使用Qt信号在主线程显示对话框，更可靠
+                        from PySide6.QtCore import Signal, QTimer
                         
-                        # 使用Qt的跨线程调用机制，确保对话框在主线程中显示
-                        # 修改为使用方法名称字符串，而不是函数对象
-                        setattr(self, "_temp_show_code_dialog", show_code_dialog)
-                        QMetaObject.invokeMethod(self, "_temp_show_code_dialog", Qt.ConnectionType.BlockingQueuedConnection)
+                        # 使用计时器在主线程中执行代码获取
+                        def show_dialog_in_main_thread():
+                            try:
+                                result = self._show_verification_code_dialog()
+                                code_result[0] = result
+                                logger.debug(f"验证码输入结果: {result}")
+                            except Exception as dialog_error:
+                                logger.error(f"显示验证码对话框时出错: {dialog_error}")
+                        
+                        # 使用单次计时器在主线程中执行
+                        timer = QTimer()
+                        timer.setSingleShot(True)
+                        timer.timeout.connect(show_dialog_in_main_thread)
+                        timer.start(100)  # 100毫秒后执行
+                        
+                        # 等待用户输入验证码
+                        max_wait_time = 180  # 最多等待3分钟
+                        wait_time = 0
+                        while code_result[0] is None and wait_time < max_wait_time:
+                            await asyncio.sleep(0.5)
+                            wait_time += 0.5
                         
                         code = code_result[0]
                         if not code:
@@ -288,18 +308,14 @@ class ActionsMixin:
                     except Exception as e:
                         logger.error(f"登录过程中出错: {e}")
                         # 在主线程中显示错误消息
-                        def show_error():
-                            QMessageBox.critical(
-                                self,
-                                "登录错误",
-                                f"登录过程中出错: {str(e)}",
-                                QMessageBox.Ok
-                            )
+                        error_msg = str(e)
+                        self.statusBar().showMessage(f"登录错误: {error_msg}", 5000)
                         
-                        # 同样，使用方法名称字符串
-                        setattr(self, "_temp_show_error", show_error)
-                        QMetaObject.invokeMethod(self, "_temp_show_error", Qt.ConnectionType.QueuedConnection)
-                        self.statusBar().showMessage(f"登录错误: {str(e)}", 5000)
+                        # 使用计时器在主线程中显示错误对话框
+                        def show_error_in_main_thread():
+                            self._show_login_error(error_msg)
+                            
+                        QTimer.singleShot(100, show_error_in_main_thread)
                 
                 # 启动登录任务
                 if hasattr(self.app, 'task_manager'):
@@ -337,19 +353,27 @@ class ActionsMixin:
             info_label.setWordWrap(True)
             layout.addWidget(info_label)
             
-            # 创建验证码输入框
+            # 创建验证码输入框 - Telegram现在使用5位或更长的验证码
             code_input = QLineEdit()
             code_input.setPlaceholderText("请输入验证码")
-            code_input.setMaxLength(5)  # 验证码通常为5位数字
+            code_input.setMaxLength(10)  # 允许更长的验证码
             
             # 设置输入验证 - 只允许输入数字
             validator = QRegularExpressionValidator(QRegularExpression("\\d+"))
             code_input.setValidator(validator)
             
+            # 设置较大的字体
+            font = code_input.font()
+            font.setPointSize(font.pointSize() + 2)
+            code_input.setFont(font)
+            
+            # 设置焦点
+            code_input.setFocus()
+            
             layout.addWidget(code_input)
             
             # 添加验证码提示
-            hint_label = QLabel("提示: 验证码通常为5位数字，请检查您的Telegram应用或手机短信。")
+            hint_label = QLabel("提示: 验证码通常为5位数字，会发送到您的Telegram应用。\n如果未收到验证码，可能需要检查您绑定的Telegram是否可用。")
             hint_label.setStyleSheet("color: gray; font-size: 10pt;")
             hint_label.setWordWrap(True)
             layout.addWidget(hint_label)
@@ -373,18 +397,47 @@ class ActionsMixin:
             
             code_input.textChanged.connect(on_text_changed)
             
-            # 显示对话框
+            # 为输入框添加回车响应
+            def handle_return_pressed():
+                if ok_button.isEnabled():
+                    code_dialog.accept()
+                    
+            code_input.returnPressed.connect(handle_return_pressed)
+            
+            # 显示对话框并置于最前
+            code_dialog.setWindowFlags(code_dialog.windowFlags() | Qt.WindowStaysOnTopHint)
             result = code_dialog.exec_()
             
             if result == QDialog.Accepted:
-                return code_input.text()
+                entered_code = code_input.text().strip()
+                logger.info(f"用户输入了验证码（长度：{len(entered_code)}）")
+                return entered_code
             else:
+                logger.info("用户取消了验证码输入")
                 return None
                 
         except Exception as e:
             logger.error(f"显示验证码对话框时出错: {e}")
             return None
     
+    def _show_login_error(self, error_msg):
+        """显示登录错误对话框
+        
+        Args:
+            error_msg: 错误信息
+        """
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "登录错误",
+                f"登录过程中出错: {error_msg}",
+                QMessageBox.Ok
+            )
+            logger.debug(f"已显示登录错误对话框: {error_msg}")
+        except Exception as e:
+            logger.error(f"显示登录错误对话框时出错: {e}")
+            
     def _open_settings(self):
         """打开设置界面"""
         logger.debug("尝试打开设置视图")

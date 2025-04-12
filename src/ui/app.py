@@ -989,6 +989,86 @@ class TGManagerApp(QObject):
                 if hasattr(settings_view, 'update_login_button'):
                     settings_view.update_login_button(True, user_info)
             
+            # 首次登录模式且登录成功后，初始化剩余的核心组件
+            if self.is_first_login:
+                logger.info("首次登录成功，开始初始化剩余核心组件")
+                
+                # 更新client引用
+                if hasattr(self.client_manager, 'client'):
+                    self.client = self.client_manager.client
+                else:
+                    logger.warning("无法获取客户端引用")
+                    return
+                    
+                try:
+                    # 为网络连接健康检查创建后台任务
+                    if hasattr(self, 'task_manager'):
+                        self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
+                        logger.debug("已启动网络连接状态检查定时任务")
+                        
+                    # 更新channel_resolver的client引用
+                    if hasattr(self, 'channel_resolver'):
+                        self.channel_resolver.client = self.client
+                        logger.debug("已更新频道解析器的客户端引用")
+                    else:
+                        # 如果channel_resolver不存在，创建它
+                        from src.utils.channel_resolver import ChannelResolver
+                        self.channel_resolver = ChannelResolver(self.client)
+                        logger.debug("已创建频道解析器")
+                    
+                    # 确保history_manager已初始化
+                    if not hasattr(self, 'history_manager'):
+                        from src.utils.history_manager import HistoryManager
+                        self.history_manager = HistoryManager()
+                        logger.debug("已创建历史管理器")
+                    
+                    # 4. 初始化下载模块
+                    if not hasattr(self, 'downloader'):
+                        from src.modules.downloader import Downloader
+                        self.downloader = Downloader(self.client, self.ui_config_manager, 
+                                                   self.channel_resolver, self.history_manager)
+                        logger.info("已初始化下载模块")
+                    
+                    # 5. 初始化串行下载模块
+                    if not hasattr(self, 'downloader_serial'):
+                        from src.modules.downloader_serial import DownloaderSerial
+                        self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, 
+                                                               self.channel_resolver, self.history_manager)
+                        logger.info("已初始化串行下载模块")
+                    
+                    # 6. 初始化上传模块
+                    if not hasattr(self, 'uploader'):
+                        from src.modules.uploader import Uploader
+                        self.uploader = Uploader(self.client, self.ui_config_manager, 
+                                               self.channel_resolver, self.history_manager, self)
+                        logger.info("已初始化上传模块")
+                    
+                    # 7. 初始化转发模块
+                    if not hasattr(self, 'forwarder'):
+                        from src.modules.forwarder import Forwarder
+                        self.forwarder = Forwarder(self.client, self.ui_config_manager, 
+                                                 self.channel_resolver, self.history_manager, 
+                                                 self.downloader, self.uploader, self)
+                        logger.info("已初始化转发模块")
+                    
+                    # 8. 初始化监听模块
+                    if not hasattr(self, 'monitor'):
+                        from src.modules.monitor import Monitor
+                        self.monitor = Monitor(self.client, self.ui_config_manager, 
+                                             self.channel_resolver, self.history_manager, self)
+                        logger.info("已初始化监听模块")
+                    
+                    # 首次登录模式标志重置
+                    self.is_first_login = False
+                    logger.info("首次登录模式已完成，所有核心组件已初始化")
+                    
+                    # 将功能模块传递给视图组件
+                    self._initialize_views()
+                except Exception as e:
+                    logger.error(f"首次登录后初始化核心组件时出错: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
             # 确保信息被实时处理
             QApplication.processEvents()
             

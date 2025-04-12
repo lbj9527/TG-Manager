@@ -436,7 +436,16 @@ class ClientManager(QObject):
             self.client.phone_number = phone_number
         
         try:
+            # 确保客户端已经启动
+            if not getattr(self.client, 'is_connected', False):
+                logger.info("客户端未启动，先启动客户端")
+                await self.client.connect()
+                logger.info("客户端已连接，准备发送验证码")
+            
             sent_code = await self.client.send_code(self.phone_number)
+            # 保存phone_code_hash用于后续登录
+            self.phone_code_hash = sent_code.phone_code_hash
+            logger.info(f"已获取phone_code_hash: {self.phone_code_hash[:4]}...{self.phone_code_hash[-4:]}")
             return self.phone_number, sent_code.type
         except FloodWait as e:
             logger.warning(f"发送验证码遇到FloodWait，需要等待 {e.x} 秒")
@@ -467,11 +476,39 @@ class ClientManager(QObject):
             await self.create_client()
         
         try:
+            # 确保客户端已经连接
+            if not getattr(self.client, 'is_connected', False):
+                logger.info("登录前确保客户端已连接")
+                await self.client.connect()
+                logger.info("客户端已连接，准备登录")
+            
+            # 检查是否有phone_code_hash
+            if not hasattr(self, 'phone_code_hash') or not self.phone_code_hash:
+                logger.error("登录错误：缺少phone_code_hash，请先发送验证码")
+                raise ValueError("缺少phone_code_hash，请先发送验证码")
+            
             # 尝试用验证码登录
-            signed_in = await self.client.sign_in(self.phone_number, code)
+            logger.info(f"正在使用验证码登录：{self.phone_number}")
+            signed_in = await self.client.sign_in(
+                phone_number=self.phone_number, 
+                phone_code_hash=self.phone_code_hash, 
+                phone_code=code
+            )
+            logger.info("验证码验证成功")
+            
+            # 清除临时存储的phone_code_hash
+            self.phone_code_hash = None
+            
             # 更新用户信息
             self.me = await self.client.get_me()
             self.is_authorized = True
+            
+            # 显示用户信息
+            user_info = f"{self.me.first_name}"
+            if self.me.last_name:
+                user_info += f" {self.me.last_name}"
+            user_info += f" (@{self.me.username})" if self.me.username else ""
+            logger.info(f"登录成功：{user_info}")
             
             # 发出信号
             self.connection_status_changed.emit(True, self.me)
@@ -480,6 +517,7 @@ class ClientManager(QObject):
             
         except SessionPasswordNeeded:
             # 如果启用了两步验证，尝试用密码登录
+            logger.info("检测到需要两步验证密码")
             if password:
                 try:
                     signed_in = await self.client.check_password(password)
