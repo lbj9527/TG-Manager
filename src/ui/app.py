@@ -269,7 +269,13 @@ class TGManagerApp(QObject):
                 self.client = await self.client_manager.start_client()
                 logger.info("Telegram客户端启动成功")
                 
+                # 在客户端成功启动后，设置连接标志
+                # 这样首次检查时不会重复触发状态变更
+                self.client_manager.connection_active = True
+                
                 # 启动定期检查网络连接状态的任务
+                # 增加延迟，避免刚启动就检查
+                await asyncio.sleep(10)  # 10秒后再开始定期检查
                 self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
                 logger.debug("已启动网络连接状态检查定时任务")
                 

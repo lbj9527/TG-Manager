@@ -526,6 +526,78 @@ class ClientManager(QObject):
             self.is_authorized = False
             return False
     
+    async def reconnect_if_needed(self):
+        """
+        如果需要重连且冷却期已过，执行重连操作
+        
+        Returns:
+            bool: 重连是否成功
+        """
+        # 检查是否可以尝试重连
+        current_time = asyncio.get_event_loop().time()
+        next_reconnect_time = getattr(self, '_next_reconnect_time', 0)
+        
+        # 如果还在冷却期内，直接返回
+        if current_time < next_reconnect_time:
+            cooldown_left = int(next_reconnect_time - current_time)
+            logger.debug(f"重连冷却中，剩余 {cooldown_left} 秒")
+            return False
+        
+        # 正在重连中，避免重复重连
+        if getattr(self, '_reconnecting', False):
+            logger.debug("重连已在进行中，跳过此次重连")
+            return False
+        
+        # 标记正在重连
+        self._reconnecting = True
+        
+        try:
+            logger.info("开始执行自动重连...")
+            
+            # 如果是数据库锁定问题，尝试修复
+            is_db_locked = any("database is locked" in str(err).lower() for err in self.recent_errors)
+            if is_db_locked and not getattr(self, '_db_fix_attempted', False):
+                # 标记已尝试修复，避免反复修复
+                self._db_fix_attempted = True
+                if await self._fix_locked_session():
+                    logger.info("会话数据库已重置，将重新启动客户端")
+            
+            # 重新从配置中获取代理设置
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            self.proxy_settings = get_proxy_settings_from_config(self.config)
+            
+            # 重新启动客户端
+            await self.restart_client()
+            
+            # 重置标记
+            self._db_fix_attempted = False
+            self._reconnecting = False
+            
+            # 重新计算下次重连时间（如果再次断开）
+            # 重置重连尝试次数
+            self._reconnect_attempts = 0
+            
+            logger.info("客户端自动重连成功")
+            return True
+        except Exception as reconnect_error:
+            # 记录重连错误
+            self._record_error(reconnect_error)
+            
+            # 更新下次重连时间
+            cooldown = min(300, 30 * (2 ** (getattr(self, '_reconnect_attempts', 1))))
+            self._next_reconnect_time = asyncio.get_event_loop().time() + cooldown
+            
+            # 重置标记
+            self._reconnecting = False
+            
+            if "database is locked" in str(reconnect_error).lower():
+                logger.error(f"客户端自动重连失败 (数据库锁定)，将在 {cooldown} 秒后重试: {reconnect_error}")
+            else:
+                logger.error(f"客户端自动重连失败，将在 {cooldown} 秒后重试: {reconnect_error}")
+            
+            return False
+            
     async def check_connection_status(self) -> bool:
         """
         检查客户端连接状态
@@ -540,6 +612,9 @@ class ClientManager(QObject):
                 # 如果之前是连接状态，发出断开连接信号
                 self.connection_status_changed.emit(False, None)
                 logger.info("检测到客户端已断开连接")
+            elif self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                # 尝试重连
+                await self.reconnect_if_needed()
             return False
         
         # 尝试发送一个简单的API请求来检查连接状态
@@ -557,7 +632,15 @@ class ClientManager(QObject):
                 # 只有状态变化时才发出信号
                 self.connection_active = True
                 self.connection_status_changed.emit(True, me)
+                # 只有当状态从未连接变为已连接时，才输出日志
                 logger.info("检测到客户端已连接")
+                
+                # 重置重连计数和冷却时间
+                if hasattr(self, '_reconnect_attempts'):
+                    self._reconnect_attempts = 0
+                if hasattr(self, '_reconnect_cooldown'):
+                    self._reconnect_cooldown = 0
+            # 如果已经是连接状态，只是更新成功，不输出日志，保持静默
             return True
         except Exception as e:
             # 记录错误到历史
@@ -574,6 +657,7 @@ class ClientManager(QObject):
             is_proxy_error = any(keyword in str(e).lower() for keyword in ['proxy', 'sock', 'connect', 'network', 'timeout', '拒绝', 'refuse', 'reset', 'error'])
             
             if self.connection_active:
+                # 状态从已连接变为未连接，需要更新UI
                 # 记录所有错误类型，包括网络错误、连接错误、API错误等
                 if is_db_locked:
                     logger.error(f"检测到会话数据库锁定: {error_name}: {error_detail}")
@@ -589,78 +673,36 @@ class ClientManager(QObject):
                 
                 # 检查是否需要自动重连
                 if self.config.get('GENERAL', {}).get('auto_restart_session', True):
-                    # 尝试自动重连
-                    logger.info("尝试自动重新连接客户端...")
-                    try:
-                        # 如果是数据库锁定问题，先尝试修复
-                        if is_db_locked:
-                            if await self._fix_locked_session():
-                                logger.info("会话数据库已重置，将重新启动客户端")
-                        
-                        # 如果是代理错误，先刷新一下代理配置
-                        elif is_proxy_error:
-                            # 重新从配置中获取代理设置
-                            ui_config = self.ui_config_manager.get_ui_config()
-                            self.config = convert_ui_config_to_dict(ui_config)
-                            self.proxy_settings = get_proxy_settings_from_config(self.config)
-                            logger.info("已更新代理配置设置")
-                        
-                        # 重新启动客户端
-                        await self.restart_client()
-                        logger.info("客户端自动重连成功")
-                    except Exception as restart_error:
-                        # 记录重启错误
-                        self._record_error(restart_error)
-                        
-                        if "database is locked" in str(restart_error).lower():
-                            logger.error(f"客户端自动重连失败 (数据库锁定): {restart_error}")
-                            # 如果是会话数据库锁定，我们可以尝试退出此次重连，等待下一次检查时重试
-                            # 这时也可以通知用户手动重启应用
-                        else:
-                            logger.error(f"客户端自动重连失败: {restart_error}")
-            elif not self.connection_active:
-                # 如果已经是断开状态，定期尝试重连
-                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
-                    # 检查最后一次重连尝试时间，避免频繁重试
-                    current_time = asyncio.get_event_loop().time()
-                    last_reconnect_time = getattr(self, '_last_reconnect_attempt', 0)
+                    # 初始化重连尝试次数
+                    if not hasattr(self, '_reconnect_attempts'):
+                        self._reconnect_attempts = 0
                     
-                    # 如果距离上次重连尝试超过30秒，再次尝试
-                    if current_time - last_reconnect_time > 30:
-                        logger.info("客户端仍处于断开状态，尝试重新连接...")
-                        try:
-                            # 如果是数据库锁定问题，尝试修复
-                            if is_db_locked and not getattr(self, '_db_fix_attempted', False):
-                                # 标记已尝试修复，避免反复修复
-                                self._db_fix_attempted = True
-                                if await self._fix_locked_session():
-                                    logger.info("会话数据库已重置，将重新启动客户端")
-                            
-                            # 重新从配置中获取代理设置
-                            ui_config = self.ui_config_manager.get_ui_config()
-                            self.config = convert_ui_config_to_dict(ui_config)
-                            self.proxy_settings = get_proxy_settings_from_config(self.config)
-                            
-                            # 记录重连尝试时间
-                            self._last_reconnect_attempt = current_time
-                            
-                            # 重新启动客户端
-                            await self.restart_client()
-                            # 重置修复尝试标记
-                            self._db_fix_attempted = False
-                            logger.info("客户端成功重新连接")
-                        except Exception as reconnect_error:
-                            # 记录重连错误
-                            self._record_error(reconnect_error)
-                            
-                            if "database is locked" in str(reconnect_error).lower():
-                                logger.error(f"客户端重新连接失败 (数据库锁定): {reconnect_error}")
-                            else:
-                                logger.error(f"客户端重新连接失败: {reconnect_error}")
-                    else:
-                        # 还不到重试时间，只记录调试信息
-                        logger.debug(f"客户端仍处于断开状态，等待重连时间: {e}")
-                else:
-                    # 没有启用自动重连，只记录调试信息
-                    logger.debug(f"客户端仍处于断开状态，且自动重连已禁用: {e}")
+                    # 增加重连尝试次数
+                    self._reconnect_attempts += 1
+                    
+                    # 根据重连次数增加冷却时间（指数退避）
+                    cooldown = min(300, 30 * (2 ** (self._reconnect_attempts - 1)))  # 最大5分钟
+                    
+                    # 记录下次可以重连的时间
+                    current_time = asyncio.get_event_loop().time()
+                    self._next_reconnect_time = current_time + cooldown
+                    
+                    logger.info(f"将在 {cooldown} 秒后尝试自动重连 (尝试次数: {self._reconnect_attempts})")
+            else:
+                # 已经是断开状态，尝试重连
+                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                    # 避免在日志中重复报告相同的错误
+                    if not hasattr(self, '_last_error_str') or self._last_error_str != str(e):
+                        if is_db_locked:
+                            logger.error(f"会话数据库锁定，尝试重新连接: {error_detail}")
+                        elif is_proxy_error:
+                            logger.error(f"代理连接问题，尝试重新连接: {error_detail}")
+                        else:
+                            logger.error(f"客户端连接已断开，尝试重新连接: {error_detail}")
+                        # 记录当前错误，用于后续比较
+                        self._last_error_str = str(e)
+                    
+                    # 尝试重连
+                    await self.reconnect_if_needed()
+            
             return False 
