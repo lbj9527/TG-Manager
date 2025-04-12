@@ -228,23 +228,86 @@ class ActionsMixin:
                 # 显示登录进行中的消息
                 self.statusBar().showMessage(f"登录中: {phone}")
                 
-                # 显示验证码输入对话框
-                code = self._show_verification_code_dialog()
-                
-                if code:
-                    # 显示登录成功消息，这里只是界面展示，实际登录逻辑后续实现
-                    QMessageBox.information(
+                # 获取app实例和client_manager
+                if not hasattr(self, 'app') or not hasattr(self.app, 'client_manager'):
+                    QMessageBox.warning(
                         self,
-                        "验证码已提交",
-                        f"已接收验证码: {code}\n\n实际登录功能将在后续实现。",
+                        "无法登录",
+                        "客户端管理器未初始化，无法完成登录。",
                         QMessageBox.Ok
                     )
+                    return
+                
+                # 创建异步任务执行登录过程
+                # 提前导入需要的模块，避免在异步函数中导入
+                from PySide6.QtCore import QMetaObject, Qt
+                from PySide6.QtWidgets import QMessageBox
+                
+                async def login_process():
+                    try:
+                        # 发送验证码
+                        await self.app.client_manager.send_code(phone)
+                        
+                        # 在主线程中显示验证码输入对话框
+                        code_result = [None]  # 使用列表存储结果，以便在嵌套函数中修改
+                        
+                        def show_code_dialog():
+                            code_result[0] = self._show_verification_code_dialog()
+                        
+                        # 使用Qt的跨线程调用机制，确保对话框在主线程中显示
+                        # 修改为使用方法名称字符串，而不是函数对象
+                        setattr(self, "_temp_show_code_dialog", show_code_dialog)
+                        QMetaObject.invokeMethod(self, "_temp_show_code_dialog", Qt.ConnectionType.BlockingQueuedConnection)
+                        
+                        code = code_result[0]
+                        if not code:
+                            self.statusBar().showMessage("登录已取消")
+                            return
+                        
+                        # 使用验证码登录
+                        user = await self.app.client_manager.sign_in(code)
+                        
+                        # 登录成功后更新状态栏
+                        if user:
+                            user_info = f"{user.first_name}"
+                            if user.last_name:
+                                user_info += f" {user.last_name}"
+                            if user.username:
+                                user_info += f" (@{user.username})"
+                            
+                            self.statusBar().showMessage(f"已登录: {user_info}", 5000)
+                            
+                            # 更新设置视图中的登录按钮
+                            if "settings_view" in self.opened_views:
+                                settings_view = self.opened_views["settings_view"]
+                                if hasattr(settings_view, 'update_login_button'):
+                                    settings_view.update_login_button(True, user_info)
+                        else:
+                            self.statusBar().showMessage("登录失败", 5000)
+                    
+                    except Exception as e:
+                        logger.error(f"登录过程中出错: {e}")
+                        # 在主线程中显示错误消息
+                        def show_error():
+                            QMessageBox.critical(
+                                self,
+                                "登录错误",
+                                f"登录过程中出错: {str(e)}",
+                                QMessageBox.Ok
+                            )
+                        
+                        # 同样，使用方法名称字符串
+                        setattr(self, "_temp_show_error", show_error)
+                        QMetaObject.invokeMethod(self, "_temp_show_error", Qt.ConnectionType.QueuedConnection)
+                        self.statusBar().showMessage(f"登录错误: {str(e)}", 5000)
+                
+                # 启动登录任务
+                if hasattr(self.app, 'task_manager'):
+                    self.app.task_manager.add_task("user_login", login_process())
                 else:
-                    self.statusBar().showMessage("登录已取消")
-                
-                # 这里可以添加实际的登录逻辑
-                # ...
-                
+                    import asyncio
+                    asyncio.create_task(login_process())
+        
         except Exception as e:
             logger.error(f"登录处理时出错: {e}")
             QMessageBox.critical(
@@ -338,11 +401,31 @@ class ActionsMixin:
             # 创建设置视图
             settings_view = SettingsView(self.config, self)
             
+            # 连接登录请求信号
+            settings_view.login_requested.connect(self._handle_login)
+            
             # 添加到中心区域
             self.central_layout.addWidget(settings_view)
             self.opened_views["settings_view"] = settings_view
             
-            # 使设置视图可见
+            # 设置当前客户端状态
+            if hasattr(self, 'app') and hasattr(self.app, 'client_manager'):
+                is_connected = self.app.client_manager.is_authorized
+                user_info = None
+                if is_connected and self.app.client_manager.me:
+                    user_obj = self.app.client_manager.me
+                    user_info = f"{user_obj.first_name}"
+                    if user_obj.last_name:
+                        user_info += f" {user_obj.last_name}"
+                    if user_obj.username:
+                        user_info += f" (@{user_obj.username})"
+                
+                logger.debug(f"更新设置视图登录按钮状态: 已连接={is_connected}, 用户信息={user_info}")
+                settings_view.update_login_button(is_connected, user_info)
+            else:
+                logger.debug("无法获取客户端状态，未更新登录按钮")
+            
+            # 切换到设置视图
             self.central_layout.setCurrentWidget(settings_view)
             
             # 连接设置视图的信号

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QMessageBox,
     QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 import json
 
 from src.utils.logger import get_logger
@@ -26,6 +26,7 @@ class SettingsView(QWidget):
     # 设置保存信号
     settings_saved = Signal(dict)  # 带参数的信号
     settings_cancelled = Signal()  # 设置取消信号
+    login_requested = Signal()     # 添加登录请求信号
     
     def __init__(self, config=None, parent=None):
         """初始化设置界面
@@ -65,6 +66,24 @@ class SettingsView(QWidget):
         if parent and hasattr(parent, 'config_saved'):
             logger.debug("将设置视图的config_saved信号连接到父窗口")
             self.settings_saved.connect(parent.config_saved)
+        
+        # 检查父窗口是否有app属性，并且app有client_manager，如果有就更新登录按钮状态
+        if parent and hasattr(parent, 'app') and hasattr(parent.app, 'client_manager'):
+            client_manager = parent.app.client_manager
+            if hasattr(client_manager, 'is_authorized') and hasattr(client_manager, 'me'):
+                is_logged_in = client_manager.is_authorized
+                user_info = None
+                if is_logged_in and client_manager.me:
+                    user_obj = client_manager.me
+                    user_info = f"{user_obj.first_name}"
+                    if user_obj.last_name:
+                        user_info += f" {user_obj.last_name}"
+                    if user_obj.username:
+                        user_info += f" (@{user_obj.username})"
+                
+                # 在界面完全创建后更新登录按钮状态
+                QTimer.singleShot(100, lambda: self.update_login_button(is_logged_in, user_info))
+                logger.debug(f"设置界面初始化时检测到登录状态: {is_logged_in}, 用户: {user_info}")
         
         # 加载配置
         if self.config:
@@ -115,6 +134,26 @@ class SettingsView(QWidget):
         
         self.phone_number = QLineEdit()
         telegram_layout.addRow("手机号码:", self.phone_number)
+        
+        # 添加登录按钮
+        self.login_button = QPushButton("登录")
+        self.login_button.setMinimumWidth(120)
+        self.login_button.clicked.connect(self._handle_login)
+        # 设置默认颜色
+        self.login_button.setStyleSheet("background-color: #2196F3; color: white;")
+        telegram_layout.addRow("", self.login_button)
+        
+        # 添加登录提示标签
+        login_tip = QLabel(
+            "请填写您的Telegram API ID、API Hash和手机号码后点击登录按钮。\n"
+            "如未申请API凭据，请访问 <a href='https://my.telegram.org'>https://my.telegram.org</a> 申请。\n"
+            "手机号码格式应为国际格式，例如：+86 12345678901"
+        )
+        login_tip.setWordWrap(True)
+        login_tip.setTextFormat(Qt.RichText)
+        login_tip.setOpenExternalLinks(True)
+        login_tip.setStyleSheet("color: gray; font-size: 9pt;")
+        telegram_layout.addRow("", login_tip)
         
         telegram_group.setLayout(telegram_layout)
         api_layout.addWidget(telegram_group)
@@ -337,21 +376,48 @@ class SettingsView(QWidget):
         self.settings_changed = True
         self.save_button.setEnabled(True)
     
-    def _save_settings(self):
-        """保存设置到配置"""
+    def _validate_settings(self):
+        """验证设置
+        
+        Returns:
+            tuple: (是否有效, 错误信息)
+        """
+        # 验证代理设置
+        if self.use_proxy.isChecked():
+            proxy_addr = self.proxy_host.text().strip()
+            if not proxy_addr:
+                return False, "启用代理时，代理地址不能为空。请输入有效的代理服务器地址。"
+        
+        # 验证API ID
+        api_id = self.api_id.text().strip()
+        if api_id:
+            try:
+                int(api_id)  # 确保是有效的整数
+            except ValueError:
+                return False, "API ID必须是正整数"
+        
+        # 这里可以添加其他验证逻辑
+        
+        return True, ""
+    
+    def _save_settings(self, silent=False):
+        """保存设置
+        
+        Args:
+            silent: 是否静默保存（不显示成功消息）
+        """
         try:
-            # 从UI收集设置
-            collected_settings = self._collect_settings()
-            
-            # 验证代理设置
-            # 如果启用代理，确保代理地址不为空
-            if collected_settings['GENERAL']['proxy_enabled']:
-                proxy_addr = collected_settings['GENERAL']['proxy_addr']
-                if not proxy_addr:
-                    QMessageBox.warning(self, "代理设置错误", "启用代理时，代理地址不能为空。请输入有效的代理服务器地址。")
-                    # 切换到代理设置选项卡
+            # 验证设置
+            valid, message = self._validate_settings()
+            if not valid:
+                QMessageBox.warning(self, "验证错误", message, QMessageBox.Ok)
+                # 如果是代理错误，切换到代理设置选项卡
+                if "代理" in message:
                     self.settings_tabs.setCurrentWidget(self.proxy_tab)
-                    return
+                return
+            
+            # 收集设置
+            collected_settings = self._collect_settings()
             
             # 创建更新后的配置副本
             updated_config = {}
@@ -382,8 +448,9 @@ class SettingsView(QWidget):
             # 禁用保存按钮
             self.save_button.setEnabled(False)
             
-            # 显示成功信息
-            QMessageBox.information(self, "设置", "设置已成功保存")
+            # 显示成功消息（如果不是静默模式）
+            if not silent:
+                QMessageBox.information(self, "设置", "设置已成功保存")
         except Exception as e:
             # 直接使用外部定义的 logger
             logger.error(f"保存设置失败: {e}")
@@ -544,4 +611,36 @@ class SettingsView(QWidget):
             if "enable_notifications" in ui:
                 self.enable_notifications.setChecked(ui["enable_notifications"])
             if "notification_sound" in ui:
-                self.notification_sound.setChecked(ui["notification_sound"]) 
+                self.notification_sound.setChecked(ui["notification_sound"])
+    
+    def update_login_button(self, is_logged_in, user_info=None):
+        """更新登录按钮状态
+        
+        Args:
+            is_logged_in: 是否已登录
+            user_info: 用户信息（可选）
+        """
+        if not hasattr(self, 'login_button'):
+            return
+            
+        if is_logged_in:
+            self.login_button.setText("已登录")
+            self.login_button.setStyleSheet("background-color: #F44336; color: white;")  # 红色背景
+            self.login_button.setEnabled(False)  # 禁用按钮
+            if user_info:
+                self.login_button.setToolTip(f"当前登录用户: {user_info}")
+            else:
+                self.login_button.setToolTip("当前已登录")
+        else:
+            self.login_button.setText("登录")
+            self.login_button.setStyleSheet("background-color: #2196F3; color: white;")
+            self.login_button.setEnabled(True)  # 启用按钮
+            self.login_button.setToolTip("点击登录到Telegram账号")
+    
+    def _handle_login(self):
+        """处理登录按钮点击事件"""
+        # 首先保存当前设置，确保使用最新的API凭据
+        self._save_settings(silent=True)
+        
+        # 发出登录请求信号
+        self.login_requested.emit() 

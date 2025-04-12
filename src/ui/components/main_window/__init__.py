@@ -27,14 +27,18 @@ class MainWindow(
     综合各个功能混入类，形成完整的主窗口，处理用户交互
     """
     
-    def __init__(self, config=None):
+    def __init__(self, config=None, app=None):
         """初始化主窗口
         
         Args:
             config: 配置对象
+            app: 应用程序实例
         """
         # 初始化基类
         super().__init__(config)
+        
+        # 保存app实例
+        self.app = app
         
         # 创建界面组件
         self._create_menu_bar()

@@ -28,16 +28,6 @@ class ToolBarMixin:
         self._toolbar_state_timer.setInterval(500)  # 500ms防抖延迟
         self._toolbar_state_timer.timeout.connect(self._save_current_state)
         
-        # 登录按钮
-        self.login_action = QAction("登录", self)
-        self.login_action.setIcon(self._get_icon("login"))
-        self.login_action.setStatusTip("登录到Telegram账号")
-        self.login_action.triggered.connect(self._handle_login)
-        self.toolbar.addAction(self.login_action)
-        
-        # 分隔符
-        self.toolbar.addSeparator()
-        
         # 返回主页按钮
         self.home_action = QAction("返回主页", self)
         self.home_action.setIcon(self._get_icon("home"))

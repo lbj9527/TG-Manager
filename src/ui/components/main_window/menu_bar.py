@@ -33,14 +33,6 @@ class MenuBarMixin:
         # 文件菜单
         self.file_menu = self.menubar.addMenu("文件")
         
-        # 登录动作
-        login_action = QAction("登录", self)
-        login_action.setIcon(self._get_icon("login"))
-        login_action.setShortcut("Ctrl+L")
-        login_action.setStatusTip("登录到Telegram账号")
-        login_action.triggered.connect(self._handle_login)
-        self.file_menu.addAction(login_action)
-        
         # 设置动作
         settings_action = QAction("设置", self)
         settings_action.setIcon(self._get_icon("settings"))

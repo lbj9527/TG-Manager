@@ -11,7 +11,7 @@ import os
 import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QObject, Signal, QSettings, QTimer, QMetaObject
+from PySide6.QtCore import QObject, Signal, QSettings, QTimer, QMetaObject, Qt
 from PySide6.QtWidgets import QSystemTrayIcon
 
 from src.utils.logger import get_logger
@@ -53,6 +53,9 @@ class TGManagerApp(QObject):
         self.app.setOrganizationName("TG-Manager")
         self.app.setOrganizationDomain("tg-manager.org")
         self.verbose = verbose
+        
+        # 添加首次登录标志
+        self.is_first_login = False
         
         # 添加标志，用于跟踪是否已显示权限错误对话框
         self._permission_error_shown = False
@@ -154,7 +157,7 @@ class TGManagerApp(QObject):
         
         # 初始化主窗口
         try:
-            self.main_window = MainWindow(self.config)
+            self.main_window = MainWindow(self.config, self)
             self.main_window.config_saved.connect(self._on_config_saved)
             
             # 将窗口居中显示在屏幕上
@@ -238,6 +241,12 @@ class TGManagerApp(QObject):
             # 启动全局异常处理器
             self.task_manager.add_task("global_exception_handler", self.global_exception_handler())
             
+            # 如果是首次登录，在初始化完成后自动打开设置界面
+            if self.is_first_login and hasattr(self, 'main_window'):
+                # 使用计时器延迟执行，确保主窗口已完全初始化
+                logger.info("检测到首次登录，将自动打开设置界面引导用户登录")
+                QTimer.singleShot(1000, self._open_settings_for_first_login)
+            
             # 不需要在这里执行Qt事件循环，qasync会处理
             # 只需要保持协程运行
             while True:
@@ -249,113 +258,108 @@ class TGManagerApp(QObject):
             return 1
     
     async def _init_async_services(self):
-        """初始化需要的异步服务"""
+        """初始化异步服务"""
+        logger.info("正在初始化异步服务...")
         try:
-            # 初始化历史记录管理器
-            self.history_manager = HistoryManager()
-            logger.info("历史记录管理器初始化成功")
+            # 初始化异步任务计划
+            if not hasattr(self, 'task_manager') or self.task_manager is None:
+                self.task_manager = AsyncTaskManager()
             
-            # 初始化客户端管理器
+            # 1. 初始化client_manager
             self.client_manager = ClientManager(self.ui_config_manager)
-            logger.info("客户端管理器初始化成功")
             
-            # 连接客户端状态变化信号
+            # 连接客户端状态信号
             if hasattr(self.client_manager, 'connection_status_changed'):
                 self.client_manager.connection_status_changed.connect(self._on_client_connection_status_changed)
-                logger.debug("已连接客户端状态变化信号")
             
-            # 启动Telegram客户端
-            try:
-                self.client = await self.client_manager.start_client()
-                logger.info("Telegram客户端启动成功")
-                
-                # 在客户端成功启动后，设置连接标志
-                # 这样首次检查时不会重复触发状态变更
-                self.client_manager.connection_active = True
-                
-                # 启动定期检查网络连接状态的任务
-                # 增加延迟，避免刚启动就检查
-                await asyncio.sleep(10)  # 10秒后再开始定期检查
-                self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
-                logger.debug("已启动网络连接状态检查定时任务")
-                
-                # 更新主窗口客户端状态
-                if hasattr(self, 'main_window') and self.client_manager.me:
-                    # 获取用户信息并格式化
-                    me = self.client_manager.me
-                    user_info = f"{me.first_name}"
-                    if me.last_name:
-                        user_info += f" {me.last_name}"
-                    user_info += f" (@{me.username})" if me.username else ""
-                    
-                    # 更新主窗口状态栏
-                    self.main_window._update_client_status(True, user_info)
-                    logger.debug(f"已更新状态栏客户端状态: {user_info}")
-            except Exception as e:
-                logger.error(f"Telegram客户端启动失败: {e}")
-                # 显示错误但继续运行，允许用户稍后通过登录按钮登录
-                # 这样可以在API ID或API Hash错误的情况下也能启动应用
-                self.client = None
+            # 检查会话文件是否存在，判断是否为首次登录
+            session_name = self.client_manager.session_name
+            session_path = f"sessions/{session_name}.session"
+            self.is_first_login = not os.path.exists(session_path)
             
-            # 初始化频道解析器
-            self.channel_resolver = ChannelResolver(self.client)
-            logger.info("频道解析器初始化成功")
-            
-            # 初始化下载模块 - 根据配置选择并行或顺序下载
-            download_config = self.ui_config_manager.get_download_config()
-            if download_config.parallel_download:
-                logger.info("使用并行下载模式")
-                self.downloader = Downloader(
-                    self.client, 
-                    self.ui_config_manager, 
-                    self.channel_resolver, 
-                    self.history_manager,
-                    app=self  # 传递应用程序实例
-                )
-                self.downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
+            if self.is_first_login:
+                logger.info(f"检测到首次登录，会话文件不存在: {session_path}")
+                # 首次登录不自动启动客户端，等待用户点击登录按钮
+                
+                # 2. 创建channel_resolver (仍然需要创建，但设置client为None)
+                self.channel_resolver = ChannelResolver(None)
+                logger.info("已创建频道解析器(无客户端)")
+                
+                # 3. 初始化history_manager
+                self.history_manager = HistoryManager()
+                
+                # 4-8. 不初始化其他核心组件，等待用户登录后再初始化
+                logger.info("首次登录模式，核心组件将在用户登录后初始化")
             else:
-                logger.info("使用顺序下载模式")
-                self.downloader = DownloaderSerial(
-                    self.client, 
-                    self.ui_config_manager, 
-                    self.channel_resolver, 
-                    self.history_manager,
-                    app=self  # 传递应用程序实例
-                )
+                # 非首次登录，正常启动客户端和初始化所有组件
+                logger.info("正在启动Telegram客户端...")
+                try:
+                    # 启动客户端
+                    self.client = await self.client_manager.start_client()
+                    
+                    # 标记客户端为活动状态
+                    self.client_manager.connection_active = True
+                    
+                    # 为网络连接健康检查创建后台任务
+                    self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
+                    logger.debug("已启动网络连接状态检查定时任务")
+                    
+                    # 如果主窗口已初始化，更新状态栏
+                    if hasattr(self, 'main_window') and self.client_manager.me:
+                        # 获取用户信息并格式化
+                        me = self.client_manager.me
+                        user_info = f"{me.first_name}"
+                        if me.last_name:
+                            user_info += f" {me.last_name}"
+                        user_info += f" (@{me.username})" if me.username else ""
+                        
+                        # 更新主窗口状态栏
+                        self.main_window._update_client_status(True, user_info)
+                        logger.debug(f"已更新状态栏客户端状态: {user_info}")
+                        
+                        # 更新设置界面中的登录按钮状态
+                        if hasattr(self.main_window, 'opened_views') and 'settings_view' in self.main_window.opened_views:
+                            settings_view = self.main_window.opened_views['settings_view']
+                            if hasattr(settings_view, 'update_login_button'):
+                                settings_view.update_login_button(True, user_info)
+                                logger.debug("已更新设置视图中的登录按钮状态")
+                
+                except Exception as e:
+                    logger.error(f"启动Telegram客户端时出错: {e}")
+                    # 显示错误但继续运行，允许用户稍后通过登录按钮登录
+                    if hasattr(self, 'main_window'):
+                        self.main_window._update_client_status(False)
+                        # 更新设置界面中的登录按钮状态
+                        if hasattr(self.main_window, 'opened_views') and 'settings_view' in self.main_window.opened_views:
+                            settings_view = self.main_window.opened_views['settings_view']
+                            if hasattr(settings_view, 'update_login_button'):
+                                settings_view.update_login_button(False)
+                
+                # 2. 创建channel_resolver (修改：在创建client后再创建channel_resolver)
+                self.channel_resolver = ChannelResolver(self.client)
+                logger.info("已创建频道解析器")
+                
+                # 3. 初始化history_manager
+                self.history_manager = HistoryManager()
+                
+                # 4. 初始化下载模块
+                self.downloader = Downloader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                
+                # 5. 初始化串行下载模块
+                self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                
+                # 6. 初始化上传模块
+                self.uploader = Uploader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager, self)
+                
+                # 7. 初始化转发模块
+                self.forwarder = Forwarder(self.client, self.ui_config_manager, self.channel_resolver, 
+                                          self.history_manager, self.downloader, self.uploader, self)
+                
+                # 8. 初始化监听模块
+                self.monitor = Monitor(self.client, self.ui_config_manager, self.channel_resolver, 
+                                       self.history_manager, self)
             
-            # 初始化上传模块
-            self.uploader = Uploader(
-                self.client, 
-                self.ui_config_manager, 
-                self.channel_resolver, 
-                self.history_manager,
-                app=self  # 传递应用程序实例
-            )
-            logger.info("上传模块初始化成功")
-            
-            # 初始化转发模块
-            self.forwarder = Forwarder(
-                self.client, 
-                self.ui_config_manager, 
-                self.channel_resolver, 
-                self.history_manager, 
-                self.downloader, 
-                self.uploader,
-                app=self  # 传递应用程序实例
-            )
-            logger.info("转发模块初始化成功")
-            
-            # 初始化监听模块
-            self.monitor = Monitor(
-                self.client, 
-                self.ui_config_manager, 
-                self.channel_resolver,
-                self.history_manager,  # 添加history_manager参数
-                app=self  # 传递应用程序实例
-            )
-            logger.info("监听模块初始化成功")
-            
-            logger.info("所有异步服务初始化成功")
+            logger.info("异步服务初始化完成")
         except Exception as e:
             logger.error(f"初始化异步服务时出错: {e}")
             import traceback
@@ -979,6 +983,12 @@ class TGManagerApp(QObject):
             # 更新主窗口状态栏
             self.main_window._update_client_status(True, user_info)
             
+            # 如果设置视图已打开，更新登录按钮状态
+            if hasattr(self.main_window, 'opened_views') and 'settings_view' in self.main_window.opened_views:
+                settings_view = self.main_window.opened_views['settings_view']
+                if hasattr(settings_view, 'update_login_button'):
+                    settings_view.update_login_button(True, user_info)
+            
             # 确保信息被实时处理
             QApplication.processEvents()
             
@@ -988,6 +998,12 @@ class TGManagerApp(QObject):
             logger.info("客户端已断开连接")
             # 更新主窗口状态栏为断开状态
             self.main_window._update_client_status(False)
+            
+            # 如果设置视图已打开，更新登录按钮状态
+            if hasattr(self.main_window, 'opened_views') and 'settings_view' in self.main_window.opened_views:
+                settings_view = self.main_window.opened_views['settings_view']
+                if hasattr(settings_view, 'update_login_button'):
+                    settings_view.update_login_button(False)
             
             # 确保信息被实时处理
             QApplication.processEvents()
@@ -1046,6 +1062,8 @@ class TGManagerApp(QObject):
                     # 连续3次以上数据库锁定错误，显示提示
                     if self._db_lock_error_count >= 3 and hasattr(self, 'main_window'):
                         from PySide6.QtWidgets import QMessageBox
+                        # 提前导入QMetaObject
+                        from PySide6.QtCore import QMetaObject, Qt
                         
                         # 只在主线程中显示对话框
                         def show_db_lock_warning():
@@ -1071,7 +1089,9 @@ class TGManagerApp(QObject):
                         # 检查是否已显示警告
                         if not hasattr(self, '_db_lock_warning_shown') or not self._db_lock_warning_shown:
                             # 使用Qt的线程安全方式调用
-                            QMetaObject.invokeMethod(self.main_window, show_db_lock_warning, Qt.ConnectionType.QueuedConnection)
+                            # 修改为使用方法名称字符串
+                            setattr(self.main_window, "_temp_show_db_lock_warning", show_db_lock_warning)
+                            QMetaObject.invokeMethod(self.main_window, "_temp_show_db_lock_warning", Qt.ConnectionType.QueuedConnection)
                 else:
                     # 如果不是数据库锁定错误，重置计数器
                     self._db_lock_error_count = 0
@@ -1080,6 +1100,55 @@ class TGManagerApp(QObject):
         except Exception as e:
             logger.error(f"立即检查连接状态出错: {e}")
             return False
+
+    def _open_settings_for_first_login(self):
+        """为首次登录打开设置界面并显示指导信息"""
+        logger.info("执行首次登录引导流程")
+        
+        try:
+            if not hasattr(self, 'main_window'):
+                logger.warning("应用程序没有主窗口实例，无法打开设置界面")
+                return
+                
+            # 使用Qt的线程安全方式调用打开设置界面
+            # 提前导入所需模块，避免在回调中导入
+            from PySide6.QtCore import QMetaObject, Qt
+            # 使用方法名称字符串调用
+            QMetaObject.invokeMethod(self.main_window, "_open_settings", Qt.ConnectionType.QueuedConnection)
+            logger.debug("已安排在主线程中打开设置界面")
+            
+            # 使用延迟显示首次登录提示对话框，确保设置界面已显示
+            QTimer.singleShot(1500, self._show_first_login_dialog)
+        except Exception as e:
+            logger.error(f"打开首次登录设置界面时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _show_first_login_dialog(self):
+        """显示首次登录提示对话框"""
+        try:
+            if not hasattr(self, 'main_window'):
+                return
+                
+            from PySide6.QtWidgets import QMessageBox
+            logger.info("显示首次登录提示对话框")
+            
+            QMessageBox.information(
+                self.main_window,
+                "首次使用提示",
+                """欢迎使用TG-Manager！
+
+检测到这是您首次使用本程序，请在API设置中填写您的Telegram API凭据并点击登录按钮完成登录。
+
+如果您还没有API ID和API Hash，请访问 https://my.telegram.org 申请。
+
+填写完成后，请点击"登录"按钮完成账号验证。""",
+                QMessageBox.Ok
+            )
+        except Exception as e:
+            logger.error(f"显示首次登录对话框时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 
 def main():
