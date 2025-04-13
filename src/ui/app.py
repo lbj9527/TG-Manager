@@ -1128,85 +1128,65 @@ class TGManagerApp(QObject):
                         initialized_components.append('history_manager(已存在)')
                     
                     # 4. 初始化下载模块
-                    if not hasattr(self, 'downloader'):
-                        logger.info("正在初始化下载模块...")
-                        try:
-                            from src.modules.downloader import Downloader
-                            self.downloader = Downloader(self.client, self.ui_config_manager, 
-                                                       self.channel_resolver, self.history_manager)
-                            logger.info("已初始化下载模块")
-                            initialized_components.append('downloader')
-                        except Exception as e:
-                            logger.error(f"初始化下载模块时出错: {e}")
-                            failed_components.append('downloader')
-                    else:
-                        logger.info("下载模块已存在")
-                        initialized_components.append('downloader(已存在)')
+                    logger.info("正在初始化下载模块...")
+                    try:
+                        from src.modules.downloader import Downloader
+                        self.downloader = Downloader(self.client, self.ui_config_manager, 
+                                                    self.channel_resolver, self.history_manager)
+                        logger.info("已初始化下载模块")
+                        initialized_components.append('downloader')
+                    except Exception as e:
+                        logger.error(f"初始化下载模块时出错: {e}")
+                        failed_components.append('downloader')
                     
                     # 5. 初始化串行下载模块
-                    if not hasattr(self, 'downloader_serial'):
                         logger.info("正在初始化串行下载模块...")
-                        try:
-                            from src.modules.downloader_serial import DownloaderSerial
-                            self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, 
-                                                                   self.channel_resolver, self.history_manager)
-                            logger.info("已初始化串行下载模块")
-                            initialized_components.append('downloader_serial')
-                        except Exception as e:
-                            logger.error(f"初始化串行下载模块时出错: {e}")
-                            failed_components.append('downloader_serial')
-                    else:
-                        logger.info("串行下载模块已存在")
-                        initialized_components.append('downloader_serial(已存在)')
+                    try:
+                        from src.modules.downloader_serial import DownloaderSerial
+                        self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, 
+                                                                self.channel_resolver, self.history_manager)
+                        logger.info("已初始化串行下载模块")
+                        initialized_components.append('downloader_serial')
+                    except Exception as e:
+                        logger.error(f"初始化串行下载模块时出错: {e}")
+                        failed_components.append('downloader_serial')
                     
                     # 6. 初始化上传模块
-                    if not hasattr(self, 'uploader'):
-                        logger.info("正在初始化上传模块...")
-                        try:
-                            from src.modules.uploader import Uploader
-                            self.uploader = Uploader(self.client, self.ui_config_manager, 
-                                                   self.channel_resolver, self.history_manager, self)
-                            logger.info("已初始化上传模块")
-                            initialized_components.append('uploader')
-                        except Exception as e:
-                            logger.error(f"初始化上传模块时出错: {e}")
-                            failed_components.append('uploader')
-                    else:
-                        logger.info("上传模块已存在")
-                        initialized_components.append('uploader(已存在)')
+                    logger.info("正在初始化上传模块...")
+                    try:
+                        from src.modules.uploader import Uploader
+                        self.uploader = Uploader(self.client, self.ui_config_manager, 
+                                                self.channel_resolver, self.history_manager, self)
+                        logger.info("已初始化上传模块")
+                        initialized_components.append('uploader')
+                    except Exception as e:
+                        logger.error(f"初始化上传模块时出错: {e}")
+                        failed_components.append('uploader')
                     
                     # 7. 初始化转发模块
-                    if not hasattr(self, 'forwarder'):
-                        logger.info("正在初始化转发模块...")
-                        try:
-                            from src.modules.forwarder import Forwarder
-                            self.forwarder = Forwarder(self.client, self.ui_config_manager, 
-                                                     self.channel_resolver, self.history_manager, 
-                                                     self.downloader, self.uploader, self)
-                            logger.info("已初始化转发模块")
-                            initialized_components.append('forwarder')
-                        except Exception as e:
-                            logger.error(f"初始化转发模块时出错: {e}")
-                            failed_components.append('forwarder')
-                    else:
-                        logger.info("转发模块已存在")
-                        initialized_components.append('forwarder(已存在)')
+                    logger.info("正在初始化转发模块...")
+                    try:
+                        from src.modules.forwarder import Forwarder
+                        self.forwarder = Forwarder(self.client, self.ui_config_manager, 
+                                                    self.channel_resolver, self.history_manager, 
+                                                    self.downloader, self.uploader, self)
+                        logger.info("已初始化转发模块")
+                        initialized_components.append('forwarder')
+                    except Exception as e:
+                        logger.error(f"初始化转发模块时出错: {e}")
+                        failed_components.append('forwarder')
                     
                     # 8. 初始化监听模块
-                    if not hasattr(self, 'monitor'):
-                        logger.info("正在初始化监听模块...")
-                        try:
-                            from src.modules.monitor import Monitor
-                            self.monitor = Monitor(self.client, self.ui_config_manager, 
-                                                 self.channel_resolver, self.history_manager, self)
-                            logger.info("已初始化监听模块")
-                            initialized_components.append('monitor')
-                        except Exception as e:
-                            logger.error(f"初始化监听模块时出错: {e}")
-                            failed_components.append('monitor')
-                    else:
-                        logger.info("监听模块已存在")
-                        initialized_components.append('monitor(已存在)')
+                    logger.info("正在初始化监听模块...")
+                    try:
+                        from src.modules.monitor import Monitor
+                        self.monitor = Monitor(self.client, self.ui_config_manager, 
+                                                self.channel_resolver, self.history_manager, self)
+                        logger.info("已初始化监听模块")
+                        initialized_components.append('monitor')
+                    except Exception as e:
+                        logger.error(f"初始化监听模块时出错: {e}")
+                        failed_components.append('monitor')
                     
                     # 检查必需组件是否全部初始化
                     required_components = ['client', 'channel_resolver', 'history_manager', 
