@@ -235,7 +235,7 @@ class TGManagerApp(QObject):
             # 初始化异步服务
             await self._init_async_services()
             
-            # 将功能模块传递给视图组件
+            # 将功能模块传递给可能已加载的视图组件（注意：视图采用延迟加载，多数视图可能尚未创建）
             self._initialize_views()
             
             # 启动全局异常处理器
@@ -264,13 +264,16 @@ class TGManagerApp(QObject):
             # 初始化异步任务计划
             if not hasattr(self, 'task_manager') or self.task_manager is None:
                 self.task_manager = AsyncTaskManager()
+                logger.debug("已创建异步任务管理器")
             
             # 1. 初始化client_manager
             self.client_manager = ClientManager(self.ui_config_manager)
+            logger.debug("已初始化客户端管理器")
             
             # 连接客户端状态信号
             if hasattr(self.client_manager, 'connection_status_changed'):
                 self.client_manager.connection_status_changed.connect(self._on_client_connection_status_changed)
+                logger.debug("已连接客户端状态变化信号")
             
             # 检查会话文件是否存在，判断是否为首次登录
             session_name = self.client_manager.session_name
@@ -287,22 +290,33 @@ class TGManagerApp(QObject):
                 
                 # 3. 初始化history_manager
                 self.history_manager = HistoryManager()
+                logger.info("已创建历史管理器")
                 
                 # 4-8. 不初始化其他核心组件，等待用户登录后再初始化
                 logger.info("首次登录模式，核心组件将在用户登录后初始化")
             else:
                 # 非首次登录，正常启动客户端和初始化所有组件
                 logger.info("正在启动Telegram客户端...")
+                # 用于追踪组件初始化状态
+                initialized_components = []
+                failed_components = []
+                
                 try:
                     # 启动客户端
-                    self.client = await self.client_manager.start_client()
+                    logger.info("正在启动客户端...")
+                    try:
+                        self.client = await self.client_manager.start_client()
+                        logger.info("客户端启动成功")
+                        initialized_components.append('client')
+                    except Exception as client_error:
+                        logger.error(f"启动客户端失败: {client_error}")
+                        failed_components.append('client')
+                        raise  # 如果客户端启动失败，重新抛出异常以中止其他初始化
                     
                     # 标记客户端为活动状态
                     self.client_manager.connection_active = True
                     
-                    # 为网络连接健康检查创建后台任务
-                    self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
-                    logger.debug("已启动网络连接状态检查定时任务")
+                    # 不再在此处启动网络连接检查任务，统一在_on_client_connection_status_changed处理
                     
                     # 如果主窗口已初始化，更新状态栏
                     if hasattr(self, 'main_window') and self.client_manager.me:
@@ -334,30 +348,97 @@ class TGManagerApp(QObject):
                             settings_view = self.main_window.opened_views['settings_view']
                             if hasattr(settings_view, 'update_login_button'):
                                 settings_view.update_login_button(False)
+                    return  # 如果客户端启动失败，提前返回
                 
-                # 2. 创建channel_resolver (修改：在创建client后再创建channel_resolver)
-                self.channel_resolver = ChannelResolver(self.client)
-                logger.info("已创建频道解析器")
+                # 2. 创建channel_resolver
+                logger.info("正在创建频道解析器...")
+                try:
+                    self.channel_resolver = ChannelResolver(self.client)
+                    logger.info("已创建频道解析器")
+                    initialized_components.append('channel_resolver')
+                except Exception as e:
+                    logger.error(f"创建频道解析器时出错: {e}")
+                    failed_components.append('channel_resolver')
                 
                 # 3. 初始化history_manager
-                self.history_manager = HistoryManager()
+                logger.info("正在创建历史管理器...")
+                try:
+                    self.history_manager = HistoryManager()
+                    logger.info("已创建历史管理器")
+                    initialized_components.append('history_manager')
+                except Exception as e:
+                    logger.error(f"创建历史管理器时出错: {e}")
+                    failed_components.append('history_manager')
                 
                 # 4. 初始化下载模块
-                self.downloader = Downloader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                logger.info("正在初始化下载模块...")
+                try:
+                    self.downloader = Downloader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                    logger.info("已初始化下载模块")
+                    initialized_components.append('downloader')
+                except Exception as e:
+                    logger.error(f"初始化下载模块时出错: {e}")
+                    failed_components.append('downloader')
                 
                 # 5. 初始化串行下载模块
-                self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                logger.info("正在初始化串行下载模块...")
+                try:
+                    self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager)
+                    logger.info("已初始化串行下载模块")
+                    initialized_components.append('downloader_serial')
+                except Exception as e:
+                    logger.error(f"初始化串行下载模块时出错: {e}")
+                    failed_components.append('downloader_serial')
                 
                 # 6. 初始化上传模块
-                self.uploader = Uploader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager, self)
+                logger.info("正在初始化上传模块...")
+                try:
+                    self.uploader = Uploader(self.client, self.ui_config_manager, self.channel_resolver, self.history_manager, self)
+                    logger.info("已初始化上传模块")
+                    initialized_components.append('uploader')
+                except Exception as e:
+                    logger.error(f"初始化上传模块时出错: {e}")
+                    failed_components.append('uploader')
                 
                 # 7. 初始化转发模块
-                self.forwarder = Forwarder(self.client, self.ui_config_manager, self.channel_resolver, 
-                                          self.history_manager, self.downloader, self.uploader, self)
+                logger.info("正在初始化转发模块...")
+                try:
+                    self.forwarder = Forwarder(self.client, self.ui_config_manager, self.channel_resolver, 
+                                            self.history_manager, self.downloader, self.uploader, self)
+                    logger.info("已初始化转发模块")
+                    initialized_components.append('forwarder')
+                except Exception as e:
+                    logger.error(f"初始化转发模块时出错: {e}")
+                    failed_components.append('forwarder')
                 
                 # 8. 初始化监听模块
-                self.monitor = Monitor(self.client, self.ui_config_manager, self.channel_resolver, 
-                                       self.history_manager, self)
+                logger.info("正在初始化监听模块...")
+                try:
+                    self.monitor = Monitor(self.client, self.ui_config_manager, self.channel_resolver, 
+                                         self.history_manager, self)
+                    logger.info("已初始化监听模块")
+                    initialized_components.append('monitor')
+                except Exception as e:
+                    logger.error(f"初始化监听模块时出错: {e}")
+                    failed_components.append('monitor')
+                
+                # 检查必需组件是否全部初始化
+                required_components = ['client', 'channel_resolver', 'history_manager', 
+                                    'downloader', 'downloader_serial',
+                                    'uploader', 'forwarder', 'monitor']
+                
+                missing_components = [comp for comp in required_components 
+                                    if comp not in initialized_components]
+                
+                if missing_components:
+                    logger.warning(f"以下必需组件未初始化: {', '.join(missing_components)}")
+                
+                if failed_components:
+                    logger.error(f"以下组件初始化失败: {', '.join(failed_components)}")
+                    
+                # 组件初始化总结
+                logger.info(f"非首次登录组件初始化总结: 成功={len(initialized_components)}, 失败={len(failed_components)}, 缺失={len(missing_components)}")
+                logger.info(f"已初始化的组件: {', '.join(initialized_components)}")
             
             logger.info("异步服务初始化完成")
         except Exception as e:
@@ -367,44 +448,48 @@ class TGManagerApp(QObject):
             raise  # 重新抛出异常以便上层处理
     
     def _initialize_views(self):
-        """初始化所有视图组件，传递功能模块实例"""
+        """初始化所有视图组件，传递功能模块实例
+        
+        注意：视图采用延迟加载方式，只有在用户点击相应导航项时才会创建
+        此方法只是将功能模块实例传递到已存在的视图中，不检查视图是否已加载
+        """
         if not hasattr(self, 'main_window'):
             logger.warning("主窗口未初始化，无法设置视图组件")
             return
         
-        # 获取视图引用
+        # 获取视图引用并设置功能模块
         try:
             # 下载视图
             download_view = self.main_window.get_view("download")
-            if download_view:
+            if download_view and hasattr(self, 'downloader'):
                 download_view.set_downloader(self.downloader)
-                logger.debug("下载视图设置了下载器实例")
+                logger.info("下载视图已设置下载器实例")
             
             # 上传视图
             upload_view = self.main_window.get_view("upload")
-            if upload_view:
+            if upload_view and hasattr(self, 'uploader'):
                 upload_view.set_uploader(self.uploader)
-                logger.debug("上传视图设置了上传器实例")
+                logger.info("上传视图已设置上传器实例")
             
             # 转发视图
             forward_view = self.main_window.get_view("forward")
-            if forward_view:
+            if forward_view and hasattr(self, 'forwarder'):
                 forward_view.set_forwarder(self.forwarder)
-                logger.debug("转发视图设置了转发器实例")
+                logger.info("转发视图已设置转发器实例")
             
             # 监听视图
             listen_view = self.main_window.get_view("listen")
-            if listen_view:
+            if listen_view and hasattr(self, 'monitor'):
                 listen_view.set_monitor(self.monitor)
-                logger.debug("监听视图设置了监听器实例")
+                logger.info("监听视图已设置监听器实例")
             
             # 任务视图 - 将任务管理器传递给任务视图
             task_view = self.main_window.get_view("task")
-            if task_view:
+            if task_view and hasattr(self, 'task_manager'):
                 task_view.set_task_manager(self.task_manager)
-                logger.debug("任务视图设置了任务管理器实例")
+                logger.info("任务视图已设置任务管理器实例")
             
-            logger.info("所有视图组件初始化完成")
+            logger.info("视图组件初始化设置完成（视图将在用户点击时加载）")
         except Exception as e:
             logger.error(f"初始化视图组件时出错: {e}")
             import traceback
@@ -993,76 +1078,159 @@ class TGManagerApp(QObject):
             if self.is_first_login:
                 logger.info("首次登录成功，开始初始化剩余核心组件")
                 
+                # 用于追踪组件初始化状态
+                initialized_components = []
+                failed_components = []
+                
                 # 更新client引用
                 if hasattr(self.client_manager, 'client'):
                     self.client = self.client_manager.client
+                    logger.info("已更新客户端引用")
+                    initialized_components.append('client')
                 else:
                     logger.warning("无法获取客户端引用")
+                    failed_components.append('client')
                     return
                     
                 try:
-                    # 为网络连接健康检查创建后台任务
-                    if hasattr(self, 'task_manager'):
-                        self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
-                        logger.debug("已启动网络连接状态检查定时任务")
-                        
+                    # 不再在此处启动网络连接检查，而是延后启动
+                    
                     # 更新channel_resolver的client引用
                     if hasattr(self, 'channel_resolver'):
                         self.channel_resolver.client = self.client
-                        logger.debug("已更新频道解析器的客户端引用")
+                        logger.info("已更新频道解析器的客户端引用")
+                        initialized_components.append('channel_resolver(更新)')
                     else:
                         # 如果channel_resolver不存在，创建它
-                        from src.utils.channel_resolver import ChannelResolver
-                        self.channel_resolver = ChannelResolver(self.client)
-                        logger.debug("已创建频道解析器")
+                        logger.info("正在创建频道解析器...")
+                        try:
+                            from src.utils.channel_resolver import ChannelResolver
+                            self.channel_resolver = ChannelResolver(self.client)
+                            logger.info("已创建频道解析器")
+                            initialized_components.append('channel_resolver(新建)')
+                        except Exception as e:
+                            logger.error(f"创建频道解析器时出错: {e}")
+                            failed_components.append('channel_resolver')
                     
                     # 确保history_manager已初始化
                     if not hasattr(self, 'history_manager'):
-                        from src.utils.history_manager import HistoryManager
-                        self.history_manager = HistoryManager()
-                        logger.debug("已创建历史管理器")
+                        logger.info("正在创建历史管理器...")
+                        try:
+                            from src.utils.history_manager import HistoryManager
+                            self.history_manager = HistoryManager()
+                            logger.info("已创建历史管理器")
+                            initialized_components.append('history_manager')
+                        except Exception as e:
+                            logger.error(f"创建历史管理器时出错: {e}")
+                            failed_components.append('history_manager')
+                    else:
+                        logger.info("历史管理器已存在")
+                        initialized_components.append('history_manager(已存在)')
                     
                     # 4. 初始化下载模块
                     if not hasattr(self, 'downloader'):
-                        from src.modules.downloader import Downloader
-                        self.downloader = Downloader(self.client, self.ui_config_manager, 
-                                                   self.channel_resolver, self.history_manager)
-                        logger.info("已初始化下载模块")
+                        logger.info("正在初始化下载模块...")
+                        try:
+                            from src.modules.downloader import Downloader
+                            self.downloader = Downloader(self.client, self.ui_config_manager, 
+                                                       self.channel_resolver, self.history_manager)
+                            logger.info("已初始化下载模块")
+                            initialized_components.append('downloader')
+                        except Exception as e:
+                            logger.error(f"初始化下载模块时出错: {e}")
+                            failed_components.append('downloader')
+                    else:
+                        logger.info("下载模块已存在")
+                        initialized_components.append('downloader(已存在)')
                     
                     # 5. 初始化串行下载模块
                     if not hasattr(self, 'downloader_serial'):
-                        from src.modules.downloader_serial import DownloaderSerial
-                        self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, 
-                                                               self.channel_resolver, self.history_manager)
-                        logger.info("已初始化串行下载模块")
+                        logger.info("正在初始化串行下载模块...")
+                        try:
+                            from src.modules.downloader_serial import DownloaderSerial
+                            self.downloader_serial = DownloaderSerial(self.client, self.ui_config_manager, 
+                                                                   self.channel_resolver, self.history_manager)
+                            logger.info("已初始化串行下载模块")
+                            initialized_components.append('downloader_serial')
+                        except Exception as e:
+                            logger.error(f"初始化串行下载模块时出错: {e}")
+                            failed_components.append('downloader_serial')
+                    else:
+                        logger.info("串行下载模块已存在")
+                        initialized_components.append('downloader_serial(已存在)')
                     
                     # 6. 初始化上传模块
                     if not hasattr(self, 'uploader'):
-                        from src.modules.uploader import Uploader
-                        self.uploader = Uploader(self.client, self.ui_config_manager, 
-                                               self.channel_resolver, self.history_manager, self)
-                        logger.info("已初始化上传模块")
+                        logger.info("正在初始化上传模块...")
+                        try:
+                            from src.modules.uploader import Uploader
+                            self.uploader = Uploader(self.client, self.ui_config_manager, 
+                                                   self.channel_resolver, self.history_manager, self)
+                            logger.info("已初始化上传模块")
+                            initialized_components.append('uploader')
+                        except Exception as e:
+                            logger.error(f"初始化上传模块时出错: {e}")
+                            failed_components.append('uploader')
+                    else:
+                        logger.info("上传模块已存在")
+                        initialized_components.append('uploader(已存在)')
                     
                     # 7. 初始化转发模块
                     if not hasattr(self, 'forwarder'):
-                        from src.modules.forwarder import Forwarder
-                        self.forwarder = Forwarder(self.client, self.ui_config_manager, 
-                                                 self.channel_resolver, self.history_manager, 
-                                                 self.downloader, self.uploader, self)
-                        logger.info("已初始化转发模块")
+                        logger.info("正在初始化转发模块...")
+                        try:
+                            from src.modules.forwarder import Forwarder
+                            self.forwarder = Forwarder(self.client, self.ui_config_manager, 
+                                                     self.channel_resolver, self.history_manager, 
+                                                     self.downloader, self.uploader, self)
+                            logger.info("已初始化转发模块")
+                            initialized_components.append('forwarder')
+                        except Exception as e:
+                            logger.error(f"初始化转发模块时出错: {e}")
+                            failed_components.append('forwarder')
+                    else:
+                        logger.info("转发模块已存在")
+                        initialized_components.append('forwarder(已存在)')
                     
                     # 8. 初始化监听模块
                     if not hasattr(self, 'monitor'):
-                        from src.modules.monitor import Monitor
-                        self.monitor = Monitor(self.client, self.ui_config_manager, 
-                                             self.channel_resolver, self.history_manager, self)
-                        logger.info("已初始化监听模块")
+                        logger.info("正在初始化监听模块...")
+                        try:
+                            from src.modules.monitor import Monitor
+                            self.monitor = Monitor(self.client, self.ui_config_manager, 
+                                                 self.channel_resolver, self.history_manager, self)
+                            logger.info("已初始化监听模块")
+                            initialized_components.append('monitor')
+                        except Exception as e:
+                            logger.error(f"初始化监听模块时出错: {e}")
+                            failed_components.append('monitor')
+                    else:
+                        logger.info("监听模块已存在")
+                        initialized_components.append('monitor(已存在)')
+                    
+                    # 检查必需组件是否全部初始化
+                    required_components = ['client', 'channel_resolver', 'history_manager', 
+                                          'downloader', 'downloader_serial',
+                                          'uploader', 'forwarder', 'monitor']
+                    
+                    missing_components = [comp for comp in required_components 
+                                        if not any(comp in init_comp for init_comp in initialized_components)]
+                    
+                    if missing_components:
+                        logger.warning(f"以下必需组件未初始化: {', '.join(missing_components)}")
+                    
+                    if failed_components:
+                        logger.error(f"以下组件初始化失败: {', '.join(failed_components)}")
+                        
+                    # 组件初始化总结
+                    logger.info(f"首次登录组件初始化总结: 成功={len(initialized_components)}, 失败={len(failed_components)}, 缺失={len(missing_components)}")
+                    logger.info(f"已初始化的组件: {', '.join(initialized_components)}")
                     
                     # 首次登录模式标志重置
                     self.is_first_login = False
                     logger.info("首次登录模式已完成，所有核心组件已初始化")
                     
-                    # 将功能模块传递给视图组件
+                    # 将功能模块传递给已加载的视图组件（注意：视图采用延迟加载，可能还未创建）
                     self._initialize_views()
                 except Exception as e:
                     logger.error(f"首次登录后初始化核心组件时出错: {e}")
@@ -1074,6 +1242,12 @@ class TGManagerApp(QObject):
             
             # 重置数据库锁定错误计数器
             self._db_lock_error_count = 0
+            
+            # 启动网络连接检查任务
+            # 使用异步任务启动网络检查，确保在登录处理完成后启动
+            if hasattr(self, 'task_manager'):
+                self.task_manager.add_task("start_network_check", self._start_network_check())
+                logger.debug("已安排启动网络连接检查")
         else:
             logger.info("客户端已断开连接")
             # 更新主窗口状态栏为断开状态
@@ -1087,6 +1261,26 @@ class TGManagerApp(QObject):
             
             # 确保信息被实时处理
             QApplication.processEvents()
+
+    async def _start_network_check(self):
+        """启动网络连接状态检查任务
+        
+        此方法确保网络连接检查任务在登录过程完成后启动，以避免任务冲突
+        """
+        # 检查是否已存在网络检查任务
+        if hasattr(self, 'task_manager') and self.task_manager.is_task_running("network_connection_check"):
+            logger.debug("网络连接检查任务已在运行，无需重复启动")
+            return
+            
+        # 等待短暂延迟，确保登录过程完全结束
+        await safe_sleep(2)
+        
+        # 启动网络连接检查任务
+        if hasattr(self, 'task_manager'):
+            self.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
+            logger.info("已启动网络连接状态检查定时任务")
+        else:
+            logger.warning("任务管理器不存在，无法启动网络连接检查")
 
     async def _check_network_connection_periodically(self):
         """定期检查网络连接状态"""
