@@ -944,25 +944,38 @@ class ListenView(QWidget):
             
         # 连接监听器事件处理器
         try:
-            # 状态更新事件
-            self.monitor.on("status", self._update_status)
+            # 检查monitor是否有信号属性并连接
+            if hasattr(self.monitor, 'status_updated'):
+                self.monitor.status_updated.connect(self._update_status)
             
-            # 新消息事件
-            self.monitor.on("new_message", self._on_new_message)
+            if hasattr(self.monitor, 'new_message_received'):
+                self.monitor.new_message_received.connect(self._on_new_message)
             
-            # 监听开始事件
-            self.monitor.on("monitoring_started", self._on_monitoring_started)
+            if hasattr(self.monitor, 'monitoring_started_signal'):
+                self.monitor.monitoring_started_signal.connect(self._on_monitoring_started)
             
-            # 监听停止事件
-            self.monitor.on("monitoring_stopped", self._on_monitoring_stopped)
+            if hasattr(self.monitor, 'monitoring_stopped_signal'):
+                self.monitor.monitoring_stopped_signal.connect(self._on_monitoring_stopped)
             
-            # 转发完成事件
-            self.monitor.on("forward_complete", self._on_forward_complete)
+            if hasattr(self.monitor, 'forward_completed'):
+                self.monitor.forward_completed.connect(self._on_forward_complete)
             
-            # 错误事件
-            self.monitor.on("error", self._on_monitor_error)
+            if hasattr(self.monitor, 'error_occurred'):
+                self.monitor.error_occurred.connect(self._on_monitor_error)
             
             logger.debug("监听器信号连接成功")
+            
+            # 如果监听器没有这些信号属性，我们需要手动添加事件监听
+            # 这是为了兼容不同版本的监听器实现
+            if not hasattr(self.monitor, 'status_updated') and hasattr(self.monitor, 'add_event_listener'):
+                self.monitor.add_event_listener("status", self._update_status)
+                self.monitor.add_event_listener("new_message", self._on_new_message)
+                self.monitor.add_event_listener("monitoring_started", self._on_monitoring_started)
+                self.monitor.add_event_listener("monitoring_stopped", self._on_monitoring_stopped)
+                self.monitor.add_event_listener("forward_complete", self._on_forward_complete)
+                self.monitor.add_event_listener("error", self._on_monitor_error)
+                logger.debug("使用事件监听器连接监听器事件")
+            
         except Exception as e:
             logger.error(f"连接监听器信号时出错: {e}")
             import traceback

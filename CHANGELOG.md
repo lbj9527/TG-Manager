@@ -1295,3 +1295,23 @@
 ### 修复
 
 - 修复了 `
+
+## [1.7.2] - 2023-XX-XX
+
+### 新增
+
+- 添加了通用的 BaseEventEmitter 基类，实现了基于 Qt Signal 的事件处理基础设施
+- 添加了 EventEmitterDownloader、EventEmitterUploader、EventEmitterForwarder 和 EventEmitterMonitor 类，为所有核心功能模块提供 Qt 信号支持
+- 实现了所有核心模块与 UI 层的统一信号槽连接机制，提高了代码可维护性
+
+### 修复
+
+- 修复上传视图、转发视图和监听视图无法正确连接到对应模块的问题（'Uploader/Forwarder/Monitor' object has no attribute 'on'）
+- 修复下载视图无法正确接收下载器事件的问题
+- 优化了状态和进度更新的处理
+
+### 变更
+
+- 重构所有核心模块的实现，将原始功能与 UI 信号机制分离
+- 改进了事件处理机制，使用标准的 Qt Signal/Slot 模式
+- 使用装饰器模式包装原始功能模块，避免修改原始代码

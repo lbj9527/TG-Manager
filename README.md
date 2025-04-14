@@ -689,6 +689,22 @@ TG-Manager 的图形界面基于 PySide6 开发，主要组件包括：
 
 每个功能模块（下载、上传、转发等）的专有设置都集成在各自的功能界面中，以提供更直接和上下文相关的设置体验。设置视图支持实时主题预览，但仅在点击"保存设置"按钮后才会永久应用主题更改。
 
+## 下载模块
+
+### 下载器组件
+
+- `Downloader`: 原始下载器类，负责从 Telegram 频道下载媒体文件
+- `EventEmitterDownloader`: 下载器包装类，提供 Qt Signal 支持，兼容 UI 层的信号槽机制
+  - 包装了原始的 Downloader 类
+  - 提供了以下信号:
+    - `status_updated(str)`: 状态更新信号
+    - `progress_updated(int, int, str)`: 进度更新信号 (当前, 总数, 文件名)
+    - `download_completed(int, str, int)`: 下载完成信号 (消息 ID, 文件名, 文件大小)
+    - `all_downloads_completed()`: 所有下载完成信号
+    - `error_occurred(str, str)`: 错误信号 (错误信息, 错误详情)
+  - 自动转发所有方法调用到原始下载器
+  - 兼容 emit 和事件监听器接口
+
 ## 贡献
 
 欢迎贡献代码或提出问题！请遵循以下步骤：
@@ -706,3 +722,57 @@ TG-Manager 的图形界面基于 PySide6 开发，主要组件包括：
 ## 联系方式
 
 如有问题或建议，请通过 [Issues](https://github.com/yourusername/TG-Manager/issues) 或电子邮件联系我们。
+
+## 项目架构
+
+TG-Manager 使用模块化设计，由以下几个核心组件组成：
+
+### 事件处理基础设施
+
+- `BaseEventEmitter`: 所有事件发射器的基类，提供 Qt Signal 支持的基础设施
+  - 定义了基本信号如`status_updated`和`error_occurred`
+  - 提供了与原始模块的集成机制
+  - 实现了事件类型到信号名称的自动映射
+
+### 核心功能模块
+
+- **下载模块**:
+
+  - `Downloader`: 原始下载器类，负责从 Telegram 频道下载媒体文件
+  - `EventEmitterDownloader`: 下载器包装类，提供 Qt Signal 支持
+    - 信号: `status_updated`, `progress_updated`, `download_completed`, `all_downloads_completed`, `error_occurred`
+
+- **上传模块**:
+
+  - `Uploader`: 原始上传器类，负责将本地文件上传到 Telegram 频道
+  - `EventEmitterUploader`: 上传器包装类，提供 Qt Signal 支持
+    - 信号: `status_updated`, `progress_updated`, `upload_completed`, `media_uploaded`, `error_occurred`
+
+- **转发模块**:
+
+  - `Forwarder`: 原始转发器类，负责转发消息从源频道到目标频道
+  - `EventEmitterForwarder`: 转发器包装类，提供 Qt Signal 支持
+    - 信号: `status_updated`, `progress_updated`, `info_updated`, `warning_updated`, `debug_updated`, `forward_completed`, `message_forwarded`, `media_group_forwarded`, `error_occurred`等
+
+- **监听模块**:
+  - `Monitor`: 原始监听器类，负责监听频道消息和实时转发
+  - `EventEmitterMonitor`: 监听器包装类，提供 Qt Signal 支持
+    - 信号: `status_updated`, `message_received`, `keyword_matched`, `message_processed`, `monitoring_started`, `monitoring_stopped`, `error_occurred`等
+
+### UI 组件
+
+各个 UI 组件通过信号和槽连接到对应的功能模块，实现交互和状态更新：
+
+- **下载视图** (`DownloadView`): 下载历史消息中的媒体文件
+- **上传视图** (`UploadView`): 将本地文件上传到目标频道
+- **转发视图** (`ForwardView`): 在不同频道间转发消息和媒体
+- **监听视图** (`ListenView`): 实时监听并转发新消息
+
+## 设计模式
+
+TG-Manager 实现采用了多种设计模式：
+
+- **装饰器模式**: 使用事件发射器类包装原始功能模块，增强其功能而不修改原始代码
+- **观察者模式**: 通过 Qt 的信号槽机制实现 UI 和核心模块的松耦合
+- **工厂模式**: 在初始化过程中创建和配置各种组件
+- **命令模式**: 使用任务上下文管理长时间运行的操作

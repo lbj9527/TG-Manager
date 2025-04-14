@@ -208,4 +208,62 @@ class SidebarMixin:
             self.opened_views[item_id] = view
             
             # 使新添加的视图可见
-            self.central_layout.setCurrentWidget(view) 
+            self.central_layout.setCurrentWidget(view)
+            
+            # 在视图创建后立即连接功能模块
+            self._connect_view_to_modules(function_name, view)
+    
+    def _connect_view_to_modules(self, function_name, view):
+        """将视图连接到相应的功能模块
+        
+        Args:
+            function_name: 功能名称
+            view: 视图实例
+        """
+        # 检查是否有app属性
+        if not hasattr(self, 'app'):
+            logger.warning(f"无法将{function_name}视图连接到功能模块：MainWindow缺少app属性")
+            return
+            
+        app = self.app
+        
+        try:
+            if function_name == 'download' and hasattr(app, 'downloader'):
+                if hasattr(view, 'set_downloader'):
+                    view.set_downloader(app.downloader)
+                    logger.info("下载视图已设置下载器实例")
+                else:
+                    logger.warning("下载视图缺少set_downloader方法")
+                    
+            elif function_name == 'upload' and hasattr(app, 'uploader'):
+                if hasattr(view, 'set_uploader'):
+                    view.set_uploader(app.uploader)
+                    logger.info("上传视图已设置上传器实例")
+                else:
+                    logger.warning("上传视图缺少set_uploader方法")
+                    
+            elif function_name == 'forward' and hasattr(app, 'forwarder'):
+                if hasattr(view, 'set_forwarder'):
+                    view.set_forwarder(app.forwarder)
+                    logger.info("转发视图已设置转发器实例")
+                else:
+                    logger.warning("转发视图缺少set_forwarder方法")
+                    
+            elif function_name == 'monitor' and hasattr(app, 'monitor'):
+                if hasattr(view, 'set_monitor'):
+                    view.set_monitor(app.monitor)
+                    logger.info("监听视图已设置监听器实例")
+                else:
+                    logger.warning("监听视图缺少set_monitor方法")
+                    
+            elif function_name == 'task_manager' and hasattr(app, 'task_manager'):
+                if hasattr(view, 'set_task_manager'):
+                    view.set_task_manager(app.task_manager)
+                    logger.info("任务视图已设置任务管理器实例")
+                else:
+                    logger.warning("任务视图缺少set_task_manager方法")
+            
+        except Exception as e:
+            logger.error(f"连接{function_name}视图到功能模块时出错: {e}")
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}") 

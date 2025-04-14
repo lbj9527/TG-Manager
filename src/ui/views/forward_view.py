@@ -697,22 +697,34 @@ class ForwardView(QWidget):
             
         # 连接转发器事件处理器
         try:
-            # 状态更新事件
-            self.forwarder.on("status", self._update_status)
+            # 检查forwarder是否有信号属性并连接
+            if hasattr(self.forwarder, 'status_updated'):
+                self.forwarder.status_updated.connect(self._update_status)
             
-            # 进度更新事件
-            self.forwarder.on("progress", self._update_progress)
+            if hasattr(self.forwarder, 'progress_updated'):
+                self.forwarder.progress_updated.connect(self._update_progress)
             
-            # 转发完成事件
-            self.forwarder.on("forward_complete", self._on_forward_complete)
+            if hasattr(self.forwarder, 'forward_completed'):
+                self.forwarder.forward_completed.connect(self._on_forward_complete)
             
-            # 所有转发完成事件
-            self.forwarder.on("all_forwards_complete", self._on_all_forwards_complete)
+            if hasattr(self.forwarder, 'all_forwards_completed'):
+                self.forwarder.all_forwards_completed.connect(self._on_all_forwards_complete)
             
-            # 错误事件
-            self.forwarder.on("error", self._on_forward_error)
+            if hasattr(self.forwarder, 'error_occurred'):
+                self.forwarder.error_occurred.connect(self._on_forward_error)
             
             logger.debug("转发器信号连接成功")
+            
+            # 如果转发器没有这些信号属性，我们需要手动添加事件监听
+            # 这是为了兼容不同版本的转发器实现
+            if not hasattr(self.forwarder, 'status_updated') and hasattr(self.forwarder, 'add_event_listener'):
+                self.forwarder.add_event_listener("status", self._update_status)
+                self.forwarder.add_event_listener("progress", self._update_progress)
+                self.forwarder.add_event_listener("forward_complete", self._on_forward_complete)
+                self.forwarder.add_event_listener("all_forwards_complete", self._on_all_forwards_complete)
+                self.forwarder.add_event_listener("error", self._on_forward_error)
+                logger.debug("使用事件监听器连接转发器事件")
+            
         except Exception as e:
             logger.error(f"连接转发器信号时出错: {e}")
             import traceback

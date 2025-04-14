@@ -806,22 +806,34 @@ class UploadView(QWidget):
             
         # 连接上传器事件处理器
         try:
-            # 状态更新事件
-            self.uploader.on("status", self._update_status)
+            # 检查uploader是否有信号属性并连接
+            if hasattr(self.uploader, 'status_updated'):
+                self.uploader.status_updated.connect(self._update_status)
             
-            # 上传进度事件
-            self.uploader.on("progress", self._update_progress)
+            if hasattr(self.uploader, 'progress_updated'):
+                self.uploader.progress_updated.connect(self._update_progress)
             
-            # 上传完成事件
-            self.uploader.on("upload_complete", self._on_upload_complete)
+            if hasattr(self.uploader, 'upload_completed'):
+                self.uploader.upload_completed.connect(self._on_upload_complete)
             
-            # 所有上传完成事件
-            self.uploader.on("all_uploads_complete", self._on_all_uploads_complete)
+            if hasattr(self.uploader, 'all_uploads_completed'):
+                self.uploader.all_uploads_completed.connect(self._on_all_uploads_complete)
             
-            # 错误事件
-            self.uploader.on("error", self._on_upload_error)
+            if hasattr(self.uploader, 'error_occurred'):
+                self.uploader.error_occurred.connect(self._on_upload_error)
             
             logger.debug("上传器信号连接成功")
+            
+            # 如果上传器没有这些信号属性，我们需要手动添加事件监听
+            # 这是为了兼容不同版本的上传器实现
+            if not hasattr(self.uploader, 'status_updated') and hasattr(self.uploader, 'add_event_listener'):
+                self.uploader.add_event_listener("status", self._update_status)
+                self.uploader.add_event_listener("progress", self._update_progress)
+                self.uploader.add_event_listener("upload_complete", self._on_upload_complete)
+                self.uploader.add_event_listener("all_uploads_complete", self._on_all_uploads_complete)
+                self.uploader.add_event_listener("error", self._on_upload_error)
+                logger.debug("使用事件监听器连接上传器事件")
+            
         except Exception as e:
             logger.error(f"连接上传器信号时出错: {e}")
             import traceback

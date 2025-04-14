@@ -166,9 +166,13 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化下载模块...")
                 try:
                     from src.modules.downloader import Downloader
-                    self.app.downloader = Downloader(self.app.client, self.app.ui_config_manager, 
+                    original_downloader = Downloader(self.app.client, self.app.ui_config_manager, 
                                                     self.app.channel_resolver, self.app.history_manager)
-                    logger.info("已初始化下载模块")
+                    
+                    # 使用事件发射器包装下载器
+                    from src.modules.event_emitter_downloader import EventEmitterDownloader
+                    self.app.downloader = EventEmitterDownloader(original_downloader)
+                    logger.info("已初始化下载模块并添加信号支持")
                     initialized_components.append('downloader')
                 except Exception as e:
                     logger.error(f"初始化下载模块时出错: {e}")
@@ -178,9 +182,13 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化串行下载模块...")
                 try:
                     from src.modules.downloader_serial import DownloaderSerial
-                    self.app.downloader_serial = DownloaderSerial(self.app.client, self.app.ui_config_manager, 
-                                                                self.app.channel_resolver, self.app.history_manager)
-                    logger.info("已初始化串行下载模块")
+                    original_downloader_serial = DownloaderSerial(self.app.client, self.app.ui_config_manager, 
+                                                                self.app.channel_resolver, self.app.history_manager, self.app)
+                    
+                    # 使用事件发射器包装串行下载器
+                    from src.modules.event_emitter_downloader_serial import EventEmitterDownloaderSerial
+                    self.app.downloader_serial = EventEmitterDownloaderSerial(original_downloader_serial)
+                    logger.info("已初始化串行下载模块并添加信号支持")
                     initialized_components.append('downloader_serial')
                 except Exception as e:
                     logger.error(f"初始化串行下载模块时出错: {e}")
@@ -190,9 +198,13 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化上传模块...")
                 try:
                     from src.modules.uploader import Uploader
-                    self.app.uploader = Uploader(self.app.client, self.app.ui_config_manager, 
+                    original_uploader = Uploader(self.app.client, self.app.ui_config_manager, 
                                                 self.app.channel_resolver, self.app.history_manager, self.app)
-                    logger.info("已初始化上传模块")
+                    
+                    # 使用事件发射器包装上传器
+                    from src.modules.event_emitter_uploader import EventEmitterUploader
+                    self.app.uploader = EventEmitterUploader(original_uploader)
+                    logger.info("已初始化上传模块并添加信号支持")
                     initialized_components.append('uploader')
                 except Exception as e:
                     logger.error(f"初始化上传模块时出错: {e}")
@@ -202,10 +214,14 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化转发模块...")
                 try:
                     from src.modules.forwarder import Forwarder
-                    self.app.forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
+                    original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
                                                   self.app.channel_resolver, self.app.history_manager, 
                                                   self.app.downloader, self.app.uploader, self.app)
-                    logger.info("已初始化转发模块")
+                    
+                    # 使用事件发射器包装转发器
+                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
+                    self.app.forwarder = EventEmitterForwarder(original_forwarder)
+                    logger.info("已初始化转发模块并添加信号支持")
                     initialized_components.append('forwarder')
                 except Exception as e:
                     logger.error(f"初始化转发模块时出错: {e}")
@@ -215,9 +231,13 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化监听模块...")
                 try:
                     from src.modules.monitor import Monitor
-                    self.app.monitor = Monitor(self.app.client, self.app.ui_config_manager, 
+                    original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
                                              self.app.channel_resolver, self.app.history_manager, self.app)
-                    logger.info("已初始化监听模块")
+                    
+                    # 使用事件发射器包装监听器
+                    from src.modules.event_emitter_monitor import EventEmitterMonitor
+                    self.app.monitor = EventEmitterMonitor(original_monitor)
+                    logger.info("已初始化监听模块并添加信号支持")
                     initialized_components.append('monitor')
                 except Exception as e:
                     logger.error(f"初始化监听模块时出错: {e}")

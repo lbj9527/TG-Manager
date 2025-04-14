@@ -840,25 +840,34 @@ class DownloadView(QWidget):
             
         # 连接下载器事件处理器
         try:
-            # 这里使用观察者模式连接事件处理器
-            # 下载器在每个阶段会触发事件，我们注册相应的处理函数
+            # 检查downloader是否有信号属性并连接
+            if hasattr(self.downloader, 'status_updated'):
+                self.downloader.status_updated.connect(self._update_status)
             
-            # 状态更新事件
-            self.downloader.on("status", self._update_status)
+            if hasattr(self.downloader, 'progress_updated'):
+                self.downloader.progress_updated.connect(self._update_progress)
             
-            # 下载进度事件
-            self.downloader.on("progress", self._update_progress)
+            if hasattr(self.downloader, 'download_completed'):
+                self.downloader.download_completed.connect(self._on_download_complete)
             
-            # 下载完成事件
-            self.downloader.on("download_complete", self._on_download_complete)
+            if hasattr(self.downloader, 'all_downloads_completed'):
+                self.downloader.all_downloads_completed.connect(self._on_all_downloads_complete)
             
-            # 下载所有完成事件
-            self.downloader.on("all_downloads_complete", self._on_all_downloads_complete)
-            
-            # 错误事件
-            self.downloader.on("error", self._on_download_error)
+            if hasattr(self.downloader, 'error_occurred'):
+                self.downloader.error_occurred.connect(self._on_download_error)
             
             logger.debug("下载器信号连接成功")
+            
+            # 如果下载器没有这些信号属性，我们需要手动添加事件监听
+            # 这是为了兼容不同版本的下载器实现
+            if not hasattr(self.downloader, 'status_updated') and hasattr(self.downloader, 'add_event_listener'):
+                self.downloader.add_event_listener("status", self._update_status)
+                self.downloader.add_event_listener("progress", self._update_progress)
+                self.downloader.add_event_listener("download_complete", self._on_download_complete)
+                self.downloader.add_event_listener("all_downloads_complete", self._on_all_downloads_complete)
+                self.downloader.add_event_listener("error", self._on_download_error)
+                logger.debug("使用事件监听器连接下载器事件")
+            
         except Exception as e:
             logger.error(f"连接下载器信号时出错: {e}")
             import traceback
