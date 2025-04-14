@@ -56,7 +56,7 @@ class LogViewerView(QWidget):
         self.config = config or {}
         self.log_file_path = self._get_log_file_path()
         self.current_filter = ""
-        self.auto_scroll = True
+        self.auto_scroll = True  # 始终启用自动滚动
         self.log_entries = []
         self.parent_window = parent
         self.is_loading = False  # 添加加载状态标志
@@ -79,7 +79,7 @@ class LogViewerView(QWidget):
         # 初始加载日志（异步）
         create_task(self._async_load_logs())
         
-        # 设置自动刷新（使用AsyncTimer替代QTimer）
+        # 设置自动刷新（使用AsyncTimer替代QTimer）- 始终自动刷新
         self.refresh_timer = AsyncTimer(2.0, self._async_refresh_logs)
         self.refresh_timer.start()
         
@@ -167,34 +167,22 @@ class LogViewerView(QWidget):
         self.level_combo.addItem("警告", "WARNING")
         self.level_combo.addItem("错误", "ERROR")
         self.level_combo.addItem("严重", "CRITICAL")
+        # 设置默认显示INFO级别（索引2）
+        self.level_combo.setCurrentIndex(2)
         self.level_combo.currentIndexChanged.connect(self._filter_changed)
         filter_panel.addWidget(self.level_combo)
         
-        # 自动刷新和滚动
-        self.auto_refresh_check = QCheckBox("自动刷新")
-        self.auto_refresh_check.setChecked(True)
-        self.auto_refresh_check.toggled.connect(self._toggle_auto_refresh)
-        filter_panel.addWidget(self.auto_refresh_check)
-        
-        self.auto_scroll_check = QCheckBox("自动滚动")
-        self.auto_scroll_check.setChecked(True)
-        self.auto_scroll_check.toggled.connect(self._toggle_auto_scroll)
-        filter_panel.addWidget(self.auto_scroll_check)
-        
         control_layout.addLayout(filter_panel)
         
-        # 导出和清空按钮
+        # 清空按钮
         button_panel = QHBoxLayout()
         
         clear_button = QPushButton("清空过滤器")
         clear_button.clicked.connect(self._clear_filters)
         button_panel.addWidget(clear_button)
         
+        # 添加空白占位符
         button_panel.addStretch(1)
-        
-        export_button = QPushButton("导出日志")
-        export_button.clicked.connect(self._export_logs)
-        button_panel.addWidget(export_button)
         
         control_layout.addLayout(button_panel)
         
@@ -416,21 +404,11 @@ class LogViewerView(QWidget):
         if self.auto_scroll and self.log_table.rowCount() > 0:
             self.log_table.scrollToBottom()
         
-    def _toggle_auto_refresh(self, enabled):
-        """切换自动刷新功能
-        
-        Args:
-            enabled: 是否启用自动刷新
-        """
-        if enabled:
-            self.refresh_timer.start()
-        else:
-            self.refresh_timer.stop()
-            
     def _clear_filters(self):
         """清空所有过滤条件"""
         self.filter_input.clear()
-        self.level_combo.setCurrentIndex(0)  # 设置为"所有级别"
+        # 清空过滤器时设置为INFO级别，而不是所有级别
+        self.level_combo.setCurrentIndex(2)  # 设置为"信息"级别
         create_task(self._async_apply_filters())
     
     def _apply_filters(self):
@@ -442,96 +420,14 @@ class LogViewerView(QWidget):
         if self.is_loading:
             return
             
-        # 记住当前滚动位置
-        scroll_position = None
-        if not self.auto_scroll:
-            scroll_bar = self.log_table.verticalScrollBar()
-            scroll_position = scroll_bar.value()
-        
         # 异步重新加载日志
         await self._async_load_logs()
         
-        # 恢复滚动位置
-        if scroll_position is not None and not self.auto_scroll:
-            scroll_bar = self.log_table.verticalScrollBar()
-            scroll_bar.setValue(scroll_position)
-            
-        # 不需要在这里显示状态消息，已经在_on_logs_loaded中处理
+        # 自动滚动到底部（已在_update_table_with_filtered_entries中处理）
     
     def _refresh_logs(self):
         """同步版本的刷新日志（保留向后兼容性）"""
         create_task(self._async_refresh_logs())
-    
-    def _toggle_auto_scroll(self, state):
-        """切换自动滚动
-        
-        Args:
-            state: 复选框状态
-        """
-        self.auto_scroll = (state == Qt.Checked)
-        if self.auto_scroll:
-            self.log_table.scrollToBottom()
-    
-    def _clear_display(self):
-        """清空日志显示"""
-        self.log_table.setRowCount(0)
-        self._update_status_message("日志显示已清空")
-    
-    def _export_logs(self):
-        """导出日志"""
-        # 获取当前筛选后的日志
-        filtered_logs = []
-        for row in range(self.log_table.rowCount()):
-            entry = {
-                'timestamp': self.log_table.item(row, 0).text(),
-                'level': self.log_table.item(row, 1).text(),
-                'source': self.log_table.item(row, 2).text(),
-                'line': self.log_table.item(row, 3).text(),
-                'message': self.log_table.item(row, 4).text()
-            }
-            filtered_logs.append(entry)
-        
-        if not filtered_logs:
-            QMessageBox.information(
-                self,
-                "导出日志",
-                "没有日志记录可导出。",
-                QMessageBox.Ok
-            )
-            return
-        
-        # 获取导出文件路径
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "导出日志",
-            f"logs_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-            "日志文件 (*.log);;文本文件 (*.txt);;所有文件 (*.*)"
-        )
-        
-        if not file_path:
-            return
-        
-        try:
-            # 写入日志
-            with open(file_path, 'w', encoding='utf-8') as file:
-                for entry in filtered_logs:
-                    file.write(f"[{entry['timestamp']}] [{entry['level']}] [{entry['source']}:{entry['line']}] {entry['message']}\n")
-            
-            QMessageBox.information(
-                self,
-                "导出成功",
-                f"日志成功导出到: {file_path}",
-                QMessageBox.Ok
-            )
-            
-        except Exception as e:
-            logger.error(f"导出日志失败: {e}")
-            QMessageBox.critical(
-                self,
-                "导出失败",
-                f"导出日志失败: {e}",
-                QMessageBox.Ok
-            )
     
     def closeEvent(self, event):
         """关闭事件处理
