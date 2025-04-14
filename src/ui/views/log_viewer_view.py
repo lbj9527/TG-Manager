@@ -15,16 +15,25 @@ from PySide6.QtGui import QColor, QTextCharFormat, QBrush, QIcon, QFont
 
 import os
 import re
+import asyncio
 import datetime
 from pathlib import Path
 
 from src.utils.logger import get_logger
+from src.utils.async_utils import (
+    create_task, qt_connect_async, AsyncTimer, as_task,
+    get_event_loop
+)
 
 logger = get_logger()
 
 
 class LogViewerView(QWidget):
     """日志查看器视图，提供日志显示、过滤和搜索功能"""
+    
+    # 定义信号
+    logs_loaded_signal = Signal(list)  # 日志加载完成信号
+    status_update_signal = Signal(str)  # 状态更新信号
     
     # 定义日志级别颜色
     LOG_COLORS = {
@@ -50,6 +59,11 @@ class LogViewerView(QWidget):
         self.auto_scroll = True
         self.log_entries = []
         self.parent_window = parent
+        self.is_loading = False  # 添加加载状态标志
+        
+        # 连接信号
+        self.logs_loaded_signal.connect(self._on_logs_loaded)
+        self.status_update_signal.connect(self._on_status_update)
         
         # 设置布局
         self.main_layout = QVBoxLayout(self)
@@ -62,13 +76,12 @@ class LogViewerView(QWidget):
         # 创建日志显示区域
         self._create_log_display()
         
-        # 加载日志
-        self._load_logs()
+        # 初始加载日志（异步）
+        create_task(self._async_load_logs())
         
-        # 设置自动刷新
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self._refresh_logs)
-        self.refresh_timer.start(2000)  # 每2秒刷新一次
+        # 设置自动刷新（使用AsyncTimer替代QTimer）
+        self.refresh_timer = AsyncTimer(2.0, self._async_refresh_logs)
+        self.refresh_timer.start()
         
         logger.info("日志查看器视图初始化完成")
     
@@ -129,25 +142,7 @@ class LogViewerView(QWidget):
         control_group = QGroupBox("日志控制")
         control_layout = QVBoxLayout(control_group)
         
-        # 文件路径面板
-        path_panel = QHBoxLayout()
-        path_panel.addWidget(QLabel("日志文件:"))
-        
-        self.path_input = QLineEdit(self.log_file_path)
-        self.path_input.setReadOnly(True)
-        path_panel.addWidget(self.path_input, 1)
-        
-        browse_button = QPushButton("浏览...")
-        browse_button.clicked.connect(self._browse_log_file)
-        path_panel.addWidget(browse_button)
-        
-        refresh_button = QPushButton("刷新")
-        refresh_button.clicked.connect(self._refresh_logs)
-        path_panel.addWidget(refresh_button)
-        
-        control_layout.addLayout(path_panel)
-        
-        # 文件路径状态标签
+        # 文件路径状态标签 - 仅显示当前日志文件路径，移除文件选择相关控件
         self.file_path_label = QLabel(f"当前日志文件: {self.log_file_path}")
         control_layout.addWidget(self.file_path_label)
         
@@ -210,63 +205,60 @@ class LogViewerView(QWidget):
         """创建日志显示区域"""
         # 创建日志表格
         self.log_table = QTableWidget()
-        self.log_table.setColumnCount(5)
-        self.log_table.setHorizontalHeaderLabels(["时间", "级别", "来源", "行号", "消息"])
+        # 减少列数从5到3，移除"来源"和"行号"列
+        self.log_table.setColumnCount(3)
+        self.log_table.setHorizontalHeaderLabels(["时间", "级别", "消息"])
         
         # 设置表格列宽
         header = self.log_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 时间
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 级别
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # 来源
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # 行号
-        header.setSectionResizeMode(4, QHeaderView.Stretch)           # 消息
+        header.setSectionResizeMode(2, QHeaderView.Stretch)           # 消息
         
         # 添加到主布局
         self.main_layout.addWidget(self.log_table, 1)  # 1为拉伸系数
     
-    def _browse_log_file(self):
-        """浏览日志文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择日志文件",
-            os.path.dirname(self.log_file_path),
-            "日志文件 (*.log);;所有文件 (*.*)"
-        )
-        
-        if file_path:
-            self.log_file_path = file_path
-            self.path_input.setText(file_path)
-            self._load_logs()
-    
-    def _load_logs(self):
-        """加载日志文件内容"""
+    async def _async_load_logs(self):
+        """异步加载日志文件内容"""
         try:
+            if self.is_loading:
+                logger.debug("日志已在加载中，跳过此次加载")
+                return
+                
+            self.is_loading = True
+            # 在首次加载时显示加载消息
+            if not hasattr(self, '_initial_load_done'):
+                self.status_update_signal.emit("正在加载日志...")
+            
             # 检查日志文件是否存在
             if not os.path.exists(self.log_file_path):
                 logger.warning(f"日志文件不存在: {self.log_file_path}")
-                # 更新UI显示空消息
-                self.log_table.setRowCount(0)
-                if hasattr(self, 'file_path_label'):
-                    self.file_path_label.setText(f"日志文件不存在: {self.log_file_path}")
+                self.status_update_signal.emit(f"日志文件不存在: {self.log_file_path}")
+                self.logs_loaded_signal.emit([])
+                self.is_loading = False
                 return
             
             # 检查日志文件大小
             if os.path.getsize(self.log_file_path) == 0:
                 logger.warning(f"日志文件为空: {self.log_file_path}")
-                # 清空表格
-                self.log_table.setRowCount(0)
-                if hasattr(self, 'file_path_label'):
-                    self.file_path_label.setText(f"日志文件为空: {self.log_file_path}")
+                self.status_update_signal.emit(f"日志文件为空: {self.log_file_path}")
+                self.logs_loaded_signal.emit([])
+                self.is_loading = False
                 return
             
-            # 清空现有日志条目
-            self.log_entries = []
+            # 在事件循环中运行IO操作
+            loop = get_event_loop()
             
-            # 读取日志文件
-            with open(self.log_file_path, 'r', encoding='utf-8') as file:
-                log_text = file.read()
+            # 使用协程执行文件读取操作
+            log_text = await loop.run_in_executor(
+                None, 
+                lambda: open(self.log_file_path, 'r', encoding='utf-8').read()
+            )
             
             # 解析日志条目
+            log_entries = []
+            
+            # 在异步任务中解析日志
             # 使用正则表达式解析日志格式
             # 支持两种日志格式:
             # 1. [YYYY-MM-DD HH:MM:SS] [LEVEL] [SOURCE:LINE] Message
@@ -292,7 +284,7 @@ class LogViewerView(QWidget):
                         'line': line.strip(),
                         'message': message.strip()
                     }
-                    self.log_entries.append(entry)
+                    log_entries.append(entry)
             elif matches2:
                 # 解析第二种格式的日志
                 for match in matches2:
@@ -304,70 +296,68 @@ class LogViewerView(QWidget):
                         'line': line.strip(),
                         'message': message.strip()
                     }
-                    self.log_entries.append(entry)
-            else:
-                # 无法匹配已知日志格式
-                logger.warning(f"无法解析日志文件格式: {self.log_file_path}")
-                # 清空表格
-                self.log_table.setRowCount(0)
-                if hasattr(self, 'file_path_label'):
-                    self.file_path_label.setText(f"无法解析日志文件格式: {self.log_file_path}")
-                return
+                    log_entries.append(entry)
             
-            # 根据过滤条件显示日志
-            self._apply_filters()
-            
-            # 如果启用了自动滚动，滚动到最新日志
-            if self.auto_scroll and self.log_table.rowCount() > 0:
-                self.log_table.scrollToBottom()
-            
-            # 更新文件路径标签
-            if hasattr(self, 'file_path_label'):
-                self.file_path_label.setText(f"当前日志文件: {self.log_file_path}")
+            # 发送解析完成的信号
+            self.logs_loaded_signal.emit(log_entries)
             
         except Exception as e:
-            logger.error(f"加载日志失败: {e}")
-            # 清空表格
-            self.log_table.setRowCount(0)
-            if hasattr(self, 'file_path_label'):
-                self.file_path_label.setText(f"加载日志失败: {e}")
+            logger.error(f"异步加载日志失败: {e}")
+            self.status_update_signal.emit(f"加载日志失败: {e}")
+            self.logs_loaded_signal.emit([])
+        finally:
+            self.is_loading = False
+    
+    @Slot(list)
+    def _on_logs_loaded(self, log_entries):
+        """日志加载完成的槽函数
+        
+        Args:
+            log_entries: 解析后的日志条目
+        """
+        self.log_entries = log_entries
+        # 更新文件路径标签
+        if hasattr(self, 'file_path_label'):
+            self.file_path_label.setText(f"当前日志文件: {self.log_file_path}")
+        
+        # 根据过滤条件显示日志
+        self._apply_filters()
+        
+        # 更新加载状态消息
+        # 仅在首次加载时显示状态信息
+        if not hasattr(self, '_initial_load_done'):
+            self._initial_load_done = True
+            if log_entries:
+                self.status_update_signal.emit(f"加载了 {len(log_entries)} 条日志记录")
+            else:
+                self.status_update_signal.emit("未找到日志记录")
+    
+    @Slot(str)
+    def _on_status_update(self, message):
+        """状态更新槽函数
+        
+        Args:
+            message: 状态消息
+        """
+        self._update_status_message(message)
     
     def _filter_changed(self):
         """当过滤条件变化时调用"""
-        self._apply_filters()
+        # 使用异步处理筛选，避免大量日志时UI卡顿
+        create_task(self._async_apply_filters())
         
-    def _toggle_auto_refresh(self, enabled):
-        """切换自动刷新功能
+    async def _async_apply_filters(self):
+        """异步应用筛选条件"""
+        # 获取筛选条件
+        selected_level = self.level_combo.currentData()
+        search_text = self.filter_input.text()
+        case_sensitive = False  # 默认不区分大小写
         
-        Args:
-            enabled: 是否启用自动刷新
-        """
-        if enabled:
-            self.refresh_timer.start(2000)  # 每2秒刷新一次
-        else:
-            self.refresh_timer.stop()
-            
-    def _clear_filters(self):
-        """清空所有过滤条件"""
-        self.filter_input.clear()
-        self.level_combo.setCurrentIndex(0)  # 设置为"所有级别"
-        self._apply_filters()
-    
-    def _apply_filters(self):
-        """根据筛选条件显示日志"""
-        try:
-            self.log_table.setRowCount(0)  # 清空表格
-            
-            if not self.log_entries:
-                return
-            
-            # 获取筛选条件
-            selected_level = self.level_combo.currentData()
-            search_text = self.filter_input.text()
-            case_sensitive = False  # 默认不区分大小写
-            
-            # 筛选日志条目
-            filtered_entries = []
+        # 异步筛选日志条目
+        loop = get_event_loop()
+        
+        def filter_entries():
+            filtered = []
             for entry in self.log_entries:
                 # 级别筛选
                 if selected_level != "ALL" and entry['level'] != selected_level:
@@ -378,58 +368,99 @@ class LogViewerView(QWidget):
                     message = entry['message']
                     if not case_sensitive:
                         message = message.lower()
-                        search_text = search_text.lower()
+                        search = search_text.lower()
+                    else:
+                        search = search_text
                     
-                    if search_text not in message:
+                    if search not in message:
                         continue
                 
-                filtered_entries.append(entry)
+                filtered.append(entry)
+            return filtered
+        
+        # 在事件循环的执行器中运行筛选操作
+        filtered_entries = await loop.run_in_executor(None, filter_entries)
+        
+        # 在主线程中更新UI
+        self._update_table_with_filtered_entries(filtered_entries)
+        
+    def _update_table_with_filtered_entries(self, filtered_entries):
+        """用筛选后的条目更新表格
+        
+        Args:
+            filtered_entries: 筛选后的日志条目
+        """
+        self.log_table.setRowCount(0)  # 清空表格
+        
+        # 显示筛选后的日志
+        for row, entry in enumerate(filtered_entries):
+            self.log_table.insertRow(row)
             
-            # 显示筛选后的日志
-            for row, entry in enumerate(filtered_entries):
-                self.log_table.insertRow(row)
-                
-                # 设置单元格项
-                timestamp_item = QTableWidgetItem(entry['timestamp'])
-                level_item = QTableWidgetItem(entry['level'])
-                source_item = QTableWidgetItem(entry['source'])
-                line_item = QTableWidgetItem(entry['line'])
-                message_item = QTableWidgetItem(entry['message'])
-                
-                # 设置日志级别颜色
-                if entry['level'] in self.LOG_COLORS:
-                    level_color = self.LOG_COLORS[entry['level']]
-                    level_item.setForeground(QBrush(level_color))
-                
-                # 添加到表格
-                self.log_table.setItem(row, 0, timestamp_item)
-                self.log_table.setItem(row, 1, level_item)
-                self.log_table.setItem(row, 2, source_item)
-                self.log_table.setItem(row, 3, line_item)
-                self.log_table.setItem(row, 4, message_item)
+            # 设置单元格项
+            timestamp_item = QTableWidgetItem(entry['timestamp'])
+            level_item = QTableWidgetItem(entry['level'])
+            # 直接使用消息，不再显示来源和行号
+            message_item = QTableWidgetItem(entry['message'])
             
-            # 如果启用了自动滚动，滚动到最新日志
-            if self.auto_scroll and self.log_table.rowCount() > 0:
-                self.log_table.scrollToBottom()
+            # 设置日志级别颜色
+            if entry['level'] in self.LOG_COLORS:
+                level_color = self.LOG_COLORS[entry['level']]
+                level_item.setForeground(QBrush(level_color))
             
-        except Exception as e:
-            logger.error(f"应用过滤器失败: {e}")
+            # 添加到表格 - 仅添加3列，不再包括来源和行号
+            self.log_table.setItem(row, 0, timestamp_item)
+            self.log_table.setItem(row, 1, level_item)
+            self.log_table.setItem(row, 2, message_item)
+        
+        # 如果启用了自动滚动，滚动到最新日志
+        if self.auto_scroll and self.log_table.rowCount() > 0:
+            self.log_table.scrollToBottom()
+        
+    def _toggle_auto_refresh(self, enabled):
+        """切换自动刷新功能
+        
+        Args:
+            enabled: 是否启用自动刷新
+        """
+        if enabled:
+            self.refresh_timer.start()
+        else:
+            self.refresh_timer.stop()
+            
+    def _clear_filters(self):
+        """清空所有过滤条件"""
+        self.filter_input.clear()
+        self.level_combo.setCurrentIndex(0)  # 设置为"所有级别"
+        create_task(self._async_apply_filters())
     
-    def _refresh_logs(self):
-        """刷新日志"""
+    def _apply_filters(self):
+        """同步应用筛选条件（保留向后兼容性）"""
+        create_task(self._async_apply_filters())
+    
+    async def _async_refresh_logs(self):
+        """异步刷新日志"""
+        if self.is_loading:
+            return
+            
         # 记住当前滚动位置
         scroll_position = None
         if not self.auto_scroll:
             scroll_bar = self.log_table.verticalScrollBar()
             scroll_position = scroll_bar.value()
         
-        # 重新加载日志
-        self._load_logs()
+        # 异步重新加载日志
+        await self._async_load_logs()
         
         # 恢复滚动位置
         if scroll_position is not None and not self.auto_scroll:
             scroll_bar = self.log_table.verticalScrollBar()
             scroll_bar.setValue(scroll_position)
+            
+        # 不需要在这里显示状态消息，已经在_on_logs_loaded中处理
+    
+    def _refresh_logs(self):
+        """同步版本的刷新日志（保留向后兼容性）"""
+        create_task(self._async_refresh_logs())
     
     def _toggle_auto_scroll(self, state):
         """切换自动滚动
@@ -509,8 +540,7 @@ class LogViewerView(QWidget):
             event: 关闭事件
         """
         # 停止刷新定时器
-        if self.refresh_timer.isActive():
-            self.refresh_timer.stop()
+        self.refresh_timer.stop()
         
         # 接受关闭事件
         event.accept()
