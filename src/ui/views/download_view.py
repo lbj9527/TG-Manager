@@ -265,8 +265,15 @@ class DownloadView(QWidget):
         self.max_downloads.setEnabled(False)
         
         parallel_layout.addWidget(self.parallel_check)
+        
+        # 添加提示标签
+        restart_note = QLabel("(更换下载模式并保存后，重启才会生效)")
+        restart_note.setStyleSheet("font-size: 12px;")
+        parallel_layout.addWidget(restart_note)
+
         parallel_layout.addWidget(QLabel("最大并发:"))
         parallel_layout.addWidget(self.max_downloads)
+        
         parallel_layout.addStretch(1)
         
         options_layout.addLayout(parallel_layout)

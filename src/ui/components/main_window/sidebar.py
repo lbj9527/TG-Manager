@@ -234,10 +234,35 @@ class SidebarMixin:
         app = self.app
         
         try:
-            if function_name == 'download' and hasattr(app, 'downloader'):
+            if function_name == 'download':
                 if hasattr(view, 'set_downloader'):
-                    view.set_downloader(app.downloader)
-                    logger.info("下载视图已设置下载器实例")
+                    # 读取配置文件中的parallel_download设置
+                    parallel_download = False
+                    try:
+                        if hasattr(app, 'ui_config_manager'):
+                            download_config = app.ui_config_manager.get_download_config()
+                            parallel_download = download_config.parallel_download
+                            logger.info(f"从配置读取parallel_download设置: {parallel_download}")
+                    except Exception as config_error:
+                        logger.error(f"读取parallel_download配置时出错: {config_error}")
+                    
+                    # 根据parallel_download设置选择下载器
+                    if parallel_download and hasattr(app, 'downloader'):
+                        view.set_downloader(app.downloader)
+                        logger.info("下载视图已设置并行下载器实例")
+                    elif not parallel_download and hasattr(app, 'downloader_serial'):
+                        view.set_downloader(app.downloader_serial)
+                        logger.info("下载视图已设置串行下载器实例")
+                    else:
+                        # 回退到可用的下载器
+                        if hasattr(app, 'downloader'):
+                            view.set_downloader(app.downloader)
+                            logger.info("下载视图已设置并行下载器实例(回退选择)")
+                        elif hasattr(app, 'downloader_serial'):
+                            view.set_downloader(app.downloader_serial)
+                            logger.info("下载视图已设置串行下载器实例(回退选择)")
+                        else:
+                            logger.warning("没有可用的下载器实例")
                 else:
                     logger.warning("下载视图缺少set_downloader方法")
                     
