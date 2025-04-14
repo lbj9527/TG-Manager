@@ -1678,7 +1678,7 @@ class Forwarder():
                     _logger.debug(f"动画下载成功: {file_path}")
             
             except FloodWait as e:
-                logger.warning(f"下载媒体文件时遇到限制，等待 {e.x} 秒")
+                _logger.warning(f"下载媒体文件时遇到限制，等待 {e.x} 秒")
                 await asyncio.sleep(e.x)
                 # 重试下载
                 retry_result = await self._retry_download_media(message, download_dir, chat_id)
@@ -1686,7 +1686,7 @@ class Forwarder():
                     downloaded_files.append(retry_result)
             
             except Exception as e:
-                logger.error(f"下载消息 {message.id} 的媒体文件失败: {e}")
+                _logger.error(f"下载消息 {message.id} 的媒体文件失败: {e}")
                 continue
         
         return downloaded_files
@@ -1745,12 +1745,12 @@ class Forwarder():
                 return None
             
             except FloodWait as e:
-                logger.warning(f"重试下载时遇到限制，等待 {e.x} 秒")
+                _logger.warning(f"重试下载时遇到限制，等待 {e.x} 秒")
                 await asyncio.sleep(e.x)
             
             except Exception as e:
                 retry_count += 1
-                logger.error(f"重试下载失败 (尝试 {retry_count}/{max_retries}): {e}")
+                _logger.error(f"重试下载失败 (尝试 {retry_count}/{max_retries}): {e}")
                 if retry_count >= max_retries:
                     break
                 await asyncio.sleep(2 * retry_count)  # 指数退避
@@ -1769,7 +1769,7 @@ class Forwarder():
         session_dir.mkdir(exist_ok=True, parents=True)
         
         debug_message = f"创建转发会话临时目录: {session_dir}"
-        logger.debug(debug_message)
+        _logger.debug(debug_message)
         self.emit("debug", debug_message)
         
         return session_dir
@@ -1791,26 +1791,26 @@ class Forwarder():
                             try:
                                 shutil.rmtree(sub_dir)
                                 debug_message = f"已清理临时目录: {sub_dir}"
-                                logger.debug(debug_message)
+                                _logger.debug(debug_message)
                                 self.emit("debug", debug_message)
                             except Exception as e:
                                 error_message = f"清理临时目录 {sub_dir} 失败: {e}"
-                                logger.error(error_message)
+                                _logger.error(error_message)
                                 self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True)
             elif dir_path.exists():
                 # 清理指定目录
                 try:
                     shutil.rmtree(dir_path)
                     debug_message = f"已清理指定目录: {dir_path}"
-                    logger.debug(debug_message)
+                    _logger.debug(debug_message)
                     self.emit("debug", debug_message)
                 except Exception as e:
                     error_message = f"清理指定目录 {dir_path} 失败: {e}"
-                    logger.error(error_message)
+                    _logger.error(error_message)
                     self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True)
         except Exception as e:
             error_message = f"清理媒体目录失败: {e}"
-            logger.error(error_message)
+            _logger.error(error_message)
             self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True) 
     
     def _estimate_media_size(self, message: Message) -> int:
