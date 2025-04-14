@@ -143,6 +143,13 @@ class CleanupManager:
             bool: 清理是否成功完成
         """
         try:
+            # 重置应用程序初始化状态，避免界面被锁定
+            if hasattr(self.app, 'is_initializing'):
+                self.app.is_initializing = False
+                # 如果主窗口仍然存在，恢复其启用状态
+                if hasattr(self.app, 'main_window') and self.app.main_window:
+                    self.app.main_window.set_ui_enabled(True)
+            
             # 停止Telegram客户端
             if hasattr(self.app, 'client_manager') and self.app.client_manager:
                 logger.debug("停止Telegram客户端")
@@ -166,14 +173,24 @@ class CleanupManager:
             logger.error(traceback.format_exc())
             return False
     
-    # 以下方法用于兼容旧的接口
     async def cleanup(self):
-        """原有的异步清理方法，保持向后兼容
-        
-        注意：此方法已被新的清理流程替代，但保留以维持兼容性
+        """清理所有资源，包括客户端连接
         
         Returns:
-            bool: 清理是否成功完成
+            bool: 是否成功清理
         """
-        logger.warning("使用了已弃用的cleanup方法，应该使用_cleanup_sync")
-        return await self._async_cleanup() 
+        try:
+            logger.info("开始异步清理过程")
+            
+            # 重置应用程序初始化状态，避免界面被锁定
+            if hasattr(self.app, 'is_initializing'):
+                self.app.is_initializing = False
+                # 如果主窗口仍然存在，恢复其启用状态
+                if hasattr(self.app, 'main_window') and self.app.main_window:
+                    self.app.main_window.set_ui_enabled(True)
+            
+            # 清理各个功能模块
+            return await self._async_cleanup()
+        except Exception as e:
+            logger.error(f"清理过程出错: {e}")
+            return False 

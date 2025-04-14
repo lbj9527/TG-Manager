@@ -129,4 +129,50 @@ class MainWindowBase(QMainWindow):
             timeout: 显示时间(毫秒)，默认3秒
         """
         logger.debug(f"状态栏消息: {message}")
-        self.statusBar().showMessage(message, timeout) 
+        self.statusBar().showMessage(message, timeout)
+    
+    def set_initialization_state(self, is_initializing=True):
+        """设置应用程序初始化状态
+        
+        Args:
+            is_initializing: 是否正在初始化
+        """
+        if is_initializing:
+            # 显示初始化状态
+            self.show_status_message("初始化中，请稍等...", 0)  # 0表示不自动清除
+            # 禁用界面操作
+            self.set_ui_enabled(False)
+        else:
+            # 清除初始化状态
+            self.show_status_message("初始化完成", 3000)
+            # 启用界面操作
+            self.set_ui_enabled(True)
+            
+    def set_ui_enabled(self, enabled=True):
+        """启用或禁用界面操作
+        
+        Args:
+            enabled: 是否启用界面
+        """
+        # 设置中心窗口部件的启用状态
+        self.central_widget.setEnabled(enabled)
+        
+        # 如果有侧边栏，设置侧边栏的启用状态
+        if hasattr(self, 'sidebar_dock'):
+            self.sidebar_dock.setEnabled(enabled)
+            
+        # 如果有菜单栏，设置菜单栏的启用状态
+        if hasattr(self, 'menuBar'):
+            menu_bar = self.menuBar()
+            if menu_bar:
+                menu_bar.setEnabled(enabled)
+                
+        # 如果有工具栏，设置工具栏的启用状态
+        if hasattr(self, 'toolbar'):
+            self.toolbar.setEnabled(enabled)
+            
+        # 更新状态栏的样式以提供视觉反馈
+        if not enabled:
+            self.statusBar().setStyleSheet("background-color: #FFEBEE;")  # 淡红色背景
+        else:
+            self.statusBar().setStyleSheet("")  # 恢复默认样式 

@@ -128,6 +128,12 @@ class SidebarMixin:
         """
         logger.debug(f"处理导航: {item_id} -> {item_data}")
         
+        # 检查应用程序是否正在初始化
+        if hasattr(self, 'app') and hasattr(self.app, 'is_initializing') and self.app.is_initializing:
+            self.show_status_message("系统正在初始化中，请稍等...", 3000)
+            logger.warning(f"用户尝试在初始化完成前访问功能: {item_id}")
+            return
+            
         # 视图已经存在，则显示它
         if item_id in self.opened_views:
             self.central_layout.setCurrentWidget(self.opened_views[item_id])

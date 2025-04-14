@@ -53,6 +53,9 @@ class TGManagerApp(QObject):
         # 添加首次登录标志
         self.is_first_login = False
         
+        # 添加初始化状态标志
+        self.is_initializing = True
+        
         if self.verbose:
             logger.debug("初始化应用程序，应用样式...")
         
@@ -173,6 +176,9 @@ class TGManagerApp(QObject):
             self.main_window = MainWindow(self.config, self)
             self.main_window.config_saved.connect(self._on_config_saved)
             
+            # 设置初始化状态
+            self.main_window.set_initialization_state(True)
+            
             # 将窗口居中显示在屏幕上
             screen = self.app.primaryScreen()
             screen_geometry = screen.availableGeometry()
@@ -255,11 +261,23 @@ class TGManagerApp(QObject):
     async def async_run(self):
         """异步运行应用程序"""
         try:
+            # 设置主窗口初始化状态，禁用界面
+            if hasattr(self, 'main_window'):
+                self.main_window.set_initialization_state(True)
+            
             # 初始化异步服务
             await self.async_services_initializer.init_async_services(self.first_login_handler)
             
             # 将功能模块传递给可能已加载的视图组件
             self.async_services_initializer.initialize_views()
+            
+            # 更新初始化状态
+            self.is_initializing = False
+            
+            # 更新主窗口初始化状态，启用界面
+            if hasattr(self, 'main_window'):
+                self.main_window.set_initialization_state(False)
+                logger.info("初始化完成，界面已启用")
             
             # 启动全局异常处理器
             self.task_manager.add_task("global_exception_handler", 
