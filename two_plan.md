@@ -398,42 +398,24 @@ TG-Manager 目前存在两个主要入口：`run_ui.py`（空壳界面程序）�
 ### 3.1 基础和简单视图迁移 (2 天)
 
 - 迁移复杂度较低的视图组件（如 `help_doc_view.py` 和 `log_viewer_view.py`）
-- 标准迁移步骤：
 
-  1. 替换 asyncio 导入：
-
-     ```python
-     # 旧代码
-     import asyncio
-
-     # 新代码
-     import asyncio
-     from src.utils.async_utils import create_task, qt_connect_async, safe_sleep
-     ```
-
-  2. 替换任务创建：
-
-     ```python
-     # 旧代码
-     loop = asyncio.get_event_loop()
-     task = asyncio.create_task(coroutine())
-
-     # 新代码
-     task = create_task(coroutine())
-     ```
-
-  3. 连接按钮点击到异步方法：
-
-     ```python
-     # 旧代码
-     self.button.clicked.connect(self._on_button_clicked)
-
-     def _on_button_clicked(self):
-         asyncio.create_task(self._async_method())
-
-     # 新代码
-     qt_connect_async(self.button.clicked, self._async_method)
-     ```
+- 日志查看器界面优化：
+  1. 使用 qasync 改进性能：
+     - 实现异步日志加载，避免界面卡顿
+     - 使用 `AsyncTimer` 替代 `QTimer` 进行自动刷新
+     - 将日志解析和筛选操作移至后台线程执行
+  
+  2. 界面简化：
+     - 移除文件选择相关控件（"日志文件:"文本框、"浏览..."按钮和"刷新"按钮）
+     - 移除"来源"和"行号"列，保留"时间"、"级别"和"消息"列
+     - 移除自动刷新和自动滚动复选框，设为默认自动刷新和滚动
+     - 移除导出日志按钮和相关功能代码
+  
+  3. 显示优化：
+     - 设置默认显示INFO级别的日志，过滤掉DEBUG级别信息
+     - 清空过滤器操作也保持INFO级别筛选不变
+     - 优化状态栏消息更新逻辑，避免重复显示"加载了xxx条日志记录"
+     - 使用异步信号机制实现UI更新，确保界面响应流畅
 
 ### 3.2 中等复杂度视图迁移 (2 天)
 
