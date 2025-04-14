@@ -257,102 +257,92 @@ TG-Manager 目前存在两个主要入口：`run_ui.py`（空壳界面程序）�
 
 - 集成 `run.py` 中的核心服务（如客户端管理、配置系统、日志等）到 `run_ui.py`
 - 确保这些服务支持 qasync
+- 实现模块化结构，将 `TGManagerApp` 类拆分到多个文件中以提高可维护性
 
 ### 2.2 【已完成】核心功能组件集成 (2 天)
 
-- 将核心功能组件集成到 `TGManagerApp` 类中：
+- 在 `AsyncServicesInitializer` 类中实现核心功能组件的初始化：
 
   ```python
-  class TGManagerApp(QObject):
-      # 现有代码
-
-      async def _init_async_services(self):
-          """初始化异步服务"""
-          # 客户端管理器
-          self.client_manager = ClientManager(self.ui_config_manager)
-          self.client = await self.client_manager.start_client()
-
-          # 频道解析器
-          self.channel_resolver = ChannelResolver(self.client)
-
-          # 历史记录管理器
-          self.history_manager = HistoryManager()
-
-          # 下载模块 - 根据配置选择并行或顺序下载
-          download_config = self.ui_config_manager.get_download_config()
-          if download_config.parallel_download:
-              logger.info("使用并行下载模式")
-              self.downloader = Downloader(
-                  self.client,
-                  self.ui_config_manager,
-                  self.channel_resolver,
-                  self.history_manager
-              )
-              self.downloader.max_concurrent_downloads = download_config.max_concurrent_downloads
-          else:
-              logger.info("使用顺序下载模式")
-              self.downloader = DownloaderSerial(
-                  self.client,
-                  self.ui_config_manager,
-                  self.channel_resolver,
-                  self.history_manager
-              )
-
-          # 上传模块
-          self.uploader = Uploader(
-              self.client,
-              self.ui_config_manager,
-              self.channel_resolver,
-              self.history_manager
-          )
-
-          # 转发模块
-          self.forwarder = Forwarder(
-              self.client,
-              self.ui_config_manager,
-              self.channel_resolver,
-              self.history_manager,
-              self.downloader,
-              self.uploader
-          )
-
-          # 监听模块
-          self.monitor = Monitor(
-              self.client,
-              self.ui_config_manager,
-              self.channel_resolver
-          )
+  async def init_async_services(self, first_login_handler=None):
+      """初始化异步服务"""
+      # 初始化异步任务计划
+      self.app.task_manager = AsyncTaskManager()
+      
+      # 1. 初始化client_manager并启动客户端
+      self.app.client_manager = ClientManager(self.app.ui_config_manager)
+      self.app.client = await self.app.client_manager.start_client()
+      
+      # 2. 创建channel_resolver
+      self.app.channel_resolver = ChannelResolver(self.app.client)
+      
+      # 3. 初始化history_manager
+      self.app.history_manager = HistoryManager()
+      
+      # 4. 初始化下载模块并添加事件发射器支持
+      original_downloader = Downloader(self.app.client, self.app.ui_config_manager, 
+                                     self.app.channel_resolver, self.app.history_manager)
+      self.app.downloader = EventEmitterDownloader(original_downloader)
+      
+      # 5. 初始化串行下载模块并添加事件发射器支持
+      original_downloader_serial = DownloaderSerial(self.app.client, self.app.ui_config_manager, 
+                                                  self.app.channel_resolver, self.app.history_manager, self.app)
+      self.app.downloader_serial = EventEmitterDownloaderSerial(original_downloader_serial)
+      
+      # 6. 初始化上传模块并添加事件发射器支持
+      original_uploader = Uploader(self.app.client, self.app.ui_config_manager, 
+                                  self.app.channel_resolver, self.app.history_manager, self.app)
+      self.app.uploader = EventEmitterUploader(original_uploader)
+      
+      # 7. 初始化转发模块并添加事件发射器支持
+      original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
+                                   self.app.channel_resolver, self.app.history_manager, 
+                                   self.app.downloader, self.app.uploader, self.app)
+      self.app.forwarder = EventEmitterForwarder(original_forwarder)
+      
+      # 8. 初始化监听模块并添加事件发射器支持
+      original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
+                              self.app.channel_resolver, self.app.history_manager, self.app)
+      self.app.monitor = EventEmitterMonitor(original_monitor)
   ```
+
+- 实现健壮的错误处理，追踪组件初始化状态
+- 添加首次登录处理逻辑，根据会话文件存在与否判断并调整初始化流程
 
 ### 2.3 【已完成】将功能模块连接到视图 (1 天)
 
-- 添加方法将功能模块传递给视图组件：
+- 添加方法将功能模块传递给视图组件，支持延迟加载视图：
 
   ```python
-  def _initialize_views(self):
-      """初始化所有视图组件"""
-      # 假设 self.main_window 已经初始化
-
-      # 获取各视图引用
-      download_view = self.main_window.download_view
-      upload_view = self.main_window.upload_view
-      forward_view = self.main_window.forward_view
-      listen_view = self.main_window.listen_view
-
-      # 设置下载视图的功能模块
-      download_view.set_downloader(self.downloader)
-
-      # 设置上传视图的功能模块
-      upload_view.set_uploader(self.uploader)
-
-      # 设置转发视图的功能模块
-      forward_view.set_forwarder(self.forwarder)
-
-      # 设置监听视图的功能模块
-      listen_view.set_monitor(self.monitor)
+  def initialize_views(self):
+      """初始化所有视图组件，传递功能模块实例"""
+      # 下载视图
+      download_view = self.app.main_window.get_view("download")
+      if download_view and hasattr(self.app, 'downloader'):
+          download_view.set_downloader(self.app.downloader)
+      
+      # 上传视图
+      upload_view = self.app.main_window.get_view("upload")
+      if upload_view and hasattr(self.app, 'uploader'):
+          upload_view.set_uploader(self.app.uploader)
+      
+      # 转发视图
+      forward_view = self.app.main_window.get_view("forward")
+      if forward_view and hasattr(self.app, 'forwarder'):
+          forward_view.set_forwarder(self.app.forwarder)
+      
+      # 监听视图
+      listen_view = self.app.main_window.get_view("listen")
+      if listen_view and hasattr(self.app, 'monitor'):
+          listen_view.set_monitor(self.app.monitor)
+      
+      # 任务视图
+      task_view = self.app.main_window.get_view("task")
+      if task_view and hasattr(self.app, 'task_manager'):
+          task_view.set_task_manager(self.app.task_manager)
   ```
 
-- 在各视图中添加对应的设置方法：
+- 在各视图中添加对应的设置方法，例如：
 
   ```python
   # 以 DownloadView 为例
@@ -362,7 +352,7 @@ TG-Manager 目前存在两个主要入口：`run_ui.py`（空壳界面程序）�
       def set_downloader(self, downloader):
           """设置下载器实例"""
           self.downloader = downloader
-          # 可能需要在此处进行其他初始化
+          # 连接信号与事件
           self._connect_signals()
 
       def _connect_signals(self):
@@ -370,10 +360,37 @@ TG-Manager 目前存在两个主要入口：`run_ui.py`（空壳界面程序）�
           if not hasattr(self, 'downloader') or self.downloader is None:
               return
 
-          # 连接下载器信号到UI更新
+          # 使用信号和事件发射器代替直接函数调用
           self.downloader.progress_updated.connect(self._update_progress)
           self.downloader.download_finished.connect(self._on_download_finished)
           # 其他信号连接...
+  ```
+
+### 2.4 【已完成】全局异常处理 (1 天)
+
+- 实现全局异常处理机制，周期性检查所有异步任务的状态：
+
+  ```python
+  async def global_exception_handler(self):
+      """全局异常处理函数"""
+      while True:
+          try:
+              for task in asyncio.all_tasks():
+                  if task.done() and not task.cancelled():
+                      try:
+                          # 尝试获取异常
+                          exc = task.exception()
+                          if exc:
+                              logger.warning(f"发现未捕获的异常: {type(exc).__name__}: {exc}, 任务名称: {task.get_name()}")
+                      except (asyncio.CancelledError, asyncio.InvalidStateError):
+                          pass  # 忽略已取消的任务和无效状态
+              await safe_sleep(5)  # 每5秒检查一次
+          except Exception as e:
+              if isinstance(e, asyncio.CancelledError) or "cancelled" in str(e).lower():
+                  logger.info("全局异常处理器已取消")
+                  break
+              logger.error(f"全局异常处理器出错: {e}")
+              await safe_sleep(5)  # 出错后等待5秒再继续
   ```
 
 ## 第三阶段：视图组件迁移到 qasync (预计 8 天)
