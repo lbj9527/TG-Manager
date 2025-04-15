@@ -370,6 +370,11 @@ class DownloadView(QWidget):
         self.start_button.setMinimumHeight(40)
         self.start_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
+        self.stop_button = QPushButton("停止下载")
+        self.stop_button.setMinimumHeight(40)
+        self.stop_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.stop_button.setEnabled(False)  # 初始状态为禁用
+        
         self.save_config_button = QPushButton("保存配置")
         self.save_config_button.setMinimumHeight(30)
         self.save_config_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
@@ -379,6 +384,7 @@ class DownloadView(QWidget):
         self.clear_list_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
         button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.save_config_button)
         button_layout.addWidget(self.clear_list_button)
         
@@ -395,6 +401,7 @@ class DownloadView(QWidget):
         
         # 下载控制
         self.start_button.clicked.connect(self._start_download)
+        self.stop_button.clicked.connect(self._stop_download)
         self.save_config_button.clicked.connect(self._save_config)
         self.clear_list_button.clicked.connect(self.clear_download_list)
         
@@ -577,29 +584,69 @@ class DownloadView(QWidget):
             QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
             return
         
-        # 获取关键词列表，不再需要检查是否是关键词模式
-        keywords = self._get_keywords()
-        
-        # 收集配置
-        config = {
-            'channels': self._get_channels(),
-            'media_types': media_types,
-            'keywords': keywords,
-            'download_path': self.download_path.text(),
-            'parallel_download': self.parallel_check.isChecked(),
-            'max_concurrent_downloads': self.max_downloads.value() if self.parallel_check.isChecked() else 1,
-            'use_keywords': self.use_keywords  # 保留此字段以便后台处理兼容
-        }
-        
-        # 发出下载开始信号
-        self.download_started.emit(config)
+        # 检查下载器是否已设置
+        if not hasattr(self, 'downloader') or self.downloader is None:
+            QMessageBox.warning(self, "错误", "下载器未初始化，请稍后再试")
+            logger.error("尝试开始下载，但下载器未初始化")
+            return
+            
+        # 准备开始下载，更新按钮状态
+        self.start_button.setText("正在下载")
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)  # 启用停止按钮
         
         # 更新状态
         self.current_task_label.setText("下载准备中...")
-        self.overall_progress_label.setText("总进度: 0/0 (0%)")
+        self.overall_progress_label.setText("总进度: 准备中")
         
-        # 禁用开始按钮
-        self.start_button.setEnabled(False)
+        # 收集配置并保存
+        self._save_config()
+        
+        # 使用异步任务执行下载
+        try:
+            # 获取主应用实例
+            app = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'app'):
+                    app = parent.app
+                    break
+                parent = parent.parent()
+            
+            logger.info("创建串行下载任务")
+            
+            if app and hasattr(app, 'task_manager'):
+                # 使用应用的任务管理器
+                download_task = app.task_manager.add_task(
+                    "download_task", 
+                    self.downloader.download_media_from_channels()
+                )
+                logger.info("使用应用任务管理器创建下载任务")
+            else:
+                # 直接使用create_task
+                from src.utils.async_utils import create_task
+                download_task = create_task(self.downloader.download_media_from_channels())
+                logger.info("使用create_task创建下载任务")
+            
+            # 记录任务已启动
+            logger.info("串行下载任务已启动")
+            
+            # 确保下载完成后恢复按钮状态
+            # 这部分依赖下载器的信号系统
+            # 在_on_all_downloads_complete方法中已经处理了按钮状态的恢复
+        except Exception as e:
+            # 处理启动下载任务时的错误
+            logger.error(f"启动下载任务失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # 恢复按钮状态
+            self.start_button.setText("开始下载")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            
+            # 显示错误消息
+            QMessageBox.critical(self, "下载错误", f"启动下载任务失败: {str(e)}")
     
     def _save_config(self):
         """保存当前配置"""
@@ -942,6 +989,7 @@ class DownloadView(QWidget):
         self.status_label.setText("下载任务已完成")
         
         # 恢复按钮状态
+        self.start_button.setText("开始下载")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         
@@ -970,6 +1018,7 @@ class DownloadView(QWidget):
         self.progress_bar.setValue(0)
         
         # 恢复按钮状态
+        self.start_button.setText("开始下载")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         
@@ -1048,4 +1097,78 @@ class DownloadView(QWidget):
         msg_box.setIcon(QMessageBox.Critical)
         msg_box.setWindowTitle(title)
         msg_box.setText(message)
-        msg_box.exec() 
+        msg_box.exec()
+
+    def _stop_download(self):
+        """停止下载任务"""
+        logger.info("用户请求停止下载")
+        
+        # 检查下载器是否已设置
+        if not hasattr(self, 'downloader') or self.downloader is None:
+            logger.warning("下载器未初始化，无法停止下载")
+            return
+            
+        try:
+            # 首先尝试使用应用的任务管理器
+            app = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'app'):
+                    app = parent.app
+                    break
+                parent = parent.parent()
+            
+            task_cancelled = False
+            
+            # 使用任务管理器取消任务
+            if app and hasattr(app, 'task_manager'):
+                if app.task_manager.is_task_running("download_task"):
+                    app.task_manager.cancel_task("download_task")
+                    logger.info("已通过任务管理器取消下载任务")
+                    task_cancelled = True
+            
+            # 如果没有通过任务管理器取消成功，尝试其他方法
+            if not task_cancelled:
+                # 尝试取消正在进行的下载任务
+                if hasattr(self.downloader, 'cancel_downloads'):
+                    # 如果下载器直接支持取消操作
+                    self.downloader.cancel_downloads()
+                    logger.info("已请求取消下载任务")
+                    task_cancelled = True
+                elif hasattr(self.downloader, 'emit') and hasattr(self.downloader, 'cancel_requested'):
+                    # 如果下载器支持发送信号
+                    self.downloader.emit('cancel_requested')
+                    logger.info("已发送取消下载请求信号")
+                    task_cancelled = True
+                
+                # 如果上述方法都不成功，尝试找到运行中的任务并取消
+                if not task_cancelled:
+                    import asyncio
+                    for task in asyncio.all_tasks():
+                        if (task.get_name() == "download_task" or 
+                            "download_media_from_channels" in str(task)) and not task.done():
+                            task.cancel()
+                            logger.info("已找到并取消下载任务")
+                            task_cancelled = True
+                            break
+            
+            if not task_cancelled:
+                logger.warning("未找到正在运行的下载任务")
+            
+            # 更新UI状态
+            self.status_label.setText("正在停止下载...")
+            
+            # 由于某些取消方法可能是异步的，我们需要在_on_all_downloads_complete或_on_download_error中恢复按钮状态
+            
+        except Exception as e:
+            logger.error(f"停止下载时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # 显示错误消息
+            QMessageBox.warning(self, "错误", f"停止下载时出错: {str(e)}")
+            
+            # 无论如何也要恢复按钮状态
+            self.start_button.setText("开始下载")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False) 
