@@ -73,27 +73,26 @@ class DownloaderSerial():
         self.download_path = Path(self.download_config.get('download_path', 'downloads'))
         self.download_path.mkdir(exist_ok=True)
         logger.info(f"下载目录: {self.download_path}")
-        
-        # 是否使用关键词下载模式
-        self.use_keywords = False
     
-    def set_keywords_mode(self, enabled: bool = False):
+    def _setting_has_keywords(self, setting: Dict[str, Any]) -> bool:
         """
-        设置是否使用关键词下载模式
+        检查下载设置是否包含有效的关键词配置
         
         Args:
-            enabled: 是否启用关键词模式
+            setting: 下载设置字典
+            
+        Returns:
+            bool: 是否包含有效的关键词配置
         """
-        self.use_keywords = enabled
-        logger.info(f"关键词下载模式: {'开启' if enabled else '关闭'}")
+        keywords = setting.get('keywords', [])
+        return bool(keywords and isinstance(keywords, list) and len(keywords) > 0)
     
     async def download_media_from_channels(self):
         """
-        从配置的频道下载媒体文件
+        从配置的频道下载媒体文件，自动根据设置是否含有关键词组织下载目录
         """
         
-        mode = "关键词下载" if self.use_keywords else "普通下载"
-        logger.info(f"开始从频道下载媒体文件 ({mode}模式)")
+        logger.info(f"开始从频道下载媒体文件")
         
         # 获取下载频道列表
         download_settings = self.download_config.get('downloadSetting', [])
@@ -105,13 +104,12 @@ class DownloaderSerial():
                        f"起始ID={setting.get('start_id', 0)}, 结束ID={setting.get('end_id', 0)}, "
                        f"媒体类型={setting.get('media_types', [])}")
             
-            # 如果是关键词模式，显示关键词列表
-            if self.use_keywords:
-                keywords = setting.get('keywords', [])
-                if keywords:
-                    logger.info(f"下载设置 #{idx+1} 关键词: {keywords}")
-                else:
-                    logger.warning(f"下载设置 #{idx+1} 未设置关键词，关键词模式下可能无法下载任何内容")
+            # 检查是否包含关键词
+            keywords = setting.get('keywords', [])
+            if self._setting_has_keywords(setting):
+                logger.info(f"下载设置 #{idx+1} 包含关键词: {keywords}，将按关键词组织下载目录")
+            else:
+                logger.info(f"下载设置 #{idx+1} 未设置关键词，将使用普通目录结构")
         
         if not download_settings:
             logger.error("未配置下载设置，无法开始下载", error_type="CONFIG", recoverable=False)
@@ -154,7 +152,12 @@ class DownloaderSerial():
             start_id = setting.get('start_id', 0)
             end_id = setting.get('end_id', 0)
             
-            logger.info(f"处理频道 {channel_name}, 开始ID: {start_id}, 结束ID: {end_id}")
+            # 检查设置是否包含关键词
+            has_keywords = self._setting_has_keywords(setting)
+            keywords = setting.get('keywords', []) if has_keywords else []
+            
+            directory_mode = "按关键词组织" if has_keywords else "普通目录结构"
+            logger.info(f"处理频道 {channel_name} ({directory_mode}), 开始ID: {start_id}, 结束ID: {end_id}")
             
             # 计算限制
             limit = abs(end_id - start_id) + 1 if start_id and end_id else global_limit
@@ -185,9 +188,6 @@ class DownloaderSerial():
                 channel_info_str, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
                 logger.info(f"开始从频道 {channel_info_str} 下载媒体，限制 {limit if limit > 0 else '无'} 条")
                 
-                # 确定目录组织方式
-                organize_by_keywords = self.use_keywords
-                
                 # 始终按频道创建主目录
                 base_folder_name = f"{channel_title}-{real_channel_id}"
                 base_folder_name = self._sanitize_filename(base_folder_name)
@@ -200,13 +200,9 @@ class DownloaderSerial():
                 downloaded_messages = self.history_manager.get_downloaded_messages(channel_name)
                 logger.info(f"已下载的消息数量: {len(downloaded_messages)}")
                 
-                # 关键词列表，仅在关键词模式下使用
-                keywords = setting.get('keywords', []) if self.use_keywords else []
-                if self.use_keywords and not keywords:
-                    logger.warning(f"频道 {channel_name} 未设置关键词，关键词模式下将跳过该频道")
-                    continue
-                elif self.use_keywords:
-                    logger.info(f"使用关键词筛选: {keywords}")
+                # 如果有关键词，在频道目录下创建关键词目录
+                if has_keywords:
+                    logger.info(f"使用关键词组织目录: {keywords}")
                     # 在频道目录下创建关键词目录
                     for keyword in keywords:
                         keyword_dir = self._sanitize_filename(keyword)
@@ -261,7 +257,7 @@ class DownloaderSerial():
                     messages_by_group[group_id].append(message)
                     
                     # 在关键词模式下，检查消息文本是否包含关键词
-                    if self.use_keywords and keywords and group_id not in matched_groups:
+                    if has_keywords and group_id not in matched_groups:
                         # 获取消息文本（正文或说明文字）
                         text = message.text or message.caption or ""
                         if text:
@@ -278,14 +274,14 @@ class DownloaderSerial():
                 # 第二轮处理：处理每个媒体组
                 for group_id, messages in messages_by_group.items():
                     # 如果是关键词模式且没有匹配关键词，则跳过整个媒体组
-                    if self.use_keywords and keywords and group_id not in matched_groups:
+                    if has_keywords and group_id not in matched_groups:
                         logger.debug(f"媒体组 {group_id} 不包含任何关键词，跳过")
                         continue
                     
                     current_channel_path = channel_download_path
                     
                     # 如果是关键词模式且匹配了关键词，使用关键词子目录
-                    if self.use_keywords and organize_by_keywords and group_id in matched_groups:
+                    if has_keywords and group_id in matched_groups:
                         matched_keyword = matched_keywords[group_id]
                         keyword_folder = self._sanitize_filename(matched_keyword)
                         
