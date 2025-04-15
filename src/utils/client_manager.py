@@ -252,15 +252,33 @@ class ClientManager(QObject):
                 # 直接调用客户端的disconnect方法，而不使用stop
                 # 这避免了客户端内部的asyncio.gather调用
                 try:
-                    if hasattr(self.client, 'disconnect'):
-                        await self.client.disconnect()
-                        logger.info("客户端已断开连接")
-                    else:
-                        # 如果没有disconnect方法，尝试使用stop
-                        await self.client.stop()
-                        logger.info("客户端已停止")
+                    if self.client:
+                        # 先尝试检查客户端是否处于已连接状态
+                        is_connected = False
+                        try:
+                            # 使用hasattr和getattr更安全地检查属性
+                            is_connected = getattr(self.client, 'is_connected', False)
+                        except Exception as attr_error:
+                            logger.debug(f"检查客户端is_connected属性时出错: {attr_error}")
+                        
+                        if is_connected:
+                            # 使用try-except包装断开操作，防止由于disconnect方法内部问题导致的错误
+                            try:
+                                logger.info("正在断开客户端连接...")
+                                await self.client.disconnect()
+                                logger.info("客户端已断开连接")
+                            except Exception as disconnect_error:
+                                logger.warning(f"断开客户端连接时遇到错误 (将忽略): {disconnect_error}")
+                        else:
+                            # 如果客户端未连接，尝试直接停止客户端
+                            logger.info("客户端未连接，尝试直接停止")
+                            try:
+                                await self.client.stop()
+                                logger.info("客户端已停止")
+                            except Exception as stop_error:
+                                logger.warning(f"停止客户端时遇到错误 (将忽略): {stop_error}")
                 except Exception as e:
-                    logger.error(f"停止客户端时出错: {e}")
+                    logger.error(f"处理客户端断开连接时出错: {e}")
                     # 客户端可能已经断开，继续执行
                 
                 # 释放对客户端的引用
@@ -295,8 +313,8 @@ class ClientManager(QObject):
                 # 尝试强制停止客户端
                 try:
                     if self.client:
-                        if hasattr(self.client, 'disconnect'):
-                            await self.client.disconnect()
+                        # 直接将客户端设为None，不再尝试调用可能导致错误的disconnect方法
+                        logger.info("强制重置客户端")
                         self.client = None
                         self.is_authorized = False
                         self.connection_active = False

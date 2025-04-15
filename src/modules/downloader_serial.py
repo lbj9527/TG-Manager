@@ -157,7 +157,7 @@ class DownloaderSerial():
             logger.info(f"处理频道 {channel_name}, 开始ID: {start_id}, 结束ID: {end_id}")
             
             # 计算限制
-            limit = abs(end_id - start_id) if start_id and end_id else global_limit
+            limit = abs(end_id - start_id) + 1 if start_id and end_id else global_limit
             logger.info(f"消息限制: {limit if limit > 0 else '无限制'}")
             
             # 确保下载目录存在
