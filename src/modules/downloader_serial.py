@@ -119,8 +119,8 @@ class DownloaderSerial():
         global_limit = self.general_config.get('limit', 50)
         logger.info(f"全局限制值: {global_limit} 条消息")
         
-        # 根据下载设置计算总下载量
-        total_download_count = 0
+        # 初始值只用于预估，后面会更新为实际的待下载总数
+        estimated_download_count = 0
         for setting in download_settings:
             start_id = setting.get('start_id', 0)
             end_id = setting.get('end_id', 0)
@@ -138,12 +138,19 @@ class DownloaderSerial():
             else:
                 setting_limit = global_limit if global_limit > 0 else 50
                 
-            total_download_count += setting_limit
+            estimated_download_count += setting_limit
         
-        logger.info(f"预计总下载消息数估计: {total_download_count} 条")
+        logger.info(f"预计总下载消息数估计: {estimated_download_count} 条（初步估计，将在处理过程中更新）")
         
         # 已完成的下载数量
         completed_count = 0
+        
+        # 实际待下载的文件总数，将在遍历频道后更新
+        total_download_count = 0
+        
+        # 第一轮：收集所有待下载的媒体信息
+        # 保存每个频道的待下载媒体组
+        pending_downloads = []
         
         # 遍历所有下载设置
         for setting in download_settings:
@@ -269,7 +276,8 @@ class DownloaderSerial():
                                     logger.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配关键词: {keyword}")
                                     break
                 
-                downloaded_count = 0
+                # 构建实际待下载的媒体项列表
+                channel_pending_downloads = []
                 
                 # 第二轮处理：处理每个媒体组
                 for group_id, messages in messages_by_group.items():
@@ -278,43 +286,93 @@ class DownloaderSerial():
                         logger.debug(f"媒体组 {group_id} 不包含任何关键词，跳过")
                         continue
                     
-                    current_channel_path = channel_download_path
-                    
-                    # 如果是关键词模式且匹配了关键词，使用关键词子目录
-                    if has_keywords and group_id in matched_groups:
-                        matched_keyword = matched_keywords[group_id]
-                        keyword_folder = self._sanitize_filename(matched_keyword)
+                    # 添加到待下载列表
+                    for message in messages:
+                        # 检查文件是否已存在
+                        file_name = self._generate_filename(message, channel_title)
+                        file_path = None  # 实际路径在下载时计算
                         
-                        # 关键词目录始终在频道目录下
-                        keyword_path = channel_download_path / keyword_folder
-                        keyword_path.mkdir(exist_ok=True)
-                        
-                        # 更新当前媒体组的下载路径为关键词目录
-                        current_channel_path = keyword_path
+                        # 将待下载项添加到列表
+                        channel_pending_downloads.append({
+                            'message': message,
+                            'file_name': file_name,
+                            'group_id': group_id,
+                            'matched_keyword': matched_keywords.get(group_id) if has_keywords and group_id in matched_groups else None
+                        })
+                
+                # 将此频道的待下载项添加到总列表
+                if channel_pending_downloads:
+                    pending_downloads.append({
+                        'channel_name': channel_name,
+                        'channel_title': channel_title,
+                        'real_channel_id': real_channel_id,
+                        'download_path': channel_download_path,
+                        'has_keywords': has_keywords,
+                        'keywords': keywords,
+                        'items': channel_pending_downloads
+                    })
                     
-                    # 如果是媒体组，记录日志
-                    if group_id.startswith("single_"):
-                        logger.info(f"准备下载单条消息: ID={messages[0].id}")
-                    else:
-                        logger.info(f"准备下载媒体组 {group_id}: 包含 {len(messages)} 条消息, IDs={[m.id for m in messages]}")
-                    
-                    # 为媒体组创建子目录（如果不是单条消息）
-                    if not group_id.startswith("single_"):
-                        # 创建安全的目录名
-                        safe_group_id = self._sanitize_filename(str(group_id))
-                        media_group_path = current_channel_path / safe_group_id
-                        media_group_path.mkdir(exist_ok=True)
-                    else:
-                        media_group_path = current_channel_path
-                    
-                    # 简化title.txt内容，只保存caption
-                    try:
-                        title_file_path = media_group_path / "title.txt"
+                    # 更新待下载总数
+                    total_download_count += len(channel_pending_downloads)
+                
+            except Exception as e:
+                logger.error(f"处理频道 {channel_name} 时出错: {str(e)}", error_type="CHANNEL_PROCESS", recoverable=True)
+                import traceback
+                error_details = traceback.format_exc()
+                logger.error(error_details)
+        
+        # 更新实际待下载总数
+        logger.info(f"实际待下载文件总数: {total_download_count} 个文件")
+        
+        # 第二轮：执行实际下载
+        for channel_data in pending_downloads:
+            channel_name = channel_data['channel_name']
+            channel_title = channel_data['channel_title']
+            real_channel_id = channel_data['real_channel_id']
+            channel_download_path = channel_data['download_path']
+            has_keywords = channel_data['has_keywords']
+            
+            downloaded_count = 0
+            
+            # 处理此频道的所有待下载项
+            for download_item in channel_data['items']:
+                message = download_item['message']
+                file_name = download_item['file_name']
+                group_id = download_item['group_id']
+                matched_keyword = download_item['matched_keyword']
+                
+                # 确定当前路径
+                current_channel_path = channel_download_path
+                
+                # 如果匹配了关键词，使用关键词目录
+                if matched_keyword:
+                    keyword_folder = self._sanitize_filename(matched_keyword)
+                    keyword_path = channel_download_path / keyword_folder
+                    keyword_path.mkdir(exist_ok=True)
+                    current_channel_path = keyword_path
+                
+                # 确定媒体组路径
+                if not group_id.startswith("single_"):
+                    safe_group_id = self._sanitize_filename(str(group_id))
+                    media_group_path = current_channel_path / safe_group_id
+                    media_group_path.mkdir(exist_ok=True)
+                else:
+                    media_group_path = current_channel_path
+                
+                # 获取该媒体组的所有消息
+                group_messages = [item['message'] for item in channel_data['items'] if item['group_id'] == group_id]
+                
+                # 添加回生成title.txt的代码
+                # 简化title.txt内容，只保存caption
+                try:
+                    title_file_path = media_group_path / "title.txt"
+                    # 如果文件已经存在，跳过创建
+                    if not title_file_path.exists() and group_messages:
                         with open(title_file_path, "w", encoding="utf-8") as f:
                             # 尝试获取包含最多文本的消息
                             best_message = None
                             best_text_length = 0
-                            for msg in messages:
+                            for msg in group_messages:
                                 text = msg.text or msg.caption or ""
                                 if len(text) > best_text_length:
                                     best_text_length = len(text)
@@ -324,85 +382,75 @@ class DownloaderSerial():
                                 text = best_message.text or best_message.caption or ""
                                 if text:
                                     f.write(f"{text}\n")
-                    except Exception as e:
-                        logger.error(f"保存标题文件失败: {e}")
+                except Exception as e:
+                    logger.error(f"保存标题文件失败: {e}")
+                
+                # 完整文件路径
+                file_path = media_group_path / file_name
+                
+                # 检查文件是否已存在
+                if file_path.exists():
+                    logger.debug(f"文件已存在: {file_path}，跳过下载")
+                    # 标记为已下载
+                    self.history_manager.add_download_record(channel_name, message.id, real_channel_id)
+                    continue
+                
+                # 下载媒体
+                logger.info(f"正在下载: {file_name}")
+                try:
+                    # 开始时间
+                    start_time = time.time()
                     
-                    # 下载媒体组中的所有消息
-                    for message in messages:
-                        media_id = message.id
+                    # 下载文件
+                    download_path = await self.client.download_media(
+                        message,
+                        file_name=str(file_path),
+                        progress=self._download_progress_callback(message.id, file_name)
+                    )
+                    
+                    # 计算下载时间
+                    download_time = time.time() - start_time
+                    
+                    if download_path:
+                        # 获取文件大小
+                        file_stat = os.stat(download_path)
+                        file_size_mb = file_stat.st_size / (1024 * 1024)
                         
-                        # 获取文件名
-                        file_name = self._generate_filename(message, channel_title)
-                        file_path = media_group_path / file_name
+                        # 下载速度计算
+                        speed_mbps = file_size_mb / download_time if download_time > 0 else 0
                         
-                        # 检查文件是否已存在
-                        if file_path.exists():
-                            logger.debug(f"文件已存在: {file_path}，跳过下载")
-                            # 标记为已下载，使用原始频道名称作为键
-                            self.history_manager.add_download_record(channel_name, media_id, real_channel_id)
-                            continue
+                        logger.info(
+                            f"下载完成: {file_name} ({file_size_mb:.2f}MB, {download_time:.2f}s, {speed_mbps:.2f}MB/s)")
                         
-                        # 下载媒体
-                        logger.info(f"正在下载: {file_name}")
-                        try:
-                            # 开始时间
-                            start_time = time.time()
-                            
-                            # 下载文件
-                            download_path = await self.client.download_media(
-                                message,
-                                file_name=str(file_path),
-                                progress=self._download_progress_callback(media_id, file_name)
-                            )
-                            
-                            # 计算下载时间
-                            download_time = time.time() - start_time
-                            
-                            if download_path:
-                                # 获取文件大小
-                                file_stat = os.stat(download_path)
-                                file_size_mb = file_stat.st_size / (1024 * 1024)
-                                
-                                # 下载速度计算
-                                speed_mbps = file_size_mb / download_time if download_time > 0 else 0
-                                
-                                logger.info(
-                                    f"下载完成: {file_name} ({file_size_mb:.2f}MB, {download_time:.2f}s, {speed_mbps:.2f}MB/s)")
-                                
-                                # 标记为已下载，使用原始频道名称作为键
-                                self.history_manager.add_download_record(channel_name, media_id, real_channel_id)
-                                
-                                # 增加下载计数
-                                downloaded_count += 1
-                                completed_count += 1
-                                
-                                # 计算进度百分比
-                                progress_percentage = (completed_count / total_download_count) * 100 if total_download_count > 0 else 0
-                                logger.info(f"总进度: {completed_count}/{total_download_count} ({progress_percentage:.2f}%)")
-                            else:
-                                logger.error(f"下载失败: {file_name}", error_type="DOWNLOAD_FAIL", recoverable=True)
+                        # 标记为已下载，使用原始频道名称作为键
+                        self.history_manager.add_download_record(channel_name, message.id, real_channel_id)
                         
-                        except FloodWait as e:
-                            logger.warning(f"下载受限，等待 {e.x} 秒")
-                            await asyncio.sleep(e.x)
-                            
-                        except Exception as e:
-                            logger.error(f"下载异常: {str(e)}", error_type="DOWNLOAD_ERROR", recoverable=True)
-                            
-                            # 检测网络相关错误
-                            error_name = type(e).__name__.lower()
-                            if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
-                                # 网络相关错误，通知应用程序检查连接状态
-                                await self._handle_network_error(e)
+                        # 增加下载计数
+                        downloaded_count += 1
+                        completed_count += 1
+                        
+                        # 计算进度百分比
+                        progress_percentage = (completed_count / total_download_count) * 100 if total_download_count > 0 else 0
+                        logger.info(f"总进度: {completed_count}/{total_download_count} ({progress_percentage:.2f}%)")
+                    else:
+                        logger.error(f"下载失败: {file_name}", error_type="DOWNLOAD_FAIL", recoverable=True)
                 
-                # 完成一个频道的下载
-                logger.info(f"完成频道 {channel_info_str} 的下载，共下载 {downloaded_count} 个文件")
-                
-            except Exception as e:
-                logger.error(f"处理频道 {channel_name} 时出错: {str(e)}", error_type="CHANNEL_PROCESS", recoverable=True)
-                import traceback
-                error_details = traceback.format_exc()
-                logger.error(error_details)
+                except FloodWait as e:
+                    logger.warning(f"下载受限，等待 {e.x} 秒")
+                    await asyncio.sleep(e.x)
+                    
+                except Exception as e:
+                    logger.error(f"下载异常: {str(e)}", error_type="DOWNLOAD_ERROR", recoverable=True)
+                    
+                    # 检测网络相关错误
+                    error_name = type(e).__name__.lower()
+                    if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
+                        # 网络相关错误，通知应用程序检查连接状态
+                        await self._handle_network_error(e)
+            
+            # 完成一个频道的下载
+            channel_info_str, _ = await self.channel_resolver.format_channel_info(real_channel_id)
+            logger.info(f"完成频道 {channel_info_str} 的下载，共下载 {downloaded_count} 个文件")
         
         # 所有频道处理完成
         logger.info(f"所有下载任务完成，共下载 {completed_count} 个文件")

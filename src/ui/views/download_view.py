@@ -599,9 +599,6 @@ class DownloadView(QWidget):
         self.current_task_label.setText("下载准备中...")
         self.overall_progress_label.setText("总进度: 准备中")
         
-        # 收集配置并保存
-        self._save_config()
-        
         # 使用异步任务执行下载
         try:
             # 获取主应用实例

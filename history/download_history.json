@@ -1,6 +1,6 @@
 {
   "channels": {
-    "https://t.me/csdkl1/115": {
+    "@csdkl1": {
       "channel_id": -1001474990982,
       "downloaded_messages": [
         109105,
@@ -15,14 +15,13 @@
         109114
       ]
     },
-    "https://t.me/xxzq6/3597": {
+    "@xxzq6": {
       "channel_id": -1001642973779,
       "downloaded_messages": [
-        3615,
-        3616,
-        3617
+        3620,
+        3621
       ]
     }
   },
-  "last_updated": "2025-04-15T21:48:01.295517"
+  "last_updated": "2025-04-16T01:22:16.308378"
 }
