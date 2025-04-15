@@ -459,6 +459,10 @@ class Downloader():
             # 更新下载历史
             self.history_manager.add_download_record(channel_id, message_id, channel_id)
             
+            # 触发下载完成事件
+            file_name = os.path.basename(file_path)
+            self.emit("download_complete", message_id, file_name, file_size)
+            
         except Exception as e:
             logger.error(f"写入文件失败: {file_path} - {e}", error_type="FILE_WRITE", recoverable=True, file_path=file_path)
 

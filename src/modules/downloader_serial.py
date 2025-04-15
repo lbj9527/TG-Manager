@@ -459,6 +459,10 @@ class DownloaderSerial():
                         # 标记为已下载，使用原始频道名称作为键
                         self.history_manager.add_download_record(channel_name, message.id, real_channel_id)
                         
+                        # 发送下载完成事件
+                        file_size = int(file_size_mb * 1024 * 1024)  # 转换为字节
+                        self.emit("download_complete", message.id, file_name, file_size)
+                        
                         # 增加下载计数
                         downloaded_count += 1
                         completed_count += 1

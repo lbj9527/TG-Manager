@@ -343,15 +343,6 @@ class DownloadView(QWidget):
         self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
         status_layout.addWidget(self.overall_progress_label)
         
-        # 添加已下载列表
-        downloaded_label = QLabel("已下载文件:")
-        downloaded_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        status_layout.addWidget(downloaded_label)
-        
-        self.downloaded_list = QListWidget()
-        self.downloaded_list.setMaximumHeight(150)  # 限制高度
-        status_layout.addWidget(self.downloaded_list)
-        
         # 添加提示信息
         tips_label = QLabel("提示: 点击\"开始下载\"按钮开始下载任务。下载进度将显示在\"下载列表\"标签页中。")
         tips_label.setStyleSheet("color: #666; margin-top: 10px;")
@@ -622,8 +613,12 @@ class DownloadView(QWidget):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)  # 启用停止按钮
         
+        # 清空下载列表
+        self.download_list.clear()
+        
         # 更新状态
         self.current_task_label.setText("下载准备中...")
+        self.status_label.setText("正在收集要下载的文件信息...")
         self.overall_progress_label.setText("总进度: 准备中")
         
         # 使用异步任务执行下载
@@ -861,8 +856,22 @@ class DownloadView(QWidget):
             file_size: 文件大小
         """
         try:
-            # 更新下载完成项目
-            self._add_download_item(filename, file_size)
+            # 将文件添加到下载列表标签页
+            readable_size = self._format_size(file_size)
+            
+            # 创建列表项
+            item = QListWidgetItem(f"{filename} ({readable_size}) - 已完成")
+            
+            # 添加到下载列表
+            self.download_list.addItem(item)
+            
+            # 保持最新项可见
+            self.download_list.scrollToBottom()
+            
+            # 如果当前不在下载列表标签页，显示提示
+            if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
+                # 切换到下载列表标签页查看详情
+                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
             
             # 重置进度条
             self.progress_bar.setRange(0, 100)
@@ -932,28 +941,6 @@ class DownloadView(QWidget):
                 logger.debug(f"错误详情: {message}")
         except Exception as e:
             logger.error(f"处理下载错误时出错: {e}")
-    
-    def _add_download_item(self, filename, file_size):
-        """添加下载完成项目到列表
-        
-        Args:
-            filename: 文件名
-            file_size: 文件大小(字节)
-        """
-        try:
-            # 将字节大小转换为人类可读格式
-            readable_size = self._format_size(file_size)
-            
-            # 创建列表项
-            item = QListWidgetItem(f"{filename} ({readable_size})")
-            
-            # 添加到已完成列表
-            self.downloaded_list.addItem(item)
-            
-            # 保持最新项可见
-            self.downloaded_list.scrollToBottom()
-        except Exception as e:
-            logger.error(f"添加下载项目时出错: {e}")
     
     def _format_size(self, size_bytes):
         """格式化文件大小
@@ -1132,6 +1119,21 @@ class DownloadView(QWidget):
                 task_manager.task_progress_update.connect(self._handle_task_progress)
         
         # 连接下载器的信号
+        # 确保下载完成信号被连接 - 修复下载列表更新问题
+        if hasattr(self.downloader, 'download_completed'):
+            logger.info("连接下载完成信号")
+            self.downloader.download_completed.connect(self._on_download_complete)
+        
+        # 确保所有下载完成信号被连接
+        if hasattr(self.downloader, 'all_downloads_completed'):
+            logger.info("连接所有下载完成信号")
+            self.downloader.all_downloads_completed.connect(self._on_all_downloads_complete)
+        
+        # 确保错误信号被连接
+        if hasattr(self.downloader, 'error_occurred'):
+            logger.info("连接错误信号")
+            self.downloader.error_occurred.connect(self._on_download_error)
+        
         # 在串行下载器中，我们使用日志更新来跟踪进度
         # 使用一个计时器定期检查日志中的进度信息
         self._progress_checker = QTimer()
@@ -1174,6 +1176,10 @@ class DownloadView(QWidget):
             if hasattr(self.downloader, 'get_download_progress'):
                 current, total = self.downloader.get_download_progress()
                 self.update_overall_progress(current, total)
+                
+                # 检查下载是否已完成，如果完成则更新按钮状态
+                if current == total and total > 0 and not self.start_button.isEnabled():
+                    self._on_all_downloads_complete()
     
     def _stop_download(self):
         """停止下载任务"""
@@ -1234,7 +1240,11 @@ class DownloadView(QWidget):
             # 更新UI状态
             self.status_label.setText("正在停止下载...")
             
-            # 由于某些取消方法可能是异步的，我们需要在_on_all_downloads_complete或_on_download_error中恢复按钮状态
+            # 由于任务取消是异步的，等待任务实际停止
+            # 在部分情况下可能需要直接恢复按钮状态
+            self.start_button.setText("开始下载")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
             
         except Exception as e:
             logger.error(f"停止下载时出错: {e}")
