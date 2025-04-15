@@ -186,40 +186,13 @@ class DownloaderSerial():
                 logger.info(f"开始从频道 {channel_info_str} 下载媒体，限制 {limit if limit > 0 else '无'} 条")
                 
                 # 确定目录组织方式
-                organize_by_chat = not self.use_keywords
                 organize_by_keywords = self.use_keywords
                 
-                # 确定文件夹名称
-                base_folder_name = None
-                
-                if organize_by_chat:
-                    # 使用"频道标题-频道ID"格式创建目录
-                    base_folder_name = f"{channel_title}-{real_channel_id}"
-                    # 确保文件夹名称有效（移除非法字符）
-                    base_folder_name = self._sanitize_filename(base_folder_name)
-                    channel_download_path = download_path / base_folder_name
-                    channel_download_path.mkdir(exist_ok=True)
-                else:
-                    # 在关键词模式下，暂时使用下载根目录，后续会根据关键词创建子目录
-                    channel_download_path = download_path
-                
-                # 关键词下载模式下，记录频道信息
-                if self.use_keywords:
-                    # 为频道创建一个基础目录用于存放关键词目录
-                    if base_folder_name:
-                        channel_base_path = download_path / base_folder_name
-                        channel_base_path.mkdir(exist_ok=True)
-                        
-                        # 在频道目录下创建一个频道信息文件
-                        try:
-                            channel_info_file = channel_base_path / "channel_info.txt"
-                            with open(channel_info_file, "w", encoding="utf-8") as f:
-                                f.write(f"频道名称: {channel_title}\n")
-                                f.write(f"频道ID: {real_channel_id}\n")
-                                f.write(f"频道链接: {channel_name}\n")
-                                f.write(f"下载时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                        except Exception as e:
-                            logger.error(f"保存频道信息文件失败: {e}")
+                # 始终按频道创建主目录
+                base_folder_name = f"{channel_title}-{real_channel_id}"
+                base_folder_name = self._sanitize_filename(base_folder_name)
+                channel_download_path = download_path / base_folder_name
+                channel_download_path.mkdir(exist_ok=True)
                 
                 logger.info(f"下载目录: {channel_download_path}")
                 
@@ -234,13 +207,12 @@ class DownloaderSerial():
                     continue
                 elif self.use_keywords:
                     logger.info(f"使用关键词筛选: {keywords}")
-                    # 在频道目录下创建关键词目录(如果使用频道/关键词的目录结构)
-                    if base_folder_name:
-                        for keyword in keywords:
-                            keyword_dir = self._sanitize_filename(keyword)
-                            keyword_path = download_path / base_folder_name / keyword_dir
-                            keyword_path.mkdir(exist_ok=True)
-                            logger.debug(f"创建关键词目录: {keyword_path}")
+                    # 在频道目录下创建关键词目录
+                    for keyword in keywords:
+                        keyword_dir = self._sanitize_filename(keyword)
+                        keyword_path = channel_download_path / keyword_dir
+                        keyword_path.mkdir(exist_ok=True)
+                        logger.debug(f"创建关键词目录: {keyword_path}")
                 
                 # 收集所有消息
                 all_messages = []
@@ -312,22 +284,14 @@ class DownloaderSerial():
                     
                     current_channel_path = channel_download_path
                     
-                    # 如果匹配了关键词，为该媒体组设置关键词目录
-                    matched_keyword = ""
+                    # 如果是关键词模式且匹配了关键词，使用关键词子目录
                     if self.use_keywords and organize_by_keywords and group_id in matched_groups:
                         matched_keyword = matched_keywords[group_id]
                         keyword_folder = self._sanitize_filename(matched_keyword)
                         
-                        # 根据频道信息和关键词创建完整路径
-                        if base_folder_name:
-                            # 如果有频道名称，使用"频道/关键词"的目录结构
-                            keyword_path = download_path / base_folder_name / keyword_folder
-                        else:
-                            # 否则直接使用"关键词"目录
-                            keyword_path = download_path / keyword_folder
-                        
-                        # 创建关键词目录
-                        keyword_path.mkdir(exist_ok=True, parents=True)
+                        # 关键词目录始终在频道目录下
+                        keyword_path = channel_download_path / keyword_folder
+                        keyword_path.mkdir(exist_ok=True)
                         
                         # 更新当前媒体组的下载路径为关键词目录
                         current_channel_path = keyword_path
@@ -347,17 +311,10 @@ class DownloaderSerial():
                     else:
                         media_group_path = current_channel_path
                     
-                    # 记录消息文本到标题文件(无论是否关键词模式)
+                    # 简化title.txt内容，只保存caption
                     try:
                         title_file_path = media_group_path / "title.txt"
-                        with open(title_file_path, "a", encoding="utf-8") as f:
-                            # 如果是关键词匹配模式，添加关键词信息
-                            if self.use_keywords and matched_keyword:
-                                f.write(f"关键词: {matched_keyword}\n")
-                            
-                            f.write(f"媒体组ID: {group_id}\n")
-                            f.write(f"消息IDs: {[m.id for m in messages]}\n")
-                            
+                        with open(title_file_path, "w", encoding="utf-8") as f:
                             # 尝试获取包含最多文本的消息
                             best_message = None
                             best_text_length = 0
@@ -369,11 +326,8 @@ class DownloaderSerial():
                             
                             if best_message:
                                 text = best_message.text or best_message.caption or ""
-                                f.write(f"消息文本:\n{text}\n")
-                            
-                            # 记录当前时间
-                            f.write(f"下载时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                            f.write("-" * 50 + "\n")
+                                if text:
+                                    f.write(f"{text}\n")
                     except Exception as e:
                         logger.error(f"保存标题文件失败: {e}")
                     
