@@ -267,7 +267,7 @@ class DownloadView(QWidget):
         parallel_layout.addWidget(self.parallel_check)
         
         # 添加提示标签
-        restart_note = QLabel("(更换下载模式并保存后，重启才会生效)")
+        restart_note = QLabel("(更换下载模式，保存重启才会生效)")
         restart_note.setStyleSheet("font-size: 12px;")
         parallel_layout.addWidget(restart_note)
 

@@ -93,12 +93,22 @@ class Downloader():
         # API错误统计
         self.api_errors = {}
         
-        # 是否使用关键词下载模式
-        self.use_keywords = False
-        
         # 任务控制
         self.is_cancelled = False
         self.is_paused = False
+    
+    def _setting_has_keywords(self, setting: Dict[str, Any]) -> bool:
+        """
+        检查下载设置是否包含有效的关键词配置
+        
+        Args:
+            setting: 下载设置字典
+            
+        Returns:
+            bool: 是否包含有效的关键词配置
+        """
+        keywords = setting.get('keywords', [])
+        return bool(keywords and isinstance(keywords, list) and len(keywords) > 0)
     
     async def download_media_from_channels(self, task_context=None):
         """
@@ -111,8 +121,7 @@ class Downloader():
         self.is_cancelled = False
         self.is_paused = False
         
-        mode = "关键词下载" if self.use_keywords else "普通下载"
-        status_message = f"开始从频道下载媒体文件（并行下载模式 - {mode}）"
+        status_message = f"开始从频道下载媒体文件（并行下载模式）"
         logger.info(status_message)
         
         info_message = f"最大并行下载数: {self.max_concurrent_downloads}, 写入线程数: {self.writer_pool_size}"
@@ -168,12 +177,9 @@ class Downloader():
                 start_id = setting.get('start_id', 0)
                 end_id = setting.get('end_id', 0)
                 media_types = setting.get('media_types', [])
-                keywords = setting.get('keywords', []) if self.use_keywords else []
+                keywords = setting.get('keywords', []) if self._setting_has_keywords(setting) else []
                 
-                if self.use_keywords:
-                    logger.info(f"准备从频道 {source_channel} 下载媒体文件，关键词: {keywords}")
-                else:
-                    logger.info(f"准备从频道 {source_channel} 下载媒体文件")
+                logger.info(f"准备从频道 {source_channel} 下载媒体文件")
                 
                 await self._process_channel_for_download(source_channel, start_id, end_id, media_types, keywords, all_download_tasks)
             
@@ -758,40 +764,48 @@ class Downloader():
 
     async def _process_channel_for_download(self, channel, start_id, end_id, media_types, keywords, all_download_tasks):
         """
-        处理单个频道的下载流程
+        处理单个频道的下载过程
         
         Args:
-            channel: 频道标识
+            channel: 频道标识符
             start_id: 起始消息ID
             end_id: 结束消息ID
             media_types: 媒体类型列表
             keywords: 关键词列表
-            all_download_tasks: 下载任务列表
+            all_download_tasks: 所有下载任务列表
         """
+        if not channel:
+            logger.warning("频道标识符为空，跳过")
+            return
+            
         try:
-            # 解析频道ID
+            # 解析频道并获取真实ID
             real_channel_id = await self.channel_resolver.get_channel_id(channel)
-            # 获取频道信息
+            
+            if not real_channel_id:
+                logger.error(f"无法解析频道 {channel}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                return
+                
+            # 获取频道信息，用于创建目录
             channel_info, (channel_title, _) = await self.channel_resolver.format_channel_info(real_channel_id)
             logger.info(f"解析频道: {channel_info}")
+            channel_folder_name = f"{channel_title}-{real_channel_id}"
+            channel_folder_name = self._sanitize_filename(channel_folder_name)
             
-            # 确定目录组织方式
-            organize_by_chat = not self.use_keywords
-            organize_by_keywords = self.use_keywords
+            # 确定有无关键词，进而确定目录组织方式
+            has_keywords = bool(keywords and len(keywords) > 0)
+            organize_by_keywords = has_keywords
             
-            # 确定文件夹名称
-            base_folder_name = None
+            # 创建主下载目录（如果不存在）
+            channel_path = self.download_path / channel_folder_name
+            channel_path.mkdir(parents=True, exist_ok=True)
             
-            if organize_by_chat:
-                # 使用"频道标题-频道ID"格式创建目录
-                base_folder_name = f"{channel_title}-{real_channel_id}"
-                # 确保文件夹名称有效（移除非法字符）
-                base_folder_name = self._sanitize_filename(base_folder_name)
-                channel_path = self.download_path / base_folder_name
-                channel_path.mkdir(exist_ok=True)
-            else:
-                # 在关键词模式下，暂时使用下载根目录，后续会根据关键词创建子目录
-                channel_path = self.download_path
+            # 如果需要按关键词组织目录，预先创建关键词目录
+            if organize_by_keywords and keywords:
+                for keyword in keywords:
+                    keyword_folder = self._sanitize_filename(keyword)
+                    keyword_path = channel_path / keyword_folder
+                    keyword_path.mkdir(exist_ok=True)
             
             # 获取已下载的消息ID列表
             downloaded_messages = self.history_manager.get_downloaded_messages(channel)
@@ -802,6 +816,7 @@ class Downloader():
             matched_groups = set()  # 匹配关键词的媒体组ID
             matched_keywords = {}   # 媒体组ID -> 匹配的关键词
             
+            # 获取频道消息
             all_messages = []
             try:
                 # 第一轮遍历：收集所有消息并按媒体组分组
@@ -842,7 +857,7 @@ class Downloader():
                 messages_by_group[group_id].append(message)
                 
                 # 在关键词模式下，检查消息文本是否包含关键词
-                if self.use_keywords and keywords and group_id not in matched_groups:
+                if has_keywords and keywords and group_id not in matched_groups:
                     # 获取消息文本（正文或说明文字）
                     text = message.text or message.caption or ""
                     if text:
@@ -860,27 +875,20 @@ class Downloader():
             # 第二轮处理：处理每个媒体组
             for group_id, messages in messages_by_group.items():
                 # 如果是关键词模式且没有匹配关键词，则跳过整个媒体组
-                if self.use_keywords and keywords and group_id not in matched_groups:
+                if has_keywords and keywords and group_id not in matched_groups:
                     logger.debug(f"媒体组 {group_id} 不包含任何关键词，跳过")
                     continue
                 
                 current_channel_path = channel_path
                 
                 # 如果匹配了关键词，为该媒体组设置关键词目录
-                if self.use_keywords and organize_by_keywords and group_id in matched_groups:
+                if has_keywords and organize_by_keywords and group_id in matched_groups:
                     matched_keyword = matched_keywords[group_id]
                     keyword_folder = self._sanitize_filename(matched_keyword)
                     
-                    # 根据频道信息和关键词创建完整路径
-                    if base_folder_name:
-                        # 如果有频道名称，使用"频道/关键词"的目录结构
-                        keyword_path = self.download_path / base_folder_name / keyword_folder
-                    else:
-                        # 否则直接使用"关键词"目录
-                        keyword_path = self.download_path / keyword_folder
-                    
                     # 创建关键词目录
-                    keyword_path.mkdir(exist_ok=True, parents=True)
+                    keyword_path = channel_path / keyword_folder
+                    keyword_path.mkdir(exist_ok=True)
                     
                     # 更新当前媒体组的下载路径为关键词目录
                     current_channel_path = keyword_path
@@ -901,7 +909,7 @@ class Downloader():
         except Exception as e:
             logger.error(f"处理频道 {channel} 下载失败: {e}")
             import traceback
-            logger.error(traceback.format_exc()) 
+            logger.error(traceback.format_exc())
 
     def _get_media_type(self, message: Message) -> Optional[str]:
         """

@@ -39,10 +39,7 @@ class EventEmitterDownloader(BaseEventEmitter):
         self.history_manager = self.downloader.history_manager
         self.app = self.downloader.app
         
-        # 复制重要属性
-        self.is_cancelled = self.downloader.is_cancelled
-        self.is_paused = self.downloader.is_paused
-        self.use_keywords = self.downloader.use_keywords
+        # 复制下载路径和下载并发数属性
         self.download_path = self.downloader.download_path
         self.max_concurrent_downloads = self.downloader.max_concurrent_downloads
     
@@ -88,7 +85,7 @@ class EventEmitterDownloader(BaseEventEmitter):
     # 包装关键方法，以便在调用前后添加信号发射
     async def download_media_from_channels(self, task_context=None):
         """包装下载方法，添加信号发射
-        
+            
         Args:
             task_context: 任务上下文
             
@@ -97,7 +94,7 @@ class EventEmitterDownloader(BaseEventEmitter):
         """
         try:
             # 发送开始状态
-            self.status_updated.emit("开始下载媒体文件...")
+            self.status_updated.emit("开始并行下载媒体文件...")
             
             # 调用原始方法
             result = await self.downloader.download_media_from_channels(task_context)
@@ -111,21 +108,4 @@ class EventEmitterDownloader(BaseEventEmitter):
             # 发送错误信号
             self.error_occurred.emit(f"下载过程中发生错误: {e}", "")
             # 重新抛出异常
-            raise
-            
-    def set_keywords_mode(self, enabled: bool = False):
-        """设置关键词下载模式
-        
-        Args:
-            enabled: 是否启用关键词模式
-        """
-        # 设置原始下载器的关键词模式
-        self.downloader.use_keywords = enabled
-        
-        # 更新本地属性
-        self.use_keywords = self.downloader.use_keywords
-        
-        # 发送状态更新信号
-        mode_text = "开启" if enabled else "关闭"
-        self.status_updated.emit(f"下载器关键词模式: {mode_text}")
-        logger.debug(f"下载器关键词模式设置为: {mode_text}") 
+            raise 

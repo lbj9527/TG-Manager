@@ -39,8 +39,7 @@ class EventEmitterDownloaderSerial(BaseEventEmitter):
         self.history_manager = self.downloader_serial.history_manager
         self.app = self.downloader_serial.app
         
-        # 复制重要属性
-        self.use_keywords = self.downloader_serial.use_keywords
+        # 复制下载路径属性
         self.download_path = self.downloader_serial.download_path
     
     def _emit_qt_signal(self, event_type, *args, **kwargs):
@@ -105,21 +104,4 @@ class EventEmitterDownloaderSerial(BaseEventEmitter):
             # 发送错误信号
             self.error_occurred.emit(f"串行下载过程中发生错误: {e}", "")
             # 重新抛出异常
-            raise
-            
-    def set_keywords_mode(self, enabled: bool = False):
-        """设置关键词下载模式
-        
-        Args:
-            enabled: 是否启用关键词模式
-        """
-        # 调用原始方法
-        self.downloader_serial.set_keywords_mode(enabled)
-        
-        # 更新本地属性
-        self.use_keywords = self.downloader_serial.use_keywords
-        
-        # 发送状态更新信号
-        mode_text = "开启" if enabled else "关闭"
-        self.status_updated.emit(f"串行下载器关键词模式: {mode_text}")
-        logger.debug(f"串行下载器关键词模式设置为: {mode_text}") 
+            raise 
