@@ -73,6 +73,38 @@ class DownloaderSerial():
         self.download_path = Path(self.download_config.get('download_path', 'downloads'))
         self.download_path.mkdir(exist_ok=True)
         logger.info(f"下载目录: {self.download_path}")
+        
+        # 添加下载状态跟踪
+        self._current_file = None  # 当前正在下载的文件名
+        self._download_progress = (0, 0)  # 当前进度和总进度
+        self._is_downloading = False  # 是否正在下载
+    
+    def get_current_file(self) -> str:
+        """
+        获取当前正在下载的文件名
+        
+        Returns:
+            str: 当前文件名，如果没有正在下载的文件则返回None
+        """
+        return self._current_file
+    
+    def get_download_progress(self) -> tuple:
+        """
+        获取当前下载进度
+        
+        Returns:
+            tuple: (当前进度, 总进度)
+        """
+        return self._download_progress
+    
+    def is_downloading(self) -> bool:
+        """
+        检查是否正在下载
+        
+        Returns:
+            bool: 是否正在下载
+        """
+        return self._is_downloading
     
     def _setting_has_keywords(self, setting: Dict[str, Any]) -> bool:
         """
@@ -93,6 +125,7 @@ class DownloaderSerial():
         """
         
         logger.info(f"开始从频道下载媒体文件")
+        self._is_downloading = True
         
         # 获取下载频道列表
         download_settings = self.download_config.get('downloadSetting', [])
@@ -397,6 +430,7 @@ class DownloaderSerial():
                 
                 # 下载媒体
                 logger.info(f"正在下载: {file_name}")
+                self._current_file = file_name  # 设置当前文件
                 try:
                     # 开始时间
                     start_time = time.time()
@@ -432,6 +466,8 @@ class DownloaderSerial():
                         # 计算进度百分比
                         progress_percentage = (completed_count / total_download_count) * 100 if total_download_count > 0 else 0
                         logger.info(f"总进度: {completed_count}/{total_download_count} ({progress_percentage:.2f}%)")
+                        # 更新下载进度
+                        self._download_progress = (completed_count, total_download_count)
                     else:
                         logger.error(f"下载失败: {file_name}", error_type="DOWNLOAD_FAIL", recoverable=True)
                 
@@ -454,6 +490,8 @@ class DownloaderSerial():
         
         # 所有频道处理完成
         logger.info(f"所有下载任务完成，共下载 {completed_count} 个文件")
+        self._is_downloading = False
+        self._current_file = None
     
     def _download_progress_callback(self, message_id, file_name):
         """

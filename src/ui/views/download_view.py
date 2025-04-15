@@ -8,9 +8,9 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QSizePolicy, QTabWidget, QSplitter
+    QSizePolicy, QTabWidget, QSplitter, QProgressBar
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
@@ -321,9 +321,36 @@ class DownloadView(QWidget):
         self.current_task_label.setStyleSheet("color: #0066cc;")
         status_layout.addWidget(self.current_task_label)
         
+        # 添加状态标签
+        self.status_label = QLabel("就绪")
+        self.status_label.setStyleSheet("color: #006600;")
+        status_layout.addWidget(self.status_label)
+        
+        # 添加进度条和进度文本
+        progress_layout = QVBoxLayout()
+        self.progress_label = QLabel("下载进度: 0%")
+        progress_layout.addWidget(self.progress_label)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        progress_layout.addWidget(self.progress_bar)
+        
+        status_layout.addLayout(progress_layout)
+        
         # 整体进度
         self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
         status_layout.addWidget(self.overall_progress_label)
+        
+        # 添加已下载列表
+        downloaded_label = QLabel("已下载文件:")
+        downloaded_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        status_layout.addWidget(downloaded_label)
+        
+        self.downloaded_list = QListWidget()
+        self.downloaded_list.setMaximumHeight(150)  # 限制高度
+        status_layout.addWidget(self.downloaded_list)
         
         # 添加提示信息
         tips_label = QLabel("提示: 点击\"开始下载\"按钮开始下载任务。下载进度将显示在\"下载列表\"标签页中。")
@@ -750,11 +777,16 @@ class DownloadView(QWidget):
             completed: 已完成数量
             total: 总数量
         """
-        percent = 0
         if total > 0:
-            percent = int(completed / total * 100)
-        
-        self.overall_progress_label.setText(f"总进度: {completed}/{total} ({percent}%)")
+            percentage = min(int((completed / total) * 100), 100)
+            self.overall_progress_label.setText(f"总进度: {completed}/{total} ({percentage}%)")
+            
+            # 如果有进度条，也更新进度条
+            if hasattr(self, 'progress_bar'):
+                self.progress_bar.setRange(0, total)
+                self.progress_bar.setValue(completed)
+        else:
+            self.overall_progress_label.setText("总进度: 准备中")
         
         # 切换到下载状态标签页
         if self.download_tabs.currentIndex() != 0:  # 0是下载状态的索引
@@ -775,9 +807,207 @@ class DownloadView(QWidget):
         """
         self.current_task_label.setText(task_description)
         
-        # 如果不在下载状态标签页，添加提示
-        if self.download_tabs.currentIndex() != 0:  # 0是下载状态的索引
-            self.download_tabs.setTabText(0, "下载状态 *")  # 添加星号表示有更新
+        # 如果处于下载状态，也更新状态标签
+        if self.start_button.isEnabled() == False:  # 如果开始按钮被禁用，说明正在下载
+            self.status_label.setText("下载中...")
+    
+    def _update_status(self, status):
+        """更新状态信息
+        
+        Args:
+            status: 状态信息
+        """
+        try:
+            self.status_label.setText(status)
+            logger.debug(f"下载状态更新: {status}")
+        except Exception as e:
+            logger.error(f"更新状态信息时出错: {e}")
+    
+    def _update_progress(self, current, total, filename=None):
+        """更新下载进度
+        
+        Args:
+            current: 当前进度
+            total: 总进度
+            filename: 文件名(可选)
+        """
+        try:
+            # 更新进度条
+            if total > 0:
+                percentage = min(int((current / total) * 100), 100)
+                self.progress_bar.setValue(percentage)
+                
+                # 更新进度文本
+                if filename:
+                    self.progress_label.setText(f"下载中: {filename} - {percentage}%")
+                else:
+                    self.progress_label.setText(f"下载进度: {percentage}%")
+            else:
+                # 不确定的进度，使用循环进度条
+                self.progress_bar.setRange(0, 0)
+                if filename:
+                    self.progress_label.setText(f"下载中: {filename}")
+                else:
+                    self.progress_label.setText("正在下载...")
+        except Exception as e:
+            logger.error(f"更新进度时出错: {e}")
+    
+    def _on_download_complete(self, message_id, filename, file_size):
+        """下载完成处理
+        
+        Args:
+            message_id: 消息ID
+            filename: 下载的文件名
+            file_size: 文件大小
+        """
+        try:
+            # 更新下载完成项目
+            self._add_download_item(filename, file_size)
+            
+            # 重置进度条
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            self.progress_label.setText("准备下载下一个文件...")
+            
+            logger.debug(f"文件下载完成: {filename}, 大小: {file_size} 字节")
+        except Exception as e:
+            logger.error(f"处理下载完成时出错: {e}")
+    
+    def _on_all_downloads_complete(self):
+        """所有下载完成处理"""
+        try:
+            # 更新UI状态
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(100)
+            self.progress_label.setText("所有下载已完成")
+            self.status_label.setText("下载任务已完成")
+            self.overall_progress_label.setText("总进度: 完成")
+            
+            # 恢复按钮状态
+            self.start_button.setText("开始下载")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            
+            # 停止进度检查定时器
+            if hasattr(self, '_progress_checker') and self._progress_checker.isActive():
+                self._progress_checker.stop()
+            
+            # 显示提示消息
+            self._show_completion_message("下载完成", "所有文件已下载完成")
+            
+            logger.info("所有文件下载完成")
+        except Exception as e:
+            logger.error(f"处理所有下载完成时出错: {e}")
+    
+    def _on_download_error(self, error, message=None):
+        """下载错误处理
+        
+        Args:
+            error: 错误信息
+            message: 额外的消息(可选)
+        """
+        try:
+            # 更新UI状态
+            error_msg = f"下载出错: {error}"
+            if message:
+                error_msg += f"\n{message}"
+                
+            self.status_label.setText(error_msg)
+            self.progress_label.setText("下载过程中出现错误")
+            
+            # 恢复进度条状态
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(0)
+            
+            # 恢复按钮状态
+            self.start_button.setText("开始下载")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            
+            # 显示错误对话框
+            self._show_error_dialog("下载错误", error_msg)
+            
+            logger.error(f"下载错误: {error}")
+            if message:
+                logger.debug(f"错误详情: {message}")
+        except Exception as e:
+            logger.error(f"处理下载错误时出错: {e}")
+    
+    def _add_download_item(self, filename, file_size):
+        """添加下载完成项目到列表
+        
+        Args:
+            filename: 文件名
+            file_size: 文件大小(字节)
+        """
+        try:
+            # 将字节大小转换为人类可读格式
+            readable_size = self._format_size(file_size)
+            
+            # 创建列表项
+            item = QListWidgetItem(f"{filename} ({readable_size})")
+            
+            # 添加到已完成列表
+            self.downloaded_list.addItem(item)
+            
+            # 保持最新项可见
+            self.downloaded_list.scrollToBottom()
+        except Exception as e:
+            logger.error(f"添加下载项目时出错: {e}")
+    
+    def _format_size(self, size_bytes):
+        """格式化文件大小
+        
+        Args:
+            size_bytes: 文件大小(字节)
+            
+        Returns:
+            str: 格式化后的大小
+        """
+        # 文件大小单位
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        
+        # 计算合适的单位
+        i = 0
+        size = float(size_bytes)
+        while size >= 1024 and i < len(units) - 1:
+            size /= 1024
+            i += 1
+        
+        # 格式化输出
+        return f"{size:.2f} {units[i]}"
+    
+    def _show_completion_message(self, title, message):
+        """显示完成提示消息
+        
+        Args:
+            title: 标题
+            message: 消息内容
+        """
+        try:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Information)
+            msg_box.setWindowTitle(title)
+            msg_box.setText(message)
+            msg_box.exec()
+        except Exception as e:
+            logger.error(f"显示完成消息时出错: {e}")
+
+    def _show_error_dialog(self, title, message):
+        """显示错误对话框
+        
+        Args:
+            title: 对话框标题
+            message: 错误消息
+        """
+        try:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle(title)
+            msg_box.setText(message)
+            msg_box.exec()
+        except Exception as e:
+            logger.error(f"显示错误对话框时出错: {e}")
     
     def clear_download_list(self):
         """清空下载列表"""
@@ -873,229 +1103,78 @@ class DownloadView(QWidget):
         Args:
             downloader: 下载器实例
         """
-        if not downloader:
-            logger.warning("下载器实例为空，无法设置")
-            return
-            
         self.downloader = downloader
-        logger.debug("下载视图已接收下载器实例")
+        logger.info(f"下载视图已设置下载器实例: {type(downloader).__name__}")
         
-        # 连接信号
+        # 连接下载器信号
         self._connect_downloader_signals()
-    
+        
     def _connect_downloader_signals(self):
-        """连接下载器信号到UI更新"""
+        """连接下载器的信号"""
         if not hasattr(self, 'downloader') or self.downloader is None:
-            logger.warning("下载器不存在，无法连接信号")
+            logger.warning("尝试连接下载器信号，但下载器未初始化")
             return
             
-        # 连接下载器事件处理器
-        try:
-            # 检查downloader是否有信号属性并连接
-            if hasattr(self.downloader, 'status_updated'):
-                self.downloader.status_updated.connect(self._update_status)
+        # 查找主应用
+        app = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'app'):
+                app = parent.app
+                break
+            parent = parent.parent()
             
-            if hasattr(self.downloader, 'progress_updated'):
-                self.downloader.progress_updated.connect(self._update_progress)
+        if app and hasattr(app, 'task_manager'):
+            task_manager = app.task_manager
             
-            if hasattr(self.downloader, 'download_completed'):
-                self.downloader.download_completed.connect(self._on_download_complete)
-            
-            if hasattr(self.downloader, 'all_downloads_completed'):
-                self.downloader.all_downloads_completed.connect(self._on_all_downloads_complete)
-            
-            if hasattr(self.downloader, 'error_occurred'):
-                self.downloader.error_occurred.connect(self._on_download_error)
-            
-            logger.debug("下载器信号连接成功")
-            
-            # 如果下载器没有这些信号属性，我们需要手动添加事件监听
-            # 这是为了兼容不同版本的下载器实现
-            if not hasattr(self.downloader, 'status_updated') and hasattr(self.downloader, 'add_event_listener'):
-                self.downloader.add_event_listener("status", self._update_status)
-                self.downloader.add_event_listener("progress", self._update_progress)
-                self.downloader.add_event_listener("download_complete", self._on_download_complete)
-                self.downloader.add_event_listener("all_downloads_complete", self._on_all_downloads_complete)
-                self.downloader.add_event_listener("error", self._on_download_error)
-                logger.debug("使用事件监听器连接下载器事件")
-            
-        except Exception as e:
-            logger.error(f"连接下载器信号时出错: {e}")
-            import traceback
-            logger.debug(f"错误详情:\n{traceback.format_exc()}")
-    
-    def _update_status(self, status):
-        """更新状态信息
+            # 连接任务更新信号
+            if hasattr(task_manager, 'task_progress_update'):
+                task_manager.task_progress_update.connect(self._handle_task_progress)
+        
+        # 连接下载器的信号
+        # 在串行下载器中，我们使用日志更新来跟踪进度
+        # 使用一个计时器定期检查日志中的进度信息
+        self._progress_checker = QTimer()
+        self._progress_checker.setInterval(500)  # 每500毫秒检查一次
+        self._progress_checker.timeout.connect(self._check_download_progress)
+        self._progress_checker.start()
+        
+        # 更新状态
+        self.status_label.setText("已连接下载器，等待开始下载")
+        
+    def _handle_task_progress(self, task_id, progress, status):
+        """处理任务进度更新
         
         Args:
+            task_id: 任务ID
+            progress: 进度值 (0-100)
             status: 状态信息
         """
-        self.status_label.setText(status)
-        logger.debug(f"下载状态更新: {status}")
+        if task_id == "download_task" and progress is not None:
+            # 更新进度条
+            self.progress_bar.setValue(progress)
+            self.progress_label.setText(f"下载进度: {progress}%")
+            self.status_label.setText(status)
     
-    def _update_progress(self, current, total, filename=None):
-        """更新下载进度
+    def _check_download_progress(self):
+        """检查日志中的下载进度信息"""
+        # 此方法通过定时器定期调用，检查日志中是否有新的下载进度信息
+        # 在实际实现中，可能需要与日志模块集成
         
-        Args:
-            current: 当前进度
-            total: 总进度
-            filename: 文件名(可选)
-        """
-        # 更新进度条
-        if total > 0:
-            percentage = min(int((current / total) * 100), 100)
-            self.progress_bar.setValue(percentage)
+        # 如果下载任务正在运行，获取当前正在下载的文件
+        if hasattr(self, 'downloader') and self.downloader:
+            # 从下载器中获取最后下载的文件和进度信息
+            # 通常，下载器应该有方法或属性来跟踪这些信息
             
-            # 更新进度文本
-            if filename:
-                self.progress_label.setText(f"下载中: {filename} - {percentage}%")
-            else:
-                self.progress_label.setText(f"下载进度: {percentage}%")
-        else:
-            # 不确定的进度，使用循环进度条
-            self.progress_bar.setRange(0, 0)
-            if filename:
-                self.progress_label.setText(f"下载中: {filename}")
-            else:
-                self.progress_label.setText("正在下载...")
-    
-    def _on_download_complete(self, message_id, filename, file_size):
-        """下载完成处理
-        
-        Args:
-            message_id: 消息ID
-            filename: 下载的文件名
-            file_size: 文件大小
-        """
-        # 更新下载完成项目
-        self._add_download_item(filename, file_size)
-        
-        # 重置进度条
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_label.setText("准备下载下一个文件...")
-        
-        logger.debug(f"文件下载完成: {filename}, 大小: {file_size} 字节")
-    
-    def _on_all_downloads_complete(self):
-        """所有下载完成处理"""
-        # 更新UI状态
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(100)
-        self.progress_label.setText("所有下载已完成")
-        self.status_label.setText("下载任务已完成")
-        
-        # 恢复按钮状态
-        self.start_button.setText("开始下载")
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        
-        # 显示提示消息
-        self._show_completion_message("下载完成", "所有文件已下载完成")
-        
-        logger.info("所有文件下载完成")
-    
-    def _on_download_error(self, error, message=None):
-        """下载错误处理
-        
-        Args:
-            error: 错误信息
-            message: 额外的消息(可选)
-        """
-        # 更新UI状态
-        error_msg = f"下载出错: {error}"
-        if message:
-            error_msg += f"\n{message}"
+            if hasattr(self.downloader, 'get_current_file'):
+                current_file = self.downloader.get_current_file()
+                if current_file:
+                    self.current_task_label.setText(f"当前下载: {current_file}")
             
-        self.status_label.setText(error_msg)
-        self.progress_label.setText("下载过程中出现错误")
-        
-        # 恢复进度条状态
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        
-        # 恢复按钮状态
-        self.start_button.setText("开始下载")
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        
-        # 显示错误对话框
-        self._show_error_dialog("下载错误", error_msg)
-        
-        logger.error(f"下载错误: {error}")
-        if message:
-            logger.debug(f"错误详情: {message}")
+            if hasattr(self.downloader, 'get_download_progress'):
+                current, total = self.downloader.get_download_progress()
+                self.update_overall_progress(current, total)
     
-    def _add_download_item(self, filename, file_size):
-        """添加下载完成项目到列表
-        
-        Args:
-            filename: 文件名
-            file_size: 文件大小(字节)
-        """
-        # 将字节大小转换为人类可读格式
-        readable_size = self._format_size(file_size)
-        
-        # 创建列表项
-        from PySide6.QtWidgets import QListWidgetItem
-        item = QListWidgetItem(f"{filename} ({readable_size})")
-        
-        # 添加到已完成列表
-        self.downloaded_list.addItem(item)
-        
-        # 保持最新项可见
-        self.downloaded_list.scrollToBottom()
-    
-    def _format_size(self, size_bytes):
-        """格式化文件大小
-        
-        Args:
-            size_bytes: 文件大小(字节)
-            
-        Returns:
-            str: 格式化后的大小
-        """
-        # 文件大小单位
-        units = ['B', 'KB', 'MB', 'GB', 'TB']
-        
-        # 计算合适的单位
-        i = 0
-        size = float(size_bytes)
-        while size >= 1024 and i < len(units) - 1:
-            size /= 1024
-            i += 1
-        
-        # 格式化输出
-        return f"{size:.2f} {units[i]}"
-    
-    def _show_completion_message(self, title, message):
-        """显示完成提示消息
-        
-        Args:
-            title: 标题
-            message: 消息内容
-        """
-        from PySide6.QtWidgets import QMessageBox
-        msg_box = QMessageBox()
-        msg_box.setIcon(QMessageBox.Information)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-        msg_box.exec()
-
-    def _show_error_dialog(self, title, message):
-        """显示错误对话框
-        
-        Args:
-            title: 对话框标题
-            message: 错误消息
-        """
-        from PySide6.QtWidgets import QMessageBox
-        msg_box = QMessageBox()
-        msg_box.setIcon(QMessageBox.Critical)
-        msg_box.setWindowTitle(title)
-        msg_box.setText(message)
-        msg_box.exec()
-
     def _stop_download(self):
         """停止下载任务"""
         logger.info("用户请求停止下载")
