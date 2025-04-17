@@ -343,12 +343,6 @@ class DownloadView(QWidget):
         self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
         status_layout.addWidget(self.overall_progress_label)
         
-        # 添加提示信息
-        tips_label = QLabel("提示: 点击\"开始下载\"按钮开始下载任务。下载进度将显示在\"下载列表\"标签页中。")
-        tips_label.setStyleSheet("color: #666; margin-top: 10px;")
-        tips_label.setWordWrap(True)
-        status_layout.addWidget(tips_label)
-        
         # 添加伸展因子，使内容靠上对齐
         status_layout.addStretch(1)
         
@@ -357,12 +351,6 @@ class DownloadView(QWidget):
         list_layout = QVBoxLayout(self.list_tab)
         list_layout.setContentsMargins(8, 8, 8, 8)
         list_layout.setSpacing(5)
-        
-        # 添加提示信息
-        list_tip_label = QLabel("下载进度将显示在此处。下载完成后可以使用\"清空列表\"按钮清除记录。")
-        list_tip_label.setStyleSheet("color: #666;")
-        list_tip_label.setWordWrap(True)
-        list_layout.addWidget(list_tip_label)
         
         # 创建下载列表
         self.download_list = QListWidget()
