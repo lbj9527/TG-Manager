@@ -325,11 +325,6 @@ class DownloadView(QWidget):
         self.current_task_label.setStyleSheet("color: #0066cc;")
         status_layout.addWidget(self.current_task_label)
         
-        # 添加状态标签
-        self.status_label = QLabel("就绪")
-        self.status_label.setStyleSheet("color: #006600;")
-        status_layout.addWidget(self.status_label)
-        
         # 添加进度条和进度文本
         progress_layout = QVBoxLayout()
         self.progress_label = QLabel("下载进度: 0%")
@@ -614,7 +609,6 @@ class DownloadView(QWidget):
         
         # 更新状态
         self.current_task_label.setText("下载准备中...")
-        self.status_label.setText("正在收集要下载的文件信息...")
         self.overall_progress_label.setText("总进度: 准备中")
         
         # 使用异步任务执行下载
@@ -801,10 +795,6 @@ class DownloadView(QWidget):
             task_description: 任务描述文本
         """
         self.current_task_label.setText(task_description)
-        
-        # 如果处于下载状态，也更新状态标签
-        if self.start_button.isEnabled() == False:  # 如果开始按钮被禁用，说明正在下载
-            self.status_label.setText("下载中...")
     
     def _update_status(self, status):
         """更新状态信息
@@ -813,7 +803,6 @@ class DownloadView(QWidget):
             status: 状态信息
         """
         try:
-            self.status_label.setText(status)
             logger.debug(f"下载状态更新: {status}")
         except Exception as e:
             logger.error(f"更新状态信息时出错: {e}")
@@ -898,9 +887,6 @@ class DownloadView(QWidget):
             if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
                 # 切换到下载列表标签页查看详情
                 self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
-                
-            # 更新状态信息
-            self.status_label.setText(f"已完成: {filename}")
             
             # 更新整体进度（但不重置进度条）
             total_items = max(self.total_downloads, 1)  # 避免除以零
@@ -917,7 +903,6 @@ class DownloadView(QWidget):
             self.progress_bar.setRange(0, 1000)  # 保持高精度范围
             self.progress_bar.setValue(1000)  # 设置为完成状态
             self.progress_label.setText("所有下载已完成")
-            self.status_label.setText("下载任务已完成")
             self.overall_progress_label.setText("总进度: 完成")
             
             # 恢复按钮状态
@@ -948,8 +933,7 @@ class DownloadView(QWidget):
             error_msg = f"下载出错: {error}"
             if message:
                 error_msg += f"\n{message}"
-                
-            self.status_label.setText(error_msg)
+            
             self.progress_label.setText("下载过程中出现错误")
             
             # 恢复进度条状态
@@ -1169,9 +1153,9 @@ class DownloadView(QWidget):
         self._progress_checker.timeout.connect(self._check_download_progress)
         self._progress_checker.start()
         
-        # 更新状态
-        self.status_label.setText("已连接下载器，等待开始下载")
-        
+        # 删除对状态标签的更新
+        # self.status_label.setText("已连接下载器，等待开始下载")
+
     def _handle_task_progress(self, task_id, progress, status):
         """处理任务进度更新
         
@@ -1184,7 +1168,7 @@ class DownloadView(QWidget):
             # 更新进度条
             self.progress_bar.setValue(progress)
             self.progress_label.setText(f"下载进度: {progress}%")
-            self.status_label.setText(status)
+            # self.status_label.setText(status)
     
     def _check_download_progress(self):
         """检查日志中的下载进度信息"""
@@ -1279,8 +1263,8 @@ class DownloadView(QWidget):
             if not task_cancelled:
                 logger.warning("未找到正在运行的下载任务")
             
-            # 更新UI状态
-            self.status_label.setText("正在停止下载...")
+            # 删除对状态标签的更新
+            # self.status_label.setText("正在停止下载...")
             
             # 由于任务取消是异步的，等待任务实际停止
             # 在部分情况下可能需要直接恢复按钮状态
