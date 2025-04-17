@@ -499,19 +499,23 @@ class DownloaderSerial():
         """
         start_time = time.time()
         last_percentage = 0
+        last_update_time = time.time()
         
         async def progress(current, total):
-            nonlocal start_time, last_percentage           
+            nonlocal start_time, last_percentage, last_update_time
             # 计算百分比
             if total > 0:
                 percentage = int((current / total) * 100)
+                current_time = time.time()
                 
-                # 只在百分比变化较大时更新进度
-                if percentage - last_percentage >= 5 or percentage == 100:
+                # 减小更新阈值，使进度条更新更平滑
+                # 同时增加时间间隔限制，避免更新过于频繁（至少0.1秒一次）
+                if (percentage - last_percentage >= 1 or percentage == 100) and (current_time - last_update_time >= 0.1):
                     last_percentage = percentage
+                    last_update_time = current_time
                     
                     # 计算下载速度
-                    elapsed_time = time.time() - start_time
+                    elapsed_time = current_time - start_time
                     if elapsed_time > 0:
                         speed = current / elapsed_time / 1024  # KB/s
                         
