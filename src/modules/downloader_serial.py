@@ -78,6 +78,7 @@ class DownloaderSerial():
         self._current_file = None  # 当前正在下载的文件名
         self._download_progress = (0, 0)  # 当前进度和总进度
         self._is_downloading = False  # 是否正在下载
+        self._current_speed = (0, "B/s")  # 当前下载速度 (数值, 单位)
     
     def get_current_file(self) -> str:
         """
@@ -96,6 +97,15 @@ class DownloaderSerial():
             tuple: (当前进度, 总进度)
         """
         return self._download_progress
+    
+    def get_download_speed(self) -> tuple:
+        """
+        获取当前下载速度
+        
+        Returns:
+            tuple: (速度值, 单位)
+        """
+        return self._current_speed
     
     def is_downloading(self) -> bool:
         """
@@ -504,6 +514,12 @@ class DownloaderSerial():
                     elapsed_time = time.time() - start_time
                     if elapsed_time > 0:
                         speed = current / elapsed_time / 1024  # KB/s
+                        
+                        # 保存当前下载速度到实例变量
+                        if speed < 1024:
+                            self._current_speed = (round(speed, 2), "KB/s")
+                        else:
+                            self._current_speed = (round(speed/1024, 2), "MB/s")
                         
                         # 格式化显示
                         if speed < 1024:
