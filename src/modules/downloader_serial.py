@@ -148,31 +148,10 @@ class DownloaderSerial():
             logger.error("未配置下载设置，无法开始下载", error_type="CONFIG", recoverable=False)
             return
         
-        # 获取全局限制值
+        # 使用get_estimated_download_count函数获取预估下载总数和全局限制值
+        estimated_download_count = self.get_estimated_download_count()
         global_limit = self.general_config.get('limit', 50)
         logger.info(f"全局限制值: {global_limit} 条消息")
-        
-        # 初始值只用于预估，后面会更新为实际的待下载总数
-        estimated_download_count = 0
-        for setting in download_settings:
-            start_id = setting.get('start_id', 0)
-            end_id = setting.get('end_id', 0)
-            
-            # 如果指定了start_id但end_id为0，暂时使用全局限制或默认值
-            # 实际数量会在下载过程中根据最新消息ID进行调整
-            if start_id > 0 and end_id == 0:
-                setting_limit = global_limit if global_limit > 0 else 50
-            # 如果指定了明确的ID范围
-            elif start_id > 0 and end_id > 0:
-                setting_limit = abs(end_id - start_id) + 1
-                if global_limit > 0 and setting_limit > global_limit:
-                    setting_limit = global_limit
-            # 没有指定任何ID范围，使用全局限制
-            else:
-                setting_limit = global_limit if global_limit > 0 else 50
-                
-            estimated_download_count += setting_limit
-        
         logger.info(f"预计总下载消息数估计: {estimated_download_count} 条（初步估计，将在处理过程中更新）")
         
         # 已完成的下载数量
@@ -879,3 +858,42 @@ class DownloaderSerial():
                 asyncio.create_task(self.app.check_connection_status_now())
             except Exception as e:
                 logger.error(f"触发连接状态检查失败: {e}") 
+
+    def get_estimated_download_count(self) -> int:
+        """
+        获取预估的下载文件总数
+        
+        Returns:
+            int: 预估的下载文件总数
+        """
+        # 获取下载频道列表
+        download_settings = self.download_config.get('downloadSetting', [])
+        if not download_settings:
+            return 0
+            
+        # 获取全局限制值
+        global_limit = self.general_config.get('limit', 50)
+        
+        # 初始值用于预估，后续会在实际下载过程中更新
+        estimated_download_count = 0
+        for setting in download_settings:
+            start_id = setting.get('start_id', 0)
+            end_id = setting.get('end_id', 0)
+            
+            # 如果指定了start_id但end_id为0，暂时使用全局限制或默认值
+            # 实际数量会在下载过程中根据最新消息ID进行调整
+            if start_id > 0 and end_id == 0:
+                setting_limit = global_limit if global_limit > 0 else 50
+            # 如果指定了明确的ID范围
+            elif start_id > 0 and end_id > 0:
+                setting_limit = abs(end_id - start_id) + 1
+                if global_limit > 0 and setting_limit > global_limit:
+                    setting_limit = global_limit
+            # 没有指定任何ID范围，使用全局限制
+            else:
+                setting_limit = global_limit if global_limit > 0 else 50
+                
+            estimated_download_count += setting_limit
+        
+        logger.info(f"预计总下载消息数估计: {estimated_download_count} 条（初步估计）")
+        return estimated_download_count 
