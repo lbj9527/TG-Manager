@@ -175,15 +175,31 @@ class AsyncTaskManager:
         """
         if name in self.tasks:
             task = self.tasks[name]
-            if not task.done() and not task.cancelled():
-                task.cancel()
-                return True
+            if not task.done():
+                try:
+                    task.cancel()
+                    logger.debug(f"已取消任务: {name}")
+                    # 立即从字典中移除，避免再次尝试取消它
+                    del self.tasks[name]
+                    return True
+                except Exception as e:
+                    logger.error(f"取消任务 '{name}' 时出错: {e}")
+            else:
+                # 任务已完成，从字典中移除
+                logger.debug(f"任务 '{name}' 已完成，从字典中移除")
+                del self.tasks[name]
         return False
     
     def cancel_all_tasks(self) -> None:
         """取消所有任务"""
-        for name in list(self.tasks.keys()):
-            self.cancel_task(name)
+        task_count = len(self.tasks)
+        if task_count > 0:
+            logger.debug(f"正在取消所有任务，共 {task_count} 个")
+            for name in list(self.tasks.keys()):
+                self.cancel_task(name)
+            logger.debug("所有任务取消操作已完成")
+        else:
+            logger.debug("没有任务需要取消")
     
     def get_task(self, name: str) -> Optional[asyncio.Task]:
         """获取指定名称的任务
@@ -206,7 +222,7 @@ class AsyncTaskManager:
             bool: 任务是否正在运行
         """
         task = self.get_task(name)
-        return task is not None and not task.done() and not task.cancelled()
+        return task is not None and not task.done()
     
     def _on_task_done(self, name: str, task: asyncio.Task) -> None:
         """任务完成回调函数
@@ -218,6 +234,7 @@ class AsyncTaskManager:
         # 从字典中移除任务
         if name in self.tasks:
             del self.tasks[name]
+            logger.debug(f"任务 '{name}' 已完成并从管理器中移除")
         
         # 检查任务是否有异常
         if not task.cancelled():
@@ -229,15 +246,15 @@ class AsyncTaskManager:
                     import traceback
                     formatted_tb = traceback.format_exc()
                     logger.debug(f"错误详情:\n{formatted_tb}")
-            except asyncio.CancelledError:
-                pass  # 忽略已取消的任务
-            except asyncio.InvalidStateError:
-                pass  # 忽略无效状态
+            except (asyncio.CancelledError, asyncio.InvalidStateError):
+                # 忽略已取消的任务和无效状态
+                pass
     
     def shutdown(self) -> None:
         """关闭任务管理器，取消所有任务"""
         self.active = False
         self.cancel_all_tasks()
+        logger.info("任务管理器已关闭")
 
 class AsyncTimer:
     """异步定时器

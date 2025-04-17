@@ -39,6 +39,10 @@ class DownloadView(QWidget):
         self.config = config or {}
         self.use_keywords = use_keywords
         
+        # 初始化下载计数器
+        self.completed_downloads = 0
+        self.total_downloads = 0
+        
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setSpacing(2)  # 减小布局间距
@@ -605,6 +609,9 @@ class DownloadView(QWidget):
         # 清空下载列表
         self.download_list.clear()
         
+        # 重置计数器
+        self.completed_downloads = 0
+        
         # 更新状态
         self.current_task_label.setText("下载准备中...")
         self.status_label.setText("正在收集要下载的文件信息...")
@@ -922,8 +929,8 @@ class DownloadView(QWidget):
             if hasattr(self, '_progress_checker') and self._progress_checker.isActive():
                 self._progress_checker.stop()
             
-            # 显示提示消息
-            self._show_completion_message("下载完成", "所有文件已下载完成")
+            # 移除弹窗提示，仅在日志中记录
+            # self._show_completion_message("下载完成", "所有文件已下载完成")
             
             logger.info("所有文件下载完成")
         except Exception as e:
@@ -1200,6 +1207,9 @@ class DownloadView(QWidget):
                 current, total = self.downloader.get_download_progress()
                 self.update_overall_progress(current, total)
                 
+                # 更新total_downloads属性以便于_on_download_complete方法使用
+                self.total_downloads = total
+                
                 # 检查下载是否已完成，如果完成则更新按钮状态
                 if current == total and total > 0 and not self.start_button.isEnabled():
                     self._on_all_downloads_complete()
@@ -1290,3 +1300,67 @@ class DownloadView(QWidget):
             self.start_button.setText("开始下载")
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False) 
+
+    def closeEvent(self, event):
+        """处理窗口关闭事件，确保清理资源
+        
+        Args:
+            event: 关闭事件
+        """
+        self._cleanup_resources()
+        super().closeEvent(event)
+        
+    def _cleanup_resources(self):
+        """清理资源，避免任务泄漏"""
+        try:
+            # 停止进度检查定时器
+            if hasattr(self, '_progress_checker') and self._progress_checker.isActive():
+                self._progress_checker.stop()
+                self._progress_checker.deleteLater()
+                logger.debug("已停止下载进度检查定时器")
+                
+            # 尝试停止下载任务
+            self._stop_download()
+            
+            # 断开信号连接
+            if hasattr(self, 'downloader') and self.downloader is not None:
+                if hasattr(self.downloader, 'download_completed'):
+                    try:
+                        self.downloader.download_completed.disconnect(self._on_download_complete)
+                    except:
+                        pass
+                
+                if hasattr(self.downloader, 'all_downloads_completed'):
+                    try:
+                        self.downloader.all_downloads_completed.disconnect(self._on_all_downloads_complete)
+                    except:
+                        pass
+                
+                if hasattr(self.downloader, 'error_occurred'):
+                    try:
+                        self.downloader.error_occurred.disconnect(self._on_download_error)
+                    except:
+                        pass
+                        
+                logger.debug("已断开下载器信号连接")
+                
+            # 获取app实例并查找任务管理器
+            app = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'app'):
+                    app = parent.app
+                    break
+                parent = parent.parent()
+                
+            # 确保任务被正确取消
+            if app and hasattr(app, 'task_manager'):
+                if app.task_manager.is_task_running("download_task"):
+                    app.task_manager.cancel_task("download_task")
+                    logger.info("在清理时取消了运行中的下载任务")
+            
+            logger.debug("下载视图资源清理完成")
+        except Exception as e:
+            logger.error(f"清理资源时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc()) 

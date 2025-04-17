@@ -150,6 +150,18 @@ class CleanupManager:
                 if hasattr(self.app, 'main_window') and self.app.main_window:
                     self.app.main_window.set_ui_enabled(True)
             
+            # 先尝试取消特定的任务
+            if hasattr(self.app, 'task_manager'):
+                for task_name in ["download_task", "upload_task", "forward_task", "monitor_task", 
+                                  "network_connection_check", "global_exception_handler"]:
+                    if self.app.task_manager.is_task_running(task_name):
+                        self.app.task_manager.cancel_task(task_name)
+                        logger.debug(f"取消了特定任务: {task_name}")
+                
+                # 取消所有其他任务
+                self.app.task_manager.cancel_all_tasks()
+                logger.debug("已取消任务管理器中的所有任务")
+            
             # 停止Telegram客户端
             if hasattr(self.app, 'client_manager') and self.app.client_manager:
                 logger.debug("停止Telegram客户端")
@@ -159,11 +171,34 @@ class CleanupManager:
                 except Exception as e:
                     logger.error(f"停止Telegram客户端时出错: {e}")
             
+            # 确保关闭所有视图的资源
+            if hasattr(self.app, 'main_window') and self.app.main_window:
+                if hasattr(self.app.main_window, 'opened_views'):
+                    for view_name, view in self.app.main_window.opened_views.items():
+                        if hasattr(view, '_cleanup_resources'):
+                            try:
+                                view._cleanup_resources()
+                                logger.debug(f"已清理视图资源: {view_name}")
+                            except Exception as e:
+                                logger.error(f"清理视图 {view_name} 资源时出错: {e}")
+            
             # 在事件循环中安全地获取和取消任务
-            for task in [t for t in asyncio.all_tasks() 
-                      if t is not asyncio.current_task() and not t.done()]:
-                logger.debug(f"取消任务: {task.get_name()}")
-                task.cancel()
+            pending_tasks = [t for t in asyncio.all_tasks() 
+                          if t is not asyncio.current_task() and not t.done()]
+            
+            if pending_tasks:
+                logger.debug(f"发现 {len(pending_tasks)} 个待处理的异步任务")
+                
+                for task in pending_tasks:
+                    task_name = task.get_name()
+                    logger.debug(f"取消任务: {task_name}")
+                    task.cancel()
+                
+                # 等待所有任务处理取消请求
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
+                logger.debug("已等待所有任务处理取消请求")
+            else:
+                logger.debug("没有发现待处理的异步任务")
             
             logger.info("异步资源清理完成")
             return True
