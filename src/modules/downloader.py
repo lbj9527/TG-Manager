@@ -73,7 +73,7 @@ class Downloader():
         self.writer_pool_size = min(32, os.cpu_count() * 2)  # 写入线程池大小：CPU核心数的2倍，最大32
         
         # 设置并行下载数量
-        self.max_concurrent_downloads = self.download_config.get('max_concurrent_downloads', 10)  # 从配置读取最大并行下载数
+        self.max_concurrent_downloads = self.download_config.get('max_concurrent_downloads', 10)
         self.active_downloads = 0  # 当前活跃下载数
         self.download_semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
         
@@ -117,6 +117,30 @@ class Downloader():
         Args:
             task_context: 移除了任务上下文参数类型
         """
+        # 重新获取最新配置
+        logger.info("下载前重新获取最新配置...")
+        try:
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            
+            # 更新下载配置和通用配置
+            self.download_config = self.config.get('DOWNLOAD', {})
+            self.general_config = self.config.get('GENERAL', {})
+            
+            # 重新创建下载目录（如果路径已更改）
+            self.download_path = Path(self.download_config.get('download_path', 'downloads'))
+            self.download_path.mkdir(exist_ok=True)
+            
+            # 更新并行下载数量
+            self.max_concurrent_downloads = self.download_config.get('max_concurrent_downloads', 10)
+            self.download_semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
+            
+            logger.info(f"配置已更新，下载设置数: {len(self.download_config.get('downloadSetting', []))}")
+        except Exception as e:
+            logger.error(f"更新配置时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
         # 初始化状态
         self.is_cancelled = False
         self.is_paused = False

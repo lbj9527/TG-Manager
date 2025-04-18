@@ -134,6 +134,26 @@ class DownloaderSerial():
         从配置的频道下载媒体文件，自动根据设置是否含有关键词组织下载目录
         """
         
+        # 重新获取最新配置
+        logger.info("下载前重新获取最新配置...")
+        try:
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            
+            # 更新下载配置和通用配置
+            self.download_config = self.config.get('DOWNLOAD', {})
+            self.general_config = self.config.get('GENERAL', {})
+            
+            # 重新创建下载目录（如果路径已更改）
+            self.download_path = Path(self.download_config.get('download_path', 'downloads'))
+            self.download_path.mkdir(exist_ok=True)
+            
+            logger.info(f"配置已更新，下载设置数: {len(self.download_config.get('downloadSetting', []))}")
+        except Exception as e:
+            logger.error(f"更新配置时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+        
         logger.info(f"开始从频道下载媒体文件")
         self._is_downloading = True
         
