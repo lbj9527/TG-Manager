@@ -604,12 +604,18 @@ class DownloadView(QWidget):
         # 清空下载列表
         self.download_list.clear()
         
-        # 重置计数器
+        # 重置计数器和进度显示
         self.completed_downloads = 0
+        self.total_downloads = 0
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("下载进度: 0%")
+        self.overall_progress_label.setText("总进度: 准备中")
+        
+        # 添加一个标志，表示需要强制更新总文件数
+        self._need_update_total = True
         
         # 更新状态
         self.current_task_label.setText("下载准备中...")
-        self.overall_progress_label.setText("总进度: 准备中")
         
         # 使用异步任务执行下载
         try:
@@ -718,6 +724,17 @@ class DownloadView(QWidget):
         logger.debug(f"向主窗口发送配置保存信号，更新下载配置")
         self.config_saved.emit(updated_config)
         
+        # 重置下载计数器和进度显示
+        self.completed_downloads = 0
+        self.total_downloads = 0
+        self.progress_bar.setValue(0)
+        self.progress_label.setText("下载进度: 0%")
+        self.overall_progress_label.setText("总进度: 0/0 (0%)")
+        self.current_task_label.setText("未开始下载")
+        
+        # 重置强制更新总数标志
+        self._need_update_total = True
+        
         # 显示成功消息
         QMessageBox.information(self, "配置保存", "下载配置已保存")
         
@@ -762,9 +779,12 @@ class DownloadView(QWidget):
             completed: 已完成数量
             total: 总数量
         """
-        if total > 0:
-            percentage = min(int((completed / total) * 100), 100)
-            self.overall_progress_label.setText(f"总进度: {completed}/{total} ({percentage}%)")
+        # 使用当前实际的总数或传入的总数，取较大值
+        actual_total = max(self.total_downloads, total)
+        
+        if actual_total > 0:
+            percentage = min(int((completed / actual_total) * 100), 100)
+            self.overall_progress_label.setText(f"总进度: {completed}/{actual_total} ({percentage}%)")
             
             # 如果有进度条，也更新进度条，使用高精度的1000分比
             if hasattr(self, 'progress_bar'):
@@ -772,7 +792,7 @@ class DownloadView(QWidget):
                 if self.progress_bar.maximum() != 1000:
                     self.progress_bar.setRange(0, 1000)
                 # 计算高精度的进度值
-                progress_value = min(int((completed / total) * 1000), 1000)
+                progress_value = min(int((completed / actual_total) * 1000), 1000)
                 self.progress_bar.setValue(progress_value)
         else:
             self.overall_progress_label.setText("总进度: 准备中")
@@ -782,7 +802,7 @@ class DownloadView(QWidget):
             self.download_tabs.setTabText(0, "下载状态 *")  # 添加星号表示有更新
         
         # 如果已全部完成，启用开始按钮
-        if completed >= total and total > 0:
+        if completed >= actual_total and actual_total > 0:
             self.start_button.setEnabled(True)
             # 恢复标签页文本
             self.download_tabs.setTabText(0, "下载状态")
@@ -827,35 +847,32 @@ class DownloadView(QWidget):
                 # 计算整数百分比
                 percentage = int((current / total) * 100)
                 
-                # 更新进度文本
-                progress_text = ""
+                # 更新进度文本和当前下载任务标签
                 if filename:
-                    progress_text = f"下载中: {filename}"
+                    self.progress_label.setText(f"下载进度: {percentage}%")
+                    self.current_task_label.setText(f"当前下载: {filename}")
                 else:
-                    progress_text = "下载进度"
+                    self.progress_label.setText(f"下载进度: {percentage}%")
                 
                 # 如果有速度信息，添加到显示中
                 if speed and isinstance(speed, tuple) and len(speed) == 2:
                     speed_value, speed_unit = speed
-                    progress_text += f" - 速度: {speed_value} {speed_unit}"
-                
-                self.progress_label.setText(progress_text)
+                    self.progress_label.setText(f"下载进度: {percentage}% - 速度: {speed_value:.1f} {speed_unit}")
             else:
                 # 不确定的进度，使用循环进度条
                 self.progress_bar.setRange(0, 0)
                 
-                progress_text = ""
+                # 更新进度文本和当前下载任务标签
                 if filename:
-                    progress_text = f"下载中: {filename}"
+                    self.progress_label.setText("正在下载...")
+                    self.current_task_label.setText(f"当前下载: {filename}")
                 else:
-                    progress_text = "正在下载..."
+                    self.progress_label.setText("正在下载...")
                 
                 # 如果有速度信息，添加到显示中
                 if speed and isinstance(speed, tuple) and len(speed) == 2:
                     speed_value, speed_unit = speed
-                    progress_text += f" - 速度: {speed_value} {speed_unit}"
-                
-                self.progress_label.setText(progress_text)
+                    self.progress_label.setText(f"正在下载... - 速度: {speed_value:.1f} {speed_unit}")
         except Exception as e:
             logger.error(f"更新进度时出错: {e}")
     
@@ -888,8 +905,14 @@ class DownloadView(QWidget):
                 # 切换到下载列表标签页查看详情
                 self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
             
-            # 更新整体进度（但不重置进度条）
-            total_items = max(self.total_downloads, 1)  # 避免除以零
+            # 更新整体进度（使用实际的总数）
+            if hasattr(self.downloader, 'get_download_progress'):
+                _, total_from_downloader = self.downloader.get_download_progress()
+                # 取当前记录的总数和下载器报告的总数中的较大值
+                total_items = max(self.total_downloads, total_from_downloader, 1)  # 避免除以零
+            else:
+                total_items = max(self.total_downloads, 1)  # 避免除以零
+                
             self.update_overall_progress(self.completed_downloads, total_items)
             
             logger.info(f"文件下载完成: {filename}, 大小: {file_size} 字节")
@@ -913,6 +936,9 @@ class DownloadView(QWidget):
             # 停止进度检查定时器
             if hasattr(self, '_progress_checker') and self._progress_checker.isActive():
                 self._progress_checker.stop()
+            
+            # 重置强制更新总数标志，为下一次下载做准备
+            self._need_update_total = True
             
             # 移除弹窗提示，仅在日志中记录
             # self._show_completion_message("下载完成", "所有文件已下载完成")
@@ -1145,6 +1171,11 @@ class DownloadView(QWidget):
         if hasattr(self.downloader, 'error_occurred'):
             logger.info("连接错误信号")
             self.downloader.error_occurred.connect(self._on_download_error)
+            
+        # 确保进度更新信号被连接
+        if hasattr(self.downloader, 'progress_updated'):
+            logger.info("连接进度更新信号")
+            self.downloader.progress_updated.connect(self._on_progress_updated)
         
         # 在串行下载器中，我们使用日志更新来跟踪进度
         # 使用一个计时器定期检查日志中的进度信息
@@ -1173,39 +1204,65 @@ class DownloadView(QWidget):
     def _check_download_progress(self):
         """检查日志中的下载进度信息"""
         # 此方法通过定时器定期调用，检查日志中是否有新的下载进度信息
-        # 在实际实现中，可能需要与日志模块集成
         
-        # 如果下载任务正在运行，获取当前正在下载的文件
+        # 如果下载任务正在运行，获取当前正在下载的文件和进度
         if hasattr(self, 'downloader') and self.downloader:
-            # 从下载器中获取最后下载的文件和进度信息
-            current_file = None
+            # 获取当前文件（只有当UI中没有显示当前文件时才更新）
             if hasattr(self.downloader, 'get_current_file'):
                 current_file = self.downloader.get_current_file()
-                if current_file:
+                if current_file and (self.current_task_label.text() == "未开始下载" or "下载准备中" in self.current_task_label.text()):
                     self.current_task_label.setText(f"当前下载: {current_file}")
             
-            # 获取下载进度
+            # 获取下载进度（总体进度）
             current = 0
             total = 0
             if hasattr(self.downloader, 'get_download_progress'):
                 current, total = self.downloader.get_download_progress()
-                self.update_overall_progress(current, total)
                 
-                # 更新total_downloads属性以便于_on_download_complete方法使用
-                self.total_downloads = total
+                # 检查总数是否有效（大于0）且需要更新
+                if total > 0 and (hasattr(self, '_need_update_total') and self._need_update_total):
+                    self.total_downloads = total
+                    logger.info(f"初始更新总下载文件数: {total}")
+                    self._need_update_total = False  # 重置标志，避免重复更新
+                # 否则只在总数更大或下载刚开始时更新总数
+                elif total > self.total_downloads or current == 0:
+                    self.total_downloads = total
+                
+                self.update_overall_progress(current, total)
                 
                 # 检查下载是否已完成，如果完成则更新按钮状态
                 if current == total and total > 0 and not self.start_button.isEnabled():
                     self._on_all_downloads_complete()
             
-            # 获取下载速度
-            speed = None
-            if hasattr(self.downloader, 'get_download_speed'):
-                speed = self.downloader.get_download_speed()
-            
-            # 如果正在下载文件，更新进度和速度显示
-            if current_file and hasattr(self.downloader, 'is_downloading') and self.downloader.is_downloading():
-                self._update_progress(current, total, current_file, speed)
+            # 更新当前文件的下载进度
+            # 注意：此部分可能已经通过直接的signal更新，所以只在需要时才更新
+            if hasattr(self.downloader, 'is_downloading') and self.downloader.is_downloading():
+                current_file = self.downloader.get_current_file()
+                speed = None
+                if hasattr(self.downloader, 'get_download_speed'):
+                    speed = self.downloader.get_download_speed()
+                
+                # 如果正在下载但没有显示文件名或速度，才主动更新UI
+                if current_file and ("未开始下载" in self.current_task_label.text() or 
+                                     "下载准备中" in self.current_task_label.text() or
+                                     not "速度" in self.progress_label.text()):
+                    self._update_progress(current, total, current_file, speed)
+    
+    def _on_progress_updated(self, current, total, filename):
+        """处理进度更新信号
+        
+        Args:
+            current: 当前进度
+            total: 总进度
+            filename: 文件名
+        """
+        # 获取速度信息
+        speed = None
+        if hasattr(self.downloader, 'get_download_speed'):
+            speed = self.downloader.get_download_speed()
+        
+        # 更新进度显示
+        self._update_progress(current, total, filename, speed)
     
     def _stop_download(self):
         """停止下载任务"""
@@ -1263,8 +1320,8 @@ class DownloadView(QWidget):
             if not task_cancelled:
                 logger.warning("未找到正在运行的下载任务")
             
-            # 删除对状态标签的更新
-            # self.status_label.setText("正在停止下载...")
+            # 重置强制更新总数标志
+            self._need_update_total = True
             
             # 由于任务取消是异步的，等待任务实际停止
             # 在部分情况下可能需要直接恢复按钮状态

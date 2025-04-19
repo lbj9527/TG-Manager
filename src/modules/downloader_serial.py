@@ -40,6 +40,7 @@ class DownloaderSerial():
             history_manager: 历史记录管理器实例
             app: 应用程序实例，用于网络错误时立即检查连接状态
         """
+        super().__init__()
         self.client = client
         self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
@@ -79,6 +80,15 @@ class DownloaderSerial():
         self._download_progress = (0, 0)  # 当前进度和总进度
         self._is_downloading = False  # 是否正在下载
         self._current_speed = (0, "B/s")  # 当前下载速度 (数值, 单位)
+        
+        # 初始化队列和状态变量
+        self._download_queue = asyncio.Queue()
+        self._done = False
+        self._is_stopped = False
+        
+        # 初始化进度追踪变量
+        self._last_progress_time = time.time()
+        self._last_progress_bytes = 0
     
     def get_current_file(self) -> str:
         """
@@ -105,7 +115,18 @@ class DownloaderSerial():
         Returns:
             tuple: (速度值, 单位)
         """
-        return self._current_speed
+        if hasattr(self, '_current_speed') and self._current_speed is not None:
+            # 确保 _current_speed 是数值，不是元组
+            if isinstance(self._current_speed, tuple):
+                speed = self._current_speed[0]
+            else:
+                speed = self._current_speed
+            
+            if speed < 1024 * 1024:  # 小于1MB/s，显示KB/s
+                return (speed / 1024, "KB/s")
+            else:  # 否则显示MB/s
+                return (speed / (1024 * 1024), "MB/s")
+        return (0, "KB/s")
     
     def is_downloading(self) -> bool:
         """
@@ -448,7 +469,7 @@ class DownloaderSerial():
                     download_path = await self.client.download_media(
                         message,
                         file_name=str(file_path),
-                        progress=self._download_progress_callback(message.id, file_name)
+                        progress=self._download_progress_callback(self.client, message.id, file_name)
                     )
                     
                     # 计算下载时间
@@ -506,64 +527,64 @@ class DownloaderSerial():
         self._is_downloading = False
         self._current_file = None
     
-    def _download_progress_callback(self, message_id, file_name):
-        """
-        创建下载进度回调函数
+    def _download_progress_callback(self, client, message_id, filename):
+        """下载进度回调函数
         
         Args:
+            client: 客户端对象
             message_id: 消息ID
-            file_name: 文件名
-            
+            filename: 文件名
+        
         Returns:
-            下载进度回调函数
+            回调函数
         """
-        start_time = time.time()
-        last_percentage = 0
-        last_update_time = time.time()
-        
-        async def progress(current, total):
-            nonlocal start_time, last_percentage, last_update_time
-            # 计算百分比
-            if total > 0:
-                percentage = int((current / total) * 100)
-                current_time = time.time()
+        # 返回一个内部的回调函数来处理进度更新
+        def callback(current, total):
+            try:
+                if total == 0:
+                    return
                 
-                # 减小更新阈值，使进度条更新更平滑
-                # 同时增加时间间隔限制，避免更新过于频繁（至少0.1秒一次）
-                if (percentage - last_percentage >= 1 or percentage == 100) and (current_time - last_update_time >= 0.1):
-                    last_percentage = percentage
-                    last_update_time = current_time
+                # 计算进度百分比
+                percentage = 100 * (current / total)
+                
+                # 计算下载速度
+                now = time.time()
+                time_diff = now - self._last_progress_time
+                
+                if time_diff > 0:
+                    speed = (current - self._last_progress_bytes) / time_diff
+                    self._current_speed = speed  # 保存当前速度供get_download_speed方法使用
                     
-                    # 计算下载速度
-                    elapsed_time = current_time - start_time
-                    if elapsed_time > 0:
-                        speed = current / elapsed_time / 1024  # KB/s
-                        
-                        # 保存当前下载速度到实例变量
-                        if speed < 1024:
-                            self._current_speed = (round(speed, 2), "KB/s")
+                    # 获取格式化后的速度
+                    speed_value, speed_unit = self.get_download_speed()
+                    speed_str = f"{speed_value:.1f} {speed_unit}"
+                    
+                    # 计算剩余时间
+                    remaining_bytes = total - current
+                    if speed > 0:
+                        time_remaining = remaining_bytes / speed  # 剩余时间（秒）
+                        if time_remaining < 60:
+                            time_str = f"{time_remaining:.1f}秒"
+                        elif time_remaining < 3600:
+                            time_str = f"{time_remaining / 60:.1f}分钟"
                         else:
-                            self._current_speed = (round(speed/1024, 2), "MB/s")
-                        
-                        # 格式化显示
-                        if speed < 1024:
-                            speed_text = f"{speed:.2f} KB/s"
-                        else:
-                            speed_text = f"{speed/1024:.2f} MB/s"
-                        
-                        # 计算剩余时间
-                        if current > 0:
-                            remaining_time = (total - current) / (current / elapsed_time)
-                            mins, secs = divmod(remaining_time, 60)
-                            time_text = f"{int(mins)}分{int(secs)}秒"
-                        else:
-                            time_text = "计算中..."
-                        
-                        # 日志显示进度
-                        logger.debug(
-                            f"下载进度: {file_name} - {percentage}% ({current/1024/1024:.2f}MB/{total/1024/1024:.2f}MB) {speed_text} 剩余: {time_text}")
-        
-        return progress
+                            time_str = f"{time_remaining / 3600:.1f}小时"
+                    else:
+                        time_str = "未知"
+                    
+                    # 更新最后进度信息
+                    self._last_progress_time = now
+                    self._last_progress_bytes = current
+                    
+                    # 打印进度信息
+                    logger.info(f"下载进度: {percentage:.2f}% ({current}/{total}) - 速度: {speed_str} - 剩余时间: {time_str} - 文件: {filename}")
+                    
+                    # 发出进度更新事件
+                    self.emit("progress", current, total, filename)
+            except Exception as e:
+                logger.error(f"计算下载进度时出错: {str(e)}")
+            
+        return callback
     
     def _sanitize_filename(self, filename: str) -> str:
         """
