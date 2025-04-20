@@ -19,6 +19,7 @@ class EventEmitterDownloaderSerial(BaseEventEmitter):
     progress_updated = Signal(int, int, str)  # 进度更新信号 (当前, 总数, 文件名)
     download_completed = Signal(int, str, int)  # 下载完成信号 (消息ID, 文件名, 文件大小)
     all_downloads_completed = Signal()  # 所有下载完成信号
+    file_already_downloaded = Signal(int, str)  # 文件已下载跳过信号 (消息ID, 文件名)
     
     def __init__(self, original_downloader: OriginalDownloaderSerial):
         """初始化串行下载器包装类
@@ -77,6 +78,13 @@ class EventEmitterDownloaderSerial(BaseEventEmitter):
             elif event_type == "all_downloads_complete":
                 self.all_downloads_completed.emit()
                 logger.debug("发射all_downloads_completed信号")
+                
+            elif event_type == "file_already_downloaded":
+                if len(args) >= 2:
+                    message_id = args[0]
+                    filename = args[1]
+                    self.file_already_downloaded.emit(message_id, filename)
+                    logger.debug(f"发射file_already_downloaded信号: msg_id={message_id}, file={filename}")
                 
         except Exception as e:
             logger.error(f"发射Qt信号时发生错误: {e}")

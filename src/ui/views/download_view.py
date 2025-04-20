@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QTabWidget, QSplitter, QProgressBar
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer
+from PySide6.QtGui import QColor
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
@@ -1156,57 +1157,34 @@ class DownloadView(QWidget):
     
     def _connect_downloader_signals(self):
         """连接下载器的信号"""
-        if not hasattr(self, 'downloader') or self.downloader is None:
-            logger.warning("尝试连接下载器信号，但下载器未初始化")
+        if not self.downloader:
+            logger.warning("无法连接下载器信号：下载器实例不存在")
             return
-            
-        # 查找主应用
-        app = None
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, 'app'):
-                app = parent.app
-                break
-            parent = parent.parent()
-            
-        if app and hasattr(app, 'task_manager'):
-            task_manager = app.task_manager
-            
-            # 连接任务更新信号
-            if hasattr(task_manager, 'task_progress_update'):
-                task_manager.task_progress_update.connect(self._handle_task_progress)
         
-        # 连接下载器的信号
-        # 确保下载完成信号被连接 - 修复下载列表更新问题
-        if hasattr(self.downloader, 'download_completed'):
+        try:
+            # 下载完成信号
             logger.info("连接下载完成信号")
             self.downloader.download_completed.connect(self._on_download_complete)
-        
-        # 确保所有下载完成信号被连接
-        if hasattr(self.downloader, 'all_downloads_completed'):
+            
+            # 所有下载完成信号
             logger.info("连接所有下载完成信号")
             self.downloader.all_downloads_completed.connect(self._on_all_downloads_complete)
-        
-        # 确保错误信号被连接
-        if hasattr(self.downloader, 'error_occurred'):
+            
+            # 错误信号
             logger.info("连接错误信号")
             self.downloader.error_occurred.connect(self._on_download_error)
             
-        # 确保进度更新信号被连接
-        if hasattr(self.downloader, 'progress_updated'):
+            # 进度更新信号
             logger.info("连接进度更新信号")
             self.downloader.progress_updated.connect(self._on_progress_updated)
-        
-        # 在串行下载器中，我们使用日志更新来跟踪进度
-        # 使用一个计时器定期检查日志中的进度信息
-        self._progress_checker = QTimer()
-        self._progress_checker.setInterval(500)  # 每500毫秒检查一次
-        self._progress_checker.timeout.connect(self._check_download_progress)
-        self._progress_checker.start()
-        
-        # 删除对状态标签的更新
-        # self.status_label.setText("已连接下载器，等待开始下载")
-
+            
+            # 文件已下载跳过信号
+            logger.info("连接文件已下载跳过信号")
+            self.downloader.file_already_downloaded.connect(self._on_file_already_downloaded)
+            
+        except Exception as e:
+            logger.error(f"连接下载器信号时出错: {e}")
+    
     def _handle_task_progress(self, task_id, progress, status):
         """处理任务进度更新
         
@@ -1287,6 +1265,31 @@ class DownloadView(QWidget):
         
         # 更新进度显示
         self._update_progress(current, total, filename, speed)
+    
+    def _on_file_already_downloaded(self, message_id, filename):
+        """处理文件已下载跳过事件
+        
+        Args:
+            message_id: 消息ID
+            filename: 文件名
+        """
+        try:
+            # 添加到下载列表
+            item = QListWidgetItem(f"消息[{message_id}]已下载，跳过：{filename}")
+            item.setForeground(QColor(128, 128, 128))  # 使用灰色文本
+            self.download_list.addItem(item)
+            
+            # 保持最新项可见
+            self.download_list.scrollToBottom()
+            
+            # 如果当前不在下载列表标签页，显示提示
+            if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
+                # 切换到下载列表标签页查看详情
+                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
+                
+            logger.debug(f"显示已下载跳过消息: ID={message_id}, 文件={filename}")
+        except Exception as e:
+            logger.error(f"处理文件已下载跳过事件时出错: {e}")
     
     def _stop_download(self):
         """停止下载任务"""

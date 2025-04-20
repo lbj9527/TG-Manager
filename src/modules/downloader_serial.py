@@ -317,6 +317,9 @@ class DownloaderSerial():
                 for message in all_messages:
                     if message.id in downloaded_messages:
                         logger.info(f"消息 {message.id} 已下载，跳过")
+                        # 发送文件已下载跳过事件
+                        file_name = self._generate_filename(message, channel_title)
+                        self.emit("file_already_downloaded", message.id, file_name)
                         continue
                     
                     # 检查消息是否包含媒体
@@ -473,6 +476,8 @@ class DownloaderSerial():
                     logger.debug(f"文件已存在: {file_path}，跳过下载")
                     # 标记为已下载
                     self.history_manager.add_download_record(channel_name, message.id, real_channel_id)
+                    # 发送文件已下载跳过事件
+                    self.emit("file_already_downloaded", message.id, file_name)
                     continue
                 
                 # 下载媒体
