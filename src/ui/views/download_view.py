@@ -595,7 +595,13 @@ class DownloadView(QWidget):
             QMessageBox.warning(self, "错误", "下载器未初始化，请稍后再试")
             logger.error("尝试开始下载，但下载器未初始化")
             return
-            
+        
+        # 在开始下载前，重置下载器的进度计数
+        if hasattr(self.downloader, '_reset_progress'):
+            self.downloader._reset_progress()
+        elif hasattr(self.downloader, 'reset_progress'):
+            self.downloader.reset_progress()
+        
         # 准备开始下载，更新按钮状态
         self.start_button.setText("正在下载")
         self.start_button.setEnabled(False)
@@ -905,17 +911,25 @@ class DownloadView(QWidget):
                 # 切换到下载列表标签页查看详情
                 self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
             
-            # 更新整体进度（使用实际的总数）
+            # 获取最新的总文件数
+            total_items = self.total_downloads
             if hasattr(self.downloader, 'get_download_progress'):
                 _, total_from_downloader = self.downloader.get_download_progress()
-                # 取当前记录的总数和下载器报告的总数中的较大值
-                total_items = max(self.total_downloads, total_from_downloader, 1)  # 避免除以零
-            else:
-                total_items = max(self.total_downloads, 1)  # 避免除以零
-                
+                if total_from_downloader > 0:
+                    # 如果下载器报告的总数有变化，更新总数
+                    if total_from_downloader != self._last_total:
+                        logger.info(f"文件完成后检测到总数变化: {self._last_total} -> {total_from_downloader}")
+                        self.total_downloads = total_from_downloader
+                        self._last_total = total_from_downloader
+                    total_items = total_from_downloader
+            
+            # 确保总数至少为已完成的数量
+            total_items = max(total_items, self.completed_downloads)
+            
+            # 更新整体进度
             self.update_overall_progress(self.completed_downloads, total_items)
             
-            logger.info(f"文件下载完成: {filename}, 大小: {file_size} 字节")
+            logger.info(f"文件下载完成: {filename}, 大小: {file_size} 字节, 进度: {self.completed_downloads}/{total_items}")
         except Exception as e:
             logger.error(f"处理下载完成时出错: {e}")
     
@@ -1131,9 +1145,15 @@ class DownloadView(QWidget):
         self.downloader = downloader
         logger.info(f"下载视图已设置下载器实例: {type(downloader).__name__}")
         
+        # 重置下载状态变量
+        self.completed_downloads = 0
+        self.total_downloads = 0
+        self._last_total = 0
+        self._need_update_total = True
+        
         # 连接下载器信号
         self._connect_downloader_signals()
-        
+    
     def _connect_downloader_signals(self):
         """连接下载器的信号"""
         if not hasattr(self, 'downloader') or self.downloader is None:
@@ -1219,15 +1239,19 @@ class DownloadView(QWidget):
             if hasattr(self.downloader, 'get_download_progress'):
                 current, total = self.downloader.get_download_progress()
                 
-                # 检查总数是否有效（大于0）且需要更新
-                if total > 0 and (hasattr(self, '_need_update_total') and self._need_update_total):
-                    self.total_downloads = total
-                    logger.info(f"初始更新总下载文件数: {total}")
-                    self._need_update_total = False  # 重置标志，避免重复更新
-                # 否则只在总数更大或下载刚开始时更新总数
-                elif total > self.total_downloads or current == 0:
-                    self.total_downloads = total
+                # 记录上一次的总数，用于检测变化
+                last_total = getattr(self, '_last_total', 0)
                 
+                # 检查总数是否有效（大于0）
+                if total > 0:
+                    # 如果总数发生变化或者标记为需要强制更新
+                    if total != last_total or (hasattr(self, '_need_update_total') and self._need_update_total):
+                        logger.info(f"更新总下载文件数: 从 {self.total_downloads} 到 {total} (上一次: {last_total})")
+                        self.total_downloads = total
+                        self._last_total = total  # 记录当前总数
+                        self._need_update_total = False  # 重置标志
+                
+                # 更新UI显示的总进度
                 self.update_overall_progress(current, total)
                 
                 # 检查下载是否已完成，如果完成则更新按钮状态

@@ -137,6 +137,18 @@ class DownloaderSerial():
         """
         return self._is_downloading
     
+    def reset_progress(self):
+        """
+        重置下载进度计数器
+        """
+        self._download_progress = (0, 0)
+        self._current_speed = 0
+        self._last_progress_time = time.time()
+        self._last_progress_bytes = 0
+        self._is_downloading = False
+        self._current_file = None
+        logger.info("下载进度计数器已重置")
+    
     def _setting_has_keywords(self, setting: Dict[str, Any]) -> bool:
         """
         检查下载设置是否包含有效的关键词配置
@@ -386,6 +398,11 @@ class DownloaderSerial():
         
         # 更新实际待下载总数
         logger.info(f"实际待下载文件总数: {total_download_count} 个文件")
+        
+        # 立即更新进度计数器
+        self._download_progress = (0, total_download_count)
+        # 发送进度更新事件，确保UI能即时获取到总文件数
+        self.emit("progress", 0, total_download_count, "")
         
         # 第二轮：执行实际下载
         for channel_data in pending_downloads:
