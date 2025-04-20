@@ -16,6 +16,13 @@ from PySide6.QtGui import QColor
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
 
+import os
+import time
+import asyncio
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Optional, Tuple, Any, Union
+
 logger = get_logger()
 
 
@@ -99,6 +106,9 @@ class DownloadView(QWidget):
         # 加载配置
         if self.config:
             self.load_config(self.config)
+            
+        # 启动时检查下载目录大小
+        QTimer.singleShot(1000, self._check_directory_size_limit_on_startup)
         
         logger.info("下载界面初始化完成")
     
@@ -282,6 +292,30 @@ class DownloadView(QWidget):
         parallel_layout.addStretch(1)
         
         options_layout.addLayout(parallel_layout)
+        
+        # 添加一些空间
+        options_layout.addSpacing(8)
+        
+        # 下载目录大小限制
+        dir_size_limit_layout = QHBoxLayout()
+        self.dir_size_limit_check = QCheckBox("启用下载目录大小限制")
+        self.dir_size_limit_check.toggled.connect(lambda checked: self.dir_size_limit.setEnabled(checked))
+        dir_size_limit_layout.addWidget(self.dir_size_limit_check)
+        
+        self.dir_size_limit = QSpinBox()
+        self.dir_size_limit.setRange(1, 100000)  # 1MB到100GB
+        self.dir_size_limit.setValue(1000)  # 默认1000MB (1GB)
+        self.dir_size_limit.setEnabled(False)
+        self.dir_size_limit.setSuffix(" MB")
+        dir_size_limit_layout.addWidget(self.dir_size_limit)
+        
+        # 添加检查目录大小按钮
+        self.check_dir_size_button = QPushButton("检查目录大小")
+        self.check_dir_size_button.clicked.connect(self._check_and_show_directory_size)
+        dir_size_limit_layout.addWidget(self.check_dir_size_button)
+        
+        dir_size_limit_layout.addStretch(1)
+        options_layout.addLayout(dir_size_limit_layout)
         
         # 添加一些空间
         options_layout.addSpacing(8)
@@ -578,6 +612,102 @@ class DownloadView(QWidget):
         
         return channels
     
+    def _get_directory_size(self, path: str) -> int:
+        """获取目录总大小（以字节为单位）
+        
+        Args:
+            path: 目录路径
+            
+        Returns:
+            int: 目录大小（字节）
+        """
+        try:
+            total_size = 0
+            path_obj = Path(path)
+            
+            # 检查路径是否存在
+            if not path_obj.exists():
+                return 0
+                
+            # 如果是文件，直接返回文件大小
+            if path_obj.is_file():
+                return path_obj.stat().st_size
+                
+            # 遍历目录计算总大小
+            for dirpath, dirnames, filenames in os.walk(path):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    # 跳过符号链接
+                    if not os.path.islink(file_path):
+                        total_size += os.path.getsize(file_path)
+                        
+            return total_size
+        except Exception as e:
+            logger.error(f"计算目录大小时出错: {e}")
+            return 0
+            
+    def _check_directory_size_limit(self) -> Tuple[bool, int, int]:
+        """检查下载目录大小是否超过限制
+        
+        Returns:
+            Tuple[bool, int, int]: (是否超过限制, 当前大小(MB), 限制大小(MB))
+        """
+        # 如果未启用目录大小限制，直接返回False
+        if not self.dir_size_limit_check.isChecked():
+            return False, 0, 0
+            
+        # 获取下载路径和大小限制
+        download_path = self.download_path.text()
+        limit_mb = self.dir_size_limit.value()
+        
+        # 获取当前目录大小（字节）
+        current_size_bytes = self._get_directory_size(download_path)
+        # 转换为MB
+        current_size_mb = current_size_bytes / (1024 * 1024)
+        
+        # 检查是否超过限制
+        return current_size_mb > limit_mb, int(current_size_mb), limit_mb
+        
+    def _show_directory_size_limit_dialog(self, current_size_mb: int, limit_mb: int):
+        """显示目录大小超出限制的警告对话框，带5秒倒计时自动关闭
+        
+        Args:
+            current_size_mb: 当前目录大小(MB)
+            limit_mb: 限制大小(MB)
+        """
+        # 创建对话框
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setWindowTitle("下载目录大小超出限制")
+        msg_box.setText(f"下载目录大小已超出设置的限制!\n\n当前大小: {current_size_mb} MB\n限制大小: {limit_mb} MB\n\n下载任务已自动停止。")
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        
+        # 创建倒计时标签
+        countdown_label = QLabel("此对话框将在 5 秒后自动关闭")
+        msg_box.setInformativeText(countdown_label.text())
+        
+        # 显示对话框（不阻塞）
+        msg_box.show()
+        
+        # 倒计时处理
+        countdown = 5
+        
+        def update_countdown():
+            nonlocal countdown
+            countdown -= 1
+            if countdown > 0:
+                msg_box.setInformativeText(f"此对话框将在 {countdown} 秒后自动关闭")
+                timer.start(1000)  # 继续倒计时
+            else:
+                msg_box.close()  # 关闭对话框
+                timer.stop()
+                timer.deleteLater()
+        
+        # 创建定时器
+        timer = QTimer()
+        timer.timeout.connect(update_countdown)
+        timer.start(1000)  # 每秒触发一次
+    
     def _start_download(self):
         """开始下载"""
         # 检查频道列表
@@ -595,6 +725,13 @@ class DownloadView(QWidget):
         if not hasattr(self, 'downloader') or self.downloader is None:
             QMessageBox.warning(self, "错误", "下载器未初始化，请稍后再试")
             logger.error("尝试开始下载，但下载器未初始化")
+            return
+            
+        # 检查下载目录大小是否超过限制
+        exceeded, current_size_mb, limit_mb = self._check_directory_size_limit()
+        if exceeded:
+            logger.warning(f"下载目录大小超出限制: 当前 {current_size_mb}MB, 限制 {limit_mb}MB")
+            self._show_directory_size_limit_dialog(current_size_mb, limit_mb)
             return
         
         # 在开始下载前，重置下载器的进度计数
@@ -716,7 +853,9 @@ class DownloadView(QWidget):
             'downloadSetting': download_setting,
             'download_path': self.download_path.text(),
             'parallel_download': self.parallel_check.isChecked(),
-            'max_concurrent_downloads': self.max_downloads.value()
+            'max_concurrent_downloads': self.max_downloads.value(),
+            'dir_size_limit_enabled': self.dir_size_limit_check.isChecked(),
+            'dir_size_limit': self.dir_size_limit.value()
         }
         
         # 组织完整配置
@@ -884,18 +1023,26 @@ class DownloadView(QWidget):
             logger.error(f"更新进度时出错: {e}")
     
     def _on_download_complete(self, message_id, filename, file_size):
-        """下载完成处理
+        """处理下载完成事件
         
         Args:
             message_id: 消息ID
-            filename: 下载的文件名
+            filename: 文件名
             file_size: 文件大小
         """
         try:
-            # 更新下载完成记录
+            # 检查下载目录大小是否超过限制
+            exceeded, current_size_mb, limit_mb = self._check_directory_size_limit()
+            if exceeded:
+                logger.warning(f"下载完成后检测到目录大小超出限制: 当前 {current_size_mb}MB, 限制 {limit_mb}MB")
+                self._stop_download()  # 停止下载
+                self._show_directory_size_limit_dialog(current_size_mb, limit_mb)
+                return
+            
+            # 增加下载完成计数
             self.completed_downloads += 1
             
-            # 将文件添加到下载列表标签页
+            # 格式化文件大小
             readable_size = self._format_size(file_size)
             
             # 创建列表项
@@ -1120,6 +1267,13 @@ class DownloadView(QWidget):
         
         max_concurrent = config.get('DOWNLOAD', {}).get('max_concurrent_downloads', 5)
         self.max_downloads.setValue(max_concurrent)
+        
+        # 加载目录大小限制设置
+        dir_size_limit_enabled = config.get('DOWNLOAD', {}).get('dir_size_limit_enabled', False)
+        self.dir_size_limit_check.setChecked(dir_size_limit_enabled)
+        
+        dir_size_limit = config.get('DOWNLOAD', {}).get('dir_size_limit', 1000)
+        self.dir_size_limit.setValue(dir_size_limit)
     
     def _on_tab_changed(self, index):
         """标签页切换事件处理
@@ -1432,3 +1586,60 @@ class DownloadView(QWidget):
             logger.error(f"清理资源时出错: {e}")
             import traceback
             logger.error(traceback.format_exc()) 
+
+    def _check_directory_size_limit_on_startup(self):
+        """启动时检查下载目录大小，如果超过限制则显示警告"""
+        # 检查下载目录大小是否超过限制
+        exceeded, current_size_mb, limit_mb = self._check_directory_size_limit()
+        if exceeded:
+            logger.warning(f"启动时检测到下载目录大小超出限制: 当前 {current_size_mb}MB, 限制 {limit_mb}MB")
+            QMessageBox.warning(
+                self, 
+                "下载目录大小超出限制", 
+                f"下载目录大小已超出设置的限制!\n\n当前大小: {current_size_mb} MB\n限制大小: {limit_mb} MB\n\n请注意，启动新的下载任务前需要清理目录或增加限制值。"
+            ) 
+
+    def _check_and_show_directory_size(self):
+        """检查并显示当前下载目录大小"""
+        try:
+            # 获取下载路径
+            download_path = self.download_path.text()
+            
+            # 如果路径不存在，创建它
+            path_obj = Path(download_path)
+            if not path_obj.exists():
+                path_obj.mkdir(parents=True, exist_ok=True)
+                QMessageBox.information(self, "目录信息", f"目录 '{download_path}' 不存在，已创建。")
+                return
+            
+            # 计算目录大小
+            total_size_bytes = self._get_directory_size(download_path)
+            
+            # 格式化大小显示
+            if total_size_bytes < 1024 * 1024:  # 小于1MB
+                size_str = f"{total_size_bytes / 1024:.2f} KB"
+            elif total_size_bytes < 1024 * 1024 * 1024:  # 小于1GB
+                size_str = f"{total_size_bytes / (1024 * 1024):.2f} MB"
+            else:  # GB或更大
+                size_str = f"{total_size_bytes / (1024 * 1024 * 1024):.2f} GB"
+            
+            # 检查是否接近或超过限制
+            limit_message = ""
+            if self.dir_size_limit_check.isChecked():
+                limit_mb = self.dir_size_limit.value()
+                current_mb = total_size_bytes / (1024 * 1024)
+                
+                if current_mb > limit_mb:
+                    limit_message = f"\n\n⚠️ 当前目录大小已超过设定的限制({limit_mb} MB)!"
+                elif current_mb > limit_mb * 0.9:  # 接近限制（90%以上）
+                    limit_message = f"\n\n⚠️ 当前目录大小已接近设定的限制({limit_mb} MB)!"
+            
+            # 显示目录大小信息
+            QMessageBox.information(
+                self,
+                "目录大小信息",
+                f"下载目录: {download_path}\n当前大小: {size_str}{limit_message}"
+            )
+        except Exception as e:
+            logger.error(f"检查目录大小时出错: {e}")
+            QMessageBox.warning(self, "错误", f"检查目录大小时出错: {str(e)}") 

@@ -244,6 +244,8 @@ class UIDownloadConfig(BaseModel):
         ge=1, 
         le=50
     )
+    dir_size_limit_enabled: bool = Field(False, description="是否启用下载目录大小限制")
+    dir_size_limit: int = Field(1000, description="下载目录大小限制(MB)", ge=1, le=100000)
 
     @validator('downloadSetting')
     def validate_download_settings(cls, v):
@@ -489,7 +491,9 @@ def create_default_config() -> UIConfig:
             ],
             download_path="downloads",
             parallel_download=False,
-            max_concurrent_downloads=10
+            max_concurrent_downloads=10,
+            dir_size_limit_enabled=False,
+            dir_size_limit=1000  # 默认1000MB (1GB)
         ),
         UPLOAD=UIUploadConfig(
             target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道

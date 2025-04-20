@@ -8,7 +8,7 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Union, Any, Optional, Set
+from typing import List, Dict, Union, Any, Optional, Set, Tuple
 
 from pyrogram import Client
 from pyrogram.types import Message
@@ -479,6 +479,18 @@ class DownloaderSerial():
                     # 发送文件已下载跳过事件
                     self.emit("file_already_downloaded", message.id, file_name)
                     continue
+                
+                # 下载前检查目录大小限制
+                exceeded, current_size_mb, limit_mb = await self._check_directory_size_limit()
+                if exceeded:
+                    logger.warning(f"下载目录大小超出限制: 当前 {current_size_mb}MB, 限制 {limit_mb}MB")
+                    # 发送错误事件通知UI
+                    error_msg = f"下载目录大小超出限制（当前: {current_size_mb}MB, 限制: {limit_mb}MB）"
+                    self.emit("error", error_msg, "下载已自动停止")
+                    # 停止下载
+                    self._is_downloading = False
+                    self._current_file = None
+                    return
                 
                 # 下载媒体
                 logger.info(f"正在下载: {file_name}")
@@ -980,3 +992,49 @@ class DownloaderSerial():
         
         logger.info(f"预计总下载消息数估计: {estimated_download_count} 条（初步估计）")
         return estimated_download_count 
+
+    async def _check_directory_size_limit(self) -> Tuple[bool, int, int]:
+        """检查下载目录大小是否超过限制
+        
+        Returns:
+            Tuple[bool, int, int]: (是否超过限制, 当前大小(MB), 限制大小(MB))
+        """
+        try:
+            # 获取最新配置
+            ui_config = self.ui_config_manager.get_ui_config()
+            config = convert_ui_config_to_dict(ui_config)
+            download_config = config.get('DOWNLOAD', {})
+            
+            # 检查是否启用了目录大小限制
+            dir_size_limit_enabled = download_config.get('dir_size_limit_enabled', False)
+            if not dir_size_limit_enabled:
+                return False, 0, 0
+                
+            # 获取下载路径和大小限制
+            download_path = download_config.get('download_path', 'downloads')
+            limit_mb = download_config.get('dir_size_limit', 1000)  # 默认1000MB (1GB)
+            
+            # 计算当前目录大小
+            total_size = 0
+            path_obj = Path(download_path)
+            
+            # 检查路径是否存在
+            if not path_obj.exists():
+                return False, 0, 0
+                
+            # 遍历目录计算总大小
+            for dirpath, dirnames, filenames in os.walk(download_path):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    # 跳过符号链接
+                    if not os.path.islink(file_path):
+                        total_size += os.path.getsize(file_path)
+            
+            # 转换为MB
+            current_size_mb = total_size / (1024 * 1024)
+            
+            # 检查是否超过限制
+            return current_size_mb > limit_mb, int(current_size_mb), limit_mb
+        except Exception as e:
+            logger.error(f"检查目录大小限制时出错: {e}")
+            return False, 0, 0 
