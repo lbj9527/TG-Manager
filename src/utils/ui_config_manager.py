@@ -179,6 +179,11 @@ class UIConfigManager:
                           logger.warning(f"无效的源频道: {item.get('source_channels')}, {e}")
                           continue  # 跳过无效项
                       
+                      # 确保关键词是字符串列表而不是嵌套列表
+                      if "keywords" in item and isinstance(item["keywords"], list):
+                          # 确保每个关键词都是字符串
+                          item["keywords"] = [str(kw) for kw in item["keywords"]]
+                      
                       valid_download_settings.append(item)
                   except Exception as e:
                       logger.warning(f"处理下载设置项时出错: {e}")
@@ -520,11 +525,17 @@ class UIConfigManager:
         if "GENERAL" in config_dict and "proxy_type" in config_dict["GENERAL"]:
             config_dict["GENERAL"]["proxy_type"] = config_dict["GENERAL"]["proxy_type"].value
         
-        # 处理DownloadConfig中的media_types
+        # 处理DownloadConfig中的media_types和keywords
         if "DOWNLOAD" in config_dict and "downloadSetting" in config_dict["DOWNLOAD"]:
             for item in config_dict["DOWNLOAD"]["downloadSetting"]:
+                # 处理媒体类型
                 if "media_types" in item:
                     item["media_types"] = [mt.value for mt in item["media_types"]]
+                
+                # 确保关键词是字符串列表而不是嵌套列表
+                if "keywords" in item and isinstance(item["keywords"], list):
+                    # 确保每个关键词都是字符串
+                    item["keywords"] = [str(kw) for kw in item["keywords"]]
         
         # 处理ForwardConfig和MonitorConfig中的media_types
         for section in ["FORWARD", "MONITOR"]:

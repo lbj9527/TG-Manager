@@ -172,7 +172,7 @@ class DownloadView(QWidget):
         keywords_layout.addWidget(keyword_label)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("输入要筛选的关键词，多个用逗号分隔")
+        self.keyword_input.setPlaceholderText("输入要筛选的关键词，多个用英文逗号分隔，同义词用横杠'-'连接")
         self.keyword_input.setMinimumWidth(300)  # 增加最小宽度
         # 设置尺寸策略为水平方向可扩展
         self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -463,7 +463,7 @@ class DownloadView(QWidget):
         self.browse_path_button.setToolTip("选择下载文件保存位置")
         
         # 关键词输入提示 - 移除对use_keywords的检查
-        self.keyword_input.setToolTip("输入要筛选的关键词")
+        self.keyword_input.setToolTip("输入要筛选的关键词，多个用英文逗号分隔，同义词用横杠'-'连接（例如：关键词1-关键词2-关键词3）")
     
     def _browse_download_path(self):
         """浏览下载路径对话框"""
@@ -495,6 +495,7 @@ class DownloadView(QWidget):
         keywords = []
         keywords_text = self.keyword_input.text().strip()
         if keywords_text:
+            # 以逗号分隔不同的关键词或同义关键词组
             keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
         
         # 获取选中的媒体类型
@@ -839,11 +840,14 @@ class DownloadView(QWidget):
             if not valid_media_types:
                 valid_media_types = ["photo", "video", "document", "audio", "animation"]
             
+            # 确保关键词是列表而非字符串
+            keywords = channel_data.get('keywords', [])
+            
             setting_item = {
                 'source_channels': channel_data.get('channel', ''),
                 'start_id': channel_data.get('start_id', 0),
                 'end_id': channel_data.get('end_id', 0),
-                'keywords': channel_data.get('keywords', []),
+                'keywords': keywords,
                 'media_types': valid_media_types
             }
             download_setting.append(setting_item)
@@ -1213,11 +1217,17 @@ class DownloadView(QWidget):
         # 加载频道
         download_settings = config.get('DOWNLOAD', {}).get('downloadSetting', [])
         for setting in download_settings:
+            # 确保关键词是列表
+            keywords = setting.get('keywords', [])
+            if isinstance(keywords, str):
+                # 如果关键词被错误地保存为字符串，将其转换为列表
+                keywords = [keywords] if keywords else []
+            
             channel_data = {
                 'channel': setting.get('source_channels', ''),
                 'start_id': setting.get('start_id', 1),
                 'end_id': setting.get('end_id', 0),
-                'keywords': setting.get('keywords', []),
+                'keywords': keywords,
                 'media_types': setting.get('media_types', ["photo", "video", "document", "audio", "animation"])
             }
             

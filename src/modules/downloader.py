@@ -891,10 +891,26 @@ class Downloader():
                     if text:
                         # 检查文本是否包含任何关键词
                         for keyword in keywords:
-                            if keyword.lower() in text.lower():
-                                matched_groups.add(group_id)
-                                matched_keywords[group_id] = keyword
-                                logger.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配关键词: {keyword}")
+                            # 检查是否是同义关键词组（包含横杠分隔符）
+                            if "-" in keyword:
+                                # 分割同义关键词
+                                synonym_keywords = [k.strip() for k in keyword.split("-") if k.strip()]
+                                # 任一同义词匹配即视为匹配
+                                for syn_keyword in synonym_keywords:
+                                    if syn_keyword.lower() in text.lower():
+                                        matched_groups.add(group_id)
+                                        matched_keywords[group_id] = keyword  # 保存整个同义词组
+                                        logger.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配同义关键词组: {keyword} 中的 {syn_keyword}")
+                                        break
+                            else:
+                                # 普通关键词匹配
+                                if keyword.lower() in text.lower():
+                                    matched_groups.add(group_id)
+                                    matched_keywords[group_id] = keyword
+                                    logger.info(f"媒体组 {group_id} (消息ID: {message.id}) 匹配关键词: {keyword}")
+                            
+                            # 如果已匹配，无需继续检查其他关键词
+                            if group_id in matched_groups:
                                 break
             
             # 准备下载任务
