@@ -439,8 +439,14 @@ class DownloaderSerial():
                     safe_group_id = self._sanitize_filename(str(group_id))
                     media_group_path = current_channel_path / safe_group_id
                     media_group_path.mkdir(exist_ok=True)
+                    logger.debug(f"为媒体组 {group_id} 创建目录: {media_group_path}")
                 else:
-                    media_group_path = current_channel_path
+                    # 对于单条消息，也创建单独的子目录，以消息ID命名
+                    message_id = str(message.id)
+                    safe_message_id = self._sanitize_filename(message_id)
+                    media_group_path = current_channel_path / safe_message_id
+                    media_group_path.mkdir(exist_ok=True)
+                    logger.debug(f"为单条消息 {message.id} 创建目录: {media_group_path}")
                 
                 # 获取该媒体组的所有消息
                 group_messages = [item['message'] for item in channel_data['items'] if item['group_id'] == group_id]
