@@ -8,10 +8,9 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QFileSystemModel, QTreeView, QSplitter, QTextEdit, QSizePolicy,
-    QTabWidget, QDoubleSpinBox
+    QTextEdit, QSizePolicy, QTabWidget, QDoubleSpinBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QModelIndex
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir
 from PySide6.QtGui import QIcon
 
 from pathlib import Path
@@ -42,7 +41,7 @@ class UploadView(QWidget):
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setSpacing(2)  # 减小布局间距
-        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
+        self.main_layout.setContentsMargins(4, 2, 4, 4)  # 减小上方边距
         self.setLayout(self.main_layout)
         
         # 设置统一的组框样式
@@ -63,8 +62,9 @@ class UploadView(QWidget):
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
-        self.config_tabs.setMaximumHeight(360)  # 增加最大高度，从320增加到360
-        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.config_tabs.setMaximumHeight(320)  # 减小最大高度
+        self.config_tabs.setMinimumHeight(290)  # 减小最小高度
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # 固定高度策略
         self.main_layout.addWidget(self.config_tabs)
         
         # 创建配置标签页
@@ -98,8 +98,11 @@ class UploadView(QWidget):
         # 目标频道标签页
         self.channel_tab = QWidget()
         channel_layout = QVBoxLayout(self.channel_tab)
-        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        channel_layout.setSpacing(4)  # 减小间距
+        channel_layout.setContentsMargins(4, 4, 4, 4)
+        channel_layout.setSpacing(4)
+        
+        # 设置标签页的固定尺寸策略
+        self.channel_tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         # 频道输入
         form_layout = QFormLayout()
@@ -126,7 +129,7 @@ class UploadView(QWidget):
         
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.channel_list.setMinimumHeight(85)  # 设置最小高度以显示约3行
+        self.channel_list.setMinimumHeight(70)  # 调整最小高度以适应新的标签页高度
         
         channel_layout.addWidget(channel_list_label)
         channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
@@ -134,8 +137,11 @@ class UploadView(QWidget):
         # 上传选项标签页
         self.options_tab = QWidget()
         options_layout = QVBoxLayout(self.options_tab)
-        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        options_layout.setSpacing(4)  # 减小间距
+        options_layout.setContentsMargins(4, 4, 4, 4)
+        options_layout.setSpacing(4)
+        
+        # 设置标签页的固定尺寸策略
+        self.options_tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         # 说明文字选项 - 改为水平布局
         caption_options_layout = QGridLayout()
@@ -202,9 +208,9 @@ class UploadView(QWidget):
         
         self.caption_template = QTextEdit()
         self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称\n{datetime} - 当前日期时间\n{index} - 文件序号")
-        # 减小高度，从120px减少到100px，从160px减少到140px
-        self.caption_template.setMinimumHeight(100)  # 设置最小高度
-        self.caption_template.setMaximumHeight(140)  # 减小最大高度
+        # 减小高度以适应新的标签页高度
+        self.caption_template.setMinimumHeight(85)
+        self.caption_template.setMaximumHeight(110)
         # 设置更适合文本编辑的尺寸策略
         self.caption_template.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         
@@ -223,58 +229,59 @@ class UploadView(QWidget):
         caption_template_layout.addWidget(self.caption_template)
         options_layout.addLayout(caption_template_layout)
         
-        # 文件选择器标签页
-        self.file_selector_tab = QWidget()
-        file_selector_layout = QVBoxLayout(self.file_selector_tab)
-        file_selector_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        file_selector_layout.setSpacing(4)  # 减小间距
-        
-        # 文件系统导航
-        file_nav_layout = QHBoxLayout()
-        
-        self.current_path_label = QLabel("当前路径:")
-        file_nav_layout.addWidget(self.current_path_label)
-        
-        self.path_input = QLineEdit()
-        self.path_input.setReadOnly(True)
-        file_nav_layout.addWidget(self.path_input)
-        
-        self.browse_button = QPushButton("浏览...")
-        file_nav_layout.addWidget(self.browse_button)
-        
-        file_selector_layout.addLayout(file_nav_layout)
-        
-        # 文件系统模型和视图
-        self.fs_model = QFileSystemModel()
-        self.fs_model.setRootPath(QDir.rootPath())
-        self.fs_model.setFilter(QDir.AllDirs | QDir.Files | QDir.NoDotAndDotDot)
-        
-        self.file_tree = QTreeView()
-        self.file_tree.setModel(self.fs_model)
-        self.file_tree.setRootIndex(self.fs_model.index(QDir.homePath()))
-        self.file_tree.setSelectionMode(QTreeView.ExtendedSelection)
-        self.file_tree.setColumnWidth(0, 250)  # 名称列宽
-        self.path_input.setText(QDir.homePath())
-        
-        file_selector_layout.addWidget(self.file_tree)
-        
-        # 文件选择按钮
-        file_selection_layout = QHBoxLayout()
-        
-        self.select_all_button = QPushButton("全选")
-        self.clear_selection_button = QPushButton("取消选择")
-        self.add_to_queue_button = QPushButton("添加到上传队列")
-        
-        file_selection_layout.addWidget(self.select_all_button)
-        file_selection_layout.addWidget(self.clear_selection_button)
-        file_selection_layout.addWidget(self.add_to_queue_button)
-        
-        file_selector_layout.addLayout(file_selection_layout)
-        
         # 将标签页添加到配置面板
         self.config_tabs.addTab(self.channel_tab, "目标频道")
         self.config_tabs.addTab(self.options_tab, "上传选项")
-        self.config_tabs.addTab(self.file_selector_tab, "文件选择")
+        
+        # 修改文件选择器标签页为简单的目录选择
+        self.file_selector_tab = QWidget()
+        file_selector_layout = QVBoxLayout(self.file_selector_tab)
+        file_selector_layout.setContentsMargins(4, 4, 4, 4)
+        file_selector_layout.setSpacing(4)
+        
+        # 设置标签页的固定尺寸策略
+        self.file_selector_tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        # 添加上传目录选择
+        dir_layout = QHBoxLayout()
+        
+        dir_label = QLabel("上传目录:")
+        dir_layout.addWidget(dir_label)
+        
+        self.path_input = QLineEdit()
+        self.path_input.setReadOnly(True)
+        self.path_input.setPlaceholderText("请选择上传文件所在目录")
+        dir_layout.addWidget(self.path_input, 1)
+        
+        self.browse_button = QPushButton("浏览...")
+        dir_layout.addWidget(self.browse_button)
+        
+        file_selector_layout.addLayout(dir_layout)
+        
+        # 添加目录结构说明
+        help_label = QLabel(
+            "提示: 上传目录中的每个子文件夹将作为一个媒体组上传。\n"
+            "如果子文件夹中有多个文件，则作为媒体组发送；如果只有一个文件，则单独发送。\n"
+            "每个子文件夹中可以放置名为title.txt的文件作为上传说明文本。\n"
+            "如果上传目录没有子文件夹，则所有文件作为单独的消息上传。"
+        )
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: #666; font-size: 11px; padding: 10px;")
+        
+        file_selector_layout.addWidget(help_label)
+        
+        # 添加一个隐藏的填充部件，确保与其他标签页高度一致
+        spacer_widget = QWidget()
+        spacer_widget.setMinimumHeight(110)  # 减少高度以适应新的标签页高度
+        spacer_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer_widget.setStyleSheet("background: transparent;")  # 确保看不见
+        file_selector_layout.addWidget(spacer_widget)
+        
+        # 添加弹性空间，确保控件不会挤压到一起
+        file_selector_layout.addStretch(1)
+        
+        # 将文件选择标签页添加到配置面板
+        self.config_tabs.addTab(self.file_selector_tab, "上传目录")
     
     def _create_upload_panel(self):
         """创建上传状态面板"""
@@ -283,6 +290,10 @@ class UploadView(QWidget):
         upload_container_layout = QVBoxLayout(upload_container)
         upload_container_layout.setContentsMargins(0, 0, 0, 0)  # 移除容器的边距
         upload_container_layout.setSpacing(2)  # 减小间距
+        
+        # 设置上传容器固定高度和尺寸策略，避免标签页切换时改变高度
+        upload_container.setMinimumHeight(230)  # 增加最小高度
+        upload_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # 允许垂直扩展
         
         # 上传队列标题和状态
         header_layout = QHBoxLayout()
@@ -300,8 +311,8 @@ class UploadView(QWidget):
         
         # 上传队列列表
         self.upload_list = QListWidget()
-        self.upload_list.setMinimumHeight(120)  # 确保列表有足够的高度
-        upload_container_layout.addWidget(self.upload_list)
+        self.upload_list.setMinimumHeight(170)  # 增加列表最小高度
+        upload_container_layout.addWidget(self.upload_list, 1)  # 添加拉伸因子，使其填充可用空间
         
         # 当前进度信息
         progress_layout = QHBoxLayout()
@@ -321,15 +332,16 @@ class UploadView(QWidget):
         
         upload_container_layout.addLayout(progress_layout)
         
-        # 添加到主布局，增加下方区域的比例
-        self.main_layout.addWidget(upload_container, 2)  # 从1增加到2，增大下方区域比例
+        # 添加到主布局，设置拉伸因子为1，允许队列区域占据更多空间
+        self.main_layout.addWidget(upload_container, 1)
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 4, 0, 0)  # 增加与上方组件的间距
         
         self.start_upload_button = QPushButton("开始上传")
-        self.start_upload_button.setMinimumHeight(40)
+        self.start_upload_button.setMinimumHeight(36)  # 减小按钮高度
         
         self.save_config_button = QPushButton("保存配置")
         self.clear_queue_button = QPushButton("清空队列")
@@ -353,14 +365,8 @@ class UploadView(QWidget):
         self.read_title_txt_check.clicked.connect(self._handle_caption_option)
         self.use_custom_template_check.clicked.connect(self._handle_caption_option)
         
-        # 文件选择
+        # 文件目录选择
         self.browse_button.clicked.connect(self._browse_directory)
-        self.file_tree.doubleClicked.connect(self._on_file_double_clicked)
-        
-        # 文件操作
-        self.select_all_button.clicked.connect(self._select_all_files)
-        self.clear_selection_button.clicked.connect(self._clear_selection)
-        self.add_to_queue_button.clicked.connect(self._add_to_queue)
         
         # 队列管理
         self.clear_queue_button.clicked.connect(self._clear_queue)
@@ -399,109 +405,19 @@ class UploadView(QWidget):
     
     def _browse_directory(self):
         """浏览文件夹对话框"""
+        current_path = self.path_input.text() or QDir.homePath()
         directory = QFileDialog.getExistingDirectory(
             self, 
-            "选择文件夹",
-            self.path_input.text()
+            "选择上传目录",
+            current_path
         )
         
         if directory:
             self.path_input.setText(directory)
-            self.file_tree.setRootIndex(self.fs_model.index(directory))
-    
-    def _on_file_double_clicked(self, index):
-        """文件树双击处理
-        
-        Args:
-            index: 被双击的项的索引
-        """
-        # 更新当前路径
-        path = self.fs_model.filePath(index)
-        self.path_input.setText(path)
-    
-    def _select_all_files(self):
-        """全选文件"""
-        self.file_tree.selectAll()
-    
-    def _clear_selection(self):
-        """取消文件选择"""
-        self.file_tree.clearSelection()
-    
-    def _add_to_queue(self):
-        """添加选中的文件到上传队列"""
-        # 获取选中的文件
-        selected_indexes = self.file_tree.selectedIndexes()
-        selected_files = []
-        
-        # 筛选出文件列中的索引，避免重复
-        for index in selected_indexes:
-            if index.column() == 0:  # 名称列
-                file_path = self.fs_model.filePath(index)
-                # 只添加文件，不添加目录
-                if os.path.isfile(file_path):
-                    selected_files.append(file_path)
-        
-        if not selected_files:
-            QMessageBox.information(self, "提示", "请选择至少一个文件")
-            return
-        
-        # 添加到上传队列
-        total_size = 0
-        for file_path in selected_files:
-            # 检查是否已经在队列中
-            exists = False
-            for i in range(self.upload_list.count()):
-                if self.upload_list.item(i).data(Qt.UserRole) == file_path:
-                    exists = True
-                    break
             
-            if not exists:
-                file_size = os.path.getsize(file_path)
-                total_size += file_size
-                
-                # 创建列表项
-                item = QListWidgetItem()
-                item.setText(f"{os.path.basename(file_path)} - {self._format_size(file_size)}")
-                item.setData(Qt.UserRole, file_path)
-                
-                # 添加到列表
-                self.upload_list.addItem(item)
-                self.upload_queue.append({
-                    'path': file_path,
-                    'size': file_size
-                })
-        
-        # 更新队列状态
-        self._update_queue_status()
-    
-    def _clear_queue(self):
-        """清空上传队列"""
-        self.upload_list.clear()
-        self.upload_queue = []
-        self._update_queue_status()
-    
-    def _remove_selected_files(self):
-        """从队列中移除选中的项目"""
-        selected_items = self.upload_list.selectedItems()
-        
-        if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要从队列中移除的文件")
-            return
-        
-        # 从队列和列表中移除选中的项目
-        for item in reversed(selected_items):
-            file_path = item.data(Qt.UserRole)
-            row = self.upload_list.row(item)
-            self.upload_list.takeItem(row)
-            
-            # 从上传队列中移除
-            for i, queue_item in enumerate(self.upload_queue):
-                if queue_item['path'] == file_path:
-                    self.upload_queue.pop(i)
-                    break
-        
-        # 更新队列状态
-        self._update_queue_status()
+            # 如果存在配置，更新配置中的目录路径
+            if isinstance(self.config, dict) and 'UPLOAD' in self.config:
+                self.config['UPLOAD']['directory'] = directory
     
     def _add_channel(self):
         """添加频道到列表"""
@@ -537,25 +453,27 @@ class UploadView(QWidget):
             self.channel_list.takeItem(row)
     
     def _start_upload(self):
-        """开始上传"""
-        # 检查目标频道
+        """开始上传操作"""
+        # 检查是否有目标频道
         if self.channel_list.count() == 0:
             QMessageBox.warning(self, "警告", "请至少添加一个目标频道")
             return
         
-        # 检查上传队列
-        if len(self.upload_queue) == 0:
-            QMessageBox.warning(self, "警告", "上传队列为空，请先添加文件")
+        # 检查上传目录
+        upload_dir = self.path_input.text()
+        if not upload_dir or not os.path.exists(upload_dir) or not os.path.isdir(upload_dir):
+            QMessageBox.warning(self, "警告", "请选择有效的上传目录")
             return
         
-        # 收集上传配置
+        # 收集目标频道
         target_channels = []
         for i in range(self.channel_list.count()):
             target_channels.append(self.channel_list.item(i).text())
         
+        # 创建上传配置
         config = {
             'target_channels': target_channels,
-            'files': self.upload_queue,
+            'directory': upload_dir,
             'options': {
                 'use_folder_name': self.use_folder_name_check.isChecked(),
                 'read_title_txt': self.read_title_txt_check.isChecked(),
@@ -582,6 +500,11 @@ class UploadView(QWidget):
             QMessageBox.warning(self, "警告", "请至少添加一个目标频道")
             return
         
+        # 检查上传目录
+        upload_dir = self.path_input.text()
+        if not upload_dir:
+            upload_dir = 'uploads'  # 使用默认目录
+        
         # 收集目标频道
         target_channels = []
         for i in range(self.channel_list.count()):
@@ -598,7 +521,7 @@ class UploadView(QWidget):
         # 创建上传配置
         upload_config = {
             'target_channels': target_channels,
-            'directory': self.path_input.text() or 'uploads',  # 使用当前选择的目录路径
+            'directory': upload_dir,
             'caption_template': self.caption_template.toPlainText(),
             'delay_between_uploads': round(float(self.upload_delay.value()), 1),  # 四舍五入到一位小数
             'options': upload_options
@@ -621,6 +544,35 @@ class UploadView(QWidget):
         
         # 更新本地配置引用
         self.config = updated_config
+    
+    def _clear_queue(self):
+        """清空上传队列"""
+        self.upload_list.clear()
+        self.upload_queue = []
+        self._update_queue_status()
+    
+    def _remove_selected_files(self):
+        """从队列中移除选中的项目"""
+        selected_items = self.upload_list.selectedItems()
+        
+        if not selected_items:
+            QMessageBox.information(self, "提示", "请先选择要从队列中移除的文件")
+            return
+        
+        # 从队列和列表中移除选中的项目
+        for item in reversed(selected_items):
+            file_path = item.data(Qt.UserRole)
+            row = self.upload_list.row(item)
+            self.upload_list.takeItem(row)
+            
+            # 从上传队列中移除
+            for i, queue_item in enumerate(self.upload_queue):
+                if queue_item['path'] == file_path:
+                    self.upload_queue.pop(i)
+                    break
+        
+        # 更新队列状态
+        self._update_queue_status()
     
     def _update_queue_status(self):
         """更新队列状态"""
@@ -737,9 +689,7 @@ class UploadView(QWidget):
         
         # 加载上传目录路径
         directory = upload_config.get('directory', 'uploads')
-        if os.path.exists(directory):
-            self.path_input.setText(directory)
-            self.file_tree.setRootIndex(self.fs_model.index(directory))
+        self.path_input.setText(directory)
         
         # 加载上传延迟
         delay_between_uploads = upload_config.get('delay_between_uploads', 0.5)
@@ -765,21 +715,22 @@ class UploadView(QWidget):
                 self.use_custom_template_check.setChecked(True)
                 self.use_folder_name_check.setChecked(False)
                 self.read_title_txt_check.setChecked(False)
+                self.caption_template.setEnabled(True)
             elif read_title_txt:
                 self.read_title_txt_check.setChecked(True)
                 self.use_folder_name_check.setChecked(False)
                 self.use_custom_template_check.setChecked(False)
+                self.caption_template.setEnabled(False)
             else:  # 默认使用文件夹名称
                 self.use_folder_name_check.setChecked(True)
                 self.read_title_txt_check.setChecked(False)
                 self.use_custom_template_check.setChecked(False)
-                
-            # 更新模板编辑区启用状态
-            self.caption_template.setEnabled(self.use_custom_template_check.isChecked())
+                self.caption_template.setEnabled(False)
             
-            # 自动缩略图选项
-            self.auto_thumbnail_check.setChecked(options.get('auto_thumbnail', True))
-            
+            # 设置自动缩略图选项
+            auto_thumbnail = options.get('auto_thumbnail', True)
+            self.auto_thumbnail_check.setChecked(auto_thumbnail)
+        
         logger.debug("上传配置已成功加载")
 
     def set_uploader(self, uploader):

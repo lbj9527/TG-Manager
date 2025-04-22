@@ -198,8 +198,8 @@ class Uploader():
             
             logger.info(f"媒体组 {group_name} 包含 {len(media_files)} 个文件")
             
-            # 检查是否有caption.txt文件
-            caption_file = group_dir / "caption.txt"
+            # 检查是否有title.txt文件
+            caption_file = group_dir / "title.txt"
             caption = None
             if caption_file.exists():
                 try:
@@ -272,8 +272,8 @@ class Uploader():
         if file_path.name.startswith('.'):
             return False
         
-        # 忽略caption.txt文件
-        if file_path.name.lower() == 'caption.txt':
+        # 忽略title.txt文件
+        if file_path.name.lower() == 'title.txt':
             return False
         
         # 获取文件类型
