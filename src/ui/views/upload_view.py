@@ -343,14 +343,15 @@ class UploadView(QWidget):
         self.start_upload_button = QPushButton("开始上传")
         self.start_upload_button.setMinimumHeight(36)  # 减小按钮高度
         
+        self.stop_upload_button = QPushButton("停止上传")
+        self.stop_upload_button.setMinimumHeight(36)
+        self.stop_upload_button.setEnabled(False)  # 初始状态下禁用
+        
         self.save_config_button = QPushButton("保存配置")
-        self.clear_queue_button = QPushButton("清空队列")
-        self.remove_selected_button = QPushButton("移除所选")
         
         button_layout.addWidget(self.start_upload_button)
+        button_layout.addWidget(self.stop_upload_button)
         button_layout.addWidget(self.save_config_button)
-        button_layout.addWidget(self.clear_queue_button)
-        button_layout.addWidget(self.remove_selected_button)
         
         self.main_layout.addLayout(button_layout)
     
@@ -368,12 +369,9 @@ class UploadView(QWidget):
         # 文件目录选择
         self.browse_button.clicked.connect(self._browse_directory)
         
-        # 队列管理
-        self.clear_queue_button.clicked.connect(self._clear_queue)
-        self.remove_selected_button.clicked.connect(self._remove_selected_files)
-        
         # 上传控制
         self.start_upload_button.clicked.connect(self._start_upload)
+        self.stop_upload_button.clicked.connect(self._stop_upload)
         self.save_config_button.clicked.connect(self._save_config)
     
     def _handle_caption_option(self):
@@ -490,8 +488,28 @@ class UploadView(QWidget):
         # 更新状态
         self.current_file_label.setText("准备上传...")
         
-        # 禁用开始按钮
+        # 更新按钮状态
         self.start_upload_button.setEnabled(False)
+        self.stop_upload_button.setEnabled(True)
+    
+    def _stop_upload(self):
+        """停止上传操作"""
+        if hasattr(self, 'uploader') and self.uploader:
+            # 如果存在uploader实例，调用其停止方法
+            if hasattr(self.uploader, 'stop') and callable(self.uploader.stop):
+                self.uploader.stop()
+                logger.info("上传操作已停止")
+            elif hasattr(self.uploader, 'cancel') and callable(self.uploader.cancel):
+                self.uploader.cancel()
+                logger.info("上传操作已取消")
+        
+        # 更新UI状态
+        self.current_file_label.setText("上传已停止")
+        self.upload_speed_label.setText("速度: - | 剩余时间: -")
+        
+        # 恢复按钮状态
+        self.start_upload_button.setEnabled(True)
+        self.stop_upload_button.setEnabled(False)
     
     def _save_config(self):
         """保存当前配置"""
@@ -544,35 +562,6 @@ class UploadView(QWidget):
         
         # 更新本地配置引用
         self.config = updated_config
-    
-    def _clear_queue(self):
-        """清空上传队列"""
-        self.upload_list.clear()
-        self.upload_queue = []
-        self._update_queue_status()
-    
-    def _remove_selected_files(self):
-        """从队列中移除选中的项目"""
-        selected_items = self.upload_list.selectedItems()
-        
-        if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要从队列中移除的文件")
-            return
-        
-        # 从队列和列表中移除选中的项目
-        for item in reversed(selected_items):
-            file_path = item.data(Qt.UserRole)
-            row = self.upload_list.row(item)
-            self.upload_list.takeItem(row)
-            
-            # 从上传队列中移除
-            for i, queue_item in enumerate(self.upload_queue):
-                if queue_item['path'] == file_path:
-                    self.upload_queue.pop(i)
-                    break
-        
-        # 更新队列状态
-        self._update_queue_status()
     
     def _update_queue_status(self):
         """更新队列状态"""
@@ -653,8 +642,9 @@ class UploadView(QWidget):
         self.current_file_label.setText("所有文件上传完成")
         self.upload_speed_label.setText("速度: - | 剩余时间: -")
         
-        # 启用开始按钮
+        # 恢复按钮状态
         self.start_upload_button.setEnabled(True)
+        self.stop_upload_button.setEnabled(False)
         
         # 显示完成消息
         QMessageBox.information(self, "上传完成", "所有文件上传任务已完成")
