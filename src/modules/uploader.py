@@ -350,7 +350,7 @@ class Uploader():
                     # 生成缩略图
                     thumbnail = None
                     try:
-                        thumbnail = await self.video_processor.extract_thumbnail(str(file))
+                        thumbnail = await self.video_processor.extract_thumbnail_async(str(file))
                         if thumbnail:
                             thumbnails.append(thumbnail)
                             logger.debug(f"已生成视频缩略图: {thumbnail}")
@@ -406,7 +406,31 @@ class Uploader():
                     
                     # 保存上传历史记录
                     for msg in result:
-                        self.history_manager.add_upload_record(chat_id, msg.id, chat_id)
+                        # 获取文件路径和大小
+                        if hasattr(msg, 'file') and hasattr(msg.file, 'size'):
+                            file_size = msg.file.size
+                        else:
+                            file_size = 0
+                        
+                        # 确定媒体类型
+                        if msg.photo:
+                            file_media_type = "photo"
+                        elif msg.video:
+                            file_media_type = "video"
+                        elif msg.document:
+                            file_media_type = "document"
+                        elif msg.audio:
+                            file_media_type = "audio"
+                        else:
+                            file_media_type = "unknown"
+                        
+                        # 记录上传
+                        self.history_manager.add_upload_record(
+                            file_path=str(chat_id), 
+                            target_channel=str(msg.id), 
+                            file_size=file_size,
+                            media_type=file_media_type
+                        )
                     
                     # 发送上传成功事件
                     self.emit("media_upload", {
@@ -468,7 +492,7 @@ class Uploader():
             # 处理视频缩略图
             if media_type == "video":
                 try:
-                    thumbnail = await self.video_processor.extract_thumbnail(str(file))
+                    thumbnail = await self.video_processor.extract_thumbnail_async(str(file))
                     if thumbnail:
                         logger.debug(f"已生成视频缩略图: {thumbnail}")
                 except Exception as e:
@@ -519,7 +543,19 @@ class Uploader():
                     
                     # 保存上传历史记录
                     if result:
-                        self.history_manager.add_upload_record(chat_id, result.id, chat_id)
+                        # 获取文件大小
+                        if hasattr(result, 'file') and hasattr(result.file, 'size'):
+                            file_size = result.file.size
+                        else:
+                            file_size = os.path.getsize(file) if os.path.exists(file) else 0
+                        
+                        # 记录上传
+                        self.history_manager.add_upload_record(
+                            file_path=str(file), 
+                            target_channel=str(chat_id), 
+                            file_size=file_size,
+                            media_type=media_type
+                        )
                     
                     # 发送上传成功事件
                     self.emit("media_upload", {

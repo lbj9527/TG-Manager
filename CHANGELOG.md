@@ -1,5 +1,29 @@
 # TG-Manager 更新日志
 
+## 1.9.28 (2025-06-01)
+
+### 错误修复
+
+- **视频缩略图生成问题修复**：修复了"object str can't be used in 'await' expression"错误
+
+  - 修正了`uploader.py`中对`VideoProcessor`方法的调用方式
+  - 将错误使用的同步方法`extract_thumbnail`改为使用异步方法`extract_thumbnail_async`
+  - 正确添加了`await`关键字于异步方法调用
+  - 确保视频缩略图能够正确生成并用于视频上传
+
+- **上传历史记录问题修复**：修复了"HistoryManager.add_upload_record() missing 1 required positional argument: 'media_type'"错误
+
+  - 更正了`uploader.py`中对`add_upload_record`方法的调用，提供所有必需的参数
+  - 正确传递文件路径、目标频道、文件大小和媒体类型四个参数
+  - 解决了因参数不足导致的上传历史记录失败问题，防止重复上传已成功发送的文件
+
+- **事件和信号处理问题修复**：修复了事件处理和信号发射相关的错误
+  - 解决了"找不到与事件类型 file_uploaded 对应的信号 file_uploaded_updated"警告
+  - 修复了"media_uploaded() only accepts 0 argument(s), 1 given!"错误
+  - 在事件映射中添加了`file_uploaded`和`media_upload`事件到`media_uploaded`信号的映射
+  - 将信号参数类型从`Dict`改为更通用的`object`类型以适应不同数据格式
+  - 优化了事件处理逻辑，确保`complete`事件也会触发`all_uploads_completed`信号
+
 ## 1.9.27 (2025-05-25)
 
 ### 错误修复

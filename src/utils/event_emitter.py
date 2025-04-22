@@ -106,7 +106,9 @@ class BaseEventEmitter(QObject):
             "message_received": "message_received",
             "forward_complete": "forward_completed",
             "upload_complete": "upload_completed",
-            "keyword_matched": "keyword_matched"
+            "keyword_matched": "keyword_matched",
+            "file_uploaded": "media_uploaded",
+            "media_upload": "media_uploaded"
         }
         
         # 返回转换后的名称，如果没有特定转换则添加"_updated"后缀

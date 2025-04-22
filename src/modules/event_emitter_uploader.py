@@ -16,8 +16,8 @@ class EventEmitterUploader(BaseEventEmitter):
     
     # 上传器特有的信号定义
     progress_updated = Signal(int, int, int)  # 进度更新信号 (进度百分比, 当前索引, 总数)
-    upload_completed = Signal(Dict)  # 上传完成信号 (结果数据)
-    media_uploaded = Signal(Dict)  # 媒体上传信号 (媒体数据)
+    upload_completed = Signal(object)  # 上传完成信号 (结果数据)
+    media_uploaded = Signal(object)  # 媒体上传信号 (媒体数据)
     all_uploads_completed = Signal()  # 所有上传完成信号
     
     def __init__(self, original_uploader: OriginalUploader):
@@ -68,9 +68,11 @@ class EventEmitterUploader(BaseEventEmitter):
                 if len(args) >= 2 and isinstance(args[1], dict):
                     result_data = args[1]
                     self.upload_completed.emit(result_data)
-                    logger.debug(f"发射upload_completed信号")
+                    # 同时发射所有上传完成信号
+                    self.all_uploads_completed.emit()
+                    logger.debug(f"发射upload_completed和all_uploads_completed信号")
                 
-            elif event_type == "media_upload":
+            elif event_type == "media_upload" or event_type == "file_uploaded":
                 # 第一个参数是媒体数据字典
                 if args and isinstance(args[0], dict):
                     media_data = args[0]
