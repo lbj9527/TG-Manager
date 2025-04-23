@@ -813,23 +813,44 @@ class UploadView(QWidget):
         """处理单个文件上传完成事件
         
         Args:
-            file_path: 文件路径
+            file_path: 文件路径或包含文件信息的字典
             success: 是否成功(默认为True)
             **kwargs: 其他参数
         """
-        file_name = os.path.basename(file_path)
-        
-        # 添加到上传列表
-        item = QListWidgetItem()
-        status = "✓ 成功" if success else "✗ 失败"
-        item.setText(f"{file_name} - {status}")
-        item.setData(Qt.UserRole, file_path)
-        self.upload_list.addItem(item)
-        
-        # 滚动到底部显示最新项
-        self.upload_list.scrollToBottom()
-        
-        logger.debug(f"文件上传{'成功' if success else '失败'}: {file_name}")
+        try:
+            # 判断参数类型并提取文件名
+            if isinstance(file_path, dict):
+                # 如果是字典，从字典中获取文件名
+                if 'file_name' in file_path:
+                    file_name = file_path['file_name']
+                else:
+                    # 尝试从字典中其他可能的键获取文件名
+                    if 'chat_id' in file_path and 'media_count' in file_path:
+                        file_name = f"媒体组({file_path['media_count']}个文件)"
+                    else:
+                        file_name = "未知文件"
+                
+                # 记录更详细的日志，帮助调试
+                logger.debug(f"从字典中提取文件名: {file_name}, 字典内容: {file_path}")
+            else:
+                # 如果是字符串路径，直接获取文件名
+                file_name = os.path.basename(file_path)
+            
+            # 添加到上传列表
+            item = QListWidgetItem()
+            status = "✓ 成功" if success else "✗ 失败"
+            item.setText(f"{file_name} - {status}")
+            item.setData(Qt.UserRole, file_path)
+            self.upload_list.addItem(item)
+            
+            # 滚动到底部显示最新项
+            self.upload_list.scrollToBottom()
+            
+            logger.debug(f"文件上传{'成功' if success else '失败'}: {file_name}")
+        except Exception as e:
+            # 捕获并记录任何错误，确保不会中断上传过程
+            logger.error(f"处理文件上传完成事件时出错: {str(e)}")
+            logger.debug(f"错误详情: file_path类型={type(file_path)}, 内容={file_path}")
 
     def _handle_upload_completed(self, success=True, **kwargs):
         """处理所有上传完成事件

@@ -407,11 +407,17 @@ class Uploader():
                         )
                     
                     # 发送上传成功事件
-                    self.emit("media_upload", {
+                    media_group_info = {
                         "chat_id": chat_id,
                         "media_count": len(media_group),
-                        "upload_time": upload_time
-                    })
+                        "upload_time": upload_time,
+                        "is_group": True,
+                        "files": [f.media.media for f in media_group if hasattr(f, 'media') and hasattr(f.media, 'media')]
+                    }
+                    self.emit("media_upload", media_group_info)
+                    
+                    # 同时为媒体组发送file_uploaded事件
+                    self.emit("file_uploaded", f"媒体组({len(media_group)}个文件)", True)
                     
                     return True
                     
@@ -535,9 +541,14 @@ class Uploader():
                     self.emit("media_upload", {
                         "chat_id": chat_id,
                         "file_name": file.name,
+                        "file_path": str(file),
                         "media_type": media_type,
-                        "upload_time": upload_time
+                        "upload_time": upload_time,
+                        "file_size": file_size
                     })
+                    
+                    # 同时发送file_uploaded事件，确保向下兼容
+                    self.emit("file_uploaded", str(file), True)
                     
                     return True
                     

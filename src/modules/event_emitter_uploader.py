@@ -77,8 +77,19 @@ class EventEmitterUploader(BaseEventEmitter):
                 if args and isinstance(args[0], dict):
                     media_data = args[0]
                     self.media_uploaded.emit(media_data)
-                    logger.debug(f"发射media_uploaded信号")
+                    logger.debug(f"发射media_uploaded信号: {media_data}")
                     
+                    # 如果是单个文件上传，额外发送file_uploaded事件，兼容旧的处理方式
+                    if event_type == "media_upload" and 'file_name' in media_data:
+                        # 向所有监听file_uploaded事件的处理器发送数据
+                        # 发送到上传视图处理文件上传完成
+                        if hasattr(self.original, '_listeners') and 'file_uploaded' in self.original._listeners:
+                            for callback in self.original._listeners['file_uploaded']:
+                                try:
+                                    callback(media_data, True)  # 传递字典和成功状态
+                                except Exception as e:
+                                    logger.error(f"调用file_uploaded回调时出错: {e}")
+            
             elif event_type == "all_uploads_complete":
                 self.all_uploads_completed.emit()
                 logger.debug("发射all_uploads_completed信号")
