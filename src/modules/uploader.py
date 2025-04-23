@@ -62,10 +62,6 @@ class Uploader():
         
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
-        
-        # 任务控制 - 移除TaskContext类型的引用
-        self.is_cancelled = False
-        self.is_paused = False
     
     async def upload_local_files(self, task_context=None):
         """
@@ -73,11 +69,7 @@ class Uploader():
         
         Args:
             task_context: 移除了任务上下文参数类型
-        """
-        # 初始化状态
-        self.is_cancelled = False
-        self.is_paused = False
-        
+        """   
         status_message = "开始上传本地文件到目标频道"
         logger.info(status_message)
         
@@ -172,16 +164,7 @@ class Uploader():
         total_files = 0
         total_media_groups = len(media_groups)
         
-        for idx, group_dir in enumerate(media_groups):
-            # 检查任务是否已取消
-            if self.is_cancelled:
-                logger.info("上传任务已取消")
-                break
-                
-            # 等待暂停恢复
-            while self.is_paused and not self.is_cancelled:
-                await asyncio.sleep(0.5)
-            
+        for idx, group_dir in enumerate(media_groups):                  
             # 更新进度
             progress = (idx / total_media_groups) * 100
             self.emit("progress", progress, idx, total_media_groups)
@@ -210,16 +193,7 @@ class Uploader():
                     logger.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
             
             # 上传到所有目标频道
-            for target, target_id, target_info in valid_targets:
-                # 检查任务是否已取消
-                if self.is_cancelled:
-                    logger.info("上传任务已取消")
-                    break
-                    
-                # 等待暂停恢复
-                while self.is_paused and not self.is_cancelled:
-                    await asyncio.sleep(0.5)
-                
+            for target, target_id, target_info in valid_targets:                         
                 logger.info(f"上传媒体组 [{group_name}] 到 {target_info}")
                 
                 # 上传媒体组
@@ -650,16 +624,7 @@ class Uploader():
         upload_count = 0
         total_files = len(files)
         
-        for idx, file in enumerate(files):
-            # 检查任务是否已取消
-            if self.is_cancelled:
-                logger.info("上传任务已取消")
-                break
-                
-            # 等待暂停恢复
-            while self.is_paused and not self.is_cancelled:
-                await asyncio.sleep(0.5)
-            
+        for idx, file in enumerate(files):                      
             # 更新进度
             progress = (idx / total_files) * 100
             self.emit("progress", progress, idx, total_files)
@@ -668,16 +633,7 @@ class Uploader():
             
             # 上传到所有目标频道
             file_uploaded = False
-            for target, target_id, target_info in targets:
-                # 检查任务是否已取消
-                if self.is_cancelled:
-                    logger.info("上传任务已取消")
-                    break
-                    
-                # 等待暂停恢复
-                while self.is_paused and not self.is_cancelled:
-                    await asyncio.sleep(0.5)
-                
+            for target, target_id, target_info in targets:               
                 logger.info(f"上传文件 [{file.name}] 到 {target_info}")
                 
                 # 上传文件
