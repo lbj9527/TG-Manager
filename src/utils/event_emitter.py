@@ -87,15 +87,13 @@ class BaseEventEmitter(QObject):
     def _convert_event_type_to_signal_name(self, event_type):
         """将事件类型转换为信号名称
         
-        例如: "status" -> "status_updated", "error" -> "error_occurred"
-        
         Args:
             event_type: 事件类型
             
         Returns:
-            str: 对应的信号名称
+            str: 信号名称
         """
-        # 基本的转换规则
+        # 事件类型到信号名称的转换映射
         conversion_map = {
             "status": "status_updated",
             "error": "error_occurred",
@@ -108,7 +106,8 @@ class BaseEventEmitter(QObject):
             "upload_complete": "upload_completed",
             "keyword_matched": "keyword_matched",
             "file_uploaded": "media_uploaded",
-            "media_upload": "media_uploaded"
+            "media_upload": "media_uploaded",
+            "file_already_uploaded": "file_already_uploaded"
         }
         
         # 返回转换后的名称，如果没有特定转换则添加"_updated"后缀

@@ -775,14 +775,29 @@ class UploadView(QWidget):
                 self.uploader.add_event_listener("complete", self._handle_upload_completed)
                 # 连接错误事件
                 self.uploader.add_event_listener("error", self._handle_upload_error)
+                # 连接文件已上传事件
+                self.uploader.add_event_listener("file_already_uploaded", self._handle_file_already_uploaded)
                 
                 logger.debug("已成功连接上传器事件")
             
+            # 如果uploader直接实现了Qt信号
+            elif hasattr(self.uploader, 'progress_updated'):
+                self.uploader.progress_updated.connect(self._handle_progress_update)
+                self.uploader.media_uploaded.connect(self._handle_file_uploaded)
+                self.uploader.all_uploads_completed.connect(self.all_uploads_completed)
+                self.uploader.error_occurred.connect(self._handle_upload_error)
+                
+                # 检查是否有file_already_uploaded信号
+                if hasattr(self.uploader, 'file_already_uploaded'):
+                    self.uploader.file_already_uploaded.connect(self._handle_file_already_uploaded)
+                
+                logger.debug("已成功连接上传器Qt信号")
+        
         except Exception as e:
             logger.error(f"连接上传器信号时出错: {e}")
             import traceback
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
-        
+    
     def _handle_progress_update(self, progress, current=None, total=None, **kwargs):
         """处理上传进度更新事件
         
@@ -897,6 +912,40 @@ class UploadView(QWidget):
         # self.stop_upload_button.setEnabled(False)
         
         logger.error(error_message)
+
+    def _handle_file_already_uploaded(self, file_data):
+        """处理文件已上传事件
+        
+        Args:
+            file_data: 文件数据字典，包含file_name, file_path, file_hash等信息
+        """
+        try:
+            # 提取文件信息
+            if isinstance(file_data, dict):
+                file_name = file_data.get('file_name', '未知文件')
+                file_hash = file_data.get('file_hash', '')
+                
+                # 格式化文件哈希显示
+                hash_display = f"(哈希: {file_hash[:8]}...)" if file_hash else ""
+                
+                # 添加到上传列表，标记为已存在
+                item = QListWidgetItem()
+                item.setText(f"{file_name} {hash_display} - ✓ 已存在")
+                if 'file_path' in file_data:
+                    item.setData(Qt.UserRole, file_data['file_path'])
+                self.upload_list.addItem(item)
+                
+                # 滚动到底部显示最新项
+                self.upload_list.scrollToBottom()
+                
+                logger.debug(f"文件已存在，跳过上传: {file_name}")
+            else:
+                logger.warning(f"收到非字典类型的文件已上传事件数据: {type(file_data)}")
+        
+        except Exception as e:
+            # 捕获并记录任何错误，确保不会中断上传过程
+            logger.error(f"处理文件已上传事件时出错: {str(e)}")
+            logger.debug(f"错误详情: file_data类型={type(file_data)}, 内容={file_data}")
 
     async def _run_upload_task(self):
         """运行上传任务的异步方法"""

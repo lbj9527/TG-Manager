@@ -19,6 +19,7 @@ class EventEmitterUploader(BaseEventEmitter):
     upload_completed = Signal(object)  # 上传完成信号 (结果数据)
     media_uploaded = Signal(object)  # 媒体上传信号 (媒体数据)
     all_uploads_completed = Signal()  # 所有上传完成信号
+    file_already_uploaded = Signal(object)  # 文件已上传信号 (文件数据)
     
     def __init__(self, original_uploader: OriginalUploader):
         """初始化上传器包装类
@@ -93,6 +94,12 @@ class EventEmitterUploader(BaseEventEmitter):
             elif event_type == "all_uploads_complete":
                 self.all_uploads_completed.emit()
                 logger.debug("发射all_uploads_completed信号")
+                
+            elif event_type == "file_already_uploaded":
+                if args and isinstance(args[0], dict):
+                    file_data = args[0]
+                    self.file_already_uploaded.emit(file_data)
+                    logger.debug(f"发射file_already_uploaded信号: {file_data}")
                 
         except Exception as e:
             logger.error(f"发射Qt信号时发生错误: {e}")

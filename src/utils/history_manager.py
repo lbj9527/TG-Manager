@@ -389,4 +389,53 @@ class HistoryManager:
         return [
             int(msg_id) for msg_id, targets in forwarded_messages.items()
             if target_channel in targets
-        ] 
+        ]
+    
+    def is_file_hash_uploaded(self, file_hash: str, target_channel: str) -> bool:
+        """
+        检查文件哈希是否已上传到目标频道
+        
+        Args:
+            file_hash: 文件哈希值
+            target_channel: 目标频道
+            
+        Returns:
+            bool: 是否已上传
+        """
+        history = self._read_history(self.upload_history_path)
+        files = history.get("files", {})
+        
+        if file_hash not in files:
+            return False
+        
+        uploaded_to = files[file_hash].get("uploaded_to", [])
+        return target_channel in uploaded_to
+    
+    def add_upload_record_by_hash(self, file_hash: str, file_path: str, target_channel: str, file_size: int, media_type: str):
+        """
+        使用文件哈希添加上传记录
+        
+        Args:
+            file_hash: 文件哈希值
+            file_path: 文件原始路径（仅作为参考信息存储）
+            target_channel: 目标频道
+            file_size: 文件大小（字节）
+            media_type: 媒体类型
+        """
+        history = self._read_history(self.upload_history_path)
+        files = history.get("files", {})
+        
+        if file_hash not in files:
+            files[file_hash] = {
+                "uploaded_to": [],
+                "original_path": file_path,
+                "upload_time": datetime.now().isoformat(),
+                "file_size": file_size,
+                "media_type": media_type
+            }
+        
+        if target_channel not in files[file_hash].get("uploaded_to", []):
+            files[file_hash].setdefault("uploaded_to", []).append(target_channel)
+            history["files"] = files
+            self._write_history(self.upload_history_path, history)
+            logger.debug(f"添加上传记录：文件哈希 {file_hash} (路径: {file_path}) 到频道 {target_channel}") 

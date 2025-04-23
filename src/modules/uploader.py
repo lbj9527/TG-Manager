@@ -20,6 +20,7 @@ from src.utils.channel_resolver import ChannelResolver
 from src.utils.history_manager import HistoryManager
 from src.utils.logger import get_logger
 from src.utils.video_processor import VideoProcessor
+from src.utils.file_utils import calculate_file_hash, get_file_size
 
 # 仅用于内部调试，不再用于UI输出
 logger = get_logger()
@@ -62,6 +63,9 @@ class Uploader():
         
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
+        
+        # 文件哈希缓存
+        self.file_hash_cache = {}
     
     async def upload_local_files(self, task_context=None):
         """
@@ -304,12 +308,57 @@ class Uploader():
         if not files:
             return False
         
+        chat_id_str = str(chat_id)
+        
+        # 过滤已上传的文件
+        filtered_files = []
+        file_hashes = {}  # 存储文件哈希值
+        
+        for file in files:
+            file_str = str(file)
+            # 计算文件哈希
+            if file_str in self.file_hash_cache:
+                file_hash = self.file_hash_cache[file_str]
+            else:
+                file_hash = calculate_file_hash(file)
+                if file_hash:
+                    self.file_hash_cache[file_str] = file_hash
+                else:
+                    logger.warning(f"无法计算文件哈希值: {file}")
+                    continue
+            
+            # 检查是否已上传
+            if self.history_manager.is_file_hash_uploaded(file_hash, chat_id_str):
+                logger.info(f"文件 {file.name} (哈希: {file_hash[:8]}...) 已上传到频道 {chat_id_str}，从媒体组中跳过")
+                
+                # 发送文件已上传事件
+                self.emit("file_already_uploaded", {
+                    "chat_id": chat_id,
+                    "file_name": file.name,
+                    "file_path": file_str,
+                    "file_hash": file_hash,
+                    "media_type": self._get_media_type(file)
+                })
+            else:
+                filtered_files.append(file)
+                file_hashes[file_str] = file_hash
+        
+        # 如果所有文件都已上传过，直接返回成功
+        if not filtered_files:
+            logger.info(f"媒体组中的所有文件都已上传到频道 {chat_id_str}，跳过整个媒体组")
+            return True
+        
+        # 如果过滤后只剩一个文件，作为单个文件上传
+        if len(filtered_files) == 1:
+            logger.info(f"媒体组中只有一个文件需要上传，转为单文件上传")
+            return await self._upload_single_file(filtered_files[0], chat_id, caption)
+        
         # 准备媒体组
         media_group = []
         thumbnails = []  # 记录生成的缩略图文件以便清理
         
         try:
-            for i, file in enumerate(files):
+            for i, file in enumerate(filtered_files):
                 file_caption = caption if i == 0 else None
                 media_type = self._get_media_type(file)
                 
@@ -398,13 +447,22 @@ class Uploader():
                         else:
                             file_media_type = "unknown"
                         
-                        # 记录上传
-                        self.history_manager.add_upload_record(
-                            file_path=str(chat_id), 
-                            target_channel=str(msg.id), 
-                            file_size=file_size,
-                            media_type=file_media_type
-                        )
+                        # 用消息ID确定对应的媒体文件
+                        # 由于PyroGram不提供足够的信息来确定哪个消息对应哪个文件
+                        # 我们假设消息顺序与文件顺序相同
+                        idx = min(result.index(msg), len(filtered_files) - 1)
+                        file_path = str(filtered_files[idx])
+                        file_hash = file_hashes.get(file_path)
+                        
+                        if file_hash:
+                            # 记录上传
+                            self.history_manager.add_upload_record_by_hash(
+                                file_hash=file_hash,
+                                file_path=file_path,
+                                target_channel=chat_id_str,
+                                file_size=file_size,
+                                media_type=file_media_type
+                            )
                     
                     # 发送上传成功事件
                     media_group_info = {
@@ -412,7 +470,7 @@ class Uploader():
                         "media_count": len(media_group),
                         "upload_time": upload_time,
                         "is_group": True,
-                        "files": [f.media.media for f in media_group if hasattr(f, 'media') and hasattr(f.media, 'media')]
+                        "files": [str(f) for f in filtered_files]
                     }
                     self.emit("media_upload", media_group_info)
                     
@@ -465,6 +523,34 @@ class Uploader():
             logger.warning(f"不支持的媒体类型: {file}")
             return False
         
+        # 计算文件哈希
+        file_str = str(file)
+        if file_str in self.file_hash_cache:
+            file_hash = self.file_hash_cache[file_str]
+        else:
+            file_hash = calculate_file_hash(file)
+            if file_hash:
+                self.file_hash_cache[file_str] = file_hash
+            else:
+                logger.warning(f"无法计算文件哈希值: {file}")
+                return False
+        
+        # 检查文件是否已上传到目标频道
+        chat_id_str = str(chat_id)
+        if self.history_manager.is_file_hash_uploaded(file_hash, chat_id_str):
+            logger.info(f"文件 {file.name} (哈希: {file_hash[:8]}...) 已上传到频道 {chat_id_str}，跳过上传")
+            
+            # 发送文件已上传事件
+            self.emit("file_already_uploaded", {
+                "chat_id": chat_id,
+                "file_name": file.name,
+                "file_path": file_str,
+                "file_hash": file_hash,
+                "media_type": media_type
+            })
+            
+            return True  # 返回成功，因为文件已经存在
+        
         # 缩略图文件路径
         thumbnail = None
         
@@ -482,7 +568,7 @@ class Uploader():
             max_retries = 3
             for retry in range(max_retries):
                 try:
-                    logger.info(f"上传文件: {file.name}...")
+                    logger.info(f"上传文件: {file.name} (哈希: {file_hash[:8]}...)...")
                     
                     start_time = time.time()
                     
@@ -527,12 +613,13 @@ class Uploader():
                         if hasattr(result, 'file') and hasattr(result.file, 'size'):
                             file_size = result.file.size
                         else:
-                            file_size = os.path.getsize(file) if os.path.exists(file) else 0
+                            file_size = get_file_size(file)
                         
-                        # 记录上传
-                        self.history_manager.add_upload_record(
-                            file_path=str(file), 
-                            target_channel=str(chat_id), 
+                        # 使用文件哈希记录上传
+                        self.history_manager.add_upload_record_by_hash(
+                            file_hash=file_hash,
+                            file_path=file_str,
+                            target_channel=chat_id_str,
                             file_size=file_size,
                             media_type=media_type
                         )
@@ -541,10 +628,11 @@ class Uploader():
                     self.emit("media_upload", {
                         "chat_id": chat_id,
                         "file_name": file.name,
-                        "file_path": str(file),
+                        "file_path": file_str,
+                        "file_hash": file_hash,
                         "media_type": media_type,
                         "upload_time": upload_time,
-                        "file_size": file_size
+                        "file_size": file_size if 'file_size' in locals() else get_file_size(file)
                     })
                     
                     # 同时发送file_uploaded事件，确保向下兼容
