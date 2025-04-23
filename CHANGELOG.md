@@ -18,11 +18,19 @@
   - 解决了因参数不足导致的上传历史记录失败问题，防止重复上传已成功发送的文件
 
 - **事件和信号处理问题修复**：修复了事件处理和信号发射相关的错误
+
   - 解决了"找不到与事件类型 file_uploaded 对应的信号 file_uploaded_updated"警告
   - 修复了"media_uploaded() only accepts 0 argument(s), 1 given!"错误
   - 在事件映射中添加了`file_uploaded`和`media_upload`事件到`media_uploaded`信号的映射
   - 将信号参数类型从`Dict`改为更通用的`object`类型以适应不同数据格式
   - 优化了事件处理逻辑，确保`complete`事件也会触发`all_uploads_completed`信号
+
+- **异步任务嵌套问题修复**：解决了"Cannot enter into task ... while another task ... is being executed"错误
+  - 重构了上传任务的异步执行机制，避免任务嵌套导致的 RuntimeError
+  - 添加了`run_async_task`工具函数，通过独立事件循环安全地执行异步任务
+  - 使用`QMetaObject.invokeMethod`在主线程中更新 UI，替代直接从异步任务调用 UI 方法
+  - 添加了信号槽机制处理上传完成和错误状态，确保 UI 操作在正确的线程上执行
+  - 提高了应用在高负载上传任务下的稳定性，消除了偶发的崩溃问题
 
 ## 1.9.27 (2025-05-25)
 

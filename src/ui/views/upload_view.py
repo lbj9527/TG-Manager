@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
     QTextEdit, QSizePolicy, QTabWidget, QDoubleSpinBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QMetaObject, Q_ARG
 from PySide6.QtGui import QIcon
 
 from pathlib import Path
@@ -484,8 +484,9 @@ class UploadView(QWidget):
         self.upload_list.clear()
         self.upload_queue = []
         
-        # 调用uploader的上传方法
-        asyncio.ensure_future(self._run_upload_task())
+        # 创建一个新的事件循环运行器来执行上传任务
+        from src.utils.async_utils import run_async_task
+        run_async_task(self._run_upload_task())
     
     def _stop_upload(self):
         """停止上传操作"""
@@ -583,6 +584,27 @@ class UploadView(QWidget):
         else:
             return f"{size_bytes / (1024 * 1024 * 1024):.1f}GB"
     
+    def _format_time(self, seconds):
+        """格式化时间
+        
+        Args:
+            seconds: 秒数
+            
+        Returns:
+            str: 格式化后的时间字符串
+        """
+        if seconds < 60:
+            return f"{seconds:.0f}秒"
+        elif seconds < 3600:
+            minutes = seconds // 60
+            seconds = seconds % 60
+            return f"{minutes:.0f}分{seconds:.0f}秒"
+        else:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            seconds = seconds % 60
+            return f"{hours:.0f}时{minutes:.0f}分{seconds:.0f}秒"
+    
     def update_upload_progress(self, file_path, progress, speed, remaining_time):
         """更新上传进度
         
@@ -631,6 +653,7 @@ class UploadView(QWidget):
                 item.setText(f"{current_text} - {status}")
                 break
     
+    @Slot()
     def all_uploads_completed(self):
         """所有上传任务完成"""
         # 重置状态
@@ -860,21 +883,38 @@ class UploadView(QWidget):
             # 调用uploader的upload_local_files方法执行上传
             await self.uploader.upload_local_files()
             
-            # 上传完成后自动调用all_uploads_completed方法更新UI
-            self.all_uploads_completed()
+            # 上传完成后使用Qt信号更新UI，而不是直接调用
+            # 通过Qt的信号/槽机制安全地在主线程更新UI
+            QMetaObject.invokeMethod(self, "all_uploads_completed", Qt.QueuedConnection)
             
         except Exception as e:
             # 捕获并处理可能的异常
             error_message = f"上传过程中发生错误: {str(e)}"
             logger.error(error_message)
             
-            # 更新UI状态
-            self.current_file_label.setText("上传出错")
-            self.upload_speed_label.setText("请检查日志获取详细信息")
-            
-            # 恢复按钮状态
-            self.start_upload_button.setEnabled(True)
-            self.stop_upload_button.setEnabled(False)
-            
-            # 显示错误对话框
-            QMessageBox.critical(self, "上传错误", error_message) 
+            # 使用Qt信号在主线程中更新UI
+            # 避免在异步任务中直接操作UI
+            QMetaObject.invokeMethod(
+                self, 
+                "_update_error_ui", 
+                Qt.QueuedConnection,
+                Q_ARG(str, error_message)
+            )
+    
+    @Slot(str)
+    def _update_error_ui(self, error_message):
+        """在主线程中更新UI显示错误信息
+        
+        Args:
+            error_message: 错误信息
+        """
+        # 更新UI状态
+        self.current_file_label.setText("上传出错")
+        self.upload_speed_label.setText("请检查日志获取详细信息")
+        
+        # 恢复按钮状态
+        self.start_upload_button.setEnabled(True)
+        self.stop_upload_button.setEnabled(False)
+        
+        # 显示错误对话框
+        QMessageBox.critical(self, "上传错误", error_message) 

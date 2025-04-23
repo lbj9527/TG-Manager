@@ -96,6 +96,43 @@ def _handle_task_exception(task):
     except Exception as e:
         logger.error(f"处理任务异常时出错: {e}")
 
+def run_async_task(coro: Coroutine) -> asyncio.Task:
+    """安全地运行一个异步任务，避免异步任务嵌套问题
+    
+    这个函数会创建一个独立的任务来执行协程，
+    并确保任务在当前线程的事件循环中运行，避免任务嵌套导致的RuntimeError。
+    
+    Args:
+        coro: 要执行的协程
+        
+    Returns:
+        asyncio.Task: 已创建的任务
+        
+    Example:
+        ```python
+        async def my_task():
+            await asyncio.sleep(1)
+            print("Task completed")
+        
+        # 安全地运行任务
+        run_async_task(my_task())
+        ```
+    """
+    # 获取或创建事件循环
+    try:
+        loop = get_event_loop()
+    except RuntimeError:
+        # 没有事件循环时创建一个新的
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # 创建任务并添加错误处理
+    task = loop.create_task(coro)
+    task.add_done_callback(_handle_task_exception)
+    
+    logger.debug(f"已创建异步任务: {task.get_name() if hasattr(task, 'get_name') else id(task)}")
+    return task
+
 def qt_connect_async(signal, coro_func: Callable[..., Coroutine[Any, Any, T]]):
     """将Qt信号连接到异步函数
     
