@@ -469,9 +469,6 @@ class UploadView(QWidget):
             QMessageBox.warning(self, "警告", "上传器未初始化，请重新启动应用")
             return
         
-        # 确保当前选择的上传目录已经保存到配置中
-        self._save_config() 
-        
         # 更新UI状态
         self.current_file_label.setText("准备上传...")
         self.upload_speed_label.setText("初始化上传...")
