@@ -58,29 +58,29 @@ class DownloadView(QWidget):
         self.setLayout(self.main_layout)
         
         # 设置统一的组框样式
-        self.setStyleSheet("""
-            QGroupBox { 
-                font-weight: bold; 
-                padding-top: 2px; 
-                margin-top: 0.5em; 
-                border: 1px solid #444;
-                border-radius: 3px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 7px;
-                padding: 0 3px;
-                background-color: palette(window);
-            }
-            QTabWidget::pane {
-                border: 1px solid #444;
-                padding: 1px;
-            }
-            QTabBar::tab {
-                padding: 3px 8px;
-            }
-        """)
+        # self.setStyleSheet("""
+        #     QGroupBox { 
+        #         font-weight: bold; 
+        #         padding-top: 2px; 
+        #         margin-top: 0.5em; 
+        #         border: 1px solid #444;
+        #         border-radius: 3px;
+        #     }
+        #     QGroupBox::title {
+        #         subcontrol-origin: margin;
+        #         subcontrol-position: top left;
+        #         left: 7px;
+        #         padding: 0 3px;
+        #         background-color: palette(window);
+        #     }
+        #     QTabWidget::pane {
+        #         border: 1px solid #444;
+        #         padding: 1px;
+        #     }
+        #     QTabBar::tab {
+        #         padding: 3px 8px;
+        #     }
+        # """)
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()

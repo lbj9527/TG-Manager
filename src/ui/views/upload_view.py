@@ -45,22 +45,6 @@ class UploadView(QWidget):
         self.main_layout.setContentsMargins(4, 2, 4, 4)  # 减小上方边距
         self.setLayout(self.main_layout)
         
-        # 设置统一的组框样式
-        self.setStyleSheet("""
-            QGroupBox { 
-                font-weight: bold; 
-                padding-top: 2px; 
-                margin-top: 0.5em; 
-            }
-            QTabWidget::pane {
-                border: 1px solid #444;
-                padding: 1px;
-            }
-            QTabBar::tab {
-                padding: 3px 8px;
-            }
-        """)
-        
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
         self.config_tabs.setMaximumHeight(320)  # 减小最大高度
@@ -267,7 +251,7 @@ class UploadView(QWidget):
             "如果上传目录没有子文件夹，则所有文件作为单独的消息上传。"
         )
         help_label.setWordWrap(True)
-        help_label.setStyleSheet("color: #666; font-size: 11px; padding: 10px;")
+        help_label.setStyleSheet("font-size: 13px; padding: 10px;")
         
         file_selector_layout.addWidget(help_label)
         
