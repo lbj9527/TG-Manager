@@ -370,21 +370,33 @@ class Uploader():
                     media_group.append(media)
                 
                 elif media_type == "video":
-                    # 生成缩略图
+                    # 生成缩略图和获取视频尺寸
                     thumbnail = None
+                    width = height = None
                     try:
-                        thumbnail = await self.video_processor.extract_thumbnail_async(str(file))
-                        if thumbnail:
+                        result = await self.video_processor.extract_thumbnail_async(str(file))
+                        if result:
+                            if isinstance(result, tuple) and len(result) == 3:
+                                thumbnail, width, height = result
+                            else:
+                                thumbnail = result
+                            
                             thumbnails.append(thumbnail)
-                            logger.debug(f"已生成视频缩略图: {thumbnail}")
+                            if width and height:
+                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                            else:
+                                logger.debug(f"已生成视频缩略图: {thumbnail}")
                     except Exception as e:
                         logger.warning(f"生成视频缩略图失败: {e}")
                     
+                    # 创建媒体对象，包含宽度和高度
                     media = InputMediaVideo(
                         media=str(file),
                         caption=file_caption,
                         thumb=thumbnail,
-                        supports_streaming=True
+                        supports_streaming=True,
+                        width=width,
+                        height=height
                     )
                     media_group.append(media)
                 
@@ -551,16 +563,25 @@ class Uploader():
             
             return True  # 返回成功，因为文件已经存在
         
-        # 缩略图文件路径
+        # 缩略图文件路径和视频尺寸
         thumbnail = None
+        width = height = None
         
         try:
-            # 处理视频缩略图
+            # 处理视频缩略图和获取尺寸
             if media_type == "video":
                 try:
-                    thumbnail = await self.video_processor.extract_thumbnail_async(str(file))
-                    if thumbnail:
-                        logger.debug(f"已生成视频缩略图: {thumbnail}")
+                    result = await self.video_processor.extract_thumbnail_async(str(file))
+                    if result:
+                        if isinstance(result, tuple) and len(result) == 3:
+                            thumbnail, width, height = result
+                        else:
+                            thumbnail = result
+                        
+                        if width and height:
+                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                        else:
+                            logger.debug(f"已生成视频缩略图: {thumbnail}")
                 except Exception as e:
                     logger.warning(f"生成视频缩略图失败: {e}")
             
@@ -584,7 +605,9 @@ class Uploader():
                             video=str(file),
                             caption=caption,
                             thumb=thumbnail,
-                            supports_streaming=True
+                            supports_streaming=True,
+                            width=width,
+                            height=height
                         )
                     elif media_type == "document":
                         result = await self.client.send_document(

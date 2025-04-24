@@ -4,7 +4,7 @@
 
 import os
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Any, Union
 
 from moviepy import VideoFileClip
 from PIL import Image
@@ -31,13 +31,15 @@ class VideoProcessor:
         self.thumb_dir = Path(thumb_dir)
         # 缩略图路径与视频路径的映射
         self._thumb_map: Dict[str, str] = {}
+        # 视频尺寸缓存
+        self._video_dimensions: Dict[str, Tuple[int, int]] = {}
         
         # 如果未提供资源管理器，则确保缩略图目录存在
         if resource_manager is None:
             # 确保缩略图目录存在
             self.thumb_dir.mkdir(parents=True, exist_ok=True)
     
-    async def extract_thumbnail_async(self, video_path: str) -> Optional[str]:
+    async def extract_thumbnail_async(self, video_path: str) -> Union[str, Tuple[str, int, int]]:
         """
         异步从视频中提取第一帧作为缩略图
         
@@ -45,7 +47,9 @@ class VideoProcessor:
             video_path: 视频文件路径
             
         Returns:
-            Optional[str]: 缩略图路径，如果失败则返回None
+            Union[str, Tuple[str, int, int]]: 
+                - 如果成功: 元组(缩略图路径, 宽度, 高度)
+                - 如果失败: None
         """
         # 检查视频文件是否存在
         video_path_obj = Path(video_path)
@@ -56,47 +60,58 @@ class VideoProcessor:
         # 如果使用资源管理器
         if self.resource_manager:
             async with TempFile(self.resource_manager, ".jpg", "thumbnails") as temp_file:
-                # 提取缩略图
-                success = await self._extract_frame_to_file(video_path, temp_file.path)
-                if not success:
+                # 提取缩略图和尺寸
+                result = await self._extract_frame_to_file(video_path, temp_file.path)
+                if not result or result[0] is not True:
                     return None
+                
+                _, width, height = result
                 
                 # 将缩略图路径与视频路径关联
                 thumb_path_str = str(temp_file.path)
                 self._thumb_map[video_path] = thumb_path_str
+                # 缓存视频尺寸
+                self._video_dimensions[video_path] = (width, height)
                 
-                return thumb_path_str
+                return (thumb_path_str, width, height)
         else:
             # 使用传统方式管理缩略图
             # 生成缩略图文件名（使用视频文件名+.jpg）
             thumb_filename = f"{video_path_obj.stem}_thumb.jpg"
             thumb_path = self.thumb_dir / thumb_filename
             
-            # 提取缩略图
-            success = await self._extract_frame_to_file(video_path, thumb_path)
-            if not success:
+            # 提取缩略图和尺寸
+            result = await self._extract_frame_to_file(video_path, thumb_path)
+            if not result or result[0] is not True:
                 return None
+            
+            _, width, height = result
             
             # 将缩略图路径与视频路径关联
             thumb_path_str = str(thumb_path)
             self._thumb_map[video_path] = thumb_path_str
+            # 缓存视频尺寸
+            self._video_dimensions[video_path] = (width, height)
             
-            return thumb_path_str
+            return (thumb_path_str, width, height)
     
-    async def _extract_frame_to_file(self, video_path: str, output_path: Path) -> bool:
+    async def _extract_frame_to_file(self, video_path: str, output_path: Path) -> Tuple[bool, int, int]:
         """
-        从视频中提取第一帧并保存到指定文件
+        从视频中提取第一帧并保存到指定文件，同时获取视频尺寸
         
         Args:
             video_path: 视频文件路径
             output_path: 输出图片路径
             
         Returns:
-            bool: 操作是否成功
+            Tuple[bool, int, int]: (操作是否成功, 视频宽度, 视频高度)
         """
         try:
             # 提取视频第一帧
             with VideoFileClip(str(video_path)) as clip:
+                # 获取视频尺寸
+                video_width, video_height = int(clip.w), int(clip.h)
+                
                 # 获取第一帧
                 frame = clip.get_frame(0)
                 
@@ -121,14 +136,14 @@ class VideoProcessor:
                     quality -= 10
                     img.save(str(output_path), "JPEG", quality=quality, optimize=True)
                 
-                logger.debug(f"成功为视频 {Path(video_path).name} 创建缩略图: {output_path}")
-                return True
+                logger.debug(f"成功为视频 {Path(video_path).name} 创建缩略图: {output_path}, 视频尺寸: {video_width}x{video_height}")
+                return (True, video_width, video_height)
         
         except Exception as e:
             logger.error(f"提取视频缩略图失败: {video_path}, 错误: {e}")
-            return False
+            return (False, 0, 0)
     
-    def extract_thumbnail(self, video_path: str) -> Optional[str]:
+    def extract_thumbnail(self, video_path: str) -> Union[str, Tuple[str, int, int]]:
         """
         从视频中提取第一帧作为缩略图（同步版本）
         
@@ -136,7 +151,9 @@ class VideoProcessor:
             video_path: 视频文件路径
             
         Returns:
-            Optional[str]: 缩略图路径，如果失败则返回None
+            Union[str, Tuple[str, int, int]]: 
+                - 如果成功: 元组(缩略图路径, 宽度, 高度)
+                - 如果失败: None
         """
         try:
             video_path_obj = Path(video_path)
@@ -159,8 +176,11 @@ class VideoProcessor:
                 thumb_path = self.thumb_dir / thumb_filename
                 self._thumb_map[video_path] = str(thumb_path)
                 
-            # 提取视频第一帧
+            # 提取视频第一帧和尺寸
             with VideoFileClip(str(video_path)) as clip:
+                # 获取视频尺寸
+                video_width, video_height = int(clip.w), int(clip.h)
+                
                 # 获取第一帧
                 frame = clip.get_frame(0)
                 
@@ -185,11 +205,38 @@ class VideoProcessor:
                     quality -= 10
                     img.save(str(thumb_path), "JPEG", quality=quality, optimize=True)
                 
-                logger.debug(f"成功为视频 {video_path_obj.name} 创建缩略图: {thumb_path}")
-                return str(thumb_path)
+                # 缓存视频尺寸
+                self._video_dimensions[video_path] = (video_width, video_height)
+                
+                logger.debug(f"成功为视频 {video_path_obj.name} 创建缩略图: {thumb_path}, 视频尺寸: {video_width}x{video_height}")
+                return (str(thumb_path), video_width, video_height)
         
         except Exception as e:
             logger.error(f"提取视频缩略图失败: {video_path}, 错误: {e}")
+            return None
+    
+    def get_video_dimensions(self, video_path: str) -> Optional[Tuple[int, int]]:
+        """
+        获取视频的尺寸
+        
+        Args:
+            video_path: a所提的路径
+            
+        Returns:
+            Optional[Tuple[int, int]]: 视频尺寸 (宽, 高)，如果失败返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_dimensions:
+            return self._video_dimensions[video_path]
+        
+        try:
+            with VideoFileClip(str(video_path)) as clip:
+                width, height = int(clip.w), int(clip.h)
+                # 缓存结果
+                self._video_dimensions[video_path] = (width, height)
+                return (width, height)
+        except Exception as e:
+            logger.error(f"获取视频尺寸失败: {video_path}, 错误: {e}")
             return None
     
     def delete_thumbnail(self, video_path: Optional[str] = None, thumb_path: Optional[str] = None) -> bool:
@@ -212,6 +259,9 @@ class VideoProcessor:
                 path_to_delete = self._thumb_map[video_path]
                 # 从映射中移除
                 del self._thumb_map[video_path]
+                # 也清除尺寸缓存
+                if video_path in self._video_dimensions:
+                    del self._video_dimensions[video_path]
                 resource_path = path_to_delete
             elif thumb_path:
                 path_to_delete = thumb_path
@@ -219,6 +269,9 @@ class VideoProcessor:
                 for vid_path, thumb in list(self._thumb_map.items()):
                     if thumb == thumb_path:
                         del self._thumb_map[vid_path]
+                        # 也清除尺寸缓存
+                        if vid_path in self._video_dimensions:
+                            del self._video_dimensions[vid_path]
                         break
                 resource_path = path_to_delete
             else:
@@ -281,6 +334,9 @@ class VideoProcessor:
                         count += 1
                     except Exception as e:
                         logger.error(f"删除缩略图文件失败: {jpg_file}, 错误: {e}")
+        
+        # 清空尺寸缓存
+        self._video_dimensions.clear()
         
         logger.info(f"已清理 {count} 个缩略图")
         return count
