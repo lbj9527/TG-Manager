@@ -119,11 +119,16 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             
             # 处理options字段
             if hasattr(upload, 'options'):
-                options = {}
-                for option_field in ["auto_thumbnail", "read_title_txt", "use_custom_template", "use_folder_name"]:
-                    if hasattr(upload.options, option_field):
-                        options[option_field] = getattr(upload.options, option_field)
-                upload_dict['options'] = options
+                # options是一个字典类型，直接复制
+                if isinstance(upload.options, dict):
+                    upload_dict['options'] = upload.options.copy()
+                else:
+                    # 如果不是字典（可能是Pydantic模型），尝试使用字段访问
+                    options = {}
+                    for option_field in ["auto_thumbnail", "read_title_txt", "use_custom_template", "use_folder_name"]:
+                        if hasattr(upload.options, option_field):
+                            options[option_field] = getattr(upload.options, option_field)
+                    upload_dict['options'] = options
             
             config_dict['UPLOAD'] = upload_dict
         

@@ -58,6 +58,11 @@ class Uploader():
         self.upload_config = self.config.get('UPLOAD', {})
         self.general_config = self.config.get('GENERAL', {})
         
+        # 添加详细的配置日志
+        logger.debug(f"初始化时的upload_config: {self.upload_config}")
+        options = self.upload_config.get('options', {})
+        logger.debug(f"初始化时的上传配置选项: {options}")
+        
         # 初始化MIME类型
         mimetypes.init()
         
@@ -67,15 +72,25 @@ class Uploader():
         # 文件哈希缓存
         self.file_hash_cache = {}
     
-    async def upload_local_files(self, task_context=None):
+    async def upload_local_files(self):
         """
         上传本地文件到目标频道
-        
-        Args:
-            task_context: 移除了任务上下文参数类型
         """   
         status_message = "开始上传本地文件到目标频道"
         logger.info(status_message)
+        
+        # 重新获取最新的UI配置
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.upload_config = self.config.get('UPLOAD', {})
+        logger.debug("已刷新上传配置")
+        logger.debug(f"完整的上传配置: {self.upload_config}")
+        
+        # 添加更详细的调试日志
+        options = self.upload_config.get('options', {})
+        logger.info(f"详细的上传配置选项: {options}")
+        logger.info(f"配置的文件夹名称选项: {options.get('use_folder_name', '未设置')}")
+        logger.info(f"配置的读取title.txt选项: {options.get('read_title_txt', '未设置')}")
         
         # 获取目标频道列表
         target_channels = self.upload_config.get('target_channels', [])
@@ -185,16 +200,55 @@ class Uploader():
             
             logger.info(f"媒体组 {group_name} 包含 {len(media_files)} 个文件")
             
-            # 检查是否有title.txt文件
-            caption_file = group_dir / "title.txt"
+            # 从upload_config中获取caption相关参数
+            options = self.upload_config.get('options', {})
+            logger.debug(f"上传配置选项: {options}")
+            
+            # 检查options是否为空，如果为空则使用默认值
+            if not options:
+                logger.warning("上传配置options为空，使用默认值")
+                options = {
+                    "use_folder_name": True,
+                    "read_title_txt": False,
+                    "use_custom_template": False,
+                    "auto_thumbnail": True
+                }
+            
+            # 明确转换为布尔值，避免字符串或其他类型的问题
+            use_folder_name = bool(options.get('use_folder_name', True))
+            read_title_txt = bool(options.get('read_title_txt', False))
+            
+            # 确保互斥性：如果两个选项都为true，优先使用read_title_txt
+            if use_folder_name and read_title_txt:
+                logger.warning("检测到use_folder_name和read_title_txt同时为true，将优先使用read_title_txt")
+                use_folder_name = False
+            
+            # 兼容性处理：如果read_title_txt为"true"字符串，确保转换为布尔值
+            if isinstance(read_title_txt, str) and read_title_txt.lower() == "true":
+                read_title_txt = True
+            # 同样处理use_folder_name
+            if isinstance(use_folder_name, str) and use_folder_name.lower() == "false":
+                use_folder_name = False
+            
+            logger.info(f"caption相关参数: use_folder_name={use_folder_name}, read_title_txt={read_title_txt}")
+            
             caption = None
-            if caption_file.exists():
-                try:
-                    with open(caption_file, 'r', encoding='utf-8') as f:
-                        caption = f.read().strip()
-                    logger.info(f"已读取媒体组 {group_name} 的说明文本，长度：{len(caption)} 字符")
-                except Exception as e:
-                    logger.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
+            
+            # 根据配置决定如何设置caption
+            if read_title_txt:
+                # 检查是否有title.txt文件
+                caption_file = group_dir / "title.txt"
+                if caption_file.exists():
+                    try:
+                        with open(caption_file, 'r', encoding='utf-8') as f:
+                            caption = f.read().strip()
+                        logger.info(f"已读取媒体组 {group_name} 的说明文本，长度：{len(caption)} 字符")
+                    except Exception as e:
+                        logger.error(f"读取说明文本文件失败: {e}", error_type="FILE_READ", recoverable=True)
+            elif use_folder_name:
+                # 使用文件夹名称作为说明文字
+                caption = group_name
+                logger.info(f"使用文件夹名称 '{group_name}' 作为说明文本")
             
             # 上传到所有目标频道
             for target, target_id, target_info in valid_targets:                         

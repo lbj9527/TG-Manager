@@ -947,6 +947,10 @@ class UploadView(QWidget):
     async def _run_upload_task(self):
         """运行上传任务的异步方法"""
         try:
+            # 确保上传器能读取到最新配置
+            self.uploader.config = self.config.copy() if isinstance(self.config, dict) else {}
+            self.uploader.upload_config = self.uploader.config.get('UPLOAD', {})
+            
             # 调用uploader的upload_local_files方法执行上传
             await self.uploader.upload_local_files()
             
