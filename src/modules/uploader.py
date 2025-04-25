@@ -296,6 +296,30 @@ class Uploader():
                                         logger.info(f"成功复制消息到频道: {target_info}")
                                         total_files += 1  # 增加文件计数（每个频道算一次）
                                         
+                                        # 记录上传历史 - 添加复制的消息记录
+                                        file_str = str(media_files[0])
+                                        file_hash = self.file_hash_cache.get(file_str)
+                                        if not file_hash:
+                                            file_hash = calculate_file_hash(media_files[0])
+                                            if file_hash:
+                                                self.file_hash_cache[file_str] = file_hash
+                                        
+                                        if file_hash:
+                                            target_id_str = str(target_id)
+                                            file_size = get_file_size(media_files[0])
+                                            media_type = self._get_media_type(media_files[0])
+                                            
+                                            # 添加到历史记录
+                                            self.history_manager.add_upload_record_by_hash(
+                                                file_hash=file_hash,
+                                                file_path=file_str,
+                                                target_channel=target_id_str,
+                                                file_size=file_size,
+                                                media_type=media_type
+                                            )
+                                            
+                                            logger.info(f"已记录文件 {media_files[0].name} 复制到 {target_info} 的历史记录")
+                                    
                                     except Exception as e:
                                         logger.error(f"复制消息到频道 {target_info} 失败: {e}")
                                         # 如果复制失败，尝试直接上传
@@ -353,10 +377,37 @@ class Uploader():
                                         if forwarded:
                                             logger.info(f"成功转发媒体组到频道: {target_info}")
                                             total_files += len(media_files)  # 增加文件计数（每个频道算一次）
+                                            
+                                            # 记录所有文件的上传历史
+                                            for media_file in media_files:
+                                                file_str = str(media_file)
+                                                file_hash = self.file_hash_cache.get(file_str)
+                                                if not file_hash:
+                                                    file_hash = calculate_file_hash(media_file)
+                                                    if file_hash:
+                                                        self.file_hash_cache[file_str] = file_hash
+                                                
+                                                if file_hash:
+                                                    target_id_str = str(target_id)
+                                                    file_size = get_file_size(media_file)
+                                                    media_type = self._get_media_type(media_file)
+                                                    
+                                                    # 添加到历史记录
+                                                    self.history_manager.add_upload_record_by_hash(
+                                                        file_hash=file_hash,
+                                                        file_path=file_str,
+                                                        target_channel=target_id_str,
+                                                        file_size=file_size,
+                                                        media_type=media_type
+                                                    )
+                                                    
+                                                    logger.debug(f"已记录文件 {media_file.name} 的复制历史到频道 {target_info}")
+                                            
+                                            logger.info(f"已记录媒体组 {group_name} 的所有文件复制到 {target_info} 的历史记录，共 {len(media_files)} 个文件")
                                         else:
                                             logger.warning(f"转发媒体组返回空结果，可能失败")
                                             raise Exception("转发媒体组返回空结果")
-                                        
+                                    
                                     except Exception as e:
                                         logger.error(f"复制媒体组到频道 {target_info} 失败: {e}")
                                         # 如果复制失败，尝试直接上传
@@ -1699,6 +1750,9 @@ class Uploader():
                                     "media_type": media_type,
                                     "is_copied": True
                                 })
+                                
+                                # 添加明确的日志记录
+                                logger.info(f"已记录文件 {file.name} 复制到 {target_info} 的历史记录")
                         
                     except Exception as e:
                         logger.error(f"复制消息到频道 {target_info} 失败: {e}")
