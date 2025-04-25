@@ -151,6 +151,10 @@ class Uploader():
             if uploaded_count > 0:
                 upload_time = end_time - start_time
                 logger.info(f"上传完成: 成功上传 {uploaded_count} 个文件，耗时 {upload_time:.2f} 秒")
+                
+                # 处理最终消息
+                await self._send_final_message(valid_targets, True)
+                
                 self.emit("complete", True, {
                     "total_files": uploaded_count,
                     "total_time": upload_time
@@ -210,7 +214,7 @@ class Uploader():
                 options = {
                     "use_folder_name": True,
                     "read_title_txt": False,
-                    "use_custom_template": False,
+                    "send_final_message": False,
                     "auto_thumbnail": True
                 }
             
@@ -257,19 +261,29 @@ class Uploader():
                 # 上传媒体组
                 if len(media_files) == 1:
                     # 单个文件，直接上传
-                    uploaded = await self._upload_single_file(media_files[0], target_id, caption)
-                    if uploaded:
-                        total_files += 1
-                        upload_count += 1
+                    success, actually_uploaded = await self._upload_single_file(media_files[0], target_id, caption)
+                    if success:
+                        if actually_uploaded:
+                            total_files += 1
+                            upload_count += 1
+                        else:
+                            logger.info(f"文件 {media_files[0].name} 已存在于目标频道，不计入上传统计")
                 else:
                     # 多个文件，作为媒体组上传
-                    uploaded = await self._upload_media_group(media_files, target_id, caption)
-                    if uploaded:
-                        total_files += len(media_files)
-                        upload_count += 1
+                    success, actually_uploaded = await self._upload_media_group(media_files, target_id, caption)
+                    if success:
+                        if actually_uploaded:
+                            # 只有在实际上传时才增加计数
+                            total_files += len(media_files)
+                            upload_count += 1
+                        else:
+                            logger.info(f"媒体组 {group_name} 的所有文件都已存在于目标频道，不计入上传统计")
                 
                 # 简单的速率限制，防止过快发送请求
                 await asyncio.sleep(2)
+        
+        # 上传完成后，发送最终消息
+        await self._send_final_message(valid_targets, upload_count > 0)
         
         # 上传完成统计
         end_time = time.time()
@@ -326,7 +340,7 @@ class Uploader():
         
         return False
     
-    async def _upload_media_group(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> bool:
+    async def _upload_media_group(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool]:
         """
         将多个文件作为媒体组上传
         
@@ -336,7 +350,7 @@ class Uploader():
             caption: 说明文本，仅会应用到第一个媒体
             
         Returns:
-            bool: 上传是否成功
+            Tuple[bool, bool]: (是否成功, 是否实际上传)第一个元素表示操作是否成功，第二个元素表示是否实际上传了文件
         """
         # 最多支持10个媒体文件作为一个组
         if len(files) > 10:
@@ -344,23 +358,29 @@ class Uploader():
             logger.warning(f"媒体组包含 {len(files)} 个文件，超过最大限制(10)，将分批上传")
             chunks = [files[i:i+10] for i in range(0, len(files), 10)]
             success = True
+            actually_uploaded = False
             for i, chunk in enumerate(chunks):
-                chunk_success = await self._upload_media_group_chunk(chunk, chat_id, caption if i == 0 else None)
+                chunk_success, chunk_uploaded = await self._upload_media_group_chunk(chunk, chat_id, caption if i == 0 else None)
                 if not chunk_success:
                     success = False
+                if chunk_uploaded:
+                    actually_uploaded = True
                 # 批次间隔
                 await asyncio.sleep(3)
-            return success
+            return success, actually_uploaded
         else:
             # 直接上传这组文件
             return await self._upload_media_group_chunk(files, chat_id, caption)
     
-    async def _upload_media_group_chunk(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> bool:
+    async def _upload_media_group_chunk(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool]:
         """
         上传一个媒体组块（最多10个文件）
+        
+        Returns:
+            Tuple[bool, bool]: (是否成功, 是否实际上传)第一个元素表示操作是否成功，第二个元素表示是否实际上传了文件
         """
         if not files:
-            return False
+            return False, False
         
         chat_id_str = str(chat_id)
         
@@ -400,7 +420,7 @@ class Uploader():
         # 如果所有文件都已上传过，直接返回成功
         if not filtered_files:
             logger.info(f"媒体组中的所有文件都已上传到频道 {chat_id_str}，跳过整个媒体组")
-            return True
+            return True, False  # 成功但没有实际上传新文件
         
         # 如果过滤后只剩一个文件，作为单个文件上传
         if len(filtered_files) == 1:
@@ -474,7 +494,7 @@ class Uploader():
             
             if not media_group:
                 logger.warning("没有有效的媒体文件可以上传")
-                return False
+                return False, False
             
             # 上传媒体组
             max_retries = 3
@@ -543,23 +563,23 @@ class Uploader():
                     # 同时为媒体组发送file_uploaded事件
                     self.emit("file_uploaded", f"媒体组({len(media_group)}个文件)", True)
                     
-                    return True
+                    return True, True  # 成功且实际上传了新文件
                     
                 except FloodWait as e:
                     logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                     await asyncio.sleep(e.x)
                 except (MediaEmpty, MediaInvalid) as e:
                     logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
-                    return False
+                    return False, False
                 except Exception as e:
                     if retry < max_retries - 1:
                         logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
                         await asyncio.sleep((retry + 1) * 2)
                     else:
                         logger.error(f"上传媒体组失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
-                        return False
+                        return False, False
             
-            return False
+            return False, False
             
         finally:
             # 清理缩略图
@@ -571,7 +591,7 @@ class Uploader():
                 except Exception as e:
                     logger.warning(f"删除缩略图失败: {e}")
     
-    async def _upload_single_file(self, file: Path, chat_id: int, caption: Optional[str] = None) -> bool:
+    async def _upload_single_file(self, file: Path, chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool]:
         """
         上传单个文件
         
@@ -581,13 +601,13 @@ class Uploader():
             caption: 说明文本
             
         Returns:
-            bool: 上传是否成功
+            Tuple[bool, bool]: (是否成功, 是否实际上传)第一个元素表示操作是否成功，第二个元素表示是否实际上传了文件
         """
         media_type = self._get_media_type(file)
         
         if not media_type:
             logger.warning(f"不支持的媒体类型: {file}")
-            return False
+            return False, False
         
         # 计算文件哈希
         file_str = str(file)
@@ -599,7 +619,7 @@ class Uploader():
                 self.file_hash_cache[file_str] = file_hash
             else:
                 logger.warning(f"无法计算文件哈希值: {file}")
-                return False
+                return False, False
         
         # 检查文件是否已上传到目标频道
         chat_id_str = str(chat_id)
@@ -615,7 +635,7 @@ class Uploader():
                 "media_type": media_type
             })
             
-            return True  # 返回成功，因为文件已经存在
+            return True, False  # 返回成功，但实际未上传新文件
         
         # 缩略图文件路径和视频尺寸
         thumbnail = None
@@ -677,7 +697,7 @@ class Uploader():
                         )
                     else:
                         logger.warning(f"不支持的媒体类型: {media_type}")
-                        return False
+                        return False, False
                     
                     end_time = time.time()
                     upload_time = end_time - start_time
@@ -715,14 +735,14 @@ class Uploader():
                     # 同时发送file_uploaded事件，确保向下兼容
                     self.emit("file_uploaded", str(file), True)
                     
-                    return True
+                    return True, True  # 上传成功且实际上传了新文件
                     
                 except FloodWait as e:
                     logger.warning(f"触发FloodWait，等待 {e.x} 秒")
                     await asyncio.sleep(e.x)
                 except (MediaEmpty, MediaInvalid) as e:
                     logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
-                    return False
+                    return False, False
                 except Exception as e:
                     if retry < max_retries - 1:
                         logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
@@ -736,9 +756,9 @@ class Uploader():
                             # 网络相关错误，通知应用程序检查连接状态
                             await self._handle_network_error(e)
                         
-                        return False
+                        return False, False
             
-            return False
+            return False, False
             
         finally:
             # 清理缩略图
@@ -795,7 +815,7 @@ class Uploader():
             targets: 目标频道列表，元组(channel_id, channel_name, channel_info)
             
         Returns:
-            int: 成功上传的文件数量
+            int: 成功上传的文件数量（实际上传的新文件，不包括已经存在的）
         """
         upload_count = 0
         total_files = len(files)
@@ -813,7 +833,8 @@ class Uploader():
                 logger.info(f"上传文件 [{file.name}] 到 {target_info}")
                 
                 # 上传文件
-                if await self._upload_single_file(file, target_id):
+                success, actually_uploaded = await self._upload_single_file(file, target_id)
+                if success and actually_uploaded:
                     file_uploaded = True
                 
                 # 简单的速率限制，防止过快发送请求
@@ -825,7 +846,7 @@ class Uploader():
             # 间隔时间
             await asyncio.sleep(0.5)
         
-        return upload_count 
+        return upload_count
 
     async def _handle_network_error(self, error):
         """
@@ -845,3 +866,102 @@ class Uploader():
                 asyncio.create_task(self.app.check_connection_status_now())
             except Exception as e:
                 logger.error(f"触发连接状态检查失败: {e}") 
+
+    async def _send_final_message(self, valid_targets, files_uploaded=False):
+        """
+        发送最终消息到所有目标频道
+        
+        如果配置中启用了send_final_message选项且提供了final_message_html_file路径，
+        则读取该HTML文件并发送到所有目标频道。
+        
+        Args:
+            valid_targets: 有效的目标频道列表，格式为 [(target, target_id, target_info), ...]
+            files_uploaded: 是否有文件实际被上传，默认为False
+        """
+        # 从配置中获取选项
+        options = self.upload_config.get('options', {})
+        send_final_message = bool(options.get('send_final_message', False))
+        
+        # 如果未启用最终消息，直接返回
+        if not send_final_message:
+            logger.debug("未启用发送最终消息功能，跳过")
+            return
+            
+        # 如果没有文件被实际上传，不发送最终消息
+        if not files_uploaded:
+            logger.info("没有文件被实际上传，跳过发送最终消息")
+            return
+        
+        # 获取HTML文件路径
+        html_file_path = options.get('final_message_html_file', '')
+        if not html_file_path:
+            logger.warning("启用了发送最终消息功能，但未指定HTML文件路径，跳过")
+            return
+        
+        # 检查文件是否存在
+        if not os.path.exists(html_file_path) or not os.path.isfile(html_file_path):
+            logger.error(f"最终消息HTML文件不存在或不是文件: {html_file_path}")
+            return
+        
+        # 读取HTML文件内容
+        try:
+            with open(html_file_path, 'r', encoding='utf-8') as f:
+                html_content = f.read().strip()
+            
+            if not html_content:
+                logger.warning(f"最终消息HTML文件内容为空: {html_file_path}")
+                return
+            
+            logger.info(f"已读取最终消息HTML文件，长度: {len(html_content)} 字符")
+            
+            # 发送到所有目标频道
+            for target, target_id, target_info in valid_targets:
+                try:
+                    logger.info(f"发送最终消息到频道: {target_info}")
+                    
+                    # 使用HTML解析模式发送消息
+                    from pyrogram import enums
+                    
+                    # 捕捉超时和网络错误
+                    max_retries = 3
+                    for retry in range(max_retries):
+                        try:
+                            message = await self.client.send_message(
+                                chat_id=target_id,
+                                text=html_content,
+                                parse_mode=enums.ParseMode.HTML,
+                                disable_web_page_preview=False  # 允许链接预览
+                            )
+                            
+                            logger.info(f"最终消息发送成功，消息ID: {message.id}")
+                            
+                            # 发送成功事件
+                            self.emit("final_message_sent", {
+                                "chat_id": target_id,
+                                "chat_info": target_info,
+                                "message_id": message.id
+                            })
+                            
+                            break  # 发送成功，跳出重试循环
+                            
+                        except Exception as e:
+                            if retry < max_retries - 1:
+                                logger.warning(f"发送最终消息失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                                await asyncio.sleep((retry + 1) * 2)
+                            else:
+                                logger.error(f"发送最终消息到频道 {target_info} 失败，已达到最大重试次数: {e}")
+                                # 发送失败事件
+                                self.emit("final_message_error", {
+                                    "chat_id": target_id,
+                                    "chat_info": target_info,
+                                    "error": str(e)
+                                })
+                    
+                    # 添加延迟以避免触发频率限制
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.error(f"发送最终消息到频道 {target_info} 时出错: {e}")
+        
+        except Exception as e:
+            logger.error(f"读取或处理最终消息HTML文件时出错: {e}") 

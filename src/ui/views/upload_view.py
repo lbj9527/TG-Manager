@@ -143,14 +143,14 @@ class UploadView(QWidget):
         self.read_title_txt_check.setChecked(False)
         self.read_title_txt_check.setMinimumHeight(25)
         
-        self.use_custom_template_check = QCheckBox("使用自定义作为说明文字模板")
-        self.use_custom_template_check.setChecked(False)
-        self.use_custom_template_check.setMinimumHeight(25)
+        self.send_final_message_check = QCheckBox("上传完成后发送最后一条消息")
+        self.send_final_message_check.setChecked(False)
+        self.send_final_message_check.setMinimumHeight(25)
         
         # 将说明文字选项添加到网格布局
         caption_options_layout.addWidget(self.use_folder_name_check, 0, 0)
         caption_options_layout.addWidget(self.read_title_txt_check, 1, 0)
-        caption_options_layout.addWidget(self.use_custom_template_check, 2, 0)
+        caption_options_layout.addWidget(self.send_final_message_check, 2, 0)
         
         # 自动生成缩略图选项
         self.auto_thumbnail_check = QCheckBox("自动生成视频缩略图")
@@ -180,39 +180,49 @@ class UploadView(QWidget):
         delay_widget.setMinimumHeight(30)
         caption_options_layout.addWidget(delay_widget, 1, 1)
         
+        # 最后消息HTML文件选择
+        final_message_widget = QWidget()
+        final_message_layout = QHBoxLayout(final_message_widget)
+        final_message_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.final_message_html_file = QLineEdit()
+        self.final_message_html_file.setReadOnly(True)
+        self.final_message_html_file.setPlaceholderText("选择HTML文件")
+        self.final_message_html_file.setEnabled(False)  # 初始状态禁用
+        
+        self.browse_html_button = QPushButton("浏览...")
+        self.browse_html_button.setEnabled(False)  # 初始状态禁用
+        
+        final_message_layout.addWidget(self.final_message_html_file)
+        final_message_layout.addWidget(self.browse_html_button)
+        
+        final_message_widget.setMinimumHeight(30)
+        caption_options_layout.addWidget(final_message_widget, 2, 1)
+        
         options_layout.addLayout(caption_options_layout)
         
-        # 自定义说明文字模板
-        caption_template_layout = QVBoxLayout()
-        caption_template_layout.setContentsMargins(0, 10, 0, 0)  # 增加顶部间距
+        # 自定义说明文字模板部分已移除，保留布局用于说明信息
+        caption_info_layout = QVBoxLayout()
+        caption_info_layout.setContentsMargins(0, 10, 0, 0)  # 增加顶部间距
         
-        caption_template_label = QLabel("自定义说明文字模板:")
-        caption_template_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
-        caption_template_label.setMinimumHeight(25)  # 设置标签高度
-        caption_template_layout.addWidget(caption_template_label)
+        caption_info_label = QLabel("说明:")
+        caption_info_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        caption_info_label.setMinimumHeight(25)  # 设置标签高度
+        caption_info_layout.addWidget(caption_info_label)
         
-        self.caption_template = QTextEdit()
-        self.caption_template.setPlaceholderText("可用变量:\n{filename} - 文件名\n{foldername} - 文件夹名称\n{datetime} - 当前日期时间\n{index} - 文件序号")
-        # 减小高度以适应新的标签页高度
-        self.caption_template.setMinimumHeight(85)
-        self.caption_template.setMaximumHeight(110)
-        # 设置更适合文本编辑的尺寸策略
-        self.caption_template.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        info_text = QLabel(
+            "1. 「使用文件夹名称作为说明文字」将使用文件夹名称作为上传文件的说明文字\n"
+            "2. 「读取title.txt文件作为说明文字」将读取文件夹中的title.txt文件内容作为说明文字\n"
+            "3. 「上传完成后发送最后一条消息」将在上传所有文件后，发送一条HTML格式的消息\n"
+            "    HTML消息支持表情和超链接，可用于发送活动总结或购买链接等信息"
+        )
+        info_text.setWordWrap(True)
+        info_text.setStyleSheet("font-size: 12px; color: #666;")
+        info_text.setMinimumHeight(85)
+        info_text.setMaximumHeight(110)
         
-        # 如果未选择自定义模板选项，则禁用编辑区
-        self.caption_template.setEnabled(False)
-        
-        # 设置文本编辑区样式
-        # self.caption_template.setStyleSheet("""
-        #     QTextEdit {
-        #         border: 1px solid #555;
-        #         border-radius: 3px;
-        #         padding: 5px;
-        #     }
-        # """)
-        
-        caption_template_layout.addWidget(self.caption_template)
-        options_layout.addLayout(caption_template_layout)
+        caption_info_layout.addWidget(info_text)
+        options_layout.addLayout(caption_info_layout)
         
         # 将标签页添加到配置面板
         self.config_tabs.addTab(self.channel_tab, "目标频道")
@@ -348,10 +358,11 @@ class UploadView(QWidget):
         # 说明文字选项互斥处理
         self.use_folder_name_check.clicked.connect(self._handle_caption_option)
         self.read_title_txt_check.clicked.connect(self._handle_caption_option)
-        self.use_custom_template_check.clicked.connect(self._handle_caption_option)
+        self.send_final_message_check.clicked.connect(self._handle_caption_option)
         
         # 文件目录选择
         self.browse_button.clicked.connect(self._browse_directory)
+        self.browse_html_button.clicked.connect(self._browse_html_file)
         
         # 上传控制
         self.start_upload_button.clicked.connect(self._start_upload)
@@ -359,31 +370,32 @@ class UploadView(QWidget):
         self.save_config_button.clicked.connect(self._save_config)
     
     def _handle_caption_option(self):
-        """处理说明文字选项的互斥"""
+        """处理说明文字选项的互斥和启用/禁用HTML文件选择器"""
         sender = self.sender()
         
-        # 确保至少有一个选项被选中
-        if not sender.isChecked():
-            sender.setChecked(True)
-            return
+        # 处理use_folder_name和read_title_txt的互斥关系
+        if sender in [self.use_folder_name_check, self.read_title_txt_check]:
+            # 确保至少有一个选项被选中
+            if not sender.isChecked():
+                sender.setChecked(True)
+                return
+                
+            # 根据点击的选项取消选中另一个选项，但不影响send_final_message_check
+            if sender == self.use_folder_name_check and sender.isChecked():
+                self.read_title_txt_check.setChecked(False)
+            elif sender == self.read_title_txt_check and sender.isChecked():
+                self.use_folder_name_check.setChecked(False)
         
-        # 根据点击的选项取消选中其他选项
-        if sender == self.use_folder_name_check:
-            self.read_title_txt_check.setChecked(False)
-            self.use_custom_template_check.setChecked(False)
-        elif sender == self.read_title_txt_check:
-            self.use_folder_name_check.setChecked(False)
-            self.use_custom_template_check.setChecked(False)
-        elif sender == self.use_custom_template_check:
-            self.use_folder_name_check.setChecked(False)
-            self.read_title_txt_check.setChecked(False)
+        # 单独处理send_final_message_check的启用/禁用HTML文件选择器
+        elif sender == self.send_final_message_check:
+            # 只处理HTML文件选择器的启用/禁用
+            if sender.isChecked():
+                self.final_message_html_file.setFocus()
             
-        # 如果选择自定义模板，设置焦点到模板编辑区
-        if sender == self.use_custom_template_check and sender.isChecked():
-            self.caption_template.setFocus()
-            
-        # 自定义模板编辑区的启用状态
-        self.caption_template.setEnabled(self.use_custom_template_check.isChecked())
+        # 最后消息HTML文件选择框和浏览按钮的启用状态
+        is_enabled = self.send_final_message_check.isChecked()
+        self.final_message_html_file.setEnabled(is_enabled)
+        self.browse_html_button.setEnabled(is_enabled)
     
     def _browse_directory(self):
         """浏览文件夹对话框"""
@@ -400,6 +412,25 @@ class UploadView(QWidget):
             # 如果存在配置，更新配置中的目录路径
             if isinstance(self.config, dict) and 'UPLOAD' in self.config:
                 self.config['UPLOAD']['directory'] = directory
+    
+    def _browse_html_file(self):
+        """浏览HTML文件选择对话框"""
+        current_path = os.path.dirname(self.final_message_html_file.text()) or QDir.homePath()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "选择HTML文件",
+            current_path,
+            "HTML文件 (*.html);;所有文件 (*.*)"
+        )
+        
+        if file_path:
+            self.final_message_html_file.setText(file_path)
+            
+            # 如果存在配置，更新配置中的HTML文件路径
+            if isinstance(self.config, dict) and 'UPLOAD' in self.config:
+                if 'options' not in self.config['UPLOAD']:
+                    self.config['UPLOAD']['options'] = {}
+                self.config['UPLOAD']['options']['final_message_html_file'] = file_path
     
     def _add_channel(self):
         """添加频道到列表"""
@@ -508,15 +539,16 @@ class UploadView(QWidget):
         upload_options = {
             'use_folder_name': self.use_folder_name_check.isChecked(),
             'read_title_txt': self.read_title_txt_check.isChecked(),
-            'use_custom_template': self.use_custom_template_check.isChecked(),
-            'auto_thumbnail': self.auto_thumbnail_check.isChecked()
+            'send_final_message': self.send_final_message_check.isChecked(),
+            'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
+            'final_message_html_file': self.final_message_html_file.text()
         }
         
         # 创建上传配置
         upload_config = {
             'target_channels': target_channels,
             'directory': upload_dir,
-            'caption_template': self.caption_template.toPlainText(),
+            'caption_template': '{filename}',  # 保持默认模板
             'delay_between_uploads': round(float(self.upload_delay.value()), 1),  # 四舍五入到一位小数
             'options': upload_options
         }
@@ -671,10 +703,6 @@ class UploadView(QWidget):
         for channel in target_channels:
             self.channel_list.addItem(channel)
         
-        # 加载说明文字模板
-        caption_template = upload_config.get('caption_template', '{filename}')
-        self.caption_template.setPlainText(caption_template)
-        
         # 加载上传目录路径
         directory = upload_config.get('directory', 'uploads')
         self.path_input.setText(directory)
@@ -693,31 +721,45 @@ class UploadView(QWidget):
         # 加载其他选项
         options = upload_config.get('options', {})
         if options:
-            # 设置说明文字选项
-            use_folder_name = options.get('use_folder_name', True)
-            read_title_txt = options.get('read_title_txt', False)
-            use_custom_template = options.get('use_custom_template', False)
+            # 加载说明文字选项 - 先重置所有复选框
+            self.use_folder_name_check.setChecked(False)
+            self.read_title_txt_check.setChecked(False)
             
-            # 确保只有一个选项被选中
-            if use_custom_template:
-                self.use_custom_template_check.setChecked(True)
-                self.use_folder_name_check.setChecked(False)
-                self.read_title_txt_check.setChecked(False)
-                self.caption_template.setEnabled(True)
-            elif read_title_txt:
+            # 明确转换为布尔值，防止字符串类型影响判断
+            use_folder_name = bool(options.get('use_folder_name', True))
+            read_title_txt = bool(options.get('read_title_txt', False))
+            
+            # 根据配置设置说明文字复选框状态，保持互斥性
+            if read_title_txt:
                 self.read_title_txt_check.setChecked(True)
-                self.use_folder_name_check.setChecked(False)
-                self.use_custom_template_check.setChecked(False)
-                self.caption_template.setEnabled(False)
-            else:  # 默认使用文件夹名称
+            elif use_folder_name:
                 self.use_folder_name_check.setChecked(True)
-                self.read_title_txt_check.setChecked(False)
-                self.use_custom_template_check.setChecked(False)
-                self.caption_template.setEnabled(False)
+            else:
+                # 默认至少选中一个
+                self.use_folder_name_check.setChecked(True)
+            
+            # 单独处理发送最终消息选项，它不应该与其他选项互斥
+            send_final_message = bool(options.get('send_final_message', False))
+            self.send_final_message_check.setChecked(send_final_message)
+            
+            # 处理HTML文件选择框和浏览按钮的启用状态
+            self.final_message_html_file.setEnabled(send_final_message)
+            self.browse_html_button.setEnabled(send_final_message)
+            
+            # 加载HTML文件路径
+            html_file_path = options.get('final_message_html_file', '')
+            # 始终设置HTML文件路径，即使send_final_message为False
+            if html_file_path:
+                self.final_message_html_file.setText(html_file_path)
+            else:
+                self.final_message_html_file.setText("")
             
             # 设置自动缩略图选项
             auto_thumbnail = options.get('auto_thumbnail', True)
             self.auto_thumbnail_check.setChecked(auto_thumbnail)
+            
+            # 记录日志
+            logger.debug(f"已从配置加载选项: use_folder_name={use_folder_name}, read_title_txt={read_title_txt}, send_final_message={send_final_message}")
         
         logger.debug("上传配置已成功加载")
 

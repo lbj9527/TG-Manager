@@ -276,14 +276,14 @@ class UIUploadConfig(BaseModel):
     """上传配置模型"""
     target_channels: List[str] = Field(..., description="目标频道列表")
     directory: str = Field("uploads", description="上传文件目录")
-    caption_template: str = Field("{filename}", description="说明文字模板")
     delay_between_uploads: float = Field(0.5, description="上传间隔时间(秒)", ge=0)
     options: dict = Field(
         default_factory=lambda: {
             "use_folder_name": True,
             "read_title_txt": False,
-            "use_custom_template": False,
-            "auto_thumbnail": True
+            "send_final_message": False,
+            "auto_thumbnail": True,
+            "final_message_html_file": ""
         },
         description="上传选项"
     )
@@ -310,16 +310,6 @@ class UIUploadConfig(BaseModel):
         # 修改路径字符检查，允许Windows盘符格式（如D:）
         if re.search(r'[<>"|?*]', v):
             raise ValueError("上传目录包含非法字符")
-        return v
-
-    @validator('caption_template')
-    def validate_caption_template(cls, v):
-        # 检查模板中的占位符是否有效
-        valid_placeholders = ["{filename}", "{date}", "{time}", "{datetime}"]
-        # 简单检查是否包含有效占位符
-        has_valid_placeholder = any(placeholder in v for placeholder in valid_placeholders)
-        if not has_valid_placeholder and "{" in v:
-            raise ValueError("无效的说明文字模板占位符，有效的占位符包括: {filename}, {date}, {time}, {datetime}")
         return v
 
     class Config:
@@ -498,7 +488,6 @@ def create_default_config() -> UIConfig:
         UPLOAD=UIUploadConfig(
             target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
             directory="uploads",
-            caption_template="{filename}",
             delay_between_uploads=0.5
         ),
         FORWARD=UIForwardConfig(
