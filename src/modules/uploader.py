@@ -143,10 +143,18 @@ class Uploader():
             # 开始上传
             logger.info(f"开始上传 {len(files)} 个文件...")
             
-            # 使用批量上传
-            start_time = time.time()
-            uploaded_count = await self._upload_files_to_channels(files, valid_targets)
-            end_time = time.time()
+            # 检查是否有多个目标频道
+            if len(valid_targets) > 1:
+                # 有多个目标频道，使用优化逻辑
+                # 创建一个新的上传方法，实现首先上传到第一个频道，然后复制到其他频道
+                start_time = time.time()
+                uploaded_count = await self._upload_files_to_channels_with_copy(files, valid_targets)
+                end_time = time.time()
+            else:
+                # 只有一个目标频道，使用原方法
+                start_time = time.time()
+                uploaded_count = await self._upload_files_to_channels(files, valid_targets)
+                end_time = time.time()
             
             if uploaded_count > 0:
                 upload_time = end_time - start_time
@@ -255,7 +263,128 @@ class Uploader():
                 logger.info(f"使用文件夹名称 '{group_name}' 作为说明文本")
             
             # 上传到所有目标频道
-            for target, target_id, target_info in valid_targets:                         
+            if len(valid_targets) > 1:
+                # 有多个目标频道，使用优化逻辑
+                first_target, first_target_id, first_target_info = valid_targets[0]
+                other_targets = valid_targets[1:]
+                
+                # 先上传到第一个目标频道
+                logger.info(f"上传媒体组 [{group_name}] 到第一个目标频道 {first_target_info}")
+                
+                # 上传媒体组
+                if len(media_files) == 1:
+                    # 单个文件，直接上传
+                    success, actually_uploaded, message = await self._upload_single_file_with_message(media_files[0], first_target_id, caption)
+                    if success:
+                        if actually_uploaded:
+                            total_files += 1
+                            upload_count += 1
+                            
+                            # 如果上传成功并且有消息对象，复制到其他频道
+                            if message:
+                                for target, target_id, target_info in other_targets:
+                                    try:
+                                        logger.info(f"复制消息到频道: {target_info}")
+                                        
+                                        # 使用copy_message复制消息
+                                        await self.client.copy_message(
+                                            chat_id=target_id,
+                                            from_chat_id=first_target_id,
+                                            message_id=message.id
+                                        )
+                                        
+                                        logger.info(f"成功复制消息到频道: {target_info}")
+                                        total_files += 1  # 增加文件计数（每个频道算一次）
+                                        
+                                    except Exception as e:
+                                        logger.error(f"复制消息到频道 {target_info} 失败: {e}")
+                                        # 如果复制失败，尝试直接上传
+                                        logger.info(f"尝试直接上传文件 [{media_files[0].name}] 到频道 {target_info}")
+                                        direct_success, direct_uploaded = await self._upload_single_file(media_files[0], target_id, caption)
+                                        if direct_success and direct_uploaded:
+                                            total_files += 1  # 增加文件计数（直接上传成功）
+                                    
+                                    # 简单的速率限制
+                                    await asyncio.sleep(1)
+                        else:
+                            logger.info(f"文件 {media_files[0].name} 已存在于目标频道，不计入上传统计")
+                    else:
+                        # 第一个频道上传失败，尝试直接上传到其他频道
+                        logger.warning(f"上传文件 [{media_files[0].name}] 到第一个目标频道失败，将直接上传到其他频道")
+                        
+                        for target, target_id, target_info in other_targets:
+                            logger.info(f"上传文件 [{media_files[0].name}] 到 {target_info}")
+                            direct_success, direct_uploaded = await self._upload_single_file(media_files[0], target_id, caption)
+                            if direct_success and direct_uploaded:
+                                total_files += 1
+                                upload_count += 1
+                            
+                            # 简单的速率限制
+                            await asyncio.sleep(1)
+                else:
+                    # 多个文件，作为媒体组上传
+                    success, actually_uploaded, messages = await self._upload_media_group_with_messages(media_files, first_target_id, caption)
+                    if success:
+                        if actually_uploaded:
+                            # 只有在实际上传时才增加计数
+                            total_files += len(media_files)
+                            upload_count += 1
+                            
+                            # 如果上传成功并且有消息对象，复制到其他频道
+                            if messages and len(messages) > 0:
+                                # 获取媒体组的第一个消息的ID
+                                first_message_id = messages[0].id
+                                logger.info(f"媒体组第一条消息ID: {first_message_id}")
+                                
+                                # 媒体组消息是连续的，计算消息ID范围
+                                message_count = len(messages)
+                                
+                                for target, target_id, target_info in other_targets:
+                                    try:
+                                        logger.info(f"复制媒体组到频道: {target_info}")
+                                        
+                                        # 尝试使用forward_messages转发媒体组（更稳定）
+                                        forwarded = await self.client.forward_messages(
+                                            chat_id=target_id,
+                                            from_chat_id=first_target_id,
+                                            message_ids=list(range(first_message_id, first_message_id + message_count))
+                                        )
+                                        
+                                        if forwarded:
+                                            logger.info(f"成功转发媒体组到频道: {target_info}")
+                                            total_files += len(media_files)  # 增加文件计数（每个频道算一次）
+                                        else:
+                                            logger.warning(f"转发媒体组返回空结果，可能失败")
+                                            raise Exception("转发媒体组返回空结果")
+                                        
+                                    except Exception as e:
+                                        logger.error(f"复制媒体组到频道 {target_info} 失败: {e}")
+                                        # 如果复制失败，尝试直接上传
+                                        logger.info(f"尝试直接上传媒体组到频道 {target_info}")
+                                        direct_success, direct_uploaded = await self._upload_media_group(media_files, target_id, caption)
+                                        if direct_success and direct_uploaded:
+                                            total_files += len(media_files)  # 增加文件计数（直接上传成功）
+                                    
+                                    # 简单的速率限制
+                                    await asyncio.sleep(2)
+                        else:
+                            logger.info(f"媒体组 {group_name} 的所有文件都已存在于目标频道，不计入上传统计")
+                    else:
+                        # 第一个频道上传失败，尝试直接上传到其他频道
+                        logger.warning(f"上传媒体组 [{group_name}] 到第一个目标频道失败，将直接上传到其他频道")
+                        
+                        for target, target_id, target_info in other_targets:
+                            logger.info(f"上传媒体组 [{group_name}] 到 {target_info}")
+                            direct_success, direct_uploaded = await self._upload_media_group(media_files, target_id, caption)
+                            if direct_success and direct_uploaded:
+                                total_files += len(media_files)
+                                upload_count += 1
+                            
+                            # 简单的速率限制
+                            await asyncio.sleep(2)
+            else:
+                # 只有一个目标频道，使用原有逻辑
+                target, target_id, target_info = valid_targets[0]                         
                 logger.info(f"上传媒体组 [{group_name}] 到 {target_info}")
                 
                 # 上传媒体组
@@ -278,9 +407,9 @@ class Uploader():
                             upload_count += 1
                         else:
                             logger.info(f"媒体组 {group_name} 的所有文件都已存在于目标频道，不计入上传统计")
-                
-                # 简单的速率限制，防止过快发送请求
-                await asyncio.sleep(2)
+            
+            # 简单的速率限制，防止过快发送请求
+            await asyncio.sleep(2)
         
         # 上传完成后，发送最终消息
         await self._send_final_message(valid_targets, upload_count > 0)
@@ -810,6 +939,9 @@ class Uploader():
         """
         将文件上传到多个目标频道
         
+        优化逻辑：首先上传到第一个目标频道，如果成功，则使用copy_message/copy_media_group将消息复制到其他频道
+        如果第一个频道上传失败，则其他频道使用原方法直接上传
+        
         Args:
             files: 文件路径列表
             targets: 目标频道列表，元组(channel_id, channel_name, channel_info)
@@ -817,8 +949,16 @@ class Uploader():
         Returns:
             int: 成功上传的文件数量（实际上传的新文件，不包括已经存在的）
         """
+        if not files or not targets:
+            logger.warning("没有文件或目标频道，无法上传")
+            return 0
+
         upload_count = 0
         total_files = len(files)
+        
+        # 复制第一个目标频道的信息，其他频道用于消息复制
+        first_target = targets[0]
+        other_targets = targets[1:] if len(targets) > 1 else []
         
         for idx, file in enumerate(files):                      
             # 更新进度
@@ -827,18 +967,58 @@ class Uploader():
             
             logger.info(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
             
-            # 上传到所有目标频道
-            file_uploaded = False
-            for target, target_id, target_info in targets:               
-                logger.info(f"上传文件 [{file.name}] 到 {target_info}")
+            # 先上传到第一个目标频道
+            first_target_id = first_target[1]
+            first_target_info = first_target[2]
+            
+            logger.info(f"上传文件 [{file.name}] 到第一个目标频道 {first_target_info}")
+            
+            # 上传文件，并获取消息对象（成功时）
+            success, actually_uploaded, message = await self._upload_single_file_with_message(file, first_target_id)
+            file_uploaded = success and actually_uploaded
+            
+            # 如果第一个频道上传成功，使用copy_message复制到其他频道
+            if success and message:
+                logger.info(f"文件 [{file.name}] 成功上传到第一个目标频道，将复制消息到其他频道")
                 
-                # 上传文件
-                success, actually_uploaded = await self._upload_single_file(file, target_id)
-                if success and actually_uploaded:
-                    file_uploaded = True
+                for target, target_id, target_info in other_targets:
+                    try:
+                        logger.info(f"复制消息到频道: {target_info}")
+                        
+                        # 使用copy_message复制消息
+                        await self.client.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=first_target_id,
+                            message_id=message.id
+                        )
+                        
+                        logger.info(f"成功复制消息到频道: {target_info}")
+                        
+                        # 简单的速率限制
+                        await asyncio.sleep(1)
+                        
+                    except Exception as e:
+                        logger.error(f"复制消息到频道 {target_info} 失败: {e}")
+                        # 如果复制失败，尝试直接上传
+                        logger.info(f"尝试直接上传文件 [{file.name}] 到频道 {target_info}")
+                        direct_success, direct_uploaded = await self._upload_single_file(file, target_id)
+                        # 不更改file_uploaded状态，只依赖第一个频道的上传结果
+            
+            # 如果第一个频道上传失败，使用原方法上传到其他频道
+            elif not success:
+                logger.warning(f"文件 [{file.name}] 上传到第一个目标频道失败，将直接上传到其他频道")
                 
-                # 简单的速率限制，防止过快发送请求
-                await asyncio.sleep(1)
+                # 遍历其他目标频道，直接上传
+                for target, target_id, target_info in other_targets:
+                    logger.info(f"上传文件 [{file.name}] 到 {target_info}")
+                    
+                    # 上传文件
+                    direct_success, direct_uploaded = await self._upload_single_file(file, target_id)
+                    if direct_success and direct_uploaded:
+                        file_uploaded = True
+                    
+                    # 简单的速率限制
+                    await asyncio.sleep(1)
             
             if file_uploaded:
                 upload_count += 1
@@ -965,3 +1145,618 @@ class Uploader():
         
         except Exception as e:
             logger.error(f"读取或处理最终消息HTML文件时出错: {e}") 
+
+    async def _upload_single_file_with_message(self, file: Path, chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool, Optional[Message]]:
+        """
+        上传单个文件并返回消息对象
+        
+        这个方法是对_upload_single_file的扩展，增加了返回上传后的消息对象，用于消息复制功能
+        
+        Args:
+            file: 文件路径
+            chat_id: 目标聊天ID
+            caption: 说明文本
+            
+        Returns:
+            Tuple[bool, bool, Optional[Message]]: (是否成功, 是否实际上传, 消息对象)
+            第一个元素表示操作是否成功，第二个元素表示是否实际上传了文件，第三个是消息对象（成功时）
+        """
+        media_type = self._get_media_type(file)
+        
+        if not media_type:
+            logger.warning(f"不支持的媒体类型: {file}")
+            return False, False, None
+        
+        # 计算文件哈希
+        file_str = str(file)
+        if file_str in self.file_hash_cache:
+            file_hash = self.file_hash_cache[file_str]
+        else:
+            file_hash = calculate_file_hash(file)
+            if file_hash:
+                self.file_hash_cache[file_str] = file_hash
+            else:
+                logger.warning(f"无法计算文件哈希值: {file}")
+                return False, False, None
+        
+        # 检查文件是否已上传到目标频道
+        chat_id_str = str(chat_id)
+        if self.history_manager.is_file_hash_uploaded(file_hash, chat_id_str):
+            logger.info(f"文件 {file.name} (哈希: {file_hash[:8]}...) 已上传到频道 {chat_id_str}，跳过上传")
+            
+            # 发送文件已上传事件
+            self.emit("file_already_uploaded", {
+                "chat_id": chat_id,
+                "file_name": file.name,
+                "file_path": file_str,
+                "file_hash": file_hash,
+                "media_type": media_type
+            })
+            
+            return True, False, None  # 返回成功，但实际未上传新文件，消息对象为None
+        
+        # 缩略图文件路径和视频尺寸
+        thumbnail = None
+        width = height = None
+        
+        try:
+            # 处理视频缩略图和获取尺寸
+            if media_type == "video":
+                try:
+                    result = await self.video_processor.extract_thumbnail_async(str(file))
+                    if result:
+                        if isinstance(result, tuple) and len(result) == 3:
+                            thumbnail, width, height = result
+                        else:
+                            thumbnail = result
+                        
+                        if width and height:
+                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                        else:
+                            logger.debug(f"已生成视频缩略图: {thumbnail}")
+                except Exception as e:
+                    logger.warning(f"生成视频缩略图失败: {e}")
+            
+            # 上传文件
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    logger.info(f"上传文件: {file.name} (哈希: {file_hash[:8]}...)...")
+                    
+                    start_time = time.time()
+                    
+                    if media_type == "photo":
+                        message = await self.client.send_photo(
+                            chat_id=chat_id,
+                            photo=str(file),
+                            caption=caption
+                        )
+                    elif media_type == "video":
+                        message = await self.client.send_video(
+                            chat_id=chat_id,
+                            video=str(file),
+                            caption=caption,
+                            thumb=thumbnail,
+                            supports_streaming=True,
+                            width=width,
+                            height=height
+                        )
+                    elif media_type == "document":
+                        message = await self.client.send_document(
+                            chat_id=chat_id,
+                            document=str(file),
+                            caption=caption
+                        )
+                    elif media_type == "audio":
+                        message = await self.client.send_audio(
+                            chat_id=chat_id,
+                            audio=str(file),
+                            caption=caption
+                        )
+                    else:
+                        logger.warning(f"不支持的媒体类型: {media_type}")
+                        return False, False, None
+                    
+                    end_time = time.time()
+                    upload_time = end_time - start_time
+                    
+                    logger.info(f"文件 {file.name} 上传成功，耗时 {upload_time:.2f} 秒")
+                    
+                    # 保存上传历史记录
+                    if message:
+                        # 获取文件大小
+                        if hasattr(message, 'file') and hasattr(message.file, 'size'):
+                            file_size = message.file.size
+                        else:
+                            file_size = get_file_size(file)
+                        
+                        # 使用文件哈希记录上传
+                        self.history_manager.add_upload_record_by_hash(
+                            file_hash=file_hash,
+                            file_path=file_str,
+                            target_channel=chat_id_str,
+                            file_size=file_size,
+                            media_type=media_type
+                        )
+                    
+                    # 发送上传成功事件
+                    self.emit("media_upload", {
+                        "chat_id": chat_id,
+                        "file_name": file.name,
+                        "file_path": file_str,
+                        "file_hash": file_hash,
+                        "media_type": media_type,
+                        "upload_time": upload_time,
+                        "file_size": file_size if 'file_size' in locals() else get_file_size(file)
+                    })
+                    
+                    # 同时发送file_uploaded事件，确保向下兼容
+                    self.emit("file_uploaded", str(file), True)
+                    
+                    return True, True, message  # 上传成功且实际上传了新文件，返回消息对象
+                    
+                except FloodWait as e:
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    await asyncio.sleep(e.x)
+                except (MediaEmpty, MediaInvalid) as e:
+                    logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    return False, False, None
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        await asyncio.sleep((retry + 1) * 2)
+                    else:
+                        logger.error(f"上传文件 {file.name} 失败: {e}")
+                        
+                        # 检测网络相关错误
+                        error_name = type(e).__name__.lower()
+                        if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
+                            # 网络相关错误，通知应用程序检查连接状态
+                            await self._handle_network_error(e)
+                        
+                        return False, False, None
+            
+            return False, False, None
+            
+        finally:
+            # 清理缩略图
+            if thumbnail and os.path.exists(thumbnail):
+                try:
+                    os.remove(thumbnail)
+                    logger.debug(f"已删除缩略图: {thumbnail}")
+                except Exception as e:
+                    logger.warning(f"删除缩略图失败: {e}")
+    
+    async def _upload_media_group_with_messages(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool, Optional[List[Message]]]:
+        """
+        将多个文件作为媒体组上传并返回消息对象列表
+        
+        这个方法是对_upload_media_group的扩展，增加了返回上传后的消息对象列表，用于消息复制功能
+        
+        Args:
+            files: 文件路径列表
+            chat_id: 目标聊天ID
+            caption: 说明文本，仅会应用到第一个媒体
+            
+        Returns:
+            Tuple[bool, bool, Optional[List[Message]]]: (是否成功, 是否实际上传, 消息对象列表)
+            第一个元素表示操作是否成功，第二个元素表示是否实际上传了文件，第三个是消息对象列表（成功时）
+        """
+        # 最多支持10个媒体文件作为一个组
+        if len(files) > 10:
+            # 分组上传
+            logger.warning(f"媒体组包含 {len(files)} 个文件，超过最大限制(10)，将分批上传")
+            chunks = [files[i:i+10] for i in range(0, len(files), 10)]
+            success = True
+            actually_uploaded = False
+            all_messages = []
+            
+            for i, chunk in enumerate(chunks):
+                chunk_success, chunk_uploaded, chunk_messages = await self._upload_media_group_chunk_with_messages(
+                    chunk, chat_id, caption if i == 0 else None
+                )
+                
+                if not chunk_success:
+                    success = False
+                if chunk_uploaded:
+                    actually_uploaded = True
+                
+                # 收集所有消息对象
+                if chunk_messages:
+                    all_messages.extend(chunk_messages)
+                    
+                # 批次间隔
+                await asyncio.sleep(3)
+                
+            return success, actually_uploaded, all_messages if all_messages else None
+        else:
+            # 直接上传这组文件
+            return await self._upload_media_group_chunk_with_messages(files, chat_id, caption)
+
+    async def _upload_media_group_chunk_with_messages(self, files: List[Path], chat_id: int, caption: Optional[str] = None) -> Tuple[bool, bool, Optional[List[Message]]]:
+        """
+        上传一个媒体组块并返回消息对象列表
+        
+        Returns:
+            Tuple[bool, bool, Optional[List[Message]]]: (是否成功, 是否实际上传, 消息对象列表)
+        """
+        if not files:
+            return False, False, None
+        
+        chat_id_str = str(chat_id)
+        
+        # 过滤已上传的文件
+        filtered_files = []
+        file_hashes = {}  # 存储文件哈希值
+        
+        for file in files:
+            file_str = str(file)
+            # 计算文件哈希
+            if file_str in self.file_hash_cache:
+                file_hash = self.file_hash_cache[file_str]
+            else:
+                file_hash = calculate_file_hash(file)
+                if file_hash:
+                    self.file_hash_cache[file_str] = file_hash
+                else:
+                    logger.warning(f"无法计算文件哈希值: {file}")
+                    continue
+            
+            # 检查是否已上传
+            if self.history_manager.is_file_hash_uploaded(file_hash, chat_id_str):
+                logger.info(f"文件 {file.name} (哈希: {file_hash[:8]}...) 已上传到频道 {chat_id_str}，从媒体组中跳过")
+                
+                # 发送文件已上传事件
+                self.emit("file_already_uploaded", {
+                    "chat_id": chat_id,
+                    "file_name": file.name,
+                    "file_path": file_str,
+                    "file_hash": file_hash,
+                    "media_type": self._get_media_type(file)
+                })
+            else:
+                filtered_files.append(file)
+                file_hashes[file_str] = file_hash
+        
+        # 如果所有文件都已上传过，直接返回成功
+        if not filtered_files:
+            logger.info(f"媒体组中的所有文件都已上传到频道 {chat_id_str}，跳过整个媒体组")
+            return True, False, None  # 成功但没有实际上传新文件
+        
+        # 如果过滤后只剩一个文件，作为单个文件上传
+        if len(filtered_files) == 1:
+            logger.info(f"媒体组中只有一个文件需要上传，转为单文件上传")
+            success, actually_uploaded, message = await self._upload_single_file_with_message(filtered_files[0], chat_id, caption)
+            return success, actually_uploaded, [message] if message else None
+        
+        # 准备媒体组
+        media_group = []
+        thumbnails = []  # 记录生成的缩略图文件以便清理
+        
+        try:
+            for i, file in enumerate(filtered_files):
+                file_caption = caption if i == 0 else None
+                media_type = self._get_media_type(file)
+                
+                if media_type == "photo":
+                    media = InputMediaPhoto(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
+                
+                elif media_type == "video":
+                    # 生成缩略图和获取视频尺寸
+                    thumbnail = None
+                    width = height = None
+                    try:
+                        result = await self.video_processor.extract_thumbnail_async(str(file))
+                        if result:
+                            if isinstance(result, tuple) and len(result) == 3:
+                                thumbnail, width, height = result
+                            else:
+                                thumbnail = result
+                            
+                            thumbnails.append(thumbnail)
+                            if width and height:
+                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                            else:
+                                logger.debug(f"已生成视频缩略图: {thumbnail}")
+                    except Exception as e:
+                        logger.warning(f"生成视频缩略图失败: {e}")
+                    
+                    # 创建媒体对象，包含宽度和高度
+                    media = InputMediaVideo(
+                        media=str(file),
+                        caption=file_caption,
+                        thumb=thumbnail,
+                        supports_streaming=True,
+                        width=width,
+                        height=height
+                    )
+                    media_group.append(media)
+                
+                elif media_type == "document":
+                    media = InputMediaDocument(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
+                
+                elif media_type == "audio":
+                    media = InputMediaAudio(
+                        media=str(file),
+                        caption=file_caption
+                    )
+                    media_group.append(media)
+                
+                else:
+                    logger.warning(f"不支持的媒体类型: {file}")
+                    continue
+            
+            if not media_group:
+                logger.warning("没有有效的媒体文件可以上传")
+                return False, False, None
+            
+            # 上传媒体组
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    # 捕获任何上传问题
+                    logger.info(f"上传媒体组 ({len(media_group)} 个文件)...")
+                    
+                    start_time = time.time()
+                    messages = await self.client.send_media_group(
+                        chat_id=chat_id,
+                        media=media_group
+                    )
+                    end_time = time.time()
+                    
+                    upload_time = end_time - start_time
+                    logger.info(f"媒体组上传成功，耗时 {upload_time:.2f} 秒")
+                    
+                    # 保存上传历史记录
+                    for msg in messages:
+                        # 获取文件路径和大小
+                        if hasattr(msg, 'file') and hasattr(msg.file, 'size'):
+                            file_size = msg.file.size
+                        else:
+                            file_size = 0
+                        
+                        # 确定媒体类型
+                        if msg.photo:
+                            file_media_type = "photo"
+                        elif msg.video:
+                            file_media_type = "video"
+                        elif msg.document:
+                            file_media_type = "document"
+                        elif msg.audio:
+                            file_media_type = "audio"
+                        else:
+                            file_media_type = "unknown"
+                        
+                        # 用消息ID确定对应的媒体文件
+                        # 由于PyroGram不提供足够的信息来确定哪个消息对应哪个文件
+                        # 我们假设消息顺序与文件顺序相同
+                        idx = min(messages.index(msg), len(filtered_files) - 1)
+                        file_path = str(filtered_files[idx])
+                        file_hash = file_hashes.get(file_path)
+                        
+                        if file_hash:
+                            # 记录上传
+                            self.history_manager.add_upload_record_by_hash(
+                                file_hash=file_hash,
+                                file_path=file_path,
+                                target_channel=chat_id_str,
+                                file_size=file_size,
+                                media_type=file_media_type
+                            )
+                    
+                    # 发送上传成功事件
+                    media_group_info = {
+                        "chat_id": chat_id,
+                        "media_count": len(media_group),
+                        "upload_time": upload_time,
+                        "is_group": True,
+                        "files": [str(f) for f in filtered_files]
+                    }
+                    self.emit("media_upload", media_group_info)
+                    
+                    # 同时为媒体组发送file_uploaded事件
+                    self.emit("file_uploaded", f"媒体组({len(media_group)}个文件)", True)
+                    
+                    return True, True, messages  # 成功且实际上传了新文件，返回消息对象列表
+                    
+                except FloodWait as e:
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒")
+                    await asyncio.sleep(e.x)
+                except (MediaEmpty, MediaInvalid) as e:
+                    logger.error(f"媒体无效: {e}", error_type="MEDIA", recoverable=True)
+                    return False, False, None
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        logger.warning(f"上传失败，将在 {(retry + 1) * 2} 秒后重试: {e}")
+                        await asyncio.sleep((retry + 1) * 2)
+                    else:
+                        logger.error(f"上传媒体组失败，已达到最大重试次数: {e}", error_type="UPLOAD", recoverable=True)
+                        return False, False, None
+            
+            return False, False, None
+            
+        finally:
+            # 清理缩略图
+            for thumb in thumbnails:
+                try:
+                    if os.path.exists(thumb):
+                        os.remove(thumb)
+                        logger.debug(f"已删除缩略图: {thumb}")
+                except Exception as e:
+                    logger.warning(f"删除缩略图失败: {e}") 
+
+    async def _upload_files_to_channels_with_copy(self, files: List[Path], targets: List[Tuple[str, int, str]]) -> int:
+        """
+        将文件上传到多个目标频道（使用消息复制优化）
+        
+        首先上传到第一个目标频道，如果成功，则使用copy_message复制到其他频道
+        如果第一个频道上传失败，则退回到原方法直接上传
+        
+        Args:
+            files: 文件路径列表
+            targets: 目标频道列表，元组(channel_id, channel_name, channel_info)
+            
+        Returns:
+            int: 成功上传的文件数量（实际上传的新文件，不包括已经存在的）
+        """
+        if not files or len(targets) < 2:
+            # 如果没有文件或者目标频道少于2个，使用原方法
+            return await self._upload_files_to_channels(files, targets)
+            
+        upload_count = 0
+        total_files = len(files)
+        
+        # 获取第一个目标频道和其他频道
+        first_target, first_target_id, first_target_info = targets[0]
+        other_targets = targets[1:]
+        
+        for idx, file in enumerate(files):                      
+            # 更新进度
+            progress = (idx / total_files) * 100
+            self.emit("progress", progress, idx, total_files)
+            
+            logger.info(f"上传文件 [{file.name}] ({idx+1}/{total_files})")
+            
+            # 先上传到第一个目标频道
+            logger.info(f"上传文件 [{file.name}] 到第一个目标频道 {first_target_info}")
+            
+            # 上传单个文件并获取消息对象
+            success, actually_uploaded, message = await self._upload_single_file_with_message(file, first_target_id)
+            
+            # 如果上传成功并且是新文件，尝试复制到其他频道
+            if success and actually_uploaded and message:
+                file_uploaded = True
+                
+                logger.info(f"文件 [{file.name}] 成功上传到第一个目标频道，将复制消息到其他频道")
+                
+                # 复制到其他频道
+                for target, target_id, target_info in other_targets:
+                    try:
+                        logger.info(f"复制消息到频道: {target_info}")
+                        
+                        # 使用copy_message复制消息
+                        copied_msg = await self.client.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=first_target_id,
+                            message_id=message.id
+                        )
+                        
+                        logger.info(f"成功复制消息到频道: {target_info}，消息ID: {copied_msg.id if copied_msg else '未知'}")
+                        
+                        # 如果复制成功，记录上传历史（与直接上传相同）
+                        if copied_msg:
+                            # 计算文件哈希（复用缓存）
+                            file_str = str(file)
+                            if file_str in self.file_hash_cache:
+                                file_hash = self.file_hash_cache[file_str]
+                            else:
+                                file_hash = calculate_file_hash(file)
+                                if file_hash:
+                                    self.file_hash_cache[file_str] = file_hash
+                            
+                            if file_hash:
+                                # 获取文件大小
+                                if hasattr(copied_msg, 'file') and hasattr(copied_msg.file, 'size'):
+                                    file_size = copied_msg.file.size
+                                else:
+                                    file_size = get_file_size(file)
+                                
+                                # 确定媒体类型
+                                if copied_msg.photo:
+                                    media_type = "photo"
+                                elif copied_msg.video:
+                                    media_type = "video"
+                                elif copied_msg.document:
+                                    media_type = "document"
+                                elif copied_msg.audio:
+                                    media_type = "audio"
+                                else:
+                                    media_type = self._get_media_type(file)
+                                
+                                # 记录上传历史
+                                self.history_manager.add_upload_record_by_hash(
+                                    file_hash=file_hash,
+                                    file_path=file_str,
+                                    target_channel=str(target_id),
+                                    file_size=file_size,
+                                    media_type=media_type
+                                )
+                                
+                                # 发送上传成功事件
+                                self.emit("media_upload", {
+                                    "chat_id": target_id,
+                                    "file_name": file.name,
+                                    "file_path": file_str,
+                                    "file_hash": file_hash,
+                                    "media_type": media_type,
+                                    "is_copied": True
+                                })
+                        
+                    except Exception as e:
+                        logger.error(f"复制消息到频道 {target_info} 失败: {e}")
+                        # 如果复制失败，尝试直接上传
+                        logger.info(f"尝试直接上传文件 [{file.name}] 到频道 {target_info}")
+                        direct_success, direct_uploaded = await self._upload_single_file(file, target_id)
+                        # 直接上传不改变file_uploaded状态
+                    
+                    # 简单的速率限制
+                    await asyncio.sleep(1)
+                
+                if file_uploaded:
+                    upload_count += 1
+                
+            # 如果第一个频道上传失败/跳过（文件已存在），或者没有消息对象
+            elif not success or not message:
+                logger.warning(f"文件 [{file.name}] 上传到第一个目标频道失败或跳过，将直接上传到其他频道")
+                
+                # 尝试直接上传到其他频道
+                file_uploaded = False
+                for target, target_id, target_info in other_targets:
+                    logger.info(f"上传文件 [{file.name}] 到 {target_info}")
+                    direct_success, direct_uploaded = await self._upload_single_file(file, target_id)
+                    if direct_success and direct_uploaded:
+                        file_uploaded = True
+                    
+                    # 简单的速率限制
+                    await asyncio.sleep(1)
+                
+                if file_uploaded:
+                    upload_count += 1
+            
+            # 如果上传成功但文件已存在
+            elif success and not actually_uploaded:
+                logger.info(f"文件 {file.name} 已存在于第一个目标频道，检查其他频道")
+                
+                # 检查其他频道是否也已上传
+                file_str = str(file)
+                file_hash = self.file_hash_cache.get(file_str)
+                if not file_hash:
+                    file_hash = calculate_file_hash(file)
+                    if file_hash:
+                        self.file_hash_cache[file_str] = file_hash
+                
+                if file_hash:
+                    for target, target_id, target_info in other_targets:
+                        target_id_str = str(target_id)
+                        if not self.history_manager.is_file_hash_uploaded(file_hash, target_id_str):
+                            logger.info(f"文件 {file.name} 在频道 {target_info} 中不存在，尝试直接上传")
+                            direct_success, direct_uploaded = await self._upload_single_file(file, target_id)
+                            # 这种情况下不增加upload_count，因为文件在第一个频道已经存在
+                        else:
+                            logger.info(f"文件 {file.name} 在频道 {target_info} 中已存在，跳过")
+                        
+                        # 简单的速率限制
+                        await asyncio.sleep(1)
+            
+            # 间隔时间
+            await asyncio.sleep(0.5)
+        
+        return upload_count 
