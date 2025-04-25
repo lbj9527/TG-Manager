@@ -139,8 +139,8 @@ class SettingsView(QWidget):
         self.login_button = QPushButton("登录")
         self.login_button.setMinimumWidth(120)
         self.login_button.clicked.connect(self._handle_login)
-        # 设置默认颜色
-        self.login_button.setStyleSheet("background-color: #2196F3; color: white;")
+        # 设置默认颜色，添加无边框样式
+        self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")
         telegram_layout.addRow("", self.login_button)
         
         # 添加登录提示标签
@@ -152,7 +152,7 @@ class SettingsView(QWidget):
         login_tip.setWordWrap(True)
         login_tip.setTextFormat(Qt.RichText)
         login_tip.setOpenExternalLinks(True)
-        login_tip.setStyleSheet("color: gray; font-size: 9pt;")
+        login_tip.setStyleSheet("font-size: 9pt;")
         telegram_layout.addRow("", login_tip)
         
         telegram_group.setLayout(telegram_layout)
@@ -625,7 +625,7 @@ class SettingsView(QWidget):
             
         if is_logged_in:
             self.login_button.setText("已登录")
-            self.login_button.setStyleSheet("background-color: #F44336; color: white;")  # 红色背景
+            self.login_button.setStyleSheet("background-color: #F44336; color: white; border: none; border-radius: 3px;")  # 红色背景，无边框
             self.login_button.setEnabled(False)  # 禁用按钮
             if user_info:
                 self.login_button.setToolTip(f"当前登录用户: {user_info}")
@@ -633,7 +633,7 @@ class SettingsView(QWidget):
                 self.login_button.setToolTip("当前已登录")
         else:
             self.login_button.setText("登录")
-            self.login_button.setStyleSheet("background-color: #2196F3; color: white;")
+            self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")  # 蓝色背景，无边框
             self.login_button.setEnabled(True)  # 启用按钮
             self.login_button.setToolTip("点击登录到Telegram账号")
     
