@@ -248,7 +248,6 @@ class UploadView(QWidget):
             "提示: 上传目录中的每个子文件夹将作为一个媒体组上传。\n"
             "如果子文件夹中有多个文件，则作为媒体组发送；如果只有一个文件，则单独发送。\n"
             "每个子文件夹中可以放置名为title.txt的文件作为上传说明文本。\n"
-            "如果上传目录没有子文件夹，则所有文件作为单独的消息上传。"
         )
         help_label.setWordWrap(True)
         help_label.setStyleSheet("font-size: 13px; padding: 10px;")
