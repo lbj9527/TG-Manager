@@ -50,30 +50,30 @@ class ForwardView(QWidget):
         self.setLayout(self.main_layout)
         
         # 设置统一的组框样式
-        self.setStyleSheet("""
-            QGroupBox { 
-                font-weight: bold; 
-                padding-top: 2px; 
-                margin-top: 0.4em; 
-            }
-            QTabWidget::pane {
-                border: 1px solid #444;
-                padding: 1px;
-            }
-            QTabBar::tab {
-                padding: 3px 8px;
-            }
-            QListWidget {
-                alternate-background-color: rgba(60, 60, 60, 0.2);
-            }
-            QListWidget::item {
-                border-bottom: 1px solid rgba(100, 100, 100, 0.1);
-                padding: 4px 2px;
-            }
-            QListWidget::item:selected {
-                background-color: rgba(0, 120, 215, 0.6);
-            }
-        """)
+        # self.setStyleSheet("""
+        #     QGroupBox { 
+        #         font-weight: bold; 
+        #         padding-top: 2px; 
+        #         margin-top: 0.4em; 
+        #     }
+        #     QTabWidget::pane {
+        #         border: 1px solid #444;
+        #         padding: 1px;
+        #     }
+        #     QTabBar::tab {
+        #         padding: 3px 8px;
+        #     }
+        #     QListWidget {
+        #         alternate-background-color: rgba(60, 60, 60, 0.2);
+        #     }
+        #     QListWidget::item {
+        #         border-bottom: 1px solid rgba(100, 100, 100, 0.1);
+        #         padding: 4px 2px;
+        #     }
+        #     QListWidget::item:selected {
+        #         background-color: rgba(0, 120, 215, 0.6);
+        #     }
+        # """)
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
@@ -166,7 +166,7 @@ class ForwardView(QWidget):
         # 创建频道列表部分
         # 频道列表标题
         self.pairs_list_label = QLabel("已配置频道对:  0对")
-        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        # self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
         channel_layout.addWidget(self.pairs_list_label)
         
         # 创建滚动区域

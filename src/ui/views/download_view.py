@@ -233,7 +233,7 @@ class DownloadView(QWidget):
         
         # 频道列表标题
         self.channel_list_label = QLabel("已配置下载频道:  0个")
-        self.channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        # self.channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
         channel_widget_layout.addWidget(self.channel_list_label)
         
         # 创建滚动区域
@@ -357,7 +357,7 @@ class DownloadView(QWidget):
         status_layout.addWidget(status_label)
         
         self.current_task_label = QLabel("未开始下载")
-        self.current_task_label.setStyleSheet("color: #0066cc;")
+        # self.current_task_label.setStyleSheet("color: #0066cc;")
         status_layout.addWidget(self.current_task_label)
         
         # 添加进度条和进度文本

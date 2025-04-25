@@ -203,13 +203,13 @@ class UploadView(QWidget):
         self.caption_template.setEnabled(False)
         
         # 设置文本编辑区样式
-        self.caption_template.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #555;
-                border-radius: 3px;
-                padding: 5px;
-            }
-        """)
+        # self.caption_template.setStyleSheet("""
+        #     QTextEdit {
+        #         border: 1px solid #555;
+        #         border-radius: 3px;
+        #         padding: 5px;
+        #     }
+        # """)
         
         caption_template_layout.addWidget(self.caption_template)
         options_layout.addLayout(caption_template_layout)
