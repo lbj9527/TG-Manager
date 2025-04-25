@@ -203,21 +203,22 @@ class UploadView(QWidget):
         
         # 自定义说明文字模板部分已移除，保留布局用于说明信息
         caption_info_layout = QVBoxLayout()
-        caption_info_layout.setContentsMargins(0, 10, 0, 0)  # 增加顶部间距
+        caption_info_layout.setContentsMargins(0, 0, 0, 0)  # 增加顶部间距
         
-        caption_info_label = QLabel("说明:")
-        caption_info_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
-        caption_info_label.setMinimumHeight(25)  # 设置标签高度
-        caption_info_layout.addWidget(caption_info_label)
+        # caption_info_label = QLabel("说明:")
+        # caption_info_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        # caption_info_label.setMinimumHeight(25)  # 设置标签高度
+        # caption_info_layout.addWidget(caption_info_label)
         
         info_text = QLabel(
+            "说明:\n"
             "1. 「使用文件夹名称作为说明文字」将使用文件夹名称作为上传文件的说明文字\n"
             "2. 「读取title.txt文件作为说明文字」将读取文件夹中的title.txt文件内容作为说明文字\n"
             "3. 「上传完成后发送最后一条消息」将在上传所有文件后，发送一条HTML格式的消息\n"
             "    HTML消息支持表情和超链接，可用于发送活动总结或购买链接等信息"
         )
         info_text.setWordWrap(True)
-        info_text.setStyleSheet("font-size: 12px; color: #666;")
+        info_text.setStyleSheet("font-size: 12px;")
         info_text.setMinimumHeight(85)
         info_text.setMaximumHeight(110)
         
