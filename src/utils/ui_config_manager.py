@@ -252,10 +252,27 @@ class UIConfigManager:
                         if not valid_targets:
                             continue
                         
-                        valid_pairs.append({
+                        # 创建有效频道对，并保留原始的start_id和end_id值
+                        valid_pair = {
                             "source_channel": source_channel,
-                            "target_channels": valid_targets
-                        })
+                            "target_channels": valid_targets,
+                            "start_id": pair.get("start_id", 0),  # 保留原始的start_id
+                            "end_id": pair.get("end_id", 0)      # 保留原始的end_id
+                        }
+                        
+                        # 保留媒体类型设置如果存在
+                        if "media_types" in pair:
+                            try:
+                                media_types = []
+                                for mt in pair["media_types"]:
+                                    if mt in [e.value for e in MediaType]:
+                                        media_types.append(MediaType(mt))
+                                if media_types:
+                                    valid_pair["media_types"] = media_types
+                            except Exception as e:
+                                logger.warning(f"处理转发频道对媒体类型时出错: {e}")
+                        
+                        valid_pairs.append(valid_pair)
                     except Exception as e:
                         logger.warning(f"处理转发频道对时出错: {e}")
                 
@@ -263,7 +280,9 @@ class UIConfigManager:
                 if not valid_pairs:
                     valid_pairs = [{
                         "source_channel": "",
-                        "target_channels": [""]
+                        "target_channels": [""],
+                        "start_id": 0,
+                        "end_id": 0
                     }]
                     logger.warning("转发频道对列表为空，已添加默认项")
                 
@@ -346,8 +365,22 @@ class UIConfigManager:
                         valid_pair = {
                             "source_channel": source_channel,
                             "target_channels": valid_targets,
-                            "remove_captions": pair.get("remove_captions", False)
+                            "remove_captions": pair.get("remove_captions", False),
+                            "start_id": pair.get("start_id", 0),  # 保留原始的start_id
+                            "end_id": pair.get("end_id", 0)      # 保留原始的end_id
                         }
+                        
+                        # 保留媒体类型设置如果存在
+                        if "media_types" in pair:
+                            try:
+                                media_types = []
+                                for mt in pair["media_types"]:
+                                    if mt in [e.value for e in MediaType]:
+                                        media_types.append(MediaType(mt))
+                                if media_types:
+                                    valid_pair["media_types"] = media_types
+                            except Exception as e:
+                                logger.warning(f"处理监听频道对媒体类型时出错: {e}")
                         
                         # 处理文本过滤器
                         if "text_filter" in pair:
@@ -389,6 +422,8 @@ class UIConfigManager:
                         "source_channel": "",
                         "target_channels": [""],
                         "remove_captions": False,
+                        "start_id": 0,
+                        "end_id": 0,
                         "text_filter": [
                             {
                                 "original_text": "示例文本",
