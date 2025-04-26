@@ -92,9 +92,6 @@ class Forwarder():
         
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
-        
-        # 任务控制
-        self.task_context = None
     
     async def forward_messages(self):
         """
@@ -114,7 +111,6 @@ class Forwarder():
         channel_pairs = self.forward_config.get('forward_channel_pairs', [])
         info_message = f"配置的频道对数量: {len(channel_pairs)}"
         _logger.info(info_message)
-        self.emit("info", info_message)
         
         # 转发计数
         forward_count = 0
@@ -122,28 +118,16 @@ class Forwarder():
         
         # 处理每个频道对
         for pair in channel_pairs:
-            source_channel = pair.source_channel
-            target_channels = pair.target_channels
-            
-            # 检查是否已取消任务
-            if self.task_context.cancel_token.is_cancelled:
-                status_message = "转发任务已取消"
-                _logger.info(status_message)
-                self.emit("status", status_message)
-                return
-            
-            # 等待任务暂停恢复
-            await self.task_context.wait_if_paused()
+            source_channel = pair["source_channel"]
+            target_channels = pair["target_channels"]
             
             if not target_channels:
                 warning_message = f"源频道 {source_channel} 没有配置目标频道，跳过"
                 _logger.warning(warning_message)
-                self.emit("warning", warning_message)
                 continue
             
             info_message = f"准备从 {source_channel} 转发到 {len(target_channels)} 个目标频道"
             _logger.info(info_message)
-            self.emit("info", info_message)
             
             try:
                 # 解析源频道ID
@@ -151,51 +135,37 @@ class Forwarder():
                 source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(source_id)
                 info_message = f"源频道: {source_info_str}"
                 _logger.info(info_message)
-                self.emit("info", info_message)
                 
                 # 检查源频道转发权限
                 status_message = "检查源频道转发权限..."
                 _logger.info(status_message)
-                self.emit("status", status_message)
                 
                 source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
                 info_message = f"源频道转发权限: {source_can_forward}"
                 _logger.info(info_message)
-                self.emit("info", info_message)
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
-                for target in target_channels:
-                    # 检查是否已取消任务
-                    if self.task_context.cancel_token.is_cancelled:
-                        status_message = "转发任务已取消"
-                        _logger.info(status_message)
-                        self.emit("status", status_message)
-                        return
-                        
+                for target in target_channels:        
                     try:
                         target_id = await self.channel_resolver.get_channel_id(target)
                         target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                         valid_target_channels.append((target, target_id, target_info_str))
                         info_message = f"目标频道: {target_info_str}"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                     except Exception as e:
                         error_message = f"解析目标频道 {target} 失败: {e}"
                         _logger.error(error_message)
-                        self.emit("error", error_message, error_type="CHANNEL_RESOLVE", recoverable=True)
                 
                 if not valid_target_channels:
                     warning_message = f"源频道 {source_channel} 没有有效的目标频道，跳过"
                     _logger.warning(warning_message)
-                    self.emit("warning", warning_message)
                     continue
                 
                 if source_can_forward:
                     # 源频道允许转发，直接使用转发功能
                     status_message = "源频道允许直接转发，获取媒体组和消息..."
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     # 获取媒体组和消息
                     media_groups = await self._get_media_groups(source_id)
@@ -204,27 +174,15 @@ class Forwarder():
                     total_groups = len(media_groups)
                     info_message = f"找到 {total_groups} 个媒体组/消息"
                     _logger.info(info_message)
-                    self.emit("info", info_message)
                     
                     # 添加进度事件
                     group_count = 0
                     
                     # 处理每个媒体组
                     for group_id, messages in media_groups.items():
-                        # 检查是否已取消任务
-                        if self.task_context.cancel_token.is_cancelled:
-                            status_message = "转发任务已取消"
-                            _logger.info(status_message)
-                            self.emit("status", status_message)
-                            return
-                        
-                        # 等待任务暂停恢复
-                        await self.task_context.wait_if_paused()
-                        
                         # 更新进度
                         group_count += 1
                         progress_percentage = (group_count / total_groups) * 100
-                        self.emit("progress", progress_percentage, group_count, total_groups, "direct_forward")
                         
                         # 转发媒体组
                         success = await self._forward_media_group_directly(messages, source_channel, source_id, valid_target_channels)
@@ -233,17 +191,15 @@ class Forwarder():
                             total_forward_count += 1
                         
                         # 检查是否达到转发限制
-                        if self.general_config.limit > 0 and forward_count >= self.general_config.limit:
-                            status_message = f"已达到转发限制 {self.general_config.limit}，暂停 {self.general_config.pause_time} 秒"
+                        if self.general_config.get('limit', 0) > 0 and forward_count >= self.general_config.get('limit', 0):
+                            status_message = f"已达到转发限制 {self.general_config.get('limit', 0)}，暂停 {self.general_config.get('pause_time', 60)} 秒"
                             _logger.info(status_message)
-                            self.emit("status", status_message)
-                            await asyncio.sleep(self.general_config.pause_time)
+                            await asyncio.sleep(self.general_config.get('pause_time', 60))
                             forward_count = 0
                 else:
                     # 源频道不允许转发，需要下载后重新上传
                     status_message = "源频道不允许直接转发，将使用下载后重新上传的方式"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     # 创建针对此频道对的临时目录 - 使用安全的文件名
                     safe_source_channel = self._get_safe_path_name(source_channel)
@@ -253,20 +209,17 @@ class Forwarder():
                     
                     status_message = "获取媒体组信息..."
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     # 获取媒体组信息
                     media_groups_info = await self._get_media_groups_info(source_id)
                     total_groups = len(media_groups_info)
                     info_message = f"找到 {total_groups} 个媒体组/消息"
                     _logger.info(info_message)
-                    self.emit("info", info_message)
                     
                     # 如果没有媒体组，跳过此频道对
                     if not media_groups_info:
                         warning_message = f"源频道 {source_channel} 没有媒体组/消息，跳过"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                         continue
                     
                     # 启动下载和上传任务
@@ -277,7 +230,6 @@ class Forwarder():
                         
                         status_message = "开始并行下载和上传媒体组..."
                         _logger.info(status_message)
-                        self.emit("status", status_message)
                         
                         # 创建生产者和消费者任务
                         producer_task = asyncio.create_task(
@@ -296,7 +248,6 @@ class Forwarder():
                         await producer_task
                         status_message = "下载任务完成，等待所有上传完成..."
                         _logger.info(status_message)
-                        self.emit("status", status_message)
                         
                         # 发送结束信号
                         await self.media_group_queue.put(None)
@@ -310,13 +261,11 @@ class Forwarder():
                         
                         status_message = "媒体组下载和上传任务完成"
                         _logger.info(status_message)
-                        self.emit("status", status_message)
                         
                         # 记录本组转发的消息数
                         total_forward_count += forward_count
                         info_message = f"从 {source_channel} 已转发 {forward_count} 个媒体组/消息"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                         
                     except Exception as e:
                         error_message = f"下载和上传任务失败: {str(e)}"
@@ -324,7 +273,6 @@ class Forwarder():
                         import traceback
                         error_details = traceback.format_exc()
                         _logger.error(error_details)
-                        self.emit("error", error_message, error_type="DOWNLOAD_UPLOAD", recoverable=False, details=error_details)
                         
                         # 取消所有任务
                         if self.producer_task and not self.producer_task.done():
@@ -363,14 +311,11 @@ class Forwarder():
                 import traceback
                 error_details = traceback.format_exc()
                 _logger.error(error_details)
-                self.emit("error", error_message, error_type="CHANNEL_PAIR", recoverable=True, details=error_details)
                 continue
         
         # 转发完成
         status_message = f"所有转发任务完成，共转发 {total_forward_count} 个媒体组/消息"
         _logger.info(status_message)
-        self.emit("status", status_message)
-        self.emit("complete", total_forward_count)
         
         # 清理临时文件
         await self.clean_media_dirs(temp_dir)
@@ -456,8 +401,8 @@ class Forwarder():
         media_groups: Dict[str, List[int]] = {}
         
         # 设置消息范围
-        start_id = self.forward_config.start_id
-        end_id = self.forward_config.end_id
+        start_id = self.forward_config.get('start_id', 0)
+        end_id = self.forward_config.get('end_id', 0)
         
         # 获取消息基本信息
         async for message in self._iter_messages(source_id, start_id, end_id):
@@ -508,25 +453,12 @@ class Forwarder():
             
             status_message = f"开始并行下载 {total_groups} 个媒体组"
             _logger.info(status_message)
-            self.emit("status", status_message)
             
             for group_id, message_ids in media_groups_info:
-                try:
-                    # 检查是否已取消任务
-                    if self.task_context and self.task_context.cancel_token.is_cancelled:
-                        status_message = "媒体组下载任务已取消"
-                        _logger.info(status_message)
-                        self.emit("status", status_message)
-                        return
-                    
-                    # 等待暂停恢复
-                    if self.task_context:
-                        await self.task_context.wait_if_paused()
-                    
+                try:   
                     # 更新进度
                     processed_groups += 1
                     progress_percentage = (processed_groups / total_groups) * 100
-                    self.emit("progress", progress_percentage, processed_groups, total_groups, "download")
                     
                     # 检查是否已全部转发
                     all_forwarded = True
@@ -549,19 +481,16 @@ class Forwarder():
                     if all_forwarded:
                         info_message = f"媒体组 {group_id} (消息IDs: {message_ids}) 已转发到所有目标频道，跳过"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                         continue
                     elif forwarded_targets:
                         info_message = f"媒体组 {group_id} (消息IDs: {message_ids}) 已部分转发: 已转发到 {forwarded_targets}, 未转发到 {not_forwarded_targets}"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                     
                     # 检查是否达到限制
-                    if self.general_config.limit > 0 and forward_count >= self.general_config.limit:
-                        status_message = f"已达到转发限制 {self.general_config.limit}，暂停 {self.general_config.pause_time} 秒"
+                    if self.general_config.get('limit', 0) > 0 and forward_count >= self.general_config.get('limit', 0):
+                        status_message = f"已达到转发限制 {self.general_config.get('limit', 0)}，暂停 {self.general_config.get('pause_time', 60)} 秒"
                         _logger.info(status_message)
-                        self.emit("status", status_message)
-                        await asyncio.sleep(self.general_config.pause_time)
+                        await asyncio.sleep(self.general_config.get('pause_time', 60))
                         forward_count = 0
                     
                     # 为每个媒体组创建安全的目录名
@@ -576,42 +505,30 @@ class Forwarder():
                     messages = []
                     status_message = f"正在获取媒体组 {group_id} 的 {len(message_ids)} 条消息"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     for message_id in message_ids:
-                        try:
-                            # 检查是否已取消任务
-                            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                                status_message = "媒体组下载任务已取消"
-                                _logger.info(status_message)
-                                self.emit("status", status_message)
-                                return
-                            
+                        try:                 
                             message = await self.client.get_messages(source_id, message_id)
                             if message:
                                 messages.append(message)
-                                self.emit("debug", f"获取消息 {message_id} 成功")
+                                _logger.debug(f"获取消息 {message_id} 成功")
                         except Exception as e:
                             error_message = f"获取消息 {message_id} 失败: {e}"
                             _logger.error(error_message)
-                            self.emit("error", error_message, error_type="GET_MESSAGE", recoverable=True)
                     
                     if not messages:
                         warning_message = f"媒体组 {group_id} 没有获取到有效消息，跳过"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                         continue
                     
                     # 下载媒体文件
                     status_message = f"正在下载媒体组 {group_id} 的 {len(messages)} 条媒体消息"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     downloaded_files = await self._download_messages(messages, group_dir, source_id)
                     if not downloaded_files:
                         warning_message = f"媒体组 {group_id} 没有媒体文件可下载，跳过"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                         continue
                     
                     # 获取消息文本
@@ -622,7 +539,7 @@ class Forwarder():
                             break
                     
                     # 移除原始标题
-                    if self.forward_config.remove_captions:
+                    if self.forward_config.get('remove_captions', False):
                         caption = None
                     
                     # 创建媒体组下载结果对象
@@ -638,8 +555,6 @@ class Forwarder():
                     # 将下载完成的媒体组放入队列
                     success_message = f"媒体组 {group_id} 下载完成，放入上传队列: 消息IDs={[m.id for m in messages]}"
                     _logger.info(success_message)
-                    self.emit("info", success_message)
-                    self.emit("media_group_downloaded", group_id, len(messages), len(downloaded_files))
                     
                     await self.media_group_queue.put(media_group_download)
                     
@@ -654,7 +569,6 @@ class Forwarder():
                     import traceback
                     error_details = traceback.format_exc()
                     _logger.error(error_details)
-                    self.emit("error", error_message, error_type="DOWNLOAD_MEDIA_GROUP", recoverable=True, details=error_details)
                     continue
                     
         except Exception as e:
@@ -663,12 +577,10 @@ class Forwarder():
             import traceback
             error_details = traceback.format_exc()
             _logger.error(error_details)
-            self.emit("error", error_message, error_type="PRODUCER_DOWNLOAD", recoverable=False, details=error_details)
         finally:
             self.download_running = False
             status_message = "生产者(下载)任务结束"
             _logger.info(status_message)
-            self.emit("status", status_message)
     
     async def _get_media_groups(self, source_id: int) -> Dict[str, List[Message]]:
         """
@@ -683,8 +595,8 @@ class Forwarder():
         media_groups: Dict[str, List[Message]] = {}
         
         # 设置消息范围
-        start_id = self.forward_config.start_id
-        end_id = self.forward_config.end_id
+        start_id = self.forward_config.get('start_id', 0)
+        end_id = self.forward_config.get('end_id', 0)
         
         # 获取消息
         async for message in self._iter_messages(source_id, start_id, end_id):
@@ -832,7 +744,7 @@ class Forwarder():
         Returns:
             bool: 是否允许
         """
-        media_types = self.forward_config.media_types
+        media_types = self.forward_config.get('media_types', [])
         
         if message.photo and "photo" in media_types:
             return True
@@ -867,7 +779,7 @@ class Forwarder():
         is_single = len(messages) == 1
         
         # 获取是否隐藏作者配置
-        hide_author = self.forward_config.hide_author
+        hide_author = self.forward_config.get('hide_author', False)
         
         # 消息ID列表（用于日志和事件）
         message_ids = [msg.id for msg in messages]
@@ -879,17 +791,6 @@ class Forwarder():
         success_count = 0
         
         for target_channel, target_id, target_info in target_channels:
-            # 检查是否已取消任务
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                status_message = "转发任务已取消"
-                _logger.info(status_message)
-                self.emit("status", status_message)
-                return success_count > 0
-            
-            # 等待暂停恢复
-            if self.task_context:
-                await self.task_context.wait_if_paused()
-                
             # 检查是否已转发到此频道
             all_forwarded = True
             for message in messages:
@@ -900,13 +801,11 @@ class Forwarder():
             if all_forwarded:
                 debug_message = f"消息已转发到频道 {target_info}，跳过"
                 _logger.debug(debug_message)
-                self.emit("info", debug_message)
                 continue
             
             try:
                 info_message = f"转发消息到频道 {target_info}"
                 _logger.info(info_message)
-                self.emit("status", info_message)
                 
                 if is_single:
                     # 单条消息转发
@@ -917,7 +816,6 @@ class Forwarder():
                             # 使用copy_message隐藏作者
                             debug_message = f"使用copy_message方法隐藏作者转发消息 {message.id}"
                             _logger.debug(debug_message)
-                            self.emit("debug", debug_message)
                             
                             forwarded = await self.client.copy_message(
                                 chat_id=target_id,
@@ -928,7 +826,6 @@ class Forwarder():
                             # 使用forward_messages保留作者信息
                             debug_message = f"使用forward_messages方法保留作者转发消息 {message.id}"
                             _logger.debug(debug_message)
-                            self.emit("debug", debug_message)
                             
                             forwarded = await self.client.forward_messages(
                                 chat_id=target_id,
@@ -947,13 +844,10 @@ class Forwarder():
                         
                         success_message = f"消息 {message.id} 转发到 {target_info} 成功"
                         _logger.info(success_message)
-                        self.emit("info", success_message)
-                        self.emit("message_forwarded", message.id, target_info)
                         success_count += 1
                     except Exception as e:
                         error_message = f"转发单条消息 {message.id} 到 {target_info} 失败: {e}，跳过"
                         _logger.error(error_message)
-                        self.emit("error", error_message, error_type="FORWARD_SINGLE", recoverable=True)
                         continue
                 else:
                     # 媒体组转发
@@ -962,7 +856,6 @@ class Forwarder():
                             # 使用copy_media_group方法一次性转发整个媒体组
                             debug_message = f"使用copy_media_group方法隐藏作者转发媒体组消息"
                             _logger.debug(debug_message)
-                            self.emit("debug", debug_message)
                             
                             # 只需要第一条消息的ID，因为copy_media_group会自动获取同一组的所有消息
                             first_message_id = message_ids[0]
@@ -975,7 +868,6 @@ class Forwarder():
                             # 使用forward_messages批量转发
                             debug_message = f"使用forward_messages方法保留作者批量转发媒体组消息"
                             _logger.debug(debug_message)
-                            self.emit("debug", debug_message)
                             
                             forwarded = await self.client.forward_messages(
                                 chat_id=target_id,
@@ -995,13 +887,10 @@ class Forwarder():
                         
                         success_message = f"媒体组 {message_ids} 转发到 {target_info} 成功"
                         _logger.info(success_message)
-                        self.emit("info", success_message)
-                        self.emit("media_group_forwarded", message_ids, target_info, len(messages))
                         success_count += 1
                     except Exception as e:
                         error_message = f"转发媒体组 {message_ids} 到 {target_info} 失败: {e}，跳过"
                         _logger.error(error_message)
-                        self.emit("error", error_message, error_type="FORWARD_MEDIA_GROUP", recoverable=True)
                         continue
                 
                 # 转发延迟
@@ -1010,7 +899,6 @@ class Forwarder():
             except FloodWait as e:
                 warning_message = f"转发消息时遇到限制，等待 {e.x} 秒"
                 _logger.warning(warning_message)
-                self.emit("warning", warning_message)
                 
                 try:
                     await asyncio.sleep(e.x)
@@ -1021,7 +909,6 @@ class Forwarder():
                 except Exception as retry_e:
                     error_message = f"重试转发到频道 {target_info} 失败: {retry_e}"
                     _logger.error(error_message)
-                    self.emit("error", error_message, error_type="FORWARD_RETRY", recoverable=True)
             
             except Exception as e:
                 error_message = f"转发消息到频道 {target_info} 失败: {e}"
@@ -1029,7 +916,6 @@ class Forwarder():
                 import traceback
                 error_details = traceback.format_exc()
                 _logger.error(error_details)
-                self.emit("error", error_message, error_type="FORWARD_GENERAL", recoverable=True, details=error_details)
                 continue
         
         # 返回是否至少有一个频道转发成功
@@ -1049,20 +935,8 @@ class Forwarder():
             
             status_message = "开始上传媒体组到目标频道"
             _logger.info(status_message)
-            self.emit("status", status_message)
             
-            while True:
-                # 检查是否已取消任务
-                if self.task_context and self.task_context.cancel_token.is_cancelled:
-                    status_message = "媒体组上传任务已取消"
-                    _logger.info(status_message)
-                    self.emit("status", status_message)
-                    break
-                
-                # 等待暂停恢复
-                if self.task_context:
-                    await self.task_context.wait_if_paused()
-                
+            while True:         
                 # 从队列获取下一个媒体组
                 try:
                     media_group_download = await asyncio.wait_for(
@@ -1074,7 +948,6 @@ class Forwarder():
                     if not self.download_running and self.media_group_queue.empty():
                         status_message = "下载任务已完成且队列为空，上传任务准备退出"
                         _logger.info(status_message)
-                        self.emit("status", status_message)
                         break
                     continue
                 
@@ -1082,7 +955,6 @@ class Forwarder():
                 if media_group_download is None:
                     status_message = "收到结束信号，消费者准备退出"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     break
                 
                 try:
@@ -1095,7 +967,6 @@ class Forwarder():
                     group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
                     status_message = f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     # 提前检查哪些频道已经转发过
                     forwarded_targets = []
@@ -1116,23 +987,19 @@ class Forwarder():
                     if forwarded_targets:
                         info_message = f"{group_id} {message_ids} 已转发到: {forwarded_targets}"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                     
                     if not not_forwarded_targets:
                         info_message = f"{group_id} {message_ids} 已转发到所有目标频道，跳过上传"
                         _logger.info(info_message)
-                        self.emit("info", info_message)
                         # 清理已全部转发的媒体组目录
                         if media_group_dir.exists():
                             try:
                                 shutil.rmtree(media_group_dir)
                                 debug_message = f"删除已全部转发的媒体组目录: {media_group_dir}"
                                 _logger.debug(debug_message)
-                                self.emit("debug", debug_message)
                             except Exception as e:
                                 error_message = f"删除媒体组目录失败: {str(e)}"
                                 _logger.error(error_message)
-                                self.emit("error", error_message, error_type="DELETE_DIR", recoverable=True)
                         self.media_group_queue.task_done()
                         continue
                     
@@ -1140,7 +1007,6 @@ class Forwarder():
                     thumbnails = {}
                     status_message = f"为媒体组 {group_id} 生成缩略图"
                     _logger.info(status_message)
-                    self.emit("status", status_message)
                     
                     for file_path, media_type in media_group_download.downloaded_files:
                         if media_type == "video":
@@ -1150,11 +1016,9 @@ class Forwarder():
                                     thumbnails[str(file_path)] = thumbnail_path
                                     debug_message = f"为视频 {file_path.name} 生成缩略图成功"
                                     _logger.debug(debug_message)
-                                    self.emit("debug", debug_message)
                             except Exception as e:
                                 warning_message = f"为视频 {file_path.name} 生成缩略图失败: {e}"
                                 _logger.warning(warning_message)
-                                self.emit("warning", warning_message)
                     
                     # 准备媒体组上传
                     media_group = []
@@ -1189,18 +1053,15 @@ class Forwarder():
                     if not media_group:
                         warning_message = "没有有效的媒体文件可上传，跳过这个媒体组"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                         # 清理空目录
                         if media_group_dir.exists():
                             try:
                                 shutil.rmtree(media_group_dir)
                                 debug_message = f"删除空媒体组目录: {media_group_dir}"
                                 _logger.debug(debug_message)
-                                self.emit("debug", debug_message)
                             except Exception as e:
                                 error_message = f"删除空媒体组目录失败: {str(e)}"
                                 _logger.error(error_message)
-                                self.emit("error", error_message, error_type="DELETE_EMPTY_DIR", recoverable=True)
                         self.media_group_queue.task_done()
                         continue
                     
@@ -1216,18 +1077,7 @@ class Forwarder():
                     total_targets = len(not_forwarded_targets)
                     current_target = 0
                     
-                    for target_channel, target_id, target_info in target_channels:
-                        # 检查是否已取消任务
-                        if self.task_context and self.task_context.cancel_token.is_cancelled:
-                            status_message = "媒体组上传任务已取消"
-                            _logger.info(status_message)
-                            self.emit("status", status_message)
-                            break
-                        
-                        # 等待暂停恢复
-                        if self.task_context:
-                            await self.task_context.wait_if_paused()
-                        
+                    for target_channel, target_id, target_info in target_channels:    
                         # 检查是否已转发到此频道
                         all_forwarded = True
                         for message in media_group_download.messages:
@@ -1238,25 +1088,22 @@ class Forwarder():
                         if all_forwarded:
                             debug_message = f"{group_id} {message_ids} 已转发到频道 {target_info}，跳过"
                             _logger.debug(debug_message)
-                            self.emit("debug", debug_message)
                             continue
                         
                         # 更新当前目标进度
                         current_target += 1
                         progress_percentage = (current_target / total_targets) * 100
-                        self.emit("progress", progress_percentage, current_target, total_targets, "upload")
                         
                         try:
                             status_message = f"上传{group_id} {message_ids} 到频道 {target_info}"
                             _logger.info(status_message)
-                            self.emit("status", status_message)
                             
                             if len(media_group) == 1:
                                 # 单个媒体
                                 try:
                                     media_item = media_group[0]
                                     if isinstance(media_item, InputMediaPhoto):
-                                        self.emit("debug", f"发送图片到 {target_info}")
+                                        _logger.debug(f"发送图片到 {target_info}")
                                         sent_message = await self.client.send_photo(
                                             chat_id=target_id,
                                             photo=media_item.media,
@@ -1267,7 +1114,7 @@ class Forwarder():
                                         thumb = None
                                         if thumbnails:
                                             thumb = thumbnails.get(media_item.media)
-                                        self.emit("debug", f"发送视频到 {target_info}")
+                                        _logger.debug(f"发送视频到 {target_info}")
                                         sent_message = await self.client.send_video(
                                             chat_id=target_id,
                                             video=media_item.media,
@@ -1276,14 +1123,14 @@ class Forwarder():
                                             thumb=thumb
                                         )
                                     elif isinstance(media_item, InputMediaDocument):
-                                        self.emit("debug", f"发送文档到 {target_info}")
+                                        _logger.debug(f"发送文档到 {target_info}")
                                         sent_message = await self.client.send_document(
                                             chat_id=target_id,
                                             document=media_item.media,
                                             caption=media_item.caption
                                         )
                                     elif isinstance(media_item, InputMediaAudio):
-                                        self.emit("debug", f"发送音频到 {target_info}")
+                                        _logger.debug(f"发送音频到 {target_info}")
                                         sent_message = await self.client.send_audio(
                                             chat_id=target_id,
                                             audio=media_item.media,
@@ -1292,7 +1139,6 @@ class Forwarder():
                                     else:
                                         warning_message = f"未知媒体类型: {type(media_item)}"
                                         _logger.warning(warning_message)
-                                        self.emit("warning", warning_message)
                                         continue
                                     
                                     # 保存第一次成功的消息，用于后续复制
@@ -1301,7 +1147,6 @@ class Forwarder():
                                 except Exception as e:
                                     error_message = f"发送单个媒体失败: {str(e)}"
                                     _logger.error(error_message)
-                                    self.emit("error", error_message, error_type="SEND_SINGLE_MEDIA", recoverable=True)
                                     all_targets_uploaded = False
                                     continue
                             else:
@@ -1309,7 +1154,7 @@ class Forwarder():
                                 try:
                                     if first_success_message is not None:
                                         # 如果已有成功消息，使用复制转发
-                                        self.emit("debug", f"使用复制方式发送媒体组到 {target_info}")
+                                        _logger.debug(f"使用复制方式发送媒体组到 {target_info}")
                                         sent_messages = await self.client.copy_media_group(
                                             chat_id=target_id,
                                             from_chat_id=first_success_message.chat.id,
@@ -1317,7 +1162,7 @@ class Forwarder():
                                         )
                                     else:
                                         # 首次发送媒体组
-                                        self.emit("debug", f"首次发送媒体组到 {target_info}")
+                                        _logger.debug(f"首次发送媒体组到 {target_info}")
                                         sent_messages = await self.client.send_media_group(
                                             chat_id=target_id,
                                             media=media_group
@@ -1329,7 +1174,6 @@ class Forwarder():
                                 except Exception as e:
                                     error_message = f"发送媒体组失败: {str(e)}"
                                     _logger.error(error_message)
-                                    self.emit("error", error_message, error_type="SEND_MEDIA_GROUP", recoverable=True)
                                     all_targets_uploaded = False
                                     continue
                             
@@ -1344,7 +1188,6 @@ class Forwarder():
                             
                             success_message = f"{group_id} {message_ids} 上传到 {target_info} 成功"
                             _logger.info(success_message)
-                            self.emit("info", success_message)
                             
                             if target_info in remaining_targets:
                                 remaining_targets.remove(target_info)
@@ -1359,14 +1202,12 @@ class Forwarder():
                         except FloodWait as e:
                             warning_message = f"上传媒体时遇到限制，等待 {e.x} 秒"
                             _logger.warning(warning_message)
-                            self.emit("warning", warning_message)
                             
                             try:
                                 await asyncio.sleep(e.x)
                                 # 继续尝试上传
                                 status_message = f"重试上传{group_id}到 {target_info}"
                                 _logger.info(status_message)
-                                self.emit("status", status_message)
                                 
                                 success = await self._upload_media_group_to_channel(
                                     media_group, 
@@ -1387,7 +1228,6 @@ class Forwarder():
                             except Exception as retry_e:
                                 error_message = f"重试上传到 {target_info} 失败: {retry_e}"
                                 _logger.error(error_message)
-                                self.emit("error", error_message, error_type="RETRY_UPLOAD", recoverable=True)
                                 all_targets_uploaded = False
                                 failed_count += 1
                         
@@ -1397,7 +1237,6 @@ class Forwarder():
                             import traceback
                             error_details = traceback.format_exc()
                             _logger.error(error_details)
-                            self.emit("error", error_message, error_type="UPLOAD_MEDIA", recoverable=True, details=error_details)
                             all_targets_uploaded = False
                             failed_count += 1
                             continue
@@ -1405,7 +1244,6 @@ class Forwarder():
                     # 媒体组上传完成后（无论成功失败），都清理缩略图
                     debug_message = f"{group_id} {message_ids} 已处理完所有目标频道，清理缩略图"
                     _logger.debug(debug_message)
-                    self.emit("debug", debug_message)
                     
                     for thumbnail_path in thumbnails.values():
                         self.video_processor.delete_thumbnail(thumbnail_path)
@@ -1414,7 +1252,6 @@ class Forwarder():
                     if all_targets_uploaded:
                         success_message = f"{group_id} {message_ids} 已成功上传到所有目标频道，清理本地文件: {media_group_dir}"
                         _logger.info(success_message)
-                        self.emit("info", success_message)
                         
                         try:
                             # 删除媒体组目录及其所有文件
@@ -1422,18 +1259,15 @@ class Forwarder():
                                 shutil.rmtree(media_group_dir)
                                 debug_message = f"已删除媒体组目录: {media_group_dir}"
                                 _logger.debug(debug_message)
-                                self.emit("debug", debug_message)
                         except Exception as e:
                             error_message = f"删除媒体组目录失败: {str(e)}"
                             _logger.error(error_message)
-                            self.emit("error", error_message, error_type="DELETE_DIR", recoverable=True)
                     else:
                         warning_message = f"{group_id} {message_ids} 未能成功上传到所有目标频道，仍有 {remaining_targets} 未转发完成，保留本地文件: {media_group_dir}"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                     
                     # 发送上传完成事件
-                    self.emit("media_group_uploaded", group_id, message_ids, uploaded_targets, remaining_targets)
+                    # self.emit("media_group_uploaded", group_id, message_ids, uploaded_targets, remaining_targets)
                 
                 except Exception as e:
                     error_message = f"处理媒体组上传失败: {str(e)}"
@@ -1441,7 +1275,6 @@ class Forwarder():
                     import traceback
                     error_details = traceback.format_exc()
                     _logger.error(error_details)
-                    self.emit("error", error_message, error_type="PROCESS_UPLOAD", recoverable=False, details=error_details)
                 finally:
                     # 标记此项为处理完成
                     self.media_group_queue.task_done()
@@ -1449,19 +1282,16 @@ class Forwarder():
         except asyncio.CancelledError:
             warning_message = "消费者任务被取消"
             _logger.warning(warning_message)
-            self.emit("warning", warning_message)
         except Exception as e:
             error_message = f"消费者任务异常: {str(e)}"
             _logger.error(error_message)
             import traceback
             error_details = traceback.format_exc()
             _logger.error(error_details)
-            self.emit("error", error_message, error_type="CONSUMER_UPLOAD", recoverable=False, details=error_details)
         finally:
             self.upload_running = False
             status_message = f"消费者(上传)任务结束，共上传 {uploaded_count} 个媒体组，失败 {failed_count} 个"
             _logger.info(status_message)
-            self.emit("status", status_message)
     
     async def _upload_media_group_to_channel(self, media_group, media_group_download, target_channel, target_id, target_info, thumbnails=None):
         """
@@ -1479,23 +1309,12 @@ class Forwarder():
             bool: 上传是否成功
         """
         retry_count = 0
-        max_retries = self.general_config.max_retries
+        max_retries = self.general_config.get('max_retries', 3)
         
         message_ids = [m.id for m in media_group_download.messages]
         group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
         
-        while retry_count < max_retries:
-            # 检查是否已取消任务
-            if self.task_context and self.task_context.cancel_token.is_cancelled:
-                status_message = "上传任务已取消"
-                _logger.info(status_message)
-                self.emit("status", status_message)
-                return False
-            
-            # 等待暂停恢复
-            if self.task_context:
-                await self.task_context.wait_if_paused()
-                
+        while retry_count < max_retries:          
             try:
                 if len(media_group) == 1:
                     # 单个媒体
@@ -1503,7 +1322,6 @@ class Forwarder():
                     if isinstance(media_item, InputMediaPhoto):
                         debug_message = f"尝试发送照片到 {target_info}"
                         _logger.debug(debug_message)
-                        self.emit("debug", debug_message)
                         
                         sent_message = await self.client.send_photo(
                             chat_id=target_id,
@@ -1518,7 +1336,6 @@ class Forwarder():
                         
                         debug_message = f"尝试发送视频到 {target_info}"
                         _logger.debug(debug_message)
-                        self.emit("debug", debug_message)
                         
                         sent_message = await self.client.send_video(
                             chat_id=target_id,
@@ -1530,7 +1347,6 @@ class Forwarder():
                     elif isinstance(media_item, InputMediaDocument):
                         debug_message = f"尝试发送文档到 {target_info}"
                         _logger.debug(debug_message)
-                        self.emit("debug", debug_message)
                         
                         sent_message = await self.client.send_document(
                             chat_id=target_id,
@@ -1540,7 +1356,6 @@ class Forwarder():
                     elif isinstance(media_item, InputMediaAudio):
                         debug_message = f"尝试发送音频到 {target_info}"
                         _logger.debug(debug_message)
-                        self.emit("debug", debug_message)
                         
                         sent_message = await self.client.send_audio(
                             chat_id=target_id,
@@ -1550,13 +1365,11 @@ class Forwarder():
                     else:
                         warning_message = f"未知媒体类型: {type(media_item)}"
                         _logger.warning(warning_message)
-                        self.emit("warning", warning_message)
                         return False
                 else:
                     # 媒体组
                     debug_message = f"尝试发送媒体组到 {target_info}"
                     _logger.debug(debug_message)
-                    self.emit("debug", debug_message)
                     
                     sent_messages = await self.client.send_media_group(
                         chat_id=target_id,
@@ -1574,34 +1387,29 @@ class Forwarder():
                 
                 success_message = f"媒体上传到 {target_info} 成功"
                 _logger.info(success_message)
-                self.emit("info", success_message)
                 return True
             
             except FloodWait as e:
                 warning_message = f"上传媒体时遇到限制，等待 {e.x} 秒"
                 _logger.warning(warning_message)
-                self.emit("warning", warning_message)
                 
                 try:
                     await asyncio.sleep(e.x)
                 except asyncio.CancelledError:
                     warning_message = "上传任务已取消(FloodWait等待期间)"
                     _logger.warning(warning_message)
-                    self.emit("warning", warning_message)
                     return False
             
             except Exception as e:
                 retry_count += 1
                 error_message = f"上传媒体到频道 {target_info} 失败 (尝试 {retry_count}/{max_retries}): {str(e)}"
                 _logger.error(error_message)
-                self.emit("error", error_message, error_type="UPLOAD_RETRY", recoverable=(retry_count < max_retries))
                 
                 if retry_count >= max_retries:
                     break
                 
                 status_message = f"将在 {2 * retry_count} 秒后重试上传 {group_id}"
                 _logger.info(status_message)
-                self.emit("status", status_message)
                 
                 # 指数退避
                 try:
@@ -1609,12 +1417,10 @@ class Forwarder():
                 except asyncio.CancelledError:
                     warning_message = "上传任务已取消(重试等待期间)"
                     _logger.warning(warning_message)
-                    self.emit("warning", warning_message)
                     return False
         
         error_message = f"上传媒体到 {target_info} 失败，已达到最大重试次数 {max_retries}"
         _logger.error(error_message)
-        self.emit("error", error_message, error_type="MAX_RETRIES_REACHED", recoverable=False)
         return False
 
     async def _download_messages(self, messages: List[Message], download_dir: Path, chat_id: int) -> List[Tuple[Path, str]]:
@@ -1704,7 +1510,7 @@ class Forwarder():
             Optional[Tuple[Path, str]]: 下载成功返回(文件路径, 媒体类型)，失败返回None
         """
         retry_count = 0
-        max_retries = self.general_config.max_retries
+        max_retries = self.general_config.get('max_retries', 3)
         
         while retry_count < max_retries:
             try:
@@ -1770,7 +1576,6 @@ class Forwarder():
         
         debug_message = f"创建转发会话临时目录: {session_dir}"
         _logger.debug(debug_message)
-        self.emit("debug", debug_message)
         
         return session_dir
     
@@ -1792,26 +1597,21 @@ class Forwarder():
                                 shutil.rmtree(sub_dir)
                                 debug_message = f"已清理临时目录: {sub_dir}"
                                 _logger.debug(debug_message)
-                                self.emit("debug", debug_message)
                             except Exception as e:
                                 error_message = f"清理临时目录 {sub_dir} 失败: {e}"
                                 _logger.error(error_message)
-                                self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True)
             elif dir_path.exists():
                 # 清理指定目录
                 try:
                     shutil.rmtree(dir_path)
                     debug_message = f"已清理指定目录: {dir_path}"
                     _logger.debug(debug_message)
-                    self.emit("debug", debug_message)
                 except Exception as e:
                     error_message = f"清理指定目录 {dir_path} 失败: {e}"
                     _logger.error(error_message)
-                    self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True)
         except Exception as e:
             error_message = f"清理媒体目录失败: {e}"
             _logger.error(error_message)
-            self.emit("error", error_message, error_type="CLEAN_DIR", recoverable=True) 
     
     def _estimate_media_size(self, message: Message) -> int:
         """
