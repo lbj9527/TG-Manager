@@ -168,7 +168,7 @@ class Forwarder():
                     _logger.info(status_message)
                     
                     # 获取媒体组和消息
-                    media_groups = await self._get_media_groups(source_id)
+                    media_groups = await self._get_media_groups(source_id, source_channel)
                     
                     # 发送总媒体组数量
                     total_groups = len(media_groups)
@@ -582,12 +582,13 @@ class Forwarder():
             status_message = "生产者(下载)任务结束"
             _logger.info(status_message)
     
-    async def _get_media_groups(self, source_id: int) -> Dict[str, List[Message]]:
+    async def _get_media_groups(self, source_id: int, source_channel: str) -> Dict[str, List[Message]]:
         """
         获取源频道的媒体组消息
         
         Args:
             source_id: 源频道ID
+            source_channel: 源频道
             
         Returns:
             Dict[str, List[Message]]: 媒体组ID与消息列表的映射
@@ -601,7 +602,7 @@ class Forwarder():
         # 获取消息
         async for message in self._iter_messages(source_id, start_id, end_id):
             # 筛选媒体类型
-            if not self._is_media_allowed(message):
+            if not self._is_media_allowed(message, source_channel):
                 continue
             
             # 获取媒体组ID
@@ -734,29 +735,51 @@ class Forwarder():
             _logger.error(f"获取消息失败: {e}")
             _logger.exception("详细错误信息：")
     
-    def _is_media_allowed(self, message: Message) -> bool:
+    def _is_media_allowed(self, message: Message, source_channel: str = None) -> bool:
         """
         检查消息媒体类型是否在允许列表中
         
         Args:
             message: 消息对象
+            source_channel: 源频道
             
         Returns:
             bool: 是否允许
         """
-        media_types = self.forward_config.get('media_types', [])
+        # 如果没有指定源频道，使用公共设置
+        if not source_channel:
+            media_types = self.forward_config.get('media_types', [])
+        else:
+            # 查找对应的频道对配置
+            channel_pairs = self.forward_config.get('forward_channel_pairs', [])
+            media_types = []
+            
+            # 查找匹配的频道对
+            for pair in channel_pairs:
+                if pair.get('source_channel') == source_channel and 'media_types' in pair:
+                    media_types = pair['media_types']
+                    break
+            
+            # 如果找不到对应的配置，使用默认值
+            if not media_types:
+                # 使用所有支持的媒体类型作为默认值
+                media_types = ["photo", "video", "document", "audio", "animation"]
+                _logger.warning(f"找不到源频道 {source_channel} 的媒体类型配置，使用默认值")
         
-        if message.photo and "photo" in media_types:
+        # 确保媒体类型是字符串列表
+        media_types_str = [str(t) for t in media_types]
+        
+        if message.photo and "photo" in media_types_str:
             return True
-        elif message.video and "video" in media_types:
+        elif message.video and "video" in media_types_str:
             return True
-        elif message.document and "document" in media_types:
+        elif message.document and "document" in media_types_str:
             return True
-        elif message.audio and "audio" in media_types:
+        elif message.audio and "audio" in media_types_str:
             return True
-        elif message.animation and "animation" in media_types:
+        elif message.animation and "animation" in media_types_str:
             return True
-        elif (message.text or message.caption) and "text" in media_types:
+        elif (message.text or message.caption) and "text" in media_types_str:
             return True
         
         return False

@@ -87,6 +87,10 @@ class UIChannelPair(BaseModel):
     """频道对配置模型"""
     source_channel: str = Field(..., description="源频道")
     target_channels: List[str] = Field(..., description="目标频道列表")
+    media_types: List[MediaType] = Field(
+        default_factory=lambda: [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
+        description="要转发的媒体类型"
+    )
 
     @validator('source_channel')
     def validate_source_channel(cls, v):
@@ -321,10 +325,6 @@ class UIForwardConfig(BaseModel):
     forward_channel_pairs: List[UIChannelPair] = Field(..., description="转发频道对列表")
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
     hide_author: bool = Field(False, description="是否隐藏原作者")
-    media_types: List[MediaType] = Field(
-        default_factory=lambda: [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
-        description="要转发的媒体类型"
-    )
     forward_delay: float = Field(0.1, description="转发间隔时间(秒)", ge=0)
     start_id: int = Field(0, description="起始消息ID (0表示从最新消息开始)")
     end_id: int = Field(0, description="结束消息ID (0表示转发到最早消息)")
@@ -494,12 +494,12 @@ def create_default_config() -> UIConfig:
             forward_channel_pairs=[
                 UIChannelPair(
                     source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
-                    target_channels=["@username"]  # 占位符频道名，用户需要替换为实际频道
+                    target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
+                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION]
                 )
             ],
             remove_captions=False,
             hide_author=False,
-            media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
             forward_delay=0.1,
             start_id=0,
             end_id=0,
@@ -516,7 +516,8 @@ def create_default_config() -> UIConfig:
                             original_text="示例文本",
                             target_text="替换后的文本"
                         )
-                    ]
+                    ],
+                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION]
                 )
             ],
             media_types=[

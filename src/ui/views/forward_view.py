@@ -371,17 +371,40 @@ class ForwardView(QWidget):
             QMessageBox.warning(self, "警告", "无效的目标频道")
             return
         
+        # 获取选中的媒体类型
+        media_types = self._get_media_types()
+        if not media_types:
+            QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
+            return
+        
         try:
             # 使用UIChannelPair进行验证
             channel_pair = {
                 'source_channel': UIChannelPair.validate_channel_id(source, "源频道"),
                 'target_channels': [UIChannelPair.validate_channel_id(t, f"目标频道 {i+1}") 
-                                   for i, t in enumerate(target_channels)]
+                                   for i, t in enumerate(target_channels)],
+                'media_types': media_types
             }
             
             # 添加到列表中
             item = QListWidgetItem()
-            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])}"
+            
+            # 创建媒体类型显示文本
+            media_types_str = []
+            if MediaType.PHOTO in media_types:
+                media_types_str.append("照片")
+            if MediaType.VIDEO in media_types:
+                media_types_str.append("视频")
+            if MediaType.DOCUMENT in media_types:
+                media_types_str.append("文档")
+            if MediaType.AUDIO in media_types:
+                media_types_str.append("音频")
+            if MediaType.ANIMATION in media_types:
+                media_types_str.append("动画")
+            
+            # 构建显示文本
+            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)})"
+            
             item.setText(display_text)
             item.setData(Qt.UserRole, channel_pair)
             self.pairs_list.addItem(item)
@@ -407,9 +430,18 @@ class ForwardView(QWidget):
             QMessageBox.information(self, "提示", "请先选择要删除的频道对")
             return
         
-        # 删除选中的频道对
-        for item in reversed(selected_items):
+        # 获取所有选中项的数据和索引
+        items_to_remove = []
+        for item in selected_items:
             row = self.pairs_list.row(item)
+            items_to_remove.append((row, item))
+        
+        # 按行号倒序排序，确保从后向前删除，避免索引变化导致错误
+        items_to_remove.sort(reverse=True, key=lambda x: x[0])
+        
+        # 删除选中的频道对
+        for row, item in items_to_remove:
+            # 同时从channel_pairs和list widget中删除
             if 0 <= row < len(self.channel_pairs):
                 self.channel_pairs.pop(row)
             self.pairs_list.takeItem(row)
@@ -456,18 +488,16 @@ class ForwardView(QWidget):
             QMessageBox.warning(self, "警告", "请先添加至少一个频道对")
             return
         
-        # 检查媒体类型
-        media_types = self._get_media_types()
-        if not media_types:
-            QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
-            return
+        # 确保每个频道对都有媒体类型
+        for pair in self.channel_pairs:
+            if not pair.get('media_types'):
+                pair['media_types'] = self._get_media_types()
         
         # 收集配置
         forward_config = {
             'forward_channel_pairs': self.channel_pairs,
             'remove_captions': self.remove_captions_check.isChecked(),
             'hide_author': self.hide_author_check.isChecked(),
-            'media_types': media_types,
             'forward_delay': self.forward_delay.value(),
             'start_id': self.start_id.value(),
             'end_id': self.end_id.value(),
@@ -524,7 +554,8 @@ class ForwardView(QWidget):
             for pair in self.channel_pairs:
                 ui_channel_pairs.append(UIChannelPair(
                     source_channel=pair['source_channel'],
-                    target_channels=pair['target_channels']
+                    target_channels=pair['target_channels'],
+                    media_types=pair.get('media_types', self._get_media_types())
                 ))
             
             # 创建UIForwardConfig对象
@@ -532,7 +563,6 @@ class ForwardView(QWidget):
                 forward_channel_pairs=ui_channel_pairs,
                 remove_captions=self.remove_captions_check.isChecked(),
                 hide_author=self.hide_author_check.isChecked(),
-                media_types=self._get_media_types(),
                 forward_delay=round(float(self.forward_delay.value()), 1),  # 四舍五入到一位小数，解决精度问题
                 start_id=self.start_id.value(),
                 end_id=self.end_id.value(),
@@ -618,24 +648,46 @@ class ForwardView(QWidget):
         forward_config = config.get('FORWARD', {})
         channel_pairs = forward_config.get('forward_channel_pairs', [])
         
+        # 记录第一个频道对的媒体类型，用于设置复选框状态
+        first_pair_media_types = []
+        
         # 添加频道对到列表
         for pair in channel_pairs:
             source_channel = pair.get('source_channel')
             target_channels = pair.get('target_channels', [])
+            media_types = pair.get('media_types', [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION])
             
             if source_channel and target_channels:
+                # 保存第一个频道对的媒体类型
+                if not first_pair_media_types and media_types:
+                    first_pair_media_types = media_types
+                
                 # 创建频道对数据
                 channel_pair = {
                     'source_channel': source_channel,
-                    'target_channels': target_channels
+                    'target_channels': target_channels,
+                    'media_types': media_types
                 }
                 
                 # 添加到列表
                 self.channel_pairs.append(channel_pair)
                 
+                # 创建媒体类型显示文本
+                media_types_str = []
+                if MediaType.PHOTO in media_types:
+                    media_types_str.append("照片")
+                if MediaType.VIDEO in media_types:
+                    media_types_str.append("视频")
+                if MediaType.DOCUMENT in media_types:
+                    media_types_str.append("文档")
+                if MediaType.AUDIO in media_types:
+                    media_types_str.append("音频")
+                if MediaType.ANIMATION in media_types:
+                    media_types_str.append("动画")
+                
                 # 创建列表项
                 item = QListWidgetItem()
-                display_text = f"{source_channel} → {', '.join(target_channels)}"
+                display_text = f"{source_channel} → {', '.join(target_channels)} (媒体类型：{', '.join(media_types_str)})"
                 item.setText(display_text)
                 item.setData(Qt.UserRole, channel_pair)
                 self.pairs_list.addItem(item)
@@ -647,8 +699,8 @@ class ForwardView(QWidget):
         self.remove_captions_check.setChecked(forward_config.get('remove_captions', False))
         self.hide_author_check.setChecked(forward_config.get('hide_author', False))
         
-        # 加载媒体类型
-        media_types = forward_config.get('media_types', [])
+        # 加载媒体类型复选框（使用第一个频道对的媒体类型，如果没有频道对则使用公共媒体类型）
+        media_types = first_pair_media_types or forward_config.get('media_types', [])
         media_types_str = [str(t) for t in media_types]  # 确保类型为字符串
         
         self.photo_check.setChecked(MediaType.PHOTO in media_types_str)
