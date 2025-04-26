@@ -442,7 +442,7 @@ class UIConfigManager:
                 logger.warning("UI配置为空，使用默认值")
 
             # 确保theme是有效值
-            valid_themes = ["深色主题", "浅色主题", "蓝色主题", "红色主题", "绿色主题", "青色主题", "紫色主题", "橙色主题"]
+            valid_themes = ["浅色主题", "深色主题", "蓝色主题", "紫色主题", "红色主题", "绿色主题", "琥珀色主题", "粉色主题", "黄色主题", "青色主题"]
             if "theme" not in ui_config or ui_config["theme"] not in valid_themes:
                 ui_config["theme"] = "深色主题"
                 logger.warning(f"UI主题无效，重置为深色主题")

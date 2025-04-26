@@ -166,7 +166,7 @@ class ForwardView(QWidget):
         # 创建频道列表部分
         # 频道列表标题
         self.pairs_list_label = QLabel("已配置频道对:  0对")
-        # self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
+        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
         channel_layout.addWidget(self.pairs_list_label)
         
         # 创建滚动区域
@@ -185,7 +185,6 @@ class ForwardView(QWidget):
         # 频道对列表
         self.pairs_list = QListWidget()
         self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.pairs_list.setAlternatingRowColors(True)
         scroll_layout.addWidget(self.pairs_list)
         
         # 设置滚动区域的内容
