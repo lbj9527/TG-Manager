@@ -91,6 +91,8 @@ class UIChannelPair(BaseModel):
         default_factory=lambda: [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
         description="要转发的媒体类型"
     )
+    start_id: int = Field(0, description="起始消息ID (0表示从最早消息开始)")
+    end_id: int = Field(0, description="结束消息ID (0表示转发到最新消息)")
 
     @validator('source_channel')
     def validate_source_channel(cls, v):
@@ -102,6 +104,20 @@ class UIChannelPair(BaseModel):
             raise ValueError("目标频道列表不能为空")
         for i, channel in enumerate(v):
             v[i] = cls.validate_channel_id(channel, f"目标频道[{i}]")
+        return v
+
+    @validator('start_id')
+    def validate_start_id(cls, v):
+        if v < 0:
+            raise ValueError("起始消息ID不能小于0")
+        return v
+
+    @validator('end_id')
+    def validate_end_id(cls, v, values):
+        if v < 0:
+            raise ValueError("结束消息ID不能小于0")
+        if v > 0 and values.get('start_id', 0) > 0 and v < values['start_id']:
+            raise ValueError("结束消息ID必须大于起始消息ID (当两者都不为0时)")
         return v
 
     @classmethod
@@ -326,8 +342,6 @@ class UIForwardConfig(BaseModel):
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
     hide_author: bool = Field(False, description="是否隐藏原作者")
     forward_delay: float = Field(0.1, description="转发间隔时间(秒)", ge=0)
-    start_id: int = Field(0, description="起始消息ID (0表示从最新消息开始)")
-    end_id: int = Field(0, description="结束消息ID (0表示转发到最早消息)")
     tmp_path: str = Field("tmp", description="临时文件路径")
 
     @validator('forward_channel_pairs')
@@ -341,20 +355,6 @@ class UIForwardConfig(BaseModel):
         """将转发延迟四舍五入到一位小数，避免浮点数精度问题"""
         if v is not None:
             return round(v, 1)
-        return v
-
-    @validator('start_id')
-    def validate_start_id(cls, v):
-        if v < 0:
-            raise ValueError("起始消息ID不能小于0")
-        return v
-
-    @validator('end_id')
-    def validate_end_id(cls, v, values):
-        if v < 0:
-            raise ValueError("结束消息ID不能小于0")
-        if v > 0 and values.get('start_id', 0) > 0 and v < values['start_id']:
-            raise ValueError("结束消息ID必须大于起始消息ID (当两者都不为0时)")
         return v
 
     @validator('tmp_path')
@@ -495,14 +495,14 @@ def create_default_config() -> UIConfig:
                 UIChannelPair(
                     source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
                     target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
-                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION]
+                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
+                    start_id=0,
+                    end_id=0
                 )
             ],
             remove_captions=False,
             hide_author=False,
             forward_delay=0.1,
-            start_id=0,
-            end_id=0,
             tmp_path="tmp"
         ),
         MONITOR=UIMonitorConfig(

@@ -123,14 +123,33 @@ class ForwardView(QWidget):
         
         channel_layout.addLayout(form_layout)
         
-        # 添加频道对按钮
+        # 添加频道对按钮和消息ID范围放在同一行
         button_layout = QHBoxLayout()
+        
         self.add_pair_button = QPushButton("添加频道对")
         self.remove_pair_button = QPushButton("删除所选")
         
         button_layout.addWidget(self.add_pair_button)
         button_layout.addWidget(self.remove_pair_button)
-        button_layout.addStretch(1)
+        
+        # 消息ID范围添加到添加频道对按钮同一行
+        button_layout.addStretch(1)  # 添加弹性空间使后面控件靠右
+        
+        button_layout.addWidget(QLabel("起始ID:"))
+        self.start_id = QSpinBox()
+        self.start_id.setRange(0, 999999999)
+        self.start_id.setValue(0)
+        self.start_id.setSpecialValueText("最早消息")  # 当值为0时显示为"最早消息"
+        self.start_id.setFixedWidth(100)
+        button_layout.addWidget(self.start_id)
+        
+        button_layout.addWidget(QLabel("结束ID:"))
+        self.end_id = QSpinBox()
+        self.end_id.setRange(0, 999999999)
+        self.end_id.setValue(0)
+        self.end_id.setSpecialValueText("最新消息")  # 当值为0时显示为"最新消息"
+        self.end_id.setFixedWidth(100)
+        button_layout.addWidget(self.end_id)
         
         channel_layout.addLayout(button_layout)
         
@@ -218,27 +237,6 @@ class ForwardView(QWidget):
         delay_layout.addStretch(1)
         
         options_layout.addLayout(delay_layout)
-        
-        # 消息ID范围
-        range_layout = QHBoxLayout()
-        
-        range_layout.addWidget(QLabel("起始ID:"))
-        self.start_id = QSpinBox()
-        self.start_id.setRange(1, 999999999)
-        self.start_id.setValue(1)
-        self.start_id.setFixedWidth(100)
-        range_layout.addWidget(self.start_id)
-        
-        range_layout.addWidget(QLabel("结束ID:"))
-        self.end_id = QSpinBox()
-        self.end_id.setRange(0, 999999999)
-        self.end_id.setValue(0)
-        self.end_id.setSpecialValueText("最新消息")  # 当值为0时显示为"最新消息"
-        self.end_id.setFixedWidth(100)
-        range_layout.addWidget(self.end_id)
-        
-        range_layout.addStretch(1)
-        options_layout.addLayout(range_layout)
         
         # 临时文件路径
         tmp_layout = QHBoxLayout()
@@ -371,6 +369,10 @@ class ForwardView(QWidget):
             QMessageBox.warning(self, "警告", "无效的目标频道")
             return
         
+        # 获取消息ID范围
+        start_id = self.start_id.value()
+        end_id = self.end_id.value()
+        
         # 获取选中的媒体类型
         media_types = self._get_media_types()
         if not media_types:
@@ -383,7 +385,9 @@ class ForwardView(QWidget):
                 'source_channel': UIChannelPair.validate_channel_id(source, "源频道"),
                 'target_channels': [UIChannelPair.validate_channel_id(t, f"目标频道 {i+1}") 
                                    for i, t in enumerate(target_channels)],
-                'media_types': media_types
+                'media_types': media_types,
+                'start_id': start_id,
+                'end_id': end_id
             }
             
             # 添加到列表中
@@ -402,8 +406,19 @@ class ForwardView(QWidget):
             if MediaType.ANIMATION in media_types:
                 media_types_str.append("动画")
             
+            # 构建ID范围显示文本
+            id_range_str = ""
+            if start_id > 0 or end_id > 0:
+                if start_id > 0 and end_id > 0:
+                    id_range_str = f"ID范围: {start_id}-{end_id}"
+                elif start_id > 0:
+                    id_range_str = f"ID范围: {start_id}+"
+                else:
+                    id_range_str = f"ID范围: 最早-{end_id}"
+                id_range_str = " - " + id_range_str
+            
             # 构建显示文本
-            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)})"
+            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}"
             
             item.setText(display_text)
             item.setData(Qt.UserRole, channel_pair)
@@ -483,24 +498,43 @@ class ForwardView(QWidget):
     
     def _start_forward(self):
         """开始转发"""
+        # 频道对列表
+        channel_pairs = []
+        
         # 检查是否有频道对
         if len(self.channel_pairs) == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个频道对")
-            return
-        
-        # 确保每个频道对都有媒体类型
-        for pair in self.channel_pairs:
-            if not pair.get('media_types'):
-                pair['media_types'] = self._get_media_types()
+            # 提示用户
+            response = QMessageBox.question(self, "无转发频道对", 
+                "转发列表中没有配置频道对，是否使用默认频道对(@username → @username)？\n"
+                "可以在开始转发后修改API配置中的具体频道信息。",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            
+            if response == QMessageBox.No:
+                return
+            
+            # 创建默认频道对
+            default_pair = {
+                'source_channel': "@username",
+                'target_channels': ["@username"],
+                'media_types': self._get_media_types(),
+                'start_id': self.start_id.value(),
+                'end_id': self.end_id.value()
+            }
+            channel_pairs.append(default_pair)
+            logger.debug("使用默认频道对进行转发")
+        else:
+            channel_pairs = self.channel_pairs
+            # 确保每个频道对都有媒体类型
+            for pair in channel_pairs:
+                if not pair.get('media_types'):
+                    pair['media_types'] = self._get_media_types()
         
         # 收集配置
         forward_config = {
-            'forward_channel_pairs': self.channel_pairs,
+            'forward_channel_pairs': channel_pairs,
             'remove_captions': self.remove_captions_check.isChecked(),
             'hide_author': self.hide_author_check.isChecked(),
             'forward_delay': self.forward_delay.value(),
-            'start_id': self.start_id.value(),
-            'end_id': self.end_id.value(),
             'tmp_path': self.tmp_path.text()
         }
         
@@ -509,7 +543,7 @@ class ForwardView(QWidget):
         row_count = 0
         
         # 为每个频道对添加一行
-        for channel_pair in self.channel_pairs:
+        for channel_pair in channel_pairs:
             source = channel_pair['source_channel']
             for target in channel_pair['target_channels']:
                 self.status_table.insertRow(row_count)
@@ -543,20 +577,32 @@ class ForwardView(QWidget):
     
     def _save_config(self):
         """保存当前配置"""
-        # 检查是否有频道对
-        if len(self.channel_pairs) == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个频道对")
-            return
-        
         try:
             # 创建UIChannelPair对象列表
             ui_channel_pairs = []
-            for pair in self.channel_pairs:
-                ui_channel_pairs.append(UIChannelPair(
-                    source_channel=pair['source_channel'],
-                    target_channels=pair['target_channels'],
-                    media_types=pair.get('media_types', self._get_media_types())
-                ))
+            
+            # 如果列表为空，使用默认频道对
+            if len(self.channel_pairs) == 0:
+                # 使用当前设置的媒体类型和消息ID，创建一个默认频道对
+                default_channel_pair = UIChannelPair(
+                    source_channel="@username",  # 使用占位符频道名
+                    target_channels=["@username"],  # 使用占位符频道名
+                    media_types=self._get_media_types(),
+                    start_id=self.start_id.value(),
+                    end_id=self.end_id.value()
+                )
+                ui_channel_pairs.append(default_channel_pair)
+                logger.debug("使用默认频道对替代空列表")
+            else:
+                # 使用已有的频道对
+                for pair in self.channel_pairs:
+                    ui_channel_pairs.append(UIChannelPair(
+                        source_channel=pair['source_channel'],
+                        target_channels=pair['target_channels'],
+                        media_types=pair.get('media_types', self._get_media_types()),
+                        start_id=pair.get('start_id', 0),
+                        end_id=pair.get('end_id', 0)
+                    ))
             
             # 创建UIForwardConfig对象
             forward_config = UIForwardConfig(
@@ -564,8 +610,6 @@ class ForwardView(QWidget):
                 remove_captions=self.remove_captions_check.isChecked(),
                 hide_author=self.hide_author_check.isChecked(),
                 forward_delay=round(float(self.forward_delay.value()), 1),  # 四舍五入到一位小数，解决精度问题
-                start_id=self.start_id.value(),
-                end_id=self.end_id.value(),
                 tmp_path=self.tmp_path.text()
             )
             
@@ -589,6 +633,9 @@ class ForwardView(QWidget):
             
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"配置保存失败: {str(e)}")
+            logger.error(f"保存配置失败: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
     
     def update_forward_status(self, source, target, count, status):
         """更新转发状态
@@ -648,8 +695,10 @@ class ForwardView(QWidget):
         forward_config = config.get('FORWARD', {})
         channel_pairs = forward_config.get('forward_channel_pairs', [])
         
-        # 记录第一个频道对的媒体类型，用于设置复选框状态
+        # 记录第一个频道对的媒体类型和ID范围，用于设置控件初始状态
         first_pair_media_types = []
+        first_pair_start_id = 0
+        first_pair_end_id = 0
         
         # 添加频道对到列表
         for pair in channel_pairs:
@@ -657,16 +706,24 @@ class ForwardView(QWidget):
             target_channels = pair.get('target_channels', [])
             media_types = pair.get('media_types', [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION])
             
+            # 确保优先从频道对中获取消息ID范围
+            start_id = pair.get('start_id', 0)
+            end_id = pair.get('end_id', 0)
+            
             if source_channel and target_channels:
-                # 保存第一个频道对的媒体类型
-                if not first_pair_media_types and media_types:
+                # 保存第一个频道对的设置，用于设置默认值
+                if not first_pair_media_types:
                     first_pair_media_types = media_types
+                    first_pair_start_id = start_id
+                    first_pair_end_id = end_id
                 
                 # 创建频道对数据
                 channel_pair = {
                     'source_channel': source_channel,
                     'target_channels': target_channels,
-                    'media_types': media_types
+                    'media_types': media_types,
+                    'start_id': start_id,
+                    'end_id': end_id
                 }
                 
                 # 添加到列表
@@ -685,9 +742,20 @@ class ForwardView(QWidget):
                 if MediaType.ANIMATION in media_types:
                     media_types_str.append("动画")
                 
+                # 构建ID范围显示文本
+                id_range_str = ""
+                if start_id > 0 or end_id > 0:
+                    if start_id > 0 and end_id > 0:
+                        id_range_str = f"ID范围: {start_id}-{end_id}"
+                    elif start_id > 0:
+                        id_range_str = f"ID范围: {start_id}+"
+                    else:
+                        id_range_str = f"ID范围: 最早-{end_id}"
+                    id_range_str = " - " + id_range_str
+                
                 # 创建列表项
                 item = QListWidgetItem()
-                display_text = f"{source_channel} → {', '.join(target_channels)} (媒体类型：{', '.join(media_types_str)})"
+                display_text = f"{source_channel} → {', '.join(target_channels)} (媒体类型：{', '.join(media_types_str)}){id_range_str}"
                 item.setText(display_text)
                 item.setData(Qt.UserRole, channel_pair)
                 self.pairs_list.addItem(item)
@@ -699,7 +767,7 @@ class ForwardView(QWidget):
         self.remove_captions_check.setChecked(forward_config.get('remove_captions', False))
         self.hide_author_check.setChecked(forward_config.get('hide_author', False))
         
-        # 加载媒体类型复选框（使用第一个频道对的媒体类型，如果没有频道对则使用公共媒体类型）
+        # 加载媒体类型复选框
         media_types = first_pair_media_types or forward_config.get('media_types', [])
         media_types_str = [str(t) for t in media_types]  # 确保类型为字符串
         
@@ -708,6 +776,10 @@ class ForwardView(QWidget):
         self.document_check.setChecked(MediaType.DOCUMENT in media_types_str) 
         self.audio_check.setChecked(MediaType.AUDIO in media_types_str)
         self.animation_check.setChecked(MediaType.ANIMATION in media_types_str)
+        
+        # 加载消息ID设置（使用第一个频道对的ID设置）
+        self.start_id.setValue(first_pair_start_id)
+        self.end_id.setValue(first_pair_end_id)
         
         # 加载其他设置
         forward_delay = forward_config.get('forward_delay', 0)
@@ -720,8 +792,6 @@ class ForwardView(QWidget):
             except (ValueError, TypeError):
                 self.forward_delay.setValue(0.0)
                 
-        self.start_id.setValue(forward_config.get('start_id', 1))
-        self.end_id.setValue(forward_config.get('end_id', 0))
         self.tmp_path.setText(forward_config.get('tmp_path', 'tmp'))
 
     def set_forwarder(self, forwarder):
@@ -888,14 +958,20 @@ class ForwardView(QWidget):
         Args:
             forward_info: 转发信息
         """
-        from PySide6.QtWidgets import QListWidgetItem
-        item = QListWidgetItem(forward_info)
+        # 转发状态信息不应该添加到频道配置列表中
+        # 这里需要创建一个单独的转发状态列表
+        # TODO: 创建一个单独的转发状态列表窗口
         
-        # 添加到已完成列表
-        self.pairs_list.addItem(item)
-        
-        # 保持最新项可见
-        self.pairs_list.scrollToBottom()
+        logger.debug(f"消息转发完成: {forward_info}")
+        # 临时解决方案：不再向频道对列表添加转发状态
+        # from PySide6.QtWidgets import QListWidgetItem
+        # item = QListWidgetItem(forward_info)
+        # 
+        # # 添加到已完成列表
+        # self.pairs_list.addItem(item)
+        # 
+        # # 保持最新项可见
+        # self.pairs_list.scrollToBottom()
     
     def _show_completion_message(self, title, message):
         """显示完成提示消息
