@@ -112,6 +112,12 @@ class Forwarder():
         info_message = f"配置的频道对数量: {len(channel_pairs)}"
         _logger.info(info_message)
         
+        # 遍历频道对，检查和打印配置
+        for i, pair in enumerate(channel_pairs):
+            _logger.info(f"检查频道对 {i+1}: source_channel={pair.get('source_channel')}, "
+                         f"target_channels={pair.get('target_channels')}, "
+                         f"start_id={pair.get('start_id')}, end_id={pair.get('end_id')}")
+        
         # 转发计数
         forward_count = 0
         total_forward_count = 0
@@ -167,8 +173,9 @@ class Forwarder():
                     status_message = "源频道允许直接转发，获取媒体组和消息..."
                     _logger.info(status_message)
                     
-                    # 获取媒体组和消息
-                    media_groups = await self._get_media_groups(source_id, source_channel)
+                    # 获取媒体组和消息，传入当前频道对配置
+                    media_groups = await self._get_media_groups(source_id, source_channel, pair)
+                    _logger.info(f"获取媒体组和消息A: {media_groups}") 
                     
                     # 发送总媒体组数量
                     total_groups = len(media_groups)
@@ -210,8 +217,9 @@ class Forwarder():
                     status_message = "获取媒体组信息..."
                     _logger.info(status_message)
                     
-                    # 获取媒体组信息
-                    media_groups_info = await self._get_media_groups_info(source_id)
+                    # 获取媒体组信息，传入当前频道对配置
+                    media_groups_info = await self._get_media_groups_info(source_id, pair)
+                    _logger.info(f"获取媒体组和消息B: {media_groups_info}") 
                     total_groups = len(media_groups_info)
                     info_message = f"找到 {total_groups} 个媒体组/消息"
                     _logger.info(info_message)
@@ -324,7 +332,8 @@ class Forwarder():
                                       source_channel: str, 
                                       source_id: int, 
                                       temp_dir: Path, 
-                                      target_channels: List[Tuple[str, int, str]]):
+                                      target_channels: List[Tuple[str, int, str]],
+                                      pair: dict = None):
         """
         并行处理媒体组下载和上传
         
@@ -333,6 +342,7 @@ class Forwarder():
             source_id: 源频道ID
             temp_dir: 临时下载目录
             target_channels: 目标频道列表(频道标识符, 频道ID, 频道信息)
+            pair: 频道对配置，包含start_id和end_id
         """
         # 使用生产者-消费者模式处理
         self.download_running = True
@@ -346,8 +356,8 @@ class Forwarder():
             except asyncio.QueueEmpty:
                 break
         
-        # 获取媒体组信息
-        media_groups_info = await self._get_media_groups_info(source_id)
+        # 获取媒体组信息，传入频道对配置
+        media_groups_info = await self._get_media_groups_info(source_id, pair)
         
         if not media_groups_info:
             _logger.warning("没有找到媒体组，跳过")
@@ -387,12 +397,13 @@ class Forwarder():
             self.producer_task = None
             self.consumer_task = None
 
-    async def _get_media_groups_info(self, source_id: int) -> List[Tuple[str, List[int]]]:
+    async def _get_media_groups_info(self, source_id: int, pair: dict = None) -> List[Tuple[str, List[int]]]:
         """
         获取源频道的媒体组基本信息（不下载内容）
         
         Args:
             source_id: 源频道ID
+            pair: 频道对配置，包含start_id和end_id
             
         Returns:
             List[Tuple[str, List[int]]]: 媒体组ID与消息ID列表的映射
@@ -400,14 +411,32 @@ class Forwarder():
         media_groups_info = []
         media_groups: Dict[str, List[int]] = {}
         
+        # 确保pair是有效的字典
+        if pair is None:
+            pair = {}
+        
         # 设置消息范围
-        start_id = self.forward_config.get('start_id', 0)
-        end_id = self.forward_config.get('end_id', 0)
+        try:
+            start_id = int(pair.get('start_id', 0) or 0)
+        except (ValueError, TypeError):
+            _logger.warning(f"无效的start_id值 '{pair.get('start_id')}', 将使用默认值0")
+            start_id = 0
+            
+        try:
+            end_id = int(pair.get('end_id', 0) or 0)
+        except (ValueError, TypeError):
+            _logger.warning(f"无效的end_id值 '{pair.get('end_id')}', 将使用默认值0")
+            end_id = 0
+            
+        # 获取源频道标识符，用于传递给_is_media_allowed方法
+        source_channel = pair.get('source_channel')
+        
+        _logger.info(f"获取媒体组消息范围: source_id={source_id}, source_channel={source_channel}, start_id={start_id}, end_id={end_id}, pair={pair}")
         
         # 获取消息基本信息
         async for message in self._iter_messages(source_id, start_id, end_id):
-            # 筛选媒体类型
-            if not self._is_media_allowed(message):
+            # 筛选媒体类型，传入源频道信息
+            if not self._is_media_allowed(message, source_channel):
                 continue
             
             # 获取媒体组ID
@@ -427,6 +456,14 @@ class Forwarder():
         
         # 按第一个消息ID排序，确保从旧到新处理
         media_groups_info.sort(key=lambda x: x[1][0] if x[1] else 0)
+        
+        # 添加更详细的日志输出
+        _logger.info(f"找到 {len(media_groups_info)} 个媒体组")
+        for i, (group_id, message_ids) in enumerate(media_groups_info[:10]):  # 只记录前10个，避免日志过长
+            _logger.info(f"媒体组 {i+1}/{len(media_groups_info)}: group_id={group_id}, 消息IDs={message_ids}")
+        
+        if len(media_groups_info) > 10:
+            _logger.info(f"还有 {len(media_groups_info) - 10} 个媒体组未显示")
         
         return media_groups_info
 
@@ -582,22 +619,38 @@ class Forwarder():
             status_message = "生产者(下载)任务结束"
             _logger.info(status_message)
     
-    async def _get_media_groups(self, source_id: int, source_channel: str) -> Dict[str, List[Message]]:
+    async def _get_media_groups(self, source_id: int, source_channel: str, pair: dict = None) -> Dict[str, List[Message]]:
         """
         获取源频道的媒体组消息
         
         Args:
             source_id: 源频道ID
             source_channel: 源频道
+            pair: 频道对配置，包含start_id和end_id
             
         Returns:
             Dict[str, List[Message]]: 媒体组ID与消息列表的映射
         """
         media_groups: Dict[str, List[Message]] = {}
         
+        # 确保pair是有效的字典
+        if pair is None:
+            pair = {}
+        
         # 设置消息范围
-        start_id = self.forward_config.get('start_id', 0)
-        end_id = self.forward_config.get('end_id', 0)
+        try:
+            start_id = int(pair.get('start_id', 0) or 0)
+        except (ValueError, TypeError):
+            _logger.warning(f"无效的start_id值 '{pair.get('start_id')}', 将使用默认值0")
+            start_id = 0
+            
+        try:
+            end_id = int(pair.get('end_id', 0) or 0)
+        except (ValueError, TypeError):
+            _logger.warning(f"无效的end_id值 '{pair.get('end_id')}', 将使用默认值0")
+            end_id = 0
+            
+        _logger.info(f"获取媒体组消息范围: source_id={source_id}, source_channel={source_channel}, start_id={start_id}, end_id={end_id}, pair={pair}")
         
         # 获取消息
         async for message in self._iter_messages(source_id, start_id, end_id):
@@ -1050,28 +1103,43 @@ class Forwarder():
                     for file_path, media_type in media_group_download.downloaded_files:
                         file_path_str = str(file_path)
                         
+                        # 检查文件是否存在
+                        if not Path(file_path_str).exists():
+                            _logger.warning(f"文件不存在: {file_path_str}，跳过")
+                            continue
+                            
                         # 只为第一个文件添加标题
                         if media_group and file_caption:
                             file_caption = None
                         
-                        # 根据媒体类型创建不同的InputMedia对象
-                        if media_type == "photo":
-                            media_group.append(InputMediaPhoto(file_path_str, caption=file_caption))
-                        elif media_type == "video":
-                            # 获取缩略图路径
-                            thumb = None
-                            if thumbnails:
-                                thumb = thumbnails.get(file_path_str)
-                            media_group.append(InputMediaVideo(
-                                file_path_str, 
-                                caption=file_caption, 
-                                supports_streaming=True,
-                                thumb=thumb
-                            ))
-                        elif media_type == "document":
-                            media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
-                        elif media_type == "audio":
-                            media_group.append(InputMediaAudio(file_path_str, caption=file_caption))
+                        try:
+                            # 根据媒体类型创建不同的InputMedia对象
+                            if media_type == "photo":
+                                media_group.append(InputMediaPhoto(file_path_str, caption=file_caption))
+                            elif media_type == "video":
+                                # 获取缩略图路径
+                                thumb = None
+                                if thumbnails and file_path_str in thumbnails:
+                                    thumb = thumbnails.get(file_path_str)
+                                    if thumb and not Path(thumb).exists():
+                                        _logger.warning(f"缩略图文件不存在: {thumb}，不使用缩略图")
+                                        thumb = None
+                                        
+                                media_group.append(InputMediaVideo(
+                                    file_path_str, 
+                                    caption=file_caption, 
+                                    supports_streaming=True,
+                                    thumb=thumb
+                                ))
+                            elif media_type == "document":
+                                media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
+                            elif media_type == "audio":
+                                media_group.append(InputMediaAudio(file_path_str, caption=file_caption))
+                            else:
+                                _logger.warning(f"不支持的媒体类型: {media_type}，文件: {file_path_str}")
+                        except Exception as e:
+                            _logger.error(f"创建媒体对象失败: {e}，文件: {file_path_str}, 类型: {media_type}")
+                            continue
                     
                     if not media_group:
                         warning_message = "没有有效的媒体文件可上传，跳过这个媒体组"
@@ -1337,6 +1405,30 @@ class Forwarder():
         message_ids = [m.id for m in media_group_download.messages]
         group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
         
+        # 检查媒体组是否为空
+        if not media_group:
+            _logger.error(f"媒体组为空，无法上传")
+            return False
+            
+        # 检查每个媒体项的文件路径
+        for i, media_item in enumerate(media_group):
+            media_file = getattr(media_item, 'media', None)
+            if media_file is None:
+                _logger.error(f"媒体项 {i+1}/{len(media_group)} 没有media属性")
+                return False
+                
+            if isinstance(media_file, str):
+                if not Path(media_file).exists():
+                    _logger.error(f"媒体文件不存在: {media_file}")
+                    return False
+                    
+                # 记录文件信息以便调试
+                try:
+                    file_size = Path(media_file).stat().st_size
+                    _logger.info(f"媒体文件 {i+1}/{len(media_group)}: {media_file}, 大小: {file_size} 字节")
+                except Exception as e:
+                    _logger.warning(f"无法获取媒体文件信息: {media_file}, 错误: {e}")
+        
         while retry_count < max_retries:          
             try:
                 if len(media_group) == 1:
@@ -1356,6 +1448,9 @@ class Forwarder():
                         thumb = None
                         if thumbnails:
                             thumb = thumbnails.get(media_item.media)
+                            if thumb and not Path(thumb).exists():
+                                _logger.warning(f"缩略图文件不存在: {thumb}，不使用缩略图")
+                                thumb = None
                         
                         debug_message = f"尝试发送视频到 {target_info}"
                         _logger.debug(debug_message)
@@ -1428,6 +1523,19 @@ class Forwarder():
                 error_message = f"上传媒体到频道 {target_info} 失败 (尝试 {retry_count}/{max_retries}): {str(e)}"
                 _logger.error(error_message)
                 
+                # 记录详细错误信息
+                import traceback
+                error_details = traceback.format_exc()
+                _logger.error(f"错误详情:\n{error_details}")
+                
+                # 检查是否是无效文件错误
+                if "Invalid file" in str(e):
+                    # 记录每个媒体项的详细信息
+                    for i, media_item in enumerate(media_group):
+                        media_file = getattr(media_item, 'media', None)
+                        item_type = type(media_item).__name__
+                        _logger.error(f"媒体项 {i+1}/{len(media_group)} 类型: {item_type}, 文件: {media_file}")
+                
                 if retry_count >= max_retries:
                     break
                 
@@ -1471,30 +1579,48 @@ class Forwarder():
                 
                 elif message.video:
                     # 下载视频
-                    file_name = message.video.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_video.mp4"
-                    file_path = download_dir / file_name
+                    if message.video.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.video.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_video.mp4"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_video.mp4"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     downloaded_files.append((file_path, "video"))
                     _logger.debug(f"视频下载成功: {file_path}")
                 
                 elif message.document:
                     # 下载文档
-                    file_name = message.document.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_document"
-                    file_path = download_dir / file_name
+                    if message.document.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.document.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_document"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_document"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     downloaded_files.append((file_path, "document"))
                     _logger.debug(f"文档下载成功: {file_path}")
                 
                 elif message.audio:
                     # 下载音频
-                    file_name = message.audio.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_audio.mp3"
-                    file_path = download_dir / file_name
+                    if message.audio.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.audio.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_audio.mp3"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_audio.mp3"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     downloaded_files.append((file_path, "audio"))
                     _logger.debug(f"音频下载成功: {file_path}")
@@ -1516,6 +1642,10 @@ class Forwarder():
             
             except Exception as e:
                 _logger.error(f"下载消息 {message.id} 的媒体文件失败: {e}")
+                # 记录详细错误信息
+                import traceback
+                error_details = traceback.format_exc()
+                _logger.error(f"下载错误详情:\n{error_details}")
                 continue
         
         return downloaded_files
@@ -1543,26 +1673,44 @@ class Forwarder():
                     return (file_path, "photo")
                 
                 elif message.video:
-                    file_name = message.video.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_video.mp4"
-                    file_path = download_dir / file_name
+                    if message.video.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.video.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_video.mp4"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_video.mp4"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     return (file_path, "video")
                 
                 elif message.document:
-                    file_name = message.document.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_document"
-                    file_path = download_dir / file_name
+                    if message.document.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.document.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_document"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_document"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     return (file_path, "document")
                 
                 elif message.audio:
-                    file_name = message.audio.file_name
-                    if not file_name:
-                        file_name = f"{chat_id}_{message.id}_audio.mp3"
-                    file_path = download_dir / file_name
+                    if message.audio.file_name:
+                        # 处理文件名以确保安全
+                        safe_file_name = self._get_safe_path_name(message.audio.file_name)
+                        # 如果文件名在处理后为空，使用默认名称
+                        if not safe_file_name or safe_file_name.strip() == "":
+                            safe_file_name = f"{chat_id}_{message.id}_audio.mp3"
+                    else:
+                        safe_file_name = f"{chat_id}_{message.id}_audio.mp3"
+                        
+                    file_path = download_dir / safe_file_name
                     await self.client.download_media(message, file_name=str(file_path))
                     return (file_path, "audio")
                 
@@ -1580,11 +1728,16 @@ class Forwarder():
             except Exception as e:
                 retry_count += 1
                 _logger.error(f"重试下载失败 (尝试 {retry_count}/{max_retries}): {e}")
+                # 记录详细错误信息
+                import traceback
+                error_details = traceback.format_exc()
+                _logger.error(f"重试下载错误详情:\n{error_details}")
+                
                 if retry_count >= max_retries:
                     break
                 await asyncio.sleep(2 * retry_count)  # 指数退避
         
-        return None 
+        return None
 
     def ensure_temp_dir(self) -> Path:
         """

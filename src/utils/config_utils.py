@@ -138,7 +138,7 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             forward = ui_config.FORWARD
             
             # 添加基本字段
-            for field in ["remove_captions", "hide_author", "forward_delay", "start_id", "end_id", "tmp_path"]:
+            for field in ["remove_captions", "hide_author", "forward_delay", "tmp_path"]:
                 if hasattr(forward, field):
                     forward_dict[field] = getattr(forward, field)
             
@@ -161,6 +161,20 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
                         pair_dict['source_channel'] = pair.source_channel
                     if hasattr(pair, 'target_channels'):
                         pair_dict['target_channels'] = pair.target_channels
+                    # 添加start_id和end_id到每个频道对配置中
+                    if hasattr(pair, 'start_id'):
+                        pair_dict['start_id'] = pair.start_id
+                    if hasattr(pair, 'end_id'):
+                        pair_dict['end_id'] = pair.end_id
+                    # 添加媒体类型到每个频道对配置中
+                    if hasattr(pair, 'media_types'):
+                        media_types = []
+                        for media_type in pair.media_types:
+                            if hasattr(media_type, 'value'):
+                                media_types.append(media_type.value)
+                            else:
+                                media_types.append(media_type)
+                        pair_dict['media_types'] = media_types
                     channel_pairs.append(pair_dict)
                 forward_dict['forward_channel_pairs'] = channel_pairs
             
