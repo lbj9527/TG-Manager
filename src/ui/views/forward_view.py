@@ -126,15 +126,7 @@ class ForwardView(QWidget):
         # 添加频道对按钮和消息ID范围放在同一行
         button_layout = QHBoxLayout()
         
-        self.add_pair_button = QPushButton("添加频道对")
-        self.remove_pair_button = QPushButton("删除所选")
-        
-        button_layout.addWidget(self.add_pair_button)
-        button_layout.addWidget(self.remove_pair_button)
-        
-        # 消息ID范围添加到添加频道对按钮同一行
-        button_layout.addStretch(1)  # 添加弹性空间使后面控件靠右
-        
+        # 消息ID范围放在左边
         button_layout.addWidget(QLabel("起始ID:"))
         self.start_id = QSpinBox()
         self.start_id.setRange(0, 999999999)
@@ -150,6 +142,16 @@ class ForwardView(QWidget):
         self.end_id.setSpecialValueText("最新消息")  # 当值为0时显示为"最新消息"
         self.end_id.setFixedWidth(100)
         button_layout.addWidget(self.end_id)
+        
+        # 添加弹性空间，将按钮推到右边
+        button_layout.addStretch(1)
+        
+        # "添加频道对"和"删除所选"按钮放在右边
+        self.add_pair_button = QPushButton("添加频道对")
+        self.remove_pair_button = QPushButton("删除所选")
+        
+        button_layout.addWidget(self.add_pair_button)
+        button_layout.addWidget(self.remove_pair_button)
         
         channel_layout.addLayout(button_layout)
         
