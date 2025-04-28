@@ -1092,10 +1092,16 @@ class Forwarder():
                                 thumbnail_path = None
                                 width = None
                                 height = None
+                                duration = None
                                 
                                 # 处理返回值可能是元组的情况
                                 if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
-                                    if len(thumbnail_result) >= 3:
+                                    if len(thumbnail_result) >= 4:
+                                        thumbnail_path, width, height, duration = thumbnail_result
+                                        # 确保时长是整数类型
+                                        if duration is not None:
+                                            duration = int(duration)
+                                    elif len(thumbnail_result) >= 3:
                                         thumbnail_path, width, height = thumbnail_result
                                     else:
                                         thumbnail_path = thumbnail_result[0]
@@ -1148,7 +1154,8 @@ class Forwarder():
                                     supports_streaming=True,
                                     thumb=thumb,
                                     width=self._get_video_width(file_path_str),
-                                    height=self._get_video_height(file_path_str)
+                                    height=self._get_video_height(file_path_str),
+                                    duration=self._get_video_duration(file_path_str)
                                 ))
                             elif media_type == "document":
                                 media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
@@ -1232,7 +1239,8 @@ class Forwarder():
                                             supports_streaming=True,
                                             thumb=thumb,
                                             width=self._get_video_width(media_item.media),
-                                            height=self._get_video_height(media_item.media)
+                                            height=self._get_video_height(media_item.media),
+                                            duration=self._get_video_duration(media_item.media)
                                         )
                                     elif isinstance(media_item, InputMediaDocument):
                                         _logger.debug(f"发送文档到 {target_info}")
@@ -1483,7 +1491,8 @@ class Forwarder():
                             supports_streaming=True,
                             thumb=thumb,
                             width=self._get_video_width(media_item.media),
-                            height=self._get_video_height(media_item.media)
+                            height=self._get_video_height(media_item.media),
+                            duration=self._get_video_duration(media_item.media)
                         )
                     elif isinstance(media_item, InputMediaDocument):
                         debug_message = f"尝试发送文档到 {target_info}"
@@ -1932,4 +1941,21 @@ class Forwarder():
             # 缓存结果
             self._video_dimensions[video_path] = dimensions
             return dimensions[1]
+        return None
+    
+    def _get_video_duration(self, video_path: str) -> Optional[int]:
+        """
+        获取视频时长
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频时长(秒)，如果无法获取则返回None
+        """
+        # 使用video_processor获取
+        duration = self.video_processor.get_video_duration(video_path)
+        # 将浮点数转换为整数，避免'float' object has no attribute 'to_bytes'错误
+        if duration is not None:
+            return int(duration)
         return None

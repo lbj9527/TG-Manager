@@ -627,30 +627,37 @@ class Uploader():
                     # 生成缩略图和获取视频尺寸
                     thumbnail = None
                     width = height = None
+                    duration = None
                     try:
                         result = await self.video_processor.extract_thumbnail_async(str(file))
                         if result:
-                            if isinstance(result, tuple) and len(result) == 3:
+                            if isinstance(result, tuple) and len(result) == 4:
+                                thumbnail, width, height, duration = result
+                                # 确保duration是整数类型
+                                if duration is not None:
+                                    duration = int(duration)
+                            elif isinstance(result, tuple) and len(result) == 3:
                                 thumbnail, width, height = result
                             else:
                                 thumbnail = result
                             
                             thumbnails.append(thumbnail)
                             if width and height:
-                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}, 时长: {duration if duration else '未知'}秒")
                             else:
                                 logger.debug(f"已生成视频缩略图: {thumbnail}")
                     except Exception as e:
                         logger.warning(f"生成视频缩略图失败: {e}")
                     
-                    # 创建媒体对象，包含宽度和高度
+                    # 创建媒体对象，包含宽度、高度和时长
                     media = InputMediaVideo(
                         media=str(file),
                         caption=file_caption,
                         thumb=thumbnail,
                         supports_streaming=True,
                         width=width,
-                        height=height
+                        height=height,
+                        duration=duration
                     )
                     media_group.append(media)
                 
@@ -799,7 +806,7 @@ class Uploader():
                 self.file_hash_cache[file_str] = file_hash
             else:
                 logger.warning(f"无法计算文件哈希值: {file}")
-                return False, False
+            return False, False
         
         # 检查文件是否已上传到目标频道
         chat_id_str = str(chat_id)
@@ -820,6 +827,7 @@ class Uploader():
         # 缩略图文件路径和视频尺寸
         thumbnail = None
         width = height = None
+        duration = None
         
         try:
             # 处理视频缩略图和获取尺寸
@@ -827,13 +835,18 @@ class Uploader():
                 try:
                     result = await self.video_processor.extract_thumbnail_async(str(file))
                     if result:
-                        if isinstance(result, tuple) and len(result) == 3:
+                        if isinstance(result, tuple) and len(result) == 4:
+                            thumbnail, width, height, duration = result
+                            # 确保duration是整数类型
+                            if duration is not None:
+                                duration = int(duration)
+                        elif isinstance(result, tuple) and len(result) == 3:
                             thumbnail, width, height = result
                         else:
                             thumbnail = result
                         
                         if width and height:
-                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}, 时长: {duration if duration else '未知'}秒")
                         else:
                             logger.debug(f"已生成视频缩略图: {thumbnail}")
                 except Exception as e:
@@ -861,7 +874,8 @@ class Uploader():
                             thumb=thumbnail,
                             supports_streaming=True,
                             width=width,
-                            height=height
+                            height=height,
+                            duration=duration
                         )
                     elif media_type == "document":
                         result = await self.client.send_document(
@@ -1249,6 +1263,7 @@ class Uploader():
         # 缩略图文件路径和视频尺寸
         thumbnail = None
         width = height = None
+        duration = None
         
         try:
             # 处理视频缩略图和获取尺寸
@@ -1256,13 +1271,18 @@ class Uploader():
                 try:
                     result = await self.video_processor.extract_thumbnail_async(str(file))
                     if result:
-                        if isinstance(result, tuple) and len(result) == 3:
+                        if isinstance(result, tuple) and len(result) == 4:
+                            thumbnail, width, height, duration = result
+                            # 确保duration是整数类型
+                            if duration is not None:
+                                duration = int(duration)
+                        elif isinstance(result, tuple) and len(result) == 3:
                             thumbnail, width, height = result
                         else:
                             thumbnail = result
                         
                         if width and height:
-                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                            logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}, 时长: {duration if duration else '未知'}秒")
                         else:
                             logger.debug(f"已生成视频缩略图: {thumbnail}")
                 except Exception as e:
@@ -1290,7 +1310,8 @@ class Uploader():
                             thumb=thumbnail,
                             supports_streaming=True,
                             width=width,
-                            height=height
+                            height=height,
+                            duration=duration
                         )
                     elif media_type == "document":
                         message = await self.client.send_document(
@@ -1500,30 +1521,37 @@ class Uploader():
                     # 生成缩略图和获取视频尺寸
                     thumbnail = None
                     width = height = None
+                    duration = None
                     try:
                         result = await self.video_processor.extract_thumbnail_async(str(file))
                         if result:
-                            if isinstance(result, tuple) and len(result) == 3:
+                            if isinstance(result, tuple) and len(result) == 4:
+                                thumbnail, width, height, duration = result
+                                # 确保duration是整数类型
+                                if duration is not None:
+                                    duration = int(duration)
+                            elif isinstance(result, tuple) and len(result) == 3:
                                 thumbnail, width, height = result
                             else:
                                 thumbnail = result
                             
                             thumbnails.append(thumbnail)
                             if width and height:
-                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}")
+                                logger.debug(f"已生成视频缩略图: {thumbnail}, 尺寸: {width}x{height}, 时长: {duration if duration else '未知'}秒")
                             else:
                                 logger.debug(f"已生成视频缩略图: {thumbnail}")
                     except Exception as e:
                         logger.warning(f"生成视频缩略图失败: {e}")
                     
-                    # 创建媒体对象，包含宽度和高度
+                    # 创建媒体对象，包含宽度、高度和时长
                     media = InputMediaVideo(
                         media=str(file),
                         caption=file_caption,
                         thumb=thumbnail,
                         supports_streaming=True,
                         width=width,
-                        height=height
+                        height=height,
+                        duration=duration
                     )
                     media_group.append(media)
                 
