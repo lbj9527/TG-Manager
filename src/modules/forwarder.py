@@ -1302,6 +1302,28 @@ class Forwarder():
                                     media_group_download.source_id
                                 )
                             
+                            # 单个视频或媒体组成功上传后立即清理对应的缩略图
+                            if len(media_group) == 1 and isinstance(media_group[0], InputMediaVideo):
+                                video_path = media_group[0].media
+                                if thumbnails and video_path in thumbnails:
+                                    thumb_path = thumbnails[video_path]
+                                    self.video_processor.delete_thumbnail(thumb_path=thumb_path)
+                                    _logger.debug(f"单个视频上传成功后立即删除缩略图: {thumb_path}")
+                                    # 从字典中移除以避免重复删除
+                                    thumbnails.pop(video_path, None)
+                            
+                            # 如果是媒体组首次上传成功并使用了视频缩略图，也可以尝试清理
+                            elif len(media_group) > 1 and first_success_message == sent_messages[0]:
+                                for media_item in media_group:
+                                    if hasattr(media_item, 'media') and isinstance(media_item, InputMediaVideo):
+                                        video_path = media_item.media
+                                        if thumbnails and video_path in thumbnails:
+                                            thumb_path = thumbnails[video_path]
+                                            self.video_processor.delete_thumbnail(thumb_path=thumb_path)
+                                            _logger.debug(f"媒体组中视频上传成功后立即删除缩略图: {thumb_path}")
+                                            # 从字典中移除以避免重复删除
+                                            thumbnails.pop(video_path, None)
+                            
                             success_message = f"{group_id} {message_ids} 上传到 {target_info} 成功"
                             _logger.info(success_message)
                             
@@ -1358,11 +1380,14 @@ class Forwarder():
                             continue
                     
                     # 媒体组上传完成后（无论成功失败），都清理缩略图
-                    debug_message = f"{group_id} {message_ids} 已处理完所有目标频道，清理缩略图"
-                    _logger.debug(debug_message)
-                    
-                    for thumbnail_path in thumbnails.values():
-                        self.video_processor.delete_thumbnail(thumbnail_path)
+                    if thumbnails and thumbnails.values():
+                        debug_message = f"{group_id} {message_ids} 已处理完所有目标频道，清理剩余缩略图"
+                        _logger.debug(debug_message)
+                        
+                        for thumbnail_path in thumbnails.values():
+                            if thumbnail_path:  # 确保缩略图路径有效
+                                self.video_processor.delete_thumbnail(thumbnail_path)
+                                _logger.debug(f"清理剩余缩略图: {thumbnail_path}")
                     
                     # 媒体组上传完成后，清理媒体组的本地文件
                     if all_targets_uploaded:
@@ -1530,6 +1555,14 @@ class Forwarder():
                         target_channel,
                         media_group_download.source_id
                     )
+                
+                # 上传成功后立即清理缩略图
+                if thumbnails:
+                    debug_message = f"上传成功，清理缩略图: {group_id} 到 {target_info}"
+                    _logger.debug(debug_message)
+                    for video_path, thumbnail_path in thumbnails.items():
+                        self.video_processor.delete_thumbnail(thumb_path=thumbnail_path)
+                        _logger.debug(f"已删除缩略图: {thumbnail_path}")
                 
                 success_message = f"媒体上传到 {target_info} 成功"
                 _logger.info(success_message)
