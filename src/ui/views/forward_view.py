@@ -13,8 +13,10 @@ from PySide6.QtWidgets import (
     QProgressBar, QTabWidget, QSizePolicy, QFileDialog,
     QDoubleSpinBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer
 from PySide6.QtGui import QIcon
+
+import asyncio
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType, UIChannelPair, UIForwardConfig
@@ -531,51 +533,99 @@ class ForwardView(QWidget):
                 if not pair.get('media_types'):
                     pair['media_types'] = self._get_media_types()
         
-        # 收集配置
-        forward_config = {
-            'forward_channel_pairs': channel_pairs,
-            'remove_captions': self.remove_captions_check.isChecked(),
-            'hide_author': self.hide_author_check.isChecked(),
-            'forward_delay': self.forward_delay.value(),
-            'tmp_path': self.tmp_path.text()
-        }
-        
-        # 准备状态表格
-        self.status_table.setRowCount(0)
-        row_count = 0
-        
-        # 为每个频道对添加一行
-        for channel_pair in channel_pairs:
-            source = channel_pair['source_channel']
-            for target in channel_pair['target_channels']:
-                self.status_table.insertRow(row_count)
-                self.status_table.setItem(row_count, 0, QTableWidgetItem(source))
-                self.status_table.setItem(row_count, 1, QTableWidgetItem(target))
-                self.status_table.setItem(row_count, 2, QTableWidgetItem("0"))
-                self.status_table.setItem(row_count, 3, QTableWidgetItem("等待中"))
-                row_count += 1
-        
-        # 更新状态
-        self.overall_status_label.setText("转发开始...")
-        self.forwarded_count_label.setText("已转发: 0 条消息")
-        
         # 更新按钮状态
         self.start_forward_button.setEnabled(False)
         self.stop_forward_button.setEnabled(True)
         
-        # 发出转发开始信号
-        self.forward_started.emit(forward_config)
+        # 更新状态
+        self.overall_status_label.setText("转发开始...")
+        
+        # 检查是否有forwarder实例
+        if not hasattr(self, 'forwarder') or self.forwarder is None:
+            error_message = "转发器实例不存在，无法开始转发"
+            logger.error(error_message)
+            QMessageBox.critical(self, "错误", error_message)
+            
+            # 恢复按钮状态
+            self.start_forward_button.setEnabled(True)
+            self.stop_forward_button.setEnabled(False)
+            return
+        
+        # 创建异步函数来启动转发
+        async def start_forward_async():
+            try:
+                # 调用forwarder的forward_messages方法
+                await self.forwarder.forward_messages()
+                
+                # 在主线程中更新UI
+                QTimer.singleShot(0, self._on_forward_complete_ui_update)
+                
+            except Exception as e:
+                # 记录错误
+                error_message = f"转发过程中发生错误: {str(e)}"
+                logger.error(error_message)
+                import traceback
+                logger.debug(f"错误详情:\n{traceback.format_exc()}")
+                
+                # 在主线程中更新UI
+                error_msg = error_message
+                QTimer.singleShot(0, lambda: self._on_forward_error_ui_update(error_msg))
+        
+        # 获取事件循环
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # 如果当前线程没有事件循环，则创建一个新的
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        # 将异步任务作为背景任务启动
+        loop.create_task(start_forward_async())
     
     def _stop_forward(self):
         """停止转发"""
-        # TODO: 实现停止转发功能
+        # 目前只更新按钮状态，实际停止功能后续实现
+        logger.info("用户点击停止转发按钮")
         
         # 更新状态
-        self.overall_status_label.setText("转发已停止")
+        self.overall_status_label.setText("请等待当前操作完成...")
+        
+        # TODO: 实现停止转发功能
         
         # 更新按钮状态
         self.start_forward_button.setEnabled(True)
         self.stop_forward_button.setEnabled(False)
+    
+    def _on_forward_complete_ui_update(self):
+        """转发完成后的UI更新"""
+        # 更新状态
+        self.overall_status_label.setText("转发已完成")
+        
+        # 更新进度条
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(100)
+        self.progress_bar.setFormat("所有转发已完成")
+        
+        # 恢复按钮状态
+        self.start_forward_button.setEnabled(True)
+        self.stop_forward_button.setEnabled(False)
+        
+        # 显示完成消息
+        QMessageBox.information(self, "转发完成", "所有转发任务已完成")
+        
+        logger.info("所有消息转发完成")
+    
+    def _on_forward_error_ui_update(self, error_message):
+        """转发出错后的UI更新"""
+        # 更新状态
+        self.overall_status_label.setText(f"转发出错: {error_message}")
+        
+        # 恢复按钮状态
+        self.start_forward_button.setEnabled(True)
+        self.stop_forward_button.setEnabled(False)
+        
+        # 显示错误消息
+        QMessageBox.critical(self, "转发错误", f"转发过程中发生错误:\n{error_message}")
     
     def _save_config(self):
         """保存当前配置"""
@@ -676,12 +726,8 @@ class ForwardView(QWidget):
     
     def forward_completed(self):
         """所有转发任务完成"""
-        # 更新状态
-        self.overall_status_label.setText("转发已完成")
-        
-        # 更新按钮状态
-        self.start_forward_button.setEnabled(True)
-        self.stop_forward_button.setEnabled(False)
+        # 调用统一的UI更新方法
+        self._on_forward_complete_ui_update()
     
     def load_config(self, config):
         """从配置加载UI状态
@@ -831,7 +877,8 @@ class ForwardView(QWidget):
                 self.forwarder.forward_completed.connect(self._on_forward_complete)
             
             if hasattr(self.forwarder, 'all_forwards_completed'):
-                self.forwarder.all_forwards_completed.connect(self._on_all_forwards_complete)
+                # 连接到新的UI更新方法
+                self.forwarder.all_forwards_completed.connect(self._on_forward_complete_ui_update)
             
             if hasattr(self.forwarder, 'error_occurred'):
                 self.forwarder.error_occurred.connect(self._on_forward_error)
@@ -844,7 +891,8 @@ class ForwardView(QWidget):
                 self.forwarder.add_event_listener("status", self._update_status)
                 self.forwarder.add_event_listener("progress", self._update_progress)
                 self.forwarder.add_event_listener("forward_complete", self._on_forward_complete)
-                self.forwarder.add_event_listener("all_forwards_complete", self._on_all_forwards_complete)
+                # 添加all_forwards_complete事件监听
+                self.forwarder.add_event_listener("all_forwards_complete", self._on_forward_complete_ui_update)
                 self.forwarder.add_event_listener("error", self._on_forward_error)
                 logger.debug("使用事件监听器连接转发器事件")
             
@@ -909,23 +957,6 @@ class ForwardView(QWidget):
         self._add_forwarded_item(forward_info)
         
         logger.debug(f"消息转发完成: {forward_info}")
-    
-    def _on_all_forwards_complete(self):
-        """所有转发完成处理"""
-        # 更新UI状态
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("所有转发已完成")
-        self.overall_status_label.setText("转发任务已完成")
-        
-        # 恢复按钮状态
-        self.start_forward_button.setEnabled(True)
-        self.stop_forward_button.setEnabled(False)
-        
-        # 显示提示消息
-        self._show_completion_message("转发完成", "所有消息已转发完成")
-        
-        logger.info("所有消息转发完成")
     
     def _on_forward_error(self, error, message=None):
         """转发错误处理
