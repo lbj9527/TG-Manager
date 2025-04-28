@@ -432,8 +432,6 @@ class Forwarder():
         # 获取源频道标识符，用于传递给_is_media_allowed方法
         source_channel = pair.get('source_channel')
         
-        _logger.info(f"获取媒体组消息范围: source_id={source_id}, source_channel={source_channel}, start_id={start_id}, end_id={end_id}, pair={pair}")
-        
         # 获取消息基本信息
         async for message in self._iter_messages(source_id, start_id, end_id):
             # 筛选媒体类型，传入源频道信息
@@ -650,8 +648,6 @@ class Forwarder():
         except (ValueError, TypeError):
             _logger.warning(f"无效的end_id值 '{pair.get('end_id')}', 将使用默认值0")
             end_id = 0
-            
-        _logger.info(f"获取媒体组消息范围: source_id={source_id}, source_channel={source_channel}, start_id={start_id}, end_id={end_id}, pair={pair}")
         
         # 获取消息
         async for message in self._iter_messages(source_id, start_id, end_id):
