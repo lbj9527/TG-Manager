@@ -175,7 +175,6 @@ class Forwarder():
                     
                     # 获取媒体组和消息，传入当前频道对配置
                     media_groups = await self._get_media_groups(source_id, source_channel, pair)
-                    _logger.info(f"获取媒体组和消息A: {media_groups}") 
                     
                     # 发送总媒体组数量
                     total_groups = len(media_groups)
@@ -219,7 +218,6 @@ class Forwarder():
                     
                     # 获取媒体组信息，传入当前频道对配置
                     media_groups_info = await self._get_media_groups_info(source_id, pair)
-                    _logger.info(f"获取媒体组和消息B: {media_groups_info}") 
                     total_groups = len(media_groups_info)
                     info_message = f"找到 {total_groups} 个媒体组/消息"
                     _logger.info(info_message)
@@ -1087,7 +1085,15 @@ class Forwarder():
                     for file_path, media_type in media_group_download.downloaded_files:
                         if media_type == "video":
                             try:
-                                thumbnail_path = self.video_processor.extract_thumbnail(str(file_path))
+                                thumbnail_result = self.video_processor.extract_thumbnail(str(file_path))
+                                thumbnail_path = None
+                                
+                                # 处理返回值可能是元组的情况
+                                if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
+                                    thumbnail_path = thumbnail_result[0]
+                                else:
+                                    thumbnail_path = thumbnail_result
+                                
                                 if thumbnail_path:
                                     thumbnails[str(file_path)] = thumbnail_path
                                     debug_message = f"为视频 {file_path.name} 生成缩略图成功"
