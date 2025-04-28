@@ -92,6 +92,9 @@ class Forwarder():
         
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
+        
+        # 视频尺寸缓存
+        self._video_dimensions = {}
     
     async def forward_messages(self):
         """
@@ -1087,15 +1090,23 @@ class Forwarder():
                             try:
                                 thumbnail_result = self.video_processor.extract_thumbnail(str(file_path))
                                 thumbnail_path = None
+                                width = None
+                                height = None
                                 
                                 # 处理返回值可能是元组的情况
                                 if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
-                                    thumbnail_path = thumbnail_result[0]
+                                    if len(thumbnail_result) >= 3:
+                                        thumbnail_path, width, height = thumbnail_result
+                                    else:
+                                        thumbnail_path = thumbnail_result[0]
                                 else:
                                     thumbnail_path = thumbnail_result
                                 
                                 if thumbnail_path:
                                     thumbnails[str(file_path)] = thumbnail_path
+                                    # 保存视频尺寸信息
+                                    if width and height:
+                                        self._video_dimensions[str(file_path)] = (width, height)
                                     debug_message = f"为视频 {file_path.name} 生成缩略图成功"
                                     _logger.debug(debug_message)
                             except Exception as e:
@@ -1135,7 +1146,9 @@ class Forwarder():
                                     file_path_str, 
                                     caption=file_caption, 
                                     supports_streaming=True,
-                                    thumb=thumb
+                                    thumb=thumb,
+                                    width=self._get_video_width(file_path_str),
+                                    height=self._get_video_height(file_path_str)
                                 ))
                             elif media_type == "document":
                                 media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
@@ -1217,7 +1230,9 @@ class Forwarder():
                                             video=media_item.media,
                                             caption=media_item.caption,
                                             supports_streaming=True,
-                                            thumb=thumb
+                                            thumb=thumb,
+                                            width=self._get_video_width(media_item.media),
+                                            height=self._get_video_height(media_item.media)
                                         )
                                     elif isinstance(media_item, InputMediaDocument):
                                         _logger.debug(f"发送文档到 {target_info}")
@@ -1466,7 +1481,9 @@ class Forwarder():
                             video=media_item.media,
                             caption=media_item.caption,
                             supports_streaming=True,
-                            thumb=thumb
+                            thumb=thumb,
+                            width=self._get_video_width(media_item.media),
+                            height=self._get_video_height(media_item.media)
                         )
                     elif isinstance(media_item, InputMediaDocument):
                         debug_message = f"尝试发送文档到 {target_info}"
@@ -1872,3 +1889,47 @@ class Forwarder():
                 asyncio.create_task(self.app.check_connection_status_now())
             except Exception as e:
                 _logger.error(f"触发连接状态检查失败: {e}")
+    
+    def _get_video_width(self, video_path: str) -> Optional[int]:
+        """
+        获取视频宽度
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频宽度，如果无法获取则返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_dimensions:
+            return self._video_dimensions[video_path][0]
+        
+        # 如果缓存中没有，使用video_processor获取
+        dimensions = self.video_processor.get_video_dimensions(video_path)
+        if dimensions:
+            # 缓存结果
+            self._video_dimensions[video_path] = dimensions
+            return dimensions[0]
+        return None
+    
+    def _get_video_height(self, video_path: str) -> Optional[int]:
+        """
+        获取视频高度
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频高度，如果无法获取则返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_dimensions:
+            return self._video_dimensions[video_path][1]
+        
+        # 如果缓存中没有，使用video_processor获取
+        dimensions = self.video_processor.get_video_dimensions(video_path)
+        if dimensions:
+            # 缓存结果
+            self._video_dimensions[video_path] = dimensions
+            return dimensions[1]
+        return None
