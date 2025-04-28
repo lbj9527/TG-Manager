@@ -1,5 +1,28 @@
 # TG-Manager 更新日志
 
+## 1.9.31 (2025-06-10)
+
+### 错误修复
+
+- **转发模块异步任务处理优化**：
+  - 修复了"Cannot enter into task ... while another task ... is being executed"错误
+  - 重构了`forward_view.py`中的`_start_forward`方法，使用`run_async_task`改进异步任务处理
+  - 新增`_run_forward_task`异步方法，改善任务执行流程，避免任务嵌套问题
+  - 添加了`_update_forward_status`槽函数，用于安全地在主线程中更新转发状态
+  - 改进了`_stop_forward`方法，确保正确取消任务并清理资源
+  - 强化了取消和完成时的资源清理机制，移除任务回调以避免循环引用
+  - 使用`QMetaObject.invokeMethod`在主线程中安全地更新 UI，替代直接从异步任务调用 UI 方法
+  - 安全地处理`CancelledError`异常，确保任务取消时不会出现未处理的异常
+
+### 实现细节
+
+- **异步通信机制改进**：
+  - 借鉴`upload_view.py`中的异步任务处理模式，统一了转发和上传模块的任务处理方式
+  - 在转发完成和出错时使用`QTimer.singleShot`延迟显示对话框，避免 UI 阻塞
+  - 为错误显示添加了回退机制，确保即使对话框显示失败，用户仍能看到错误信息
+  - 添加了`forward_task`属性以保持对任务的引用，便于取消和资源清理
+  - 提高了转发大量媒体时的稳定性，解决了偶发的崩溃问题
+
 ## 1.9.30 (2025-06-06)
 
 ### 错误修复
