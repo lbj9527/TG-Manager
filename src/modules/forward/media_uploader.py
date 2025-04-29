@@ -82,11 +82,11 @@ class MediaUploader:
                     return False
                     
                 # 记录文件信息以便调试
-                try:
-                    file_size = Path(media_file).stat().st_size
-                    _logger.info(f"媒体文件 {i+1}/{len(media_group)}: {media_file}, 大小: {file_size} 字节")
-                except Exception as e:
-                    _logger.warning(f"无法获取媒体文件信息: {media_file}, 错误: {e}")
+                # try:
+                #     file_size = Path(media_file).stat().st_size
+                #     _logger.info(f"媒体文件 {i+1}/{len(media_group)}: {media_file}, 大小: {file_size} 字节")
+                # except Exception as e:
+                #     _logger.warning(f"无法获取媒体文件信息: {media_file}, 错误: {e}")
         
         while retry_count < max_retries:          
             try:

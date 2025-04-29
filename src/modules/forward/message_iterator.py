@@ -74,7 +74,7 @@ class MessageIterator:
             max_batch_size = 100
             
             # 获取消息的最大尝试次数，避免无限循环
-            max_attempts = 5
+            max_attempts = 2
             attempt_count = 0
             
             while message_ids_to_fetch and attempt_count < max_attempts:

@@ -98,12 +98,6 @@ class Forwarder():
         info_message = f"配置的频道对数量: {len(channel_pairs)}"
         _logger.info(info_message)
         
-        # 遍历频道对，检查和打印配置
-        for i, pair in enumerate(channel_pairs):
-            _logger.info(f"检查频道对 {i+1}: source_channel={pair.get('source_channel')}, "
-                         f"target_channels={pair.get('target_channels')}, "
-                         f"start_id={pair.get('start_id')}, end_id={pair.get('end_id')}")
-        
         # 转发计数
         forward_count = 0
         total_forward_count = 0
@@ -128,13 +122,7 @@ class Forwarder():
                 info_message = f"源频道: {source_info_str}"
                 _logger.info(info_message)
                 
-                # 检查源频道转发权限
-                status_message = "检查源频道转发权限..."
-                _logger.info(status_message)
-                
                 source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
-                info_message = f"源频道转发权限: {source_can_forward}"
-                _logger.info(info_message)
                 
                 # 获取有效的目标频道
                 valid_target_channels = []
@@ -164,8 +152,6 @@ class Forwarder():
                     
                     # 发送总媒体组数量
                     total_groups = len(media_groups)
-                    info_message = f"找到 {total_groups} 个媒体组/消息"
-                    _logger.info(info_message)
                     
                     # 添加进度事件
                     group_count = 0
@@ -215,8 +201,6 @@ class Forwarder():
                     # 获取媒体组信息，传入当前频道对配置
                     media_groups_info = await self.media_group_collector.get_media_groups_info(source_id, pair)
                     total_groups = len(media_groups_info)
-                    info_message = f"找到 {total_groups} 个媒体组/消息"
-                    _logger.info(info_message)
                     
                     # 如果没有媒体组，跳过此频道对
                     if not media_groups_info:

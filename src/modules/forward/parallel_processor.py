@@ -326,7 +326,7 @@ class ParallelProcessor:
                     
                     # 记录媒体组信息
                     group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
-                    _logger.info(f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}")
+                    # _logger.info(f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}")
                     
                     # 提前检查哪些频道已经转发过
                     forwarded_targets = []
