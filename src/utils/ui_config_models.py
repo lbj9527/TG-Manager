@@ -343,6 +343,8 @@ class UIForwardConfig(BaseModel):
     hide_author: bool = Field(False, description="是否隐藏原作者")
     forward_delay: float = Field(0.1, description="转发间隔时间(秒)", ge=0)
     tmp_path: str = Field("tmp", description="临时文件路径")
+    send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
+    final_message_html_file: str = Field("", description="最后一条消息的HTML文件路径")
 
     @validator('forward_channel_pairs')
     def validate_forward_channel_pairs(cls, v):
@@ -364,6 +366,16 @@ class UIForwardConfig(BaseModel):
         # 修改路径字符检查，允许Windows盘符格式（如D:）
         if re.search(r'[<>"|?*]', v):
             raise ValueError("临时文件路径包含非法字符")
+        return v
+
+    @validator('final_message_html_file')
+    def validate_html_file_path(cls, v):
+        # 如果路径为空，直接返回
+        if not v:
+            return v
+        # 检查路径是否包含非法字符
+        if re.search(r'[<>"|?*]', v):
+            raise ValueError("HTML文件路径包含非法字符")
         return v
 
     class Config:
@@ -503,7 +515,9 @@ def create_default_config() -> UIConfig:
             remove_captions=False,
             hide_author=False,
             forward_delay=0.1,
-            tmp_path="tmp"
+            tmp_path="tmp",
+            send_final_message=False,
+            final_message_html_file=""
         ),
         MONITOR=UIMonitorConfig(
             monitor_channel_pairs=[

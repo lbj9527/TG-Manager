@@ -253,7 +253,9 @@ TG-Manager 使用 JSON 配置文件来存储应用设置。默认配置文件为
       // 转发频道对列表
       {
         "source_channel": "@source_channel1", // 源频道
-        "target_channels": ["@target_channel1", "@target_channel2"] // 目标频道列表
+        "target_channels": ["@target_channel1", "@target_channel2"], // 目标频道列表
+        "send_final_message": true,
+        "final_message_html_file": "messages/final_message.html"
       }
     ],
     "remove_captions": false, // 是否移除媒体说明文字
@@ -754,6 +756,75 @@ TG-Manager 的图形界面基于 PySide6 开发，主要组件包括：
     - `error_occurred(str, str)`: 错误信号 (错误信息, 错误详情)
   - 自动转发所有方法调用到原始下载器
   - 兼容 emit 和事件监听器接口
+
+## 功能
+
+### 转发模块
+
+TG-Manager 提供强大的转发功能，支持将消息从一个频道转发到另一个频道，具有以下特性：
+
+- 支持多个频道对的配置
+- 可以选择性地转发特定类型的媒体（图片、视频、文件等）
+- 支持历史消息批量转发
+- 支持自动转发新消息
+- **自定义文字尾巴功能**：
+  - 可以在转发完成后发送一条自定义的总结消息
+  - 支持从 HTML 文件中加载消息内容，可包含文字、表情和超链接
+  - 适用于添加版权声明、联系方式或其他额外信息
+
+#### 自定义文字尾巴功能
+
+转发模块的自定义文字尾巴功能允许用户在转发完成后向目标频道发送一条自定义的总结消息，具有以下特点：
+
+- **配置简单**：只需在转发配置中启用"转发完成后发送最后一条消息"选项，并选择 HTML 格式的消息文件
+- **支持富文本**：消息内容支持 HTML 格式，可包含文字、表情符号、加粗文本、斜体和超链接
+- **多目标频道**：自动向所有配置的目标频道发送最终消息
+- **错误重试**：内置重试机制，确保消息能够成功发送
+
+##### 配置字段
+
+在 config.json 的 FORWARD 部分，添加以下配置字段：
+
+```json
+"FORWARD": {
+  "forward_channel_pairs": [
+    {
+      "source_channel": "@source_channel1",
+      "target_channels": ["@target_channel1", "@target_channel2"],
+      "send_final_message": true,
+      "final_message_html_file": "messages/final_message.html"
+    }
+  ],
+  // 其他转发配置...
+}
+```
+
+关键配置字段说明：
+
+- `send_final_message`：布尔值，是否在转发完成后发送最终消息
+- `final_message_html_file`：字符串，HTML 文件路径，包含最终消息的内容
+
+##### HTML 文件格式示例
+
+final_message.html 文件内容示例：
+
+```html
+<b>转发已完成</b> 🎉 本频道内容来自 <a href="https://t.me/source_channel">原始频道</a>
+
+<i>版权声明：内容仅供学习参考，未经授权禁止商业使用</i>
+
+如有问题请联系 @admin_username
+```
+
+HTML 文件支持的格式包括：
+
+- 粗体：`<b>文本</b>`
+- 斜体：`<i>文本</i>`
+- 下划线：`<u>文本</u>`
+- 删除线：`<s>文本</s>`
+- 代码：`<code>文本</code>`
+- 超链接：`<a href="URL">链接文本</a>`
+- 表情符号：直接使用 Unicode 表情符号
 
 ## 贡献
 

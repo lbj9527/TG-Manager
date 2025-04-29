@@ -13,11 +13,13 @@ from PySide6.QtWidgets import (
     QProgressBar, QTabWidget, QSizePolicy, QFileDialog,
     QDoubleSpinBox, QDialog, QMenu
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer, QMetaObject, Q_ARG, QPoint
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer, QMetaObject, Q_ARG, QPoint, QDir
 from PySide6.QtGui import QIcon, QCursor
 
 import asyncio
 import time
+import os
+from pathlib import Path
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType, UIChannelPair, UIForwardConfig
@@ -258,6 +260,36 @@ class ForwardView(QWidget):
         
         options_layout.addLayout(tmp_layout)
         
+        # 自定义文字尾巴复选框
+        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
+        self.send_final_message_check.setChecked(False)
+        options_layout.addWidget(self.send_final_message_check)
+        
+        # HTML文件路径
+        html_file_layout = QHBoxLayout()
+        html_file_layout.addWidget(QLabel("HTML文件:"))
+        
+        self.final_message_html_file = QLineEdit()
+        self.final_message_html_file.setReadOnly(True)
+        self.final_message_html_file.setPlaceholderText("选择HTML文件")
+        self.final_message_html_file.setEnabled(False)  # 初始状态禁用
+        html_file_layout.addWidget(self.final_message_html_file)
+        
+        self.browse_html_button = QPushButton("浏览...")
+        self.browse_html_button.setEnabled(False)  # 初始状态禁用
+        html_file_layout.addWidget(self.browse_html_button)
+        
+        options_layout.addLayout(html_file_layout)
+        
+        # 添加HTML文件说明
+        html_info = QLabel(
+            "提示: HTML文件支持文字、表情和超链接，可用于发送活动总结或购买链接等信息。\n"
+            "转发完成后会自动发送该文件内容作为最后一条消息。"
+        )
+        html_info.setWordWrap(True)
+        html_info.setStyleSheet("font-size: 12px; color: #666; margin-top: 5px;")
+        options_layout.addWidget(html_info)
+        
         # 添加弹性空间
         options_layout.addStretch(1)
         
@@ -336,6 +368,12 @@ class ForwardView(QWidget):
         
         # 临时目录浏览
         self.browse_tmp_button.clicked.connect(self._browse_tmp_path)
+        
+        # HTML文件浏览
+        self.browse_html_button.clicked.connect(self._browse_html_file)
+        
+        # 自定义文字尾巴设置状态控制
+        self.send_final_message_check.toggled.connect(self._handle_final_message_option)
         
         # 转发控制
         self.start_forward_button.clicked.connect(self._start_forward)
@@ -472,11 +510,33 @@ class ForwardView(QWidget):
         self._update_pairs_list_title()
     
     def _browse_tmp_path(self):
-        """浏览临时目录路径"""
-        current_path = self.tmp_path.text()
-        path = QFileDialog.getExistingDirectory(self, "选择临时文件目录", current_path)
-        if path:
-            self.tmp_path.setText(path)
+        """浏览临时目录"""
+        directory = QFileDialog.getExistingDirectory(
+            self, 
+            "选择临时文件目录",
+            self.tmp_path.text()
+        )
+        
+        if directory:
+            self.tmp_path.setText(directory)
+    
+    def _browse_html_file(self):
+        """浏览HTML文件"""
+        current_path = os.path.dirname(self.final_message_html_file.text()) or QDir.homePath()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "选择HTML文件",
+            current_path,
+            "HTML文件 (*.html);;所有文件 (*.*)"
+        )
+        
+        if file_path:
+            self.final_message_html_file.setText(file_path)
+    
+    def _handle_final_message_option(self, checked):
+        """处理自定义文字尾巴选项的启用/禁用"""
+        self.final_message_html_file.setEnabled(checked)
+        self.browse_html_button.setEnabled(checked)
     
     def _get_media_types(self):
         """获取选中的媒体类型
@@ -746,7 +806,9 @@ class ForwardView(QWidget):
                 remove_captions=self.remove_captions_check.isChecked(),
                 hide_author=self.hide_author_check.isChecked(),
                 forward_delay=round(float(self.forward_delay.value()), 1),  # 四舍五入到一位小数，解决精度问题
-                tmp_path=self.tmp_path.text()
+                tmp_path=self.tmp_path.text(),
+                send_final_message=self.send_final_message_check.isChecked(),
+                final_message_html_file=self.final_message_html_file.text()
             )
             
             # 组织完整配置
@@ -898,6 +960,12 @@ class ForwardView(QWidget):
         # 加载其他转发选项
         self.remove_captions_check.setChecked(forward_config.get('remove_captions', False))
         self.hide_author_check.setChecked(forward_config.get('hide_author', False))
+        
+        # 加载自定义文字尾巴选项
+        self.send_final_message_check.setChecked(forward_config.get('send_final_message', False))
+        self.final_message_html_file.setText(forward_config.get('final_message_html_file', ''))
+        self.final_message_html_file.setEnabled(self.send_final_message_check.isChecked())
+        self.browse_html_button.setEnabled(self.send_final_message_check.isChecked())
         
         # 加载媒体类型复选框
         media_types = first_pair_media_types or forward_config.get('media_types', [])

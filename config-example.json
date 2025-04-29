@@ -67,28 +67,27 @@
   "FORWARD": {
     "forward_channel_pairs": [
       {
-        "source_channel": "https://t.me/xxzq6/3591",
+        "source_channel": "@source_channel1",
         "target_channels": [
-          "@xgyvcu",
-          "+JvLn20QQesE4M2Ux",
-          "@gsbsbt",
-          "@cuyfcopu"
-        ]
+          "@target_channel1",
+          "@target_channel2"
+        ],
+        "media_types": [
+          "photo",
+          "video",
+          "document",
+          "audio"
+        ],
+        "start_id": 0,
+        "end_id": 0
       }
     ],
-    "remove_captions": true,
-    "hide_author": true,
-    "media_types": [
-      "photo",
-      "video",
-      "document",
-      "audio",
-      "animation"
-    ],
-    "forward_delay": 0.7,
-    "start_id": 3591,
-    "end_id": 0,
-    "tmp_path": "tmp"
+    "remove_captions": false,
+    "hide_author": false,
+    "forward_delay": 0.1,
+    "tmp_path": "tmp",
+    "send_final_message": false,
+    "final_message_html_file": ""
   },
   "MONITOR": {
     "monitor_channel_pairs": [
