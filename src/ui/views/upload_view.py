@@ -8,10 +8,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QTextEdit, QSizePolicy, QTabWidget, QDoubleSpinBox
+    QTextEdit, QSizePolicy, QTabWidget, QDoubleSpinBox,
+    QProgressBar, QDialog, QMenu
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QMetaObject, Q_ARG
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QDir, QMetaObject, Q_ARG, QTimer
+from PySide6.QtGui import QIcon, QCursor
 
 from pathlib import Path
 import os
@@ -115,6 +116,8 @@ class UploadView(QWidget):
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.channel_list.setMinimumHeight(70)  # 调整最小高度以适应新的标签页高度
+        self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)  # 设置自定义右键菜单
+        self.channel_list.customContextMenuRequested.connect(self._show_context_menu)  # 连接右键菜单事件
         
         channel_layout.addWidget(channel_list_label)
         channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
@@ -335,40 +338,43 @@ class UploadView(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 4, 0, 0)  # 增加与上方组件的间距
         
-        self.start_upload_button = QPushButton("开始上传")
-        self.start_upload_button.setMinimumHeight(36)  # 减小按钮高度
+        self.start_button = QPushButton("开始上传")
+        self.start_button.setMinimumHeight(36)  # 减小按钮高度
         
-        self.stop_upload_button = QPushButton("停止上传")
-        self.stop_upload_button.setMinimumHeight(36)
-        self.stop_upload_button.setEnabled(False)  # 初始状态下禁用
+        self.stop_button = QPushButton("停止上传")
+        self.stop_button.setMinimumHeight(36)
+        self.stop_button.setEnabled(False)  # 初始状态下禁用
         
         self.save_config_button = QPushButton("保存配置")
         
-        button_layout.addWidget(self.start_upload_button)
-        button_layout.addWidget(self.stop_upload_button)
+        button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.save_config_button)
         
         self.main_layout.addLayout(button_layout)
     
     def _connect_signals(self):
         """连接信号和槽"""
-        # 频道管理
+        # 连接信号
+        self.browse_button.clicked.connect(self._browse_directory)
+        self.browse_html_button.clicked.connect(self._browse_html_file)
         self.add_channel_button.clicked.connect(self._add_channel)
         self.remove_channel_button.clicked.connect(self._remove_channels)
         
-        # 说明文字选项互斥处理
+        # 说明文字选项互斥逻辑
         self.use_folder_name_check.clicked.connect(self._handle_caption_option)
         self.read_title_txt_check.clicked.connect(self._handle_caption_option)
         self.send_final_message_check.clicked.connect(self._handle_caption_option)
         
-        # 文件目录选择
-        self.browse_button.clicked.connect(self._browse_directory)
-        self.browse_html_button.clicked.connect(self._browse_html_file)
-        
-        # 上传控制
-        self.start_upload_button.clicked.connect(self._start_upload)
-        self.stop_upload_button.clicked.connect(self._stop_upload)
+        # 上传控制按钮
+        self.start_button.clicked.connect(self._start_upload)
+        self.stop_button.clicked.connect(self._stop_upload)
         self.save_config_button.clicked.connect(self._save_config)
+        
+        # 如果有父窗口，尝试连接config_saved信号
+        parent = self.parent()
+        if parent and hasattr(parent, 'save_config'):
+            self.config_saved.connect(parent.save_config)
     
     def _handle_caption_option(self):
         """处理说明文字选项的互斥和启用/禁用HTML文件选择器"""
@@ -489,8 +495,8 @@ class UploadView(QWidget):
         self.upload_speed_label.setText("初始化上传...")
         
         # 更新按钮状态
-        self.start_upload_button.setEnabled(False)
-        self.stop_upload_button.setEnabled(True)
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
         
         # 清空上传列表
         self.upload_list.clear()
@@ -516,8 +522,8 @@ class UploadView(QWidget):
         self.upload_speed_label.setText("速度: - | 剩余时间: -")
         
         # 恢复按钮状态
-        self.start_upload_button.setEnabled(True)
-        self.stop_upload_button.setEnabled(False)
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
     
     def _save_config(self):
         """保存当前配置"""
@@ -674,8 +680,8 @@ class UploadView(QWidget):
         self.upload_speed_label.setText("速度: - | 剩余时间: -")
         
         # 恢复按钮状态
-        self.start_upload_button.setEnabled(True)
-        self.stop_upload_button.setEnabled(False)
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
         
         # 显示完成消息
         QMessageBox.information(self, "上传完成", "所有文件上传任务已完成")
@@ -912,8 +918,8 @@ class UploadView(QWidget):
             self.upload_speed_label.setText("上传完成")
         
         # 恢复按钮状态 - 在异步方法中已经处理，这里不重复处理
-        # self.start_upload_button.setEnabled(True)
-        # self.stop_upload_button.setEnabled(False)
+        # self.start_button.setEnabled(True)
+        # self.stop_button.setEnabled(False)
         
         logger.info(f"所有上传{'成功' if success else '完成但有错误'}，总共 {total_files} 个文件")
 
@@ -931,8 +937,8 @@ class UploadView(QWidget):
         self.upload_speed_label.setText(error_message)
         
         # 恢复按钮状态 - 在异步方法中已经处理，这里不重复处理
-        # self.start_upload_button.setEnabled(True)
-        # self.stop_upload_button.setEnabled(False)
+        # self.start_button.setEnabled(True)
+        # self.stop_button.setEnabled(False)
         
         logger.error(error_message)
 
@@ -1010,8 +1016,102 @@ class UploadView(QWidget):
         self.upload_speed_label.setText("请检查日志获取详细信息")
         
         # 恢复按钮状态
-        self.start_upload_button.setEnabled(True)
-        self.stop_upload_button.setEnabled(False)
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
         
         # 显示错误对话框
-        QMessageBox.critical(self, "上传错误", error_message) 
+        QMessageBox.critical(self, "上传错误", error_message)
+
+    def _show_context_menu(self, pos):
+        """显示右键菜单
+        
+        Args:
+            pos: 鼠标位置
+        """
+        # 确保有选中的项目
+        current_item = self.channel_list.itemAt(pos)
+        if not current_item:
+            return
+        
+        # 创建菜单
+        context_menu = QMenu(self)
+        
+        # 添加菜单项
+        edit_action = context_menu.addAction("编辑")
+        delete_action = context_menu.addAction("删除")
+        
+        # 显示菜单并获取用户选择的操作
+        action = context_menu.exec(QCursor.pos())
+        
+        # 处理用户选择
+        if action == edit_action:
+            self._edit_channel(current_item)
+        elif action == delete_action:
+            # 删除操作直接调用已有的删除方法
+            self._remove_channels()
+
+    def _edit_channel(self, item):
+        """编辑频道
+        
+        Args:
+            item: 要编辑的列表项
+        """
+        # 获取项目索引
+        row = self.channel_list.row(item)
+        
+        # 获取频道数据
+        channel_text = item.text()
+        
+        # 创建编辑对话框
+        edit_dialog = QDialog(self)
+        edit_dialog.setWindowTitle("编辑目标频道")
+        edit_dialog.setMinimumWidth(400)
+        
+        # 对话框布局
+        dialog_layout = QVBoxLayout(edit_dialog)
+        
+        # 表单布局
+        form_layout = QFormLayout()
+        
+        # 频道输入
+        channel_input = QLineEdit(channel_text)
+        form_layout.addRow("目标频道:", channel_input)
+        
+        # 添加表单布局到对话框
+        dialog_layout.addLayout(form_layout)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("保存")
+        cancel_button = QPushButton("取消")
+        
+        button_layout.addStretch(1)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        
+        dialog_layout.addLayout(button_layout)
+        
+        # 连接按钮信号
+        save_button.clicked.connect(edit_dialog.accept)
+        cancel_button.clicked.connect(edit_dialog.reject)
+        
+        # 显示对话框并处理结果
+        if edit_dialog.exec() == QDialog.Accepted:
+            try:
+                # 收集编辑后的数据
+                new_channel = channel_input.text().strip()
+                
+                # 验证输入
+                if not new_channel:
+                    raise ValueError("频道链接不能为空")
+                
+                # 检查是否已存在相同频道（排除当前项）
+                for i in range(self.channel_list.count()):
+                    if i != row and self.channel_list.item(i).text() == new_channel:
+                        raise ValueError("此频道已在列表中")
+                
+                # 更新列表项
+                item.setText(new_channel)
+                
+            except ValueError as e:
+                QMessageBox.warning(self, "输入错误", str(e)) 

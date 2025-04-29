@@ -8,10 +8,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton,
     QGroupBox, QScrollArea, QSpinBox, QGridLayout,
     QListWidget, QListWidgetItem, QFileDialog, QMessageBox,
-    QSizePolicy, QTabWidget, QSplitter, QProgressBar
+    QSizePolicy, QTabWidget, QSplitter, QProgressBar,
+    QDialog, QMenu
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QCursor
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
@@ -249,9 +250,11 @@ class DownloadView(QWidget):
         scroll_layout.setContentsMargins(0, 0, 0, 0)
         scroll_layout.setSpacing(0)
         
-        # 频道列表 - 不再设置固定高度，让它在滚动区域内自然扩展
+        # 频道列表
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)  # 设置自定义右键菜单
+        self.channel_list.customContextMenuRequested.connect(self._show_context_menu)  # 连接右键菜单事件
         scroll_layout.addWidget(self.channel_list)
         
         # 设置滚动区域的内容
@@ -1653,3 +1656,223 @@ class DownloadView(QWidget):
         except Exception as e:
             logger.error(f"检查目录大小时出错: {e}")
             QMessageBox.warning(self, "错误", f"检查目录大小时出错: {str(e)}") 
+
+    def _show_context_menu(self, pos):
+        """显示右键菜单
+        
+        Args:
+            pos: 鼠标位置
+        """
+        # 确保有选中的项目
+        current_item = self.channel_list.itemAt(pos)
+        if not current_item:
+            return
+        
+        # 创建菜单
+        context_menu = QMenu(self)
+        
+        # 添加菜单项
+        edit_action = context_menu.addAction("编辑")
+        delete_action = context_menu.addAction("删除")
+        
+        # 显示菜单并获取用户选择的操作
+        action = context_menu.exec(QCursor.pos())
+        
+        # 处理用户选择
+        if action == edit_action:
+            self._edit_channel(current_item)
+        elif action == delete_action:
+            # 删除操作直接调用已有的删除方法
+            self._remove_channels()
+
+    def _edit_channel(self, item):
+        """编辑频道配置
+        
+        Args:
+            item: 要编辑的列表项
+        """
+        # 获取项目索引
+        row = self.channel_list.row(item)
+        
+        # 获取频道数据
+        channel_data = item.data(Qt.UserRole)
+        if not channel_data:
+            return
+        
+        # 创建编辑对话框
+        edit_dialog = QDialog(self)
+        edit_dialog.setWindowTitle("编辑频道配置")
+        edit_dialog.setMinimumWidth(400)
+        
+        # 对话框布局
+        dialog_layout = QVBoxLayout(edit_dialog)
+        
+        # 表单布局
+        form_layout = QFormLayout()
+        
+        # 频道输入
+        channel_input = QLineEdit(channel_data.get('channel', ''))
+        form_layout.addRow("频道链接:", channel_input)
+        
+        # 添加表单布局到对话框
+        dialog_layout.addLayout(form_layout)
+        
+        # 消息ID范围
+        id_layout = QHBoxLayout()
+        
+        # 起始ID
+        start_id_input = QSpinBox()
+        start_id_input.setRange(1, 999999999)
+        start_id_input.setValue(channel_data.get('start_id', 1))
+        
+        # 结束ID
+        end_id_input = QSpinBox()
+        end_id_input.setRange(0, 999999999)
+        end_id_input.setValue(channel_data.get('end_id', 0))
+        end_id_input.setSpecialValueText("最新消息")
+        
+        id_layout.addWidget(QLabel("起始ID:"))
+        id_layout.addWidget(start_id_input)
+        id_layout.addWidget(QLabel("结束ID:"))
+        id_layout.addWidget(end_id_input)
+        
+        # 添加ID范围布局
+        dialog_layout.addLayout(id_layout)
+        
+        # 关键词输入
+        keywords_layout = QHBoxLayout()
+        keywords_layout.addWidget(QLabel("关键词:"))
+        
+        keywords_input = QLineEdit()
+        keywords_input.setPlaceholderText("多个关键词用逗号分隔，同义词用横杠'-'连接")
+        keywords_str = ','.join(channel_data.get('keywords', []))
+        keywords_input.setText(keywords_str)
+        
+        keywords_layout.addWidget(keywords_input)
+        dialog_layout.addLayout(keywords_layout)
+        
+        # 媒体类型选择
+        media_types = channel_data.get('media_types', [])
+        
+        media_group = QGroupBox("媒体类型")
+        media_layout = QHBoxLayout(media_group)
+        
+        photo_check = QCheckBox("照片")
+        photo_check.setChecked("photo" in media_types)
+        media_layout.addWidget(photo_check)
+        
+        video_check = QCheckBox("视频")
+        video_check.setChecked("video" in media_types)
+        media_layout.addWidget(video_check)
+        
+        document_check = QCheckBox("文档")
+        document_check.setChecked("document" in media_types)
+        media_layout.addWidget(document_check)
+        
+        audio_check = QCheckBox("音频")
+        audio_check.setChecked("audio" in media_types)
+        media_layout.addWidget(audio_check)
+        
+        animation_check = QCheckBox("动画")
+        animation_check.setChecked("animation" in media_types)
+        media_layout.addWidget(animation_check)
+        
+        # 添加媒体类型组
+        dialog_layout.addWidget(media_group)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("保存")
+        cancel_button = QPushButton("取消")
+        
+        button_layout.addStretch(1)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        
+        dialog_layout.addLayout(button_layout)
+        
+        # 连接按钮信号
+        save_button.clicked.connect(edit_dialog.accept)
+        cancel_button.clicked.connect(edit_dialog.reject)
+        
+        # 显示对话框并处理结果
+        if edit_dialog.exec() == QDialog.Accepted:
+            try:
+                # 收集编辑后的数据
+                new_channel = channel_input.text().strip()
+                
+                # 验证输入
+                if not new_channel:
+                    raise ValueError("频道链接不能为空")
+                
+                # 收集关键词
+                new_keywords = []
+                keywords_text = keywords_input.text().strip()
+                if keywords_text:
+                    new_keywords = [k.strip() for k in keywords_text.split(',') if k.strip()]
+                
+                # 收集媒体类型
+                new_media_types = []
+                if photo_check.isChecked():
+                    new_media_types.append("photo")
+                if video_check.isChecked():
+                    new_media_types.append("video")
+                if document_check.isChecked():
+                    new_media_types.append("document")
+                if audio_check.isChecked():
+                    new_media_types.append("audio")
+                if animation_check.isChecked():
+                    new_media_types.append("animation")
+                
+                if not new_media_types:
+                    raise ValueError("至少需要选择一种媒体类型")
+                
+                # 创建更新后的频道数据
+                updated_data = {
+                    'channel': new_channel,
+                    'start_id': start_id_input.value(),
+                    'end_id': end_id_input.value(),
+                    'keywords': new_keywords,
+                    'media_types': new_media_types
+                }
+                
+                # 更新列表项和数据
+                self._update_channel(row, updated_data)
+                
+            except ValueError as e:
+                QMessageBox.warning(self, "输入错误", str(e))
+
+    def _update_channel(self, row, updated_data):
+        """更新频道数据
+        
+        Args:
+            row: 行索引
+            updated_data: 更新后的频道数据
+        """
+        # 更新列表项
+        if 0 <= row < self.channel_list.count():
+            item = self.channel_list.item(row)
+            if item:
+                # 创建显示文本
+                display_text = f"{updated_data['channel']} (ID范围: {updated_data['start_id']}-{updated_data['end_id'] if updated_data['end_id'] > 0 else '最新'})"
+                
+                # 如果有关键词，添加到显示文本中
+                if updated_data.get('keywords'):
+                    keywords_str = '，'.join(updated_data['keywords'])
+                    display_text += f"（关键词：{keywords_str}）"
+                
+                # 添加媒体类型到显示文本中
+                if updated_data.get('media_types'):
+                    media_types_display = {
+                        "photo": "照片",
+                        "video": "视频",
+                        "document": "文档",
+                        "audio": "音频",
+                        "animation": "动画"
+                    }
+                    media_types_str = '、'.join([media_types_display.get(t, t) for t in updated_data['media_types']])
+                    display_text += f"（媒体类型：{media_types_str}）"
+                
+                # 更新项目文本和数据
+                item.setText(display_text)
+                item.setData(Qt.UserRole, updated_data) 

@@ -1,13 +1,5 @@
 {
   "channels": {
-    "https://t.me/xxzq6/3597": {
-      "channel_id": -1001642973779,
-      "downloaded_messages": [
-        3615,
-        3616,
-        3617
-      ]
-    },
     "https://t.me/csdkl1/109658": {
       "channel_id": -1001474990982,
       "downloaded_messages": [
@@ -32,7 +24,16 @@
         109676,
         109677
       ]
+    },
+    "https://t.me/xxzq6/3646": {
+      "channel_id": -1001642973779,
+      "downloaded_messages": [
+        3646,
+        3647,
+        3648,
+        3649
+      ]
     }
   },
-  "last_updated": "2025-04-28T19:33:49.702668"
+  "last_updated": "2025-04-29T20:00:54.148949"
 }
