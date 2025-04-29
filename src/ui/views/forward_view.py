@@ -81,14 +81,14 @@ class ForwardView(QWidget):
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
-        self.config_tabs.setMaximumHeight(320)  # 设置最大高度
-        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.main_layout.addWidget(self.config_tabs)
+        # 移除最大高度限制，让标签页可以占用更多空间
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.main_layout.addWidget(self.config_tabs, 1)  # 使标签页可以自动拉伸
         
         # 创建配置标签页
         self._create_config_panel()
         
-        # 创建下部转发状态面板
+        # 创建转发进度标签页
         self._create_forward_panel()
         
         # 创建底部操作按钮
@@ -265,10 +265,9 @@ class ForwardView(QWidget):
     
     def _create_forward_panel(self):
         """创建转发状态面板"""
-        # 创建底部容器
-        self.status_container = QWidget()
-        self.status_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        status_layout = QVBoxLayout(self.status_container)
+        # 创建转发进度标签页
+        self.progress_tab = QWidget()
+        status_layout = QVBoxLayout(self.progress_tab)
         status_layout.setContentsMargins(6, 6, 6, 6)
         
         # 状态表格
@@ -306,8 +305,8 @@ class ForwardView(QWidget):
         
         status_layout.addLayout(progress_layout)
         
-        # 添加状态容器到主布局
-        self.main_layout.addWidget(self.status_container, 1)
+        # 添加转发进度标签页到配置面板
+        self.config_tabs.addTab(self.progress_tab, "转发进度")
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -521,6 +520,9 @@ class ForwardView(QWidget):
         # 更新进度条状态
         self.progress_bar.setFormat("准备转发...")
         self.progress_bar.setRange(0, 0)  # 显示持续进度
+        
+        # 自动切换到转发进度标签页
+        self.config_tabs.setCurrentWidget(self.progress_tab)
 
         # 创建一个新的事件循环运行器来执行转发任务
         self.forward_task = run_async_task(self._run_forward_task(forward_config))
