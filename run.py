@@ -17,7 +17,7 @@ from src.utils.client_manager import ClientManager
 from src.modules.downloader import Downloader
 from src.modules.downloader_serial import DownloaderSerial
 from src.modules.uploader import Uploader
-from src.modules.forwarder import Forwarder
+from src.modules.forward.forwarder import Forwarder
 from src.modules.monitor import Monitor
 from src.utils.ui_config_manager import UIConfigManager
 

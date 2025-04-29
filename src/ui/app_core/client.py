@@ -299,7 +299,7 @@ class ClientHandler:
             # 7. 初始化转发模块
             logger.info("正在初始化转发模块...")
             try:
-                from src.modules.forwarder import Forwarder
+                from src.modules.forward.forwarder import Forwarder
                 original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
                                             self.app.channel_resolver, self.app.history_manager, 
                                             self.app.downloader, self.app.uploader, self.app)

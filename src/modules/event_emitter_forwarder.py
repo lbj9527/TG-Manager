@@ -4,7 +4,7 @@ TG-Manager 事件发射器转发器
 """
 
 from PySide6.QtCore import Signal
-from src.modules.forwarder import Forwarder as OriginalForwarder
+from src.modules.forward.forwarder import Forwarder as OriginalForwarder
 from src.utils.logger import get_logger
 from src.utils.event_emitter import BaseEventEmitter
 from typing import Any, Dict, List

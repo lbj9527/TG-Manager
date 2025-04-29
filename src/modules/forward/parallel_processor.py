@@ -1,0 +1,473 @@
+"""
+并行处理器，用于并行下载和上传媒体组
+"""
+
+import asyncio
+import os
+import time
+import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Tuple, Any, Optional, Set, AsyncGenerator
+
+from pyrogram import Client
+from pyrogram.types import Message
+from pyrogram.errors import FloodWait
+
+from src.modules.forward.media_group_download import MediaGroupDownload
+from src.modules.forward.message_downloader import MessageDownloader
+from src.modules.forward.media_uploader import MediaUploader
+from src.modules.forward.media_group_collector import MediaGroupCollector
+from src.utils.logger import get_logger
+
+_logger = get_logger()
+
+class ParallelProcessor:
+    """
+    并行处理器，负责并行下载和上传媒体组
+    实现生产者-消费者模式
+    """
+    
+    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None):
+        """
+        初始化并行处理器
+        
+        Args:
+            client: Pyrogram客户端实例
+            history_manager: 历史记录管理器实例
+            general_config: 通用配置
+        """
+        self.client = client
+        self.history_manager = history_manager
+        self.general_config = general_config or {}
+        
+        # 创建媒体组队列
+        self.media_group_queue = asyncio.Queue()
+        
+        # 生产者-消费者控制
+        self.download_running = False
+        self.upload_running = False
+        self.producer_task = None
+        self.consumer_task = None
+        
+        # 初始化下载和上传组件
+        self.message_downloader = MessageDownloader(client)
+        self.media_uploader = MediaUploader(client, history_manager, general_config)
+    
+    async def process_parallel_download_upload(self, 
+                                       source_channel: str, 
+                                       source_id: int, 
+                                       media_groups_info: List[Tuple[str, List[int]]], 
+                                       temp_dir: Path,
+                                       target_channels: List[Tuple[str, int, str]]):
+        """
+        并行处理媒体组下载和上传
+        
+        Args:
+            source_channel: 源频道标识符
+            source_id: 源频道ID
+            media_groups_info: 媒体组信息列表[(group_id, [message_ids])]
+            temp_dir: 临时下载目录
+            target_channels: 目标频道列表，用于检查是否已转发
+        """
+        try:
+            # 设置下载和上传标志
+            self.download_running = True
+            self.upload_running = True
+            
+            _logger.info("开始并行下载和上传媒体组...")
+            
+            # 创建生产者和消费者任务
+            producer_task = asyncio.create_task(
+                self._producer_download_media_groups_parallel(
+                    source_channel, source_id, media_groups_info, temp_dir, target_channels
+                )
+            )
+            consumer_task = asyncio.create_task(
+                self._consumer_upload_media_groups(target_channels)
+            )
+            
+            self.producer_task = producer_task
+            self.consumer_task = consumer_task
+            
+            # 等待生产者和消费者任务完成
+            await producer_task
+            _logger.info("下载任务完成，等待所有上传完成...")
+            
+            # 发送结束信号
+            await self.media_group_queue.put(None)
+            
+            # 等待消费者任务完成
+            await consumer_task
+            
+            # 重置任务引用
+            self.producer_task = None
+            self.consumer_task = None
+            
+            _logger.info("媒体组下载和上传任务完成")
+            
+        except Exception as e:
+            _logger.error(f"下载和上传任务失败: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            _logger.error(error_details)
+            
+            # 取消所有任务
+            if self.producer_task and not self.producer_task.done():
+                self.producer_task.cancel()
+            if self.consumer_task and not self.consumer_task.done():
+                self.consumer_task.cancel()
+            
+            # 等待任务取消
+            try:
+                if self.producer_task:
+                    await self.producer_task
+            except asyncio.CancelledError:
+                pass
+            
+            try:
+                if self.consumer_task:
+                    await self.consumer_task
+            except asyncio.CancelledError:
+                pass
+            
+            # 重置任务标志
+            self.download_running = False
+            self.upload_running = False
+            
+            # 清空队列
+            while not self.media_group_queue.empty():
+                try:
+                    await self.media_group_queue.get()
+                    self.media_group_queue.task_done()
+                except Exception:
+                    pass
+            
+            raise
+    
+    async def _producer_download_media_groups_parallel(self, 
+                                                 source_channel: str, 
+                                                 source_id: int, 
+                                                 media_groups_info: List[Tuple[str, List[int]]], 
+                                                 temp_dir: Path,
+                                                 target_channels: List[Tuple[str, int, str]]):
+        """
+        生产者：并行下载媒体组
+        
+        Args:
+            source_channel: 源频道标识符
+            source_id: 源频道ID
+            media_groups_info: 媒体组信息列表[(group_id, [message_ids])]
+            temp_dir: 临时下载目录
+            target_channels: 目标频道列表，用于检查是否已转发
+        """
+        try:
+            forward_count = 0
+            total_groups = len(media_groups_info)
+            processed_groups = 0
+            
+            _logger.info(f"开始并行下载 {total_groups} 个媒体组")
+            
+            for group_id, message_ids in media_groups_info:
+                try:   
+                    # 更新进度
+                    processed_groups += 1
+                    progress_percentage = (processed_groups / total_groups) * 100
+                    
+                    # 检查是否已全部转发
+                    all_forwarded = True
+                    forwarded_targets = []
+                    not_forwarded_targets = []
+                    
+                    for target_channel, target_id, target_info in target_channels:
+                        target_all_forwarded = True
+                        for message_id in message_ids:
+                            if not self.history_manager or not self.history_manager.is_message_forwarded(source_channel, message_id, target_channel):
+                                target_all_forwarded = False
+                                all_forwarded = False
+                                break
+                        
+                        if target_all_forwarded:
+                            forwarded_targets.append(target_info)
+                        else:
+                            not_forwarded_targets.append(target_info)
+                    
+                    if all_forwarded:
+                        _logger.info(f"媒体组 {group_id} (消息IDs: {message_ids}) 已转发到所有目标频道，跳过")
+                        continue
+                    elif forwarded_targets:
+                        _logger.info(f"媒体组 {group_id} (消息IDs: {message_ids}) 已部分转发: 已转发到 {forwarded_targets}, 未转发到 {not_forwarded_targets}")
+                    
+                    # 检查是否达到限制
+                    if self.general_config.get('limit', 0) > 0 and forward_count >= self.general_config.get('limit', 0):
+                        _logger.info(f"已达到转发限制 {self.general_config.get('limit', 0)}，暂停 {self.general_config.get('pause_time', 60)} 秒")
+                        await asyncio.sleep(self.general_config.get('pause_time', 60))
+                        forward_count = 0
+                    
+                    # 为每个媒体组创建安全的目录名
+                    # 将媒体组ID转为字符串，并替换可能的非法路径字符
+                    safe_group_id = self._get_safe_path_name(str(group_id))
+                    
+                    # 为每个媒体组创建单独的下载目录
+                    group_dir = temp_dir / safe_group_id
+                    group_dir.mkdir(exist_ok=True)
+                    
+                    # 获取完整消息对象
+                    messages = []
+                    _logger.info(f"正在获取媒体组 {group_id} 的 {len(message_ids)} 条消息")
+                    
+                    for message_id in message_ids:
+                        try:                 
+                            message = await self.client.get_messages(source_id, message_id)
+                            if message:
+                                messages.append(message)
+                                _logger.debug(f"获取消息 {message_id} 成功")
+                        except Exception as e:
+                            _logger.error(f"获取消息 {message_id} 失败: {e}")
+                    
+                    if not messages:
+                        _logger.warning(f"媒体组 {group_id} 没有获取到有效消息，跳过")
+                        continue
+                    
+                    # 下载媒体文件
+                    _logger.info(f"正在下载媒体组 {group_id} 的 {len(messages)} 条媒体消息")
+                    
+                    downloaded_files = await self.message_downloader.download_messages(messages, group_dir, source_id)
+                    if not downloaded_files:
+                        _logger.warning(f"媒体组 {group_id} 没有媒体文件可下载，跳过")
+                        continue
+                    
+                    # 获取消息文本
+                    caption = None
+                    for message in messages:
+                        if message.caption or message.text:
+                            caption = message.caption or message.text
+                            break
+                    
+                    # 移除原始标题
+                    if self.general_config.get('remove_captions', False):
+                        caption = None
+                    
+                    # 创建媒体组下载结果对象
+                    media_group_download = MediaGroupDownload(
+                        source_channel=source_channel,
+                        source_id=source_id,
+                        messages=messages,
+                        download_dir=group_dir,
+                        downloaded_files=downloaded_files,
+                        caption=caption
+                    )
+                    
+                    # 将下载完成的媒体组放入队列
+                    _logger.info(f"媒体组 {group_id} 下载完成，放入上传队列: 消息IDs={[m.id for m in messages]}")
+                    
+                    await self.media_group_queue.put(media_group_download)
+                    
+                    forward_count += 1
+                    
+                    # 添加适当的延迟，避免API限制
+                    await asyncio.sleep(0.5)
+                    
+                except Exception as e:
+                    _logger.error(f"处理媒体组 {group_id} 失败: {str(e)}")
+                    import traceback
+                    error_details = traceback.format_exc()
+                    _logger.error(error_details)
+                    continue
+                    
+        except Exception as e:
+            _logger.error(f"生产者并行下载任务异常: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            _logger.error(error_details)
+        finally:
+            self.download_running = False
+            _logger.info("生产者(下载)任务结束")
+    
+    async def _consumer_upload_media_groups(self, target_channels: List[Tuple[str, int, str]]):
+        """
+        消费者：上传媒体组到目标频道
+        
+        Args:
+            target_channels: 目标频道列表(频道标识符, 频道ID, 频道信息)
+        """
+        try:
+            # 记录上传计数
+            uploaded_count = 0
+            failed_count = 0
+            
+            _logger.info("开始上传媒体组到目标频道")
+            
+            while True:         
+                # 从队列获取下一个媒体组
+                try:
+                    media_group_download = await asyncio.wait_for(
+                        self.media_group_queue.get(), 
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    # 每5秒检查一次是否应该退出
+                    if not self.download_running and self.media_group_queue.empty():
+                        _logger.info("下载任务已完成且队列为空，上传任务准备退出")
+                        break
+                    continue
+                
+                # 检查是否结束信号
+                if media_group_download is None:
+                    _logger.info("收到结束信号，消费者准备退出")
+                    break
+                
+                try:
+                    # 记录媒体组的目录，以便上传后删除
+                    media_group_dir = media_group_download.download_dir
+                    message_ids = [m.id for m in media_group_download.messages]
+                    source_channel = media_group_download.source_channel
+                    
+                    # 记录媒体组信息
+                    group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
+                    _logger.info(f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}")
+                    
+                    # 提前检查哪些频道已经转发过
+                    forwarded_targets = []
+                    not_forwarded_targets = []
+                    
+                    for target_channel, _, target_info in target_channels:
+                        all_forwarded = True
+                        for message in media_group_download.messages:
+                            if not self.history_manager or not self.history_manager.is_message_forwarded(media_group_download.source_channel, message.id, target_channel):
+                                all_forwarded = False
+                                break
+                        
+                        if all_forwarded:
+                            forwarded_targets.append(target_info)
+                        else:
+                            not_forwarded_targets.append(target_info)
+                    
+                    if forwarded_targets:
+                        _logger.info(f"{group_id} {message_ids} 已转发到: {forwarded_targets}")
+                    
+                    if not not_forwarded_targets:
+                        _logger.info(f"{group_id} {message_ids} 已转发到所有目标频道，跳过上传")
+                        # 清理已全部转发的媒体组目录
+                        self.media_uploader.cleanup_media_group_dir(media_group_dir)
+                        self.media_group_queue.task_done()
+                        continue
+                    
+                    # 为视频文件生成缩略图
+                    thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+                    
+                    # 准备媒体组上传
+                    media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
+                    
+                    if not media_group:
+                        _logger.warning("没有有效的媒体文件可上传，跳过这个媒体组")
+                        # 清理空目录
+                        self.media_uploader.cleanup_media_group_dir(media_group_dir)
+                        self.media_group_queue.task_done()
+                        continue
+                    
+                    # 标记是否所有目标频道都已上传成功
+                    all_targets_uploaded = True
+                    remaining_targets = not_forwarded_targets.copy()
+                    uploaded_targets = []
+                        
+                    # 依次上传到需要转发的目标频道
+                    first_success_message = None
+                    
+                    # 计算总目标频道数量，用于进度计算
+                    total_targets = len(not_forwarded_targets)
+                    current_target = 0
+                    
+                    for target_channel, target_id, target_info in target_channels:    
+                        # 检查是否已转发到此频道
+                        all_forwarded = True
+                        for message in media_group_download.messages:
+                            if not self.history_manager or not self.history_manager.is_message_forwarded(media_group_download.source_channel, message.id, target_channel):
+                                all_forwarded = False
+                                break
+                        
+                        if all_forwarded:
+                            _logger.debug(f"{group_id} {message_ids} 已转发到频道 {target_info}，跳过")
+                            continue
+                        
+                        # 更新当前目标进度
+                        current_target += 1
+                        progress_percentage = (current_target / total_targets) * 100
+                        
+                        # 上传到目标频道
+                        _logger.info(f"上传{group_id} {message_ids} 到频道 {target_info}")
+                        success = await self.media_uploader.upload_media_group_to_channel(
+                            media_group, 
+                            media_group_download, 
+                            target_channel, 
+                            target_id, 
+                            target_info,
+                            thumbnails
+                        )
+                        
+                        if success:
+                            if target_info in remaining_targets:
+                                remaining_targets.remove(target_info)
+                                uploaded_targets.append(target_info)
+                            uploaded_count += 1
+                        else:
+                            all_targets_uploaded = False
+                            failed_count += 1
+                            
+                    # 媒体组上传完成后（无论成功失败），都清理缩略图
+                    self.media_uploader.cleanup_thumbnails(thumbnails)
+                    
+                    # 媒体组上传完成后，清理媒体组的本地文件
+                    if all_targets_uploaded:
+                        _logger.info(f"{group_id} {message_ids} 已成功上传到所有目标频道，清理本地文件: {media_group_dir}")
+                        self.media_uploader.cleanup_media_group_dir(media_group_dir)
+                    else:
+                        _logger.warning(f"{group_id} {message_ids} 未能成功上传到所有目标频道，仍有 {remaining_targets} 未转发完成，保留本地文件: {media_group_dir}")
+                
+                except Exception as e:
+                    _logger.error(f"处理媒体组上传失败: {str(e)}")
+                    import traceback
+                    error_details = traceback.format_exc()
+                    _logger.error(error_details)
+                finally:
+                    # 标记此项为处理完成
+                    self.media_group_queue.task_done()
+        
+        except asyncio.CancelledError:
+            _logger.warning("消费者任务被取消")
+        except Exception as e:
+            _logger.error(f"消费者任务异常: {str(e)}")
+            import traceback
+            error_details = traceback.format_exc()
+            _logger.error(error_details)
+        finally:
+            self.upload_running = False
+            _logger.info(f"消费者(上传)任务结束，共上传 {uploaded_count} 个媒体组，失败 {failed_count} 个")
+    
+    def _get_safe_path_name(self, path_str: str) -> str:
+        """
+        将路径字符串转换为安全的文件名，移除无效字符
+        
+        Args:
+            path_str: 原始路径字符串
+            
+        Returns:
+            str: 处理后的安全路径字符串
+        """
+        # 替换URL分隔符
+        safe_str = path_str.replace('://', '_').replace(':', '_')
+        
+        # 替换路径分隔符
+        safe_str = safe_str.replace('\\', '_').replace('/', '_')
+        
+        # 替换其他不安全的文件名字符
+        unsafe_chars = '<>:"|?*'
+        for char in unsafe_chars:
+            safe_str = safe_str.replace(char, '_')
+            
+        # 如果结果太长，取MD5哈希值
+        if len(safe_str) > 100:
+            import hashlib
+            safe_str = hashlib.md5(path_str.encode()).hexdigest()
+            
+        return safe_str 

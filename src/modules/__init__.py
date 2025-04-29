@@ -4,7 +4,7 @@
 
 from src.modules.downloader import Downloader
 from src.modules.uploader import Uploader
-from src.modules.forwarder import Forwarder
+from src.modules.forward.forwarder import Forwarder
 from src.modules.monitor import Monitor
 from src.modules.event_emitter_downloader import EventEmitterDownloader
 from src.modules.event_emitter_uploader import EventEmitterUploader
