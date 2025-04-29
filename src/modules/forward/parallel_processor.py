@@ -294,6 +294,7 @@ class ParallelProcessor:
         try:
             # 记录上传计数
             uploaded_count = 0
+            copied_count = 0
             failed_count = 0
             
             _logger.info("开始上传媒体组到目标频道")
@@ -370,14 +371,17 @@ class ParallelProcessor:
                     all_targets_uploaded = True
                     remaining_targets = not_forwarded_targets.copy()
                     uploaded_targets = []
-                        
-                    # 依次上传到需要转发的目标频道
-                    first_success_message = None
                     
                     # 计算总目标频道数量，用于进度计算
                     total_targets = len(not_forwarded_targets)
                     current_target = 0
                     
+                    # 记录第一次上传成功的频道ID和消息IDs，用于后续复制
+                    first_upload_channel_id = None
+                    first_upload_messages = []  # 存储上传成功的消息对象
+                    is_media_group = len(media_group) > 1
+                    
+                    # 依次上传到需要转发的目标频道
                     for target_channel, target_id, target_info in target_channels:    
                         # 检查是否已转发到此频道
                         all_forwarded = True
@@ -394,9 +398,61 @@ class ParallelProcessor:
                         current_target += 1
                         progress_percentage = (current_target / total_targets) * 100
                         
+                        # 检查是否可以使用copy方式转发
+                        if first_upload_channel_id is not None and first_upload_messages:
+                            try:
+                                _logger.info(f"尝试从已上传频道复制{group_id} {message_ids} 到 {target_info}")
+                                
+                                if is_media_group:
+                                    # 媒体组使用copy_media_group方法
+                                    # 只需要第一条消息的ID，因为copy_media_group会自动找到其他消息
+                                    first_message = first_upload_messages[0]
+                                    copied_msgs = await self.client.copy_media_group(
+                                        chat_id=target_id,
+                                        from_chat_id=first_upload_channel_id,
+                                        message_id=first_message.id
+                                    )
+                                    copy_success = True
+                                else:
+                                    # 单条消息使用copy_message方法
+                                    first_message = first_upload_messages[0]
+                                    copied_msg = await self.client.copy_message(
+                                        chat_id=target_id,
+                                        from_chat_id=first_upload_channel_id,
+                                        message_id=first_message.id
+                                    )
+                                    copy_success = True
+                                
+                                if copy_success:
+                                    # 记录转发历史
+                                    if self.history_manager:
+                                        for message in media_group_download.messages:
+                                            self.history_manager.add_forward_record(
+                                                media_group_download.source_channel,
+                                                message.id,
+                                                target_channel,
+                                                media_group_download.source_id
+                                            )
+                                    
+                                    _logger.info(f"成功从已上传频道复制{group_id}到 {target_info}")
+                                    copied_count += 1
+                                    
+                                    if target_info in remaining_targets:
+                                        remaining_targets.remove(target_info)
+                                        uploaded_targets.append(target_info)
+                                    
+                                    # 添加短暂延迟，避免频繁API调用
+                                    await asyncio.sleep(0.5)
+                                    continue
+                                
+                            except Exception as copy_error:
+                                _logger.warning(f"从已上传频道复制失败，将尝试直接上传: {copy_error}")
+                                # 复制失败，回退到正常上传流程
+                        
                         # 上传到目标频道
                         _logger.info(f"上传{group_id} {message_ids} 到频道 {target_info}")
-                        success = await self.media_uploader.upload_media_group_to_channel(
+                        success = False
+                        upload_result = await self.media_uploader.upload_media_group_to_channel(
                             media_group, 
                             media_group_download, 
                             target_channel, 
@@ -404,6 +460,21 @@ class ParallelProcessor:
                             target_info,
                             thumbnails
                         )
+                        
+                        # upload_result可能是布尔值或消息对象列表
+                        if isinstance(upload_result, list):
+                            # 上传成功并返回了消息对象
+                            sent_messages = upload_result
+                            success = True
+                            
+                            # 如果这是第一次成功上传，保存频道ID和消息对象用于后续复制
+                            if first_upload_channel_id is None:
+                                first_upload_channel_id = target_id
+                                first_upload_messages = sent_messages
+                                _logger.info(f"已保存第一次上传成功的消息，用于后续复制转发")
+                        elif upload_result:
+                            # 上传成功但没有返回消息对象
+                            success = True
                         
                         if success:
                             if target_info in remaining_targets:
@@ -442,7 +513,7 @@ class ParallelProcessor:
             _logger.error(error_details)
         finally:
             self.upload_running = False
-            _logger.info(f"消费者(上传)任务结束，共上传 {uploaded_count} 个媒体组，失败 {failed_count} 个")
+            _logger.info(f"消费者(上传)任务结束，共上传 {uploaded_count} 个媒体组，复制 {copied_count} 个，失败 {failed_count} 个")
     
     def _get_safe_path_name(self, path_str: str) -> str:
         """

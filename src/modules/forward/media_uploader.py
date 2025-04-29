@@ -43,7 +43,7 @@ class MediaUploader:
                                           target_channel: str, 
                                           target_id: int, 
                                           target_info: str,
-                                          thumbnails: Dict[str, str] = None) -> bool:
+                                          thumbnails: Dict[str, str] = None) -> Union[List[Message], bool]:
         """
         上传媒体组到指定频道，处理重试逻辑
         
@@ -56,7 +56,7 @@ class MediaUploader:
             thumbnails: 缩略图字典，键为文件路径，值为缩略图路径
             
         Returns:
-            bool: 上传是否成功
+            Union[List[Message], bool]: 上传成功时返回消息对象列表，失败时返回False
         """
         retry_count = 0
         max_retries = self.general_config.get('max_retries', 3)
@@ -93,6 +93,8 @@ class MediaUploader:
                 if len(media_group) == 1:
                     # 单个媒体
                     media_item = media_group[0]
+                    sent_message = None
+                    
                     if isinstance(media_item, InputMediaPhoto):
                         debug_message = f"尝试发送照片到 {target_info}"
                         _logger.debug(debug_message)
@@ -146,6 +148,13 @@ class MediaUploader:
                         warning_message = f"未知媒体类型: {type(media_item)}"
                         _logger.warning(warning_message)
                         return False
+                    
+                    # 确保sent_message存在
+                    if not sent_message:
+                        _logger.warning(f"媒体上传成功，但没有获取到消息对象")
+                        sent_messages = []
+                    else:
+                        sent_messages = [sent_message]
                 else:
                     # 媒体组
                     debug_message = f"尝试发送媒体组到 {target_info}"
@@ -176,7 +185,9 @@ class MediaUploader:
                 
                 success_message = f"媒体上传到 {target_info} 成功"
                 _logger.info(success_message)
-                return True
+                
+                # 返回消息对象列表，用于后续复制
+                return sent_messages
             
             except FloodWait as e:
                 warning_message = f"上传媒体时遇到限制，等待 {e.x} 秒"
