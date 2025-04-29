@@ -102,6 +102,9 @@ class Forwarder():
         forward_count = 0
         total_forward_count = 0
         
+        # 收集所有目标频道用于最终消息发送
+        all_target_channels = []
+        
         # 处理每个频道对
         for pair in channel_pairs:
             source_channel = pair["source_channel"]
@@ -131,6 +134,7 @@ class Forwarder():
                         target_id = await self.channel_resolver.get_channel_id(target)
                         target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
                         valid_target_channels.append((target, target_id, target_info_str))
+                        all_target_channels.append((target, target_id, target_info_str))
                         info_message = f"目标频道: {target_info_str}"
                         _logger.info(info_message)
                     except Exception as e:
@@ -244,8 +248,72 @@ class Forwarder():
         status_message = f"所有转发任务完成，共转发 {total_forward_count} 个媒体组/消息"
         _logger.info(status_message)
         
+        # 发送最终消息
+        if self.forward_config.get('send_final_message', False) and all_target_channels:
+            await self._send_final_message(all_target_channels)
+        
         # 清理临时文件
         await self._clean_media_dirs(temp_dir)
+    
+    async def _send_final_message(self, target_channels: List[Tuple[str, int, str]]):
+        """
+        发送最终消息到所有目标频道
+        
+        Args:
+            target_channels: 目标频道列表，每个元素为 (channel_string, channel_id, channel_info_str)
+        """
+        # 检查是否启用了发送最终消息功能
+        if not self.forward_config.get('send_final_message', False):
+            return
+        
+        # 获取HTML文件路径
+        html_file_path = self.forward_config.get('final_message_html_file', '')
+        if not html_file_path:
+            _logger.warning("未指定最终消息HTML文件路径，跳过发送最终消息")
+            return
+        
+        html_path = Path(html_file_path)
+        if not html_path.exists() or not html_path.is_file():
+            _logger.error(f"最终消息HTML文件不存在或不是文件: {html_file_path}")
+            return
+        
+        try:
+            # 读取HTML文件内容
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read().strip()
+            
+            if not html_content:
+                _logger.warning("最终消息HTML文件内容为空，跳过发送最终消息")
+                return
+            
+            _logger.info(f"准备发送最终消息到 {len(target_channels)} 个目标频道")
+            
+            # 使用HTML解析模式发送消息
+            from pyrogram import enums
+            
+            # 发送到每个目标频道
+            for channel_string, channel_id, channel_info in target_channels:
+                try:
+                    # 使用Pyrogram的HTML支持发送消息
+                    await self.client.send_message(
+                        chat_id=channel_id,
+                        text=html_content,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_web_page_preview=False  # 允许网页预览
+                    )
+                    _logger.info(f"已发送最终消息到 {channel_info}")
+                    
+                    # 添加短暂延迟避免速率限制
+                    await asyncio.sleep(0.5)
+                    
+                except Exception as e:
+                    _logger.error(f"向 {channel_info} 发送最终消息失败: {e}")
+                    continue
+                
+            _logger.info("所有最终消息发送完成")
+            
+        except Exception as e:
+            _logger.error(f"处理最终消息失败: {e}")
     
     def _ensure_temp_dir(self) -> Path:
         """
