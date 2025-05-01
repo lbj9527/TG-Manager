@@ -4,6 +4,7 @@
 
 import asyncio
 import time
+import random
 from typing import List, Dict, Any, Tuple, Set
 from datetime import datetime, timedelta
 
@@ -48,7 +49,7 @@ class MediaGroupHandler:
         # 媒体组处理锁，防止并发处理同一个媒体组
         self.media_group_locks = {}
         # 媒体组超时时间（秒），超过此时间后媒体组将被视为完整并处理
-        self.media_group_timeout = 10
+        self.media_group_timeout = 8
         # 媒体组清理任务
         self.media_group_cleanup_task = None
         # 已处理媒体组清理任务
@@ -71,6 +72,25 @@ class MediaGroupHandler:
         self.last_media_group_fetch: Dict[str, float] = {}
         # 媒体组API调用的最小间隔(秒)
         self.media_group_fetch_interval = 2
+        
+        # API并发控制
+        self.api_semaphore = asyncio.Semaphore(3)  # 限制最多3个并发API请求
+        self.global_last_api_call = 0  # 全局最后API调用时间
+        self.global_api_interval = 0.5  # 全局API调用最小间隔(秒)
+        
+        # 媒体组获取优先级队列 - 用于排队处理API请求
+        self.api_request_queue = asyncio.Queue()
+        self.api_worker_task = None
+        
+        # 待处理消息队列 - 用于平滑处理大量涌入的消息
+        self.message_backlog = {}  # 格式: {channel_id: {media_group_id: (message, pair_config)}}
+        self.backlog_processor_task = None
+        
+        # 高流量保护标志
+        self.high_traffic_mode = False
+        self.high_traffic_threshold = 10  # 10个以上媒体组同时进入时激活高流量模式
+        self.high_traffic_cooldown = 30  # 30秒冷却时间
+        self.last_high_traffic_time = 0
     
     def set_channel_pairs(self, channel_pairs: Dict[int, Dict[str, Any]]):
         """
@@ -90,6 +110,16 @@ class MediaGroupHandler:
         if self.processed_groups_cleanup_task is None:
             self.processed_groups_cleanup_task = asyncio.create_task(self._cleanup_processed_groups())
             logger.debug("已处理媒体组清理任务已启动")
+            
+        # 启动API请求处理任务
+        if self.api_worker_task is None:
+            self.api_worker_task = asyncio.create_task(self._api_request_worker())
+            logger.debug("API请求处理任务已启动")
+            
+        # 启动积压消息处理任务
+        if self.backlog_processor_task is None:
+            self.backlog_processor_task = asyncio.create_task(self._process_message_backlog())
+            logger.debug("积压消息处理任务已启动")
     
     async def stop(self):
         """停止媒体组处理器"""
@@ -118,6 +148,30 @@ class MediaGroupHandler:
                 logger.error(f"取消已处理媒体组清理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
             
             self.processed_groups_cleanup_task = None
+            
+        # 取消API请求处理任务
+        if self.api_worker_task:
+            self.api_worker_task.cancel()
+            try:
+                await self.api_worker_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"取消API请求处理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
+                
+            self.api_worker_task = None
+            
+        # 取消积压消息处理任务
+        if self.backlog_processor_task:
+            self.backlog_processor_task.cancel()
+            try:
+                await self.backlog_processor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"取消积压消息处理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
+                
+            self.backlog_processor_task = None
         
         # 清空媒体组缓存
         self.media_group_cache.clear()
@@ -125,6 +179,7 @@ class MediaGroupHandler:
         self.processed_media_groups.clear()
         self.fetching_media_groups.clear()
         self.last_media_group_fetch.clear()
+        self.message_backlog.clear()
         logger.info("已清理所有媒体组缓存")
     
     async def _cleanup_processed_groups(self):
@@ -265,6 +320,21 @@ class MediaGroupHandler:
             logger.debug(f"媒体组 {media_group_id} 已处理，跳过")
             return
             
+        # 检查当前流量状态，判断是否处于高流量模式
+        now = time.time()
+        pending_media_groups_count = len(self.fetching_media_groups) + self.api_request_queue.qsize()
+        
+        if pending_media_groups_count > self.high_traffic_threshold:
+            # 激活高流量模式
+            if not self.high_traffic_mode:
+                logger.warning(f"检测到高流量: {pending_media_groups_count} 个媒体组待处理，激活高流量保护模式")
+                self.high_traffic_mode = True
+                self.last_high_traffic_time = now
+        elif self.high_traffic_mode and (now - self.last_high_traffic_time) > self.high_traffic_cooldown:
+            # 如果已经超过冷却时间，退出高流量模式
+            logger.info(f"高流量情况已缓解，退出高流量保护模式")
+            self.high_traffic_mode = False
+        
         # 获取锁
         lock_key = f"{channel_id}_{media_group_id}"
         if lock_key not in self.media_group_locks:
@@ -276,6 +346,17 @@ class MediaGroupHandler:
                 logger.debug(f"媒体组 {media_group_id} 已处理，跳过")
                 return
             
+            # 首先尝试将消息添加到缓存
+            cache_hit = False
+            if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
+                cache_hit = True
+                
+            # 在高流量模式下，首先把消息放入缓存，优先使用超时机制处理完整消息
+            if self.high_traffic_mode:
+                logger.debug(f"高流量模式: 将媒体组 {media_group_id} 消息 [ID: {message.id}] 添加到缓存")
+                await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+                return
+            
             # 检查是否已有其他任务正在获取这个媒体组
             if media_group_id in self.fetching_media_groups:
                 logger.debug(f"媒体组 {media_group_id} 正在被其他任务获取，将消息添加到缓存")
@@ -285,7 +366,6 @@ class MediaGroupHandler:
                 
             # 检查是否需要调用get_media_group
             # 1. 检查距离上次获取是否已经超过最小时间间隔
-            now = time.time()
             can_fetch = True
             if media_group_id in self.last_media_group_fetch:
                 last_fetch_time = self.last_media_group_fetch[media_group_id]
@@ -294,58 +374,43 @@ class MediaGroupHandler:
                     logger.debug(f"媒体组 {media_group_id} 距离上次获取时间较短，跳过API调用，等待更多消息收集")
                     can_fetch = False
             
-            # 2. 检查缓存中是否已有该媒体组的部分消息
-            # 如果已经有部分消息，则先将当前消息添加到缓存
-            has_cached_messages = False
-            if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
-                cached_messages = self.media_group_cache[channel_id][media_group_id].get('messages', [])
-                has_cached_messages = len(cached_messages) > 0
+            # 2. 判断是否为首次收到该媒体组的消息
+            # 如果是缓存命中的情况，优先将消息添加到缓存，减少不必要的API调用
+            if cache_hit:
+                # 优先添加到缓存
+                await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
                 
-                # 如果缓存中已经有很多消息，可能不需要调用API
-                if has_cached_messages and len(cached_messages) >= 8:  # 假设大多数媒体组不超过10条消息
+                # 根据缓存消息数量决定是否需要API调用
+                cached_messages = self.media_group_cache[channel_id][media_group_id].get('messages', [])
+                
+                # 如果缓存中已经有较多消息，可能不需要调用API
+                if len(cached_messages) >= 6:  # 大多数媒体组消息不超过10条
                     logger.info(f"媒体组 {media_group_id} 在缓存中已有 {len(cached_messages)} 条消息，跳过API调用")
+                    can_fetch = False
+                    
+                # 如果消息中包含media_group_count字段，根据已收集比例决定是否需要API调用
+                if hasattr(message, 'media_group_count') and message.media_group_count > 0:
+                    completion_ratio = len(cached_messages) / message.media_group_count
+                    if completion_ratio > 0.7:  # 如果已收集超过70%的消息，不调用API
+                        logger.info(f"媒体组 {media_group_id} 已收集 {completion_ratio:.1%} 的消息({len(cached_messages)}/{message.media_group_count})，跳过API调用")
+                        can_fetch = False
+            else:
+                # 如果是首次收到该媒体组的消息，先将消息添加到缓存
+                await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+            
+            # 3. 判断当前API请求队列长度，避免队列过长
+            queue_size = self.api_request_queue.qsize()
+            if queue_size > 6:  # 如果队列中已有超过6个请求，考虑跳过API调用
+                # 使用随机概率决定是否跳过，队列越长跳过概率越高
+                skip_probability = min(0.8, queue_size / 10)  # 最高80%概率跳过
+                if random.random() < skip_probability:
+                    logger.debug(f"API请求队列过长 ({queue_size})，随机决定跳过媒体组 {media_group_id} 的API调用")
                     can_fetch = False
             
             if can_fetch:
-                # 设置获取标记
-                self.fetching_media_groups.add(media_group_id)
-                # 记录获取时间
-                self.last_media_group_fetch[media_group_id] = now
-                
-                # 尝试使用 get_media_group 方法立即获取完整的媒体组
-                try:
-                    logger.info(f"尝试获取媒体组 {media_group_id} 的所有消息")
-                    # 使用 get_media_group 方法获取完整的媒体组
-                    complete_media_group = await self.client.get_media_group(channel_id, message.id)
-                    
-                    # 移除获取标记
-                    self.fetching_media_groups.remove(media_group_id)
-                    
-                    if complete_media_group:
-                        logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
-                        # 标记为已处理
-                        self.processed_media_groups.add(media_group_id)
-                        # 处理完整的媒体组
-                        await self._process_media_group(complete_media_group, pair_config)
-                        
-                        # 如果缓存中有该媒体组，清理它
-                        if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
-                            del self.media_group_cache[channel_id][media_group_id]
-                            # 如果此频道没有更多媒体组，移除整个频道条目
-                            if not self.media_group_cache[channel_id]:
-                                del self.media_group_cache[channel_id]
-                        
-                        return
-                    else:
-                        logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，将使用超时机制")
-                except Exception as e:
-                    logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，错误: {str(e)}，将使用超时机制")
-                    # 发生错误时移除获取标记，但保留获取时间记录以限制调用频率
-                    if media_group_id in self.fetching_media_groups:
-                        self.fetching_media_groups.remove(media_group_id)
-            
-            # 如果无法立即获取完整媒体组或API调用失败，回退到缓存和超时机制
-            await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+                # 不是立即调用API，而是将请求加入队列
+                logger.debug(f"将媒体组 {media_group_id} 的API请求加入队列")
+                await self.api_request_queue.put((channel_id, message.id, media_group_id, message, pair_config))
     
     async def _add_message_to_cache(self, message: Message, media_group_id: str, channel_id: int, pair_config: dict):
         """将消息添加到媒体组缓存
@@ -779,3 +844,169 @@ class MediaGroupHandler:
         except Exception as e:
             logger.error(f"发送修改后的媒体组 {media_group_id} 到 {target_info} 失败: {str(e)}", error_type="SEND_MODIFIED", recoverable=True)
             return False 
+
+    async def _api_request_worker(self):
+        """API请求队列工作器，负责处理排队的API请求"""
+        try:
+            while not self.should_stop:
+                try:
+                    # 从队列获取一个任务
+                    request_data = await self.api_request_queue.get()
+                    
+                    if self.should_stop:
+                        break
+                        
+                    channel_id, message_id, media_group_id, message, pair_config = request_data
+                    
+                    # 再次检查该媒体组是否已处理
+                    if media_group_id in self.processed_media_groups:
+                        self.api_request_queue.task_done()
+                        continue
+                        
+                    # 随机延迟一小段时间，分散API请求
+                    jitter = random.uniform(0.1, 0.5)
+                    await asyncio.sleep(jitter)
+                    
+                    # 控制全局API调用频率
+                    now = time.time()
+                    time_since_last_call = now - self.global_last_api_call
+                    if time_since_last_call < self.global_api_interval:
+                        await asyncio.sleep(self.global_api_interval - time_since_last_call + jitter)
+                    
+                    # 使用信号量限制并发API请求数量
+                    async with self.api_semaphore:
+                        # 更新全局API调用时间
+                        self.global_last_api_call = time.time()
+                        
+                        # 尝试使用get_media_group获取完整媒体组
+                        try:
+                            # 检查媒体组是否仍在获取中
+                            if media_group_id in self.fetching_media_groups:
+                                logger.debug(f"媒体组 {media_group_id} 仍在被其他任务获取，跳过API请求")
+                                self.api_request_queue.task_done()
+                                continue
+                                
+                            # 检查媒体组是否已处理（可能在等待期间被处理）
+                            if media_group_id in self.processed_media_groups:
+                                logger.debug(f"媒体组 {media_group_id} 已在等待期间被处理，跳过API请求")
+                                self.api_request_queue.task_done()
+                                continue
+                                
+                            # 标记为正在获取
+                            self.fetching_media_groups.add(media_group_id)
+                            self.last_media_group_fetch[media_group_id] = time.time()
+                            
+                            logger.info(f"从队列处理媒体组 {media_group_id} 的API请求")
+                            complete_media_group = await self.client.get_media_group(channel_id, message_id)
+                            
+                            if complete_media_group:
+                                logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
+                                # 标记为已处理
+                                self.processed_media_groups.add(media_group_id)
+                                # 处理完整的媒体组
+                                asyncio.create_task(self._process_media_group(complete_media_group, pair_config))
+                                
+                                # 如果缓存中有该媒体组，清理它
+                                if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
+                                    del self.media_group_cache[channel_id][media_group_id]
+                                    # 如果此频道没有更多媒体组，移除整个频道条目
+                                    if not self.media_group_cache[channel_id]:
+                                        del self.media_group_cache[channel_id]
+                            else:
+                                logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，添加到积压队列")
+                                self._add_to_backlog(message, media_group_id, channel_id, pair_config)
+                                
+                        except Exception as e:
+                            logger.warning(f"处理媒体组 {media_group_id} 的API请求失败: {str(e)}")
+                            self._add_to_backlog(message, media_group_id, channel_id, pair_config)
+                        finally:
+                            # 完成任务并移除获取标记
+                            self.api_request_queue.task_done()
+                            if media_group_id in self.fetching_media_groups:
+                                self.fetching_media_groups.remove(media_group_id)
+                
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"API请求处理工作器异常: {str(e)}", error_type="API_WORKER", recoverable=True)
+                    await asyncio.sleep(1)
+                    
+            logger.info("API请求处理工作器已停止")
+        except asyncio.CancelledError:
+            logger.info("API请求处理工作器任务已取消")
+            
+    async def _process_message_backlog(self):
+        """处理积压消息队列"""
+        try:
+            while not self.should_stop:
+                try:
+                    # 每次处理一批积压消息
+                    await asyncio.sleep(2)  # 积压消息处理间隔
+                    
+                    if self.should_stop:
+                        break
+                        
+                    active_channels = list(self.message_backlog.keys())
+                    if not active_channels:
+                        continue
+                        
+                    # 随机选择一个频道进行处理，避免所有频道同时处理
+                    channel_id = random.choice(active_channels)
+                    active_groups = list(self.message_backlog[channel_id].keys())
+                    
+                    if not active_groups:
+                        if channel_id in self.message_backlog:
+                            del self.message_backlog[channel_id]
+                        continue
+                    
+                    # 随机选择一个媒体组进行处理
+                    media_group_id = random.choice(active_groups)
+                    
+                    # 检查是否已经处理
+                    if media_group_id in self.processed_media_groups:
+                        if media_group_id in self.message_backlog[channel_id]:
+                            del self.message_backlog[channel_id][media_group_id]
+                        if not self.message_backlog[channel_id]:
+                            del self.message_backlog[channel_id]
+                        continue
+                    
+                    # 获取消息和配置
+                    message, pair_config = self.message_backlog[channel_id][media_group_id]
+                    
+                    # 将消息添加到缓存中并继续正常处理流程
+                    await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+                    
+                    # 从积压队列中移除已处理的消息
+                    del self.message_backlog[channel_id][media_group_id]
+                    if not self.message_backlog[channel_id]:
+                        del self.message_backlog[channel_id]
+                    
+                except Exception as e:
+                    logger.error(f"处理积压消息异常: {str(e)}", error_type="BACKLOG_PROCESSOR", recoverable=True)
+                    await asyncio.sleep(1)
+                    
+            logger.info("积压消息处理任务已停止")
+        except asyncio.CancelledError:
+            logger.info("积压消息处理任务已取消")
+    
+    def _add_to_backlog(self, message: Message, media_group_id: str, channel_id: int, pair_config: dict):
+        """将消息添加到积压队列
+        
+        Args:
+            message: 媒体组消息
+            media_group_id: 媒体组ID
+            channel_id: 频道ID
+            pair_config: 频道对配置
+        """
+        # 检查媒体组是否已处理
+        if media_group_id in self.processed_media_groups:
+            return
+            
+        # 确保频道存在于积压队列中
+        if channel_id not in self.message_backlog:
+            self.message_backlog[channel_id] = {}
+            
+        # 如果媒体组不存在，添加它
+        if media_group_id not in self.message_backlog[channel_id]:
+            self.message_backlog[channel_id][media_group_id] = (message, pair_config)
+            logger.debug(f"添加媒体组 {media_group_id} 到积压队列") 
