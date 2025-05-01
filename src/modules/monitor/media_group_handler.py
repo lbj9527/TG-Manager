@@ -4,7 +4,7 @@
 
 import asyncio
 import time
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Set
 from datetime import datetime, timedelta
 
 from pyrogram import Client
@@ -61,9 +61,16 @@ class MediaGroupHandler:
         self.should_stop = False
         
         # 已处理的媒体组ID集合，用于防止重复处理
-        self.processed_media_groups = set()
+        self.processed_media_groups: Set[str] = set()
         # 上次清理已处理媒体组的时间
         self.last_processed_groups_cleanup = time.time()
+        
+        # 正在获取完整媒体组的ID集合，防止重复调用get_media_group
+        self.fetching_media_groups: Set[str] = set()
+        # 媒体组API调用的上次时间记录，限制调用频率
+        self.last_media_group_fetch: Dict[str, float] = {}
+        # 媒体组API调用的最小间隔(秒)
+        self.media_group_fetch_interval = 2
     
     def set_channel_pairs(self, channel_pairs: Dict[int, Dict[str, Any]]):
         """
@@ -116,6 +123,8 @@ class MediaGroupHandler:
         self.media_group_cache.clear()
         self.media_group_locks.clear()
         self.processed_media_groups.clear()
+        self.fetching_media_groups.clear()
+        self.last_media_group_fetch.clear()
         logger.info("已清理所有媒体组缓存")
     
     async def _cleanup_processed_groups(self):
@@ -135,6 +144,19 @@ class MediaGroupHandler:
                         logger.info(f"清理已处理媒体组记录，当前数量: {previous_count}")
                         self.processed_media_groups.clear()
                         logger.info(f"已清理 {previous_count} 条已处理媒体组记录")
+                    
+                    # 同时清理媒体组获取时间记录
+                    old_fetch_time_count = len(self.last_media_group_fetch)
+                    if old_fetch_time_count > 0:
+                        self.last_media_group_fetch.clear()
+                        logger.debug(f"已清理 {old_fetch_time_count} 条媒体组获取时间记录")
+                    
+                    # 清理可能残留的获取标记
+                    if self.fetching_media_groups:
+                        old_fetch_count = len(self.fetching_media_groups)
+                        self.fetching_media_groups.clear()
+                        logger.debug(f"已清理 {old_fetch_count} 条媒体组获取标记")
+                        
                     self.last_processed_groups_cleanup = now
                     
         except asyncio.CancelledError:
@@ -199,12 +221,23 @@ class MediaGroupHandler:
                                         if not self.media_group_cache[channel_id]:
                                             del self.media_group_cache[channel_id]
                                             
+                                # 移除获取标记，如果存在的话
+                                if group_id in self.fetching_media_groups:
+                                    self.fetching_media_groups.remove(group_id)
+                                            
                             except Exception as e:
                                 logger.error(f"处理超时媒体组 {group_id} 时出错: {str(e)}", error_type="MEDIA_GROUP_TIMEOUT", recoverable=True)
                                 # 尽管出错，仍然尝试从缓存中移除
                                 try:
                                     if channel_id in self.media_group_cache and group_id in self.media_group_cache[channel_id]:
                                         del self.media_group_cache[channel_id][group_id]
+                                except Exception:
+                                    pass
+                                
+                                # 移除获取标记，如果存在的话
+                                try:
+                                    if group_id in self.fetching_media_groups:
+                                        self.fetching_media_groups.remove(group_id)
                                 except Exception:
                                     pass
                                 
@@ -242,70 +275,135 @@ class MediaGroupHandler:
             if media_group_id in self.processed_media_groups:
                 logger.debug(f"媒体组 {media_group_id} 已处理，跳过")
                 return
-                
-            # 尝试使用 get_media_group 方法立即获取完整的媒体组
-            try:
-                logger.info(f"尝试立即获取媒体组 {media_group_id} 的所有消息")
-                # 使用 get_media_group 方法获取完整的媒体组
-                complete_media_group = await self.client.get_media_group(channel_id, message.id)
-                
-                if complete_media_group:
-                    logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
-                    # 标记为已处理
-                    self.processed_media_groups.add(media_group_id)
-                    # 处理完整的媒体组
-                    await self._process_media_group(complete_media_group, pair_config)
-                    return
-                else:
-                    logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，将使用超时机制")
-            except Exception as e:
-                logger.warning(f"无法立即获取媒体组 {media_group_id} 的完整消息，错误: {str(e)}，将使用超时机制")
             
-            # 如果无法立即获取完整媒体组，回退到缓存和超时机制
-            # 确保频道存在于缓存中
-            if channel_id not in self.media_group_cache:
-                self.media_group_cache[channel_id] = {}
-                
-            # 如果媒体组不存在，创建它
-            if media_group_id not in self.media_group_cache[channel_id]:
-                self.media_group_cache[channel_id][media_group_id] = {
-                    'messages': [],
-                    'last_update_time': time.time(),
-                    'pair_config': pair_config
-                }
-                
-            # 添加消息到媒体组
-            group_data = self.media_group_cache[channel_id][media_group_id]
-            messages = group_data['messages']
-            
-            # 检查消息是否已经在缓存中
-            if any(m.id == message.id for m in messages):
-                logger.debug(f"媒体组消息 [ID: {message.id}] 已在缓存中，跳过")
+            # 检查是否已有其他任务正在获取这个媒体组
+            if media_group_id in self.fetching_media_groups:
+                logger.debug(f"媒体组 {media_group_id} 正在被其他任务获取，将消息添加到缓存")
+                # 将消息添加到缓存后直接返回，避免重复调用API
+                await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
                 return
                 
-            # 添加消息并更新时间戳
-            messages.append(message)
-            group_data['last_update_time'] = time.time()
+            # 检查是否需要调用get_media_group
+            # 1. 检查距离上次获取是否已经超过最小时间间隔
+            now = time.time()
+            can_fetch = True
+            if media_group_id in self.last_media_group_fetch:
+                last_fetch_time = self.last_media_group_fetch[media_group_id]
+                if now - last_fetch_time < self.media_group_fetch_interval:
+                    # 时间间隔太短，不重复调用API
+                    logger.debug(f"媒体组 {media_group_id} 距离上次获取时间较短，跳过API调用，等待更多消息收集")
+                    can_fetch = False
             
-            # 排序媒体组消息（按照ID）
-            messages.sort(key=lambda m: m.id)
-            
-            logger.debug(f"添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 现有 {len(messages)} 条消息")
-            
-            # 如果我们接收到了整个媒体组（根据media_group_count），处理它
-            if hasattr(message, 'media_group_count') and len(messages) >= message.media_group_count:
-                logger.info(f"媒体组 {media_group_id} 已完整接收 ({len(messages)}/{message.media_group_count}), 开始处理")
-                # 标记为已处理
-                self.processed_media_groups.add(media_group_id)
-                # 处理完整的媒体组
-                await self._process_media_group(messages, pair_config)
+            # 2. 检查缓存中是否已有该媒体组的部分消息
+            # 如果已经有部分消息，则先将当前消息添加到缓存
+            has_cached_messages = False
+            if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
+                cached_messages = self.media_group_cache[channel_id][media_group_id].get('messages', [])
+                has_cached_messages = len(cached_messages) > 0
                 
-                # 从缓存中删除此媒体组
-                del self.media_group_cache[channel_id][media_group_id]
+                # 如果缓存中已经有很多消息，可能不需要调用API
+                if has_cached_messages and len(cached_messages) >= 8:  # 假设大多数媒体组不超过10条消息
+                    logger.info(f"媒体组 {media_group_id} 在缓存中已有 {len(cached_messages)} 条消息，跳过API调用")
+                    can_fetch = False
+            
+            if can_fetch:
+                # 设置获取标记
+                self.fetching_media_groups.add(media_group_id)
+                # 记录获取时间
+                self.last_media_group_fetch[media_group_id] = now
                 
-                # 如果此频道没有更多媒体组，移除整个频道条目
-                if not self.media_group_cache[channel_id]:
-                    del self.media_group_cache[channel_id]
+                # 尝试使用 get_media_group 方法立即获取完整的媒体组
+                try:
+                    logger.info(f"尝试获取媒体组 {media_group_id} 的所有消息")
+                    # 使用 get_media_group 方法获取完整的媒体组
+                    complete_media_group = await self.client.get_media_group(channel_id, message.id)
+                    
+                    # 移除获取标记
+                    self.fetching_media_groups.remove(media_group_id)
+                    
+                    if complete_media_group:
+                        logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
+                        # 标记为已处理
+                        self.processed_media_groups.add(media_group_id)
+                        # 处理完整的媒体组
+                        await self._process_media_group(complete_media_group, pair_config)
+                        
+                        # 如果缓存中有该媒体组，清理它
+                        if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
+                            del self.media_group_cache[channel_id][media_group_id]
+                            # 如果此频道没有更多媒体组，移除整个频道条目
+                            if not self.media_group_cache[channel_id]:
+                                del self.media_group_cache[channel_id]
+                        
+                        return
+                    else:
+                        logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，将使用超时机制")
+                except Exception as e:
+                    logger.warning(f"无法获取媒体组 {media_group_id} 的完整消息，错误: {str(e)}，将使用超时机制")
+                    # 发生错误时移除获取标记，但保留获取时间记录以限制调用频率
+                    if media_group_id in self.fetching_media_groups:
+                        self.fetching_media_groups.remove(media_group_id)
+            
+            # 如果无法立即获取完整媒体组或API调用失败，回退到缓存和超时机制
+            await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+    
+    async def _add_message_to_cache(self, message: Message, media_group_id: str, channel_id: int, pair_config: dict):
+        """将消息添加到媒体组缓存
+        
+        Args:
+            message: 媒体组消息
+            media_group_id: 媒体组ID
+            channel_id: 频道ID
+            pair_config: 频道对配置
+        """
+        # 确保频道存在于缓存中
+        if channel_id not in self.media_group_cache:
+            self.media_group_cache[channel_id] = {}
+            
+        # 如果媒体组不存在，创建它
+        if media_group_id not in self.media_group_cache[channel_id]:
+            self.media_group_cache[channel_id][media_group_id] = {
+                'messages': [],
+                'last_update_time': time.time(),
+                'pair_config': pair_config
+            }
+            
+        # 添加消息到媒体组
+        group_data = self.media_group_cache[channel_id][media_group_id]
+        messages = group_data['messages']
+        
+        # 检查消息是否已经在缓存中
+        if any(m.id == message.id for m in messages):
+            logger.debug(f"媒体组消息 [ID: {message.id}] 已在缓存中，跳过")
+            return
+            
+        # 添加消息并更新时间戳
+        messages.append(message)
+        group_data['last_update_time'] = time.time()
+        
+        # 排序媒体组消息（按照ID）
+        messages.sort(key=lambda m: m.id)
+        
+        logger.debug(f"添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 现有 {len(messages)} 条消息")
+        
+        # 如果我们接收到了整个媒体组（根据media_group_count），处理它
+        if hasattr(message, 'media_group_count') and len(messages) >= message.media_group_count:
+            logger.info(f"媒体组 {media_group_id} 已完整接收 ({len(messages)}/{message.media_group_count}), 开始处理")
+            # 标记为已处理
+            self.processed_media_groups.add(media_group_id)
+            # 处理完整的媒体组
+            await self._process_media_group(messages, pair_config)
+            
+            # 从缓存中删除此媒体组
+            del self.media_group_cache[channel_id][media_group_id]
+            
+            # 如果此频道没有更多媒体组，移除整个频道条目
+            if not self.media_group_cache[channel_id]:
+                del self.media_group_cache[channel_id]
+                
+            # 移除获取标记，如果存在的话
+            if media_group_id in self.fetching_media_groups:
+                self.fetching_media_groups.remove(media_group_id)
                     
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
         """处理完整的媒体组消息
