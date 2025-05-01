@@ -42,7 +42,6 @@ class EventEmitterMonitor(BaseEventEmitter):
         self.client = self.monitor.client
         self.ui_config_manager = self.monitor.ui_config_manager
         self.channel_resolver = self.monitor.channel_resolver
-        self.history_manager = self.monitor.history_manager
         self.app = self.monitor.app
         
         # 监听任务控制变量
@@ -143,8 +142,8 @@ class EventEmitterMonitor(BaseEventEmitter):
             # 发送监听开始信号
             self.monitoring_started.emit()
             
-            # 调用原始方法
-            result = await self.monitor.start_monitoring(task_context)
+            # 调用原始方法 - 不传递任何参数，因为Monitor.start_monitoring不接受参数
+            result = await self.monitor.start_monitoring()
             
             # 监听结束
             self.monitoring_stopped.emit()

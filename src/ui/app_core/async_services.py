@@ -232,7 +232,7 @@ class AsyncServicesInitializer:
                 try:
                     from src.modules.monitor import Monitor
                     original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
-                                             self.app.channel_resolver, self.app.history_manager, self.app)
+                                             self.app.channel_resolver, self.app)
                     
                     # 使用事件发射器包装监听器
                     from src.modules.event_emitter_monitor import EventEmitterMonitor
