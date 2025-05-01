@@ -383,8 +383,8 @@ class MediaGroupHandler:
                 # 根据缓存消息数量决定是否需要API调用
                 cached_messages = self.media_group_cache[channel_id][media_group_id].get('messages', [])
                 
-                # 如果缓存中已经有较多消息，可能不需要调用API
-                if len(cached_messages) >= 6:  # 大多数媒体组消息不超过10条
+                # 如果缓存中已经有消息，可以跳过API调用，因为一条消息就能获取整个媒体组
+                if len(cached_messages) >= 1:  # 只要有一条消息就跳过API调用
                     logger.info(f"媒体组 {media_group_id} 在缓存中已有 {len(cached_messages)} 条消息，跳过API调用")
                     can_fetch = False
                     
