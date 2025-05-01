@@ -18,6 +18,7 @@ from src.modules.downloader import Downloader
 from src.modules.downloader_serial import DownloaderSerial
 from src.modules.uploader import Uploader
 from src.modules.forward.forwarder import Forwarder
+# 导入重构后的监听模块 (位于src/modules/monitor/目录)
 from src.modules.monitor import Monitor
 from src.utils.ui_config_manager import UIConfigManager
 
@@ -114,7 +115,7 @@ async def main():
             
         elif args.command == 'startmonitor':
             logger.info("启动消息监听转发")
-            # 初始化监听模块，不再传递history_manager参数
+            # 初始化重构后的监听模块，传递history_manager参数
             monitor = Monitor(client, ui_config_manager, channel_resolver)
             # 开始监听
             await monitor.start_monitoring()
