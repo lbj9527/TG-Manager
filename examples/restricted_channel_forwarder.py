@@ -146,10 +146,9 @@ class RestrictedChannelForwarder:
         self.source_channel_id = None
         self.target_channel_id = None
         
-        # 媒体组缓存
-        self.media_group_cache: Dict[str, List[Message]] = {}
+        # 已处理的媒体组ID集合，防止重复处理
+        self.processed_media_groups = set()
         self.media_group_lock = asyncio.Lock()
-        self.media_group_timeout = 10  # 媒体组消息收集超时时间（秒）
     
     async def initialize(self):
         """初始化频道ID"""
@@ -225,34 +224,39 @@ class RestrictedChannelForwarder:
         
         media_group_id = message.media_group_id
         
+        # 使用锁确保并发安全
         async with self.media_group_lock:
-            # 添加到媒体组缓存
-            if media_group_id not in self.media_group_cache:
-                self.media_group_cache[media_group_id] = []
-                # 设置定时器，等待一段时间后处理媒体组
-                asyncio.create_task(self.process_media_group_after_timeout(media_group_id))
-            
-            self.media_group_cache[media_group_id].append(message)
-            logger.info(f"收到媒体组消息: {message.id}，添加到组 {media_group_id}，当前组内消息数: {len(self.media_group_cache[media_group_id])}")
-    
-    async def process_media_group_after_timeout(self, media_group_id: str):
-        """
-        等待超时后处理媒体组
-        
-        Args:
-            media_group_id: 媒体组ID
-        """
-        await asyncio.sleep(self.media_group_timeout)
-        
-        async with self.media_group_lock:
-            if media_group_id not in self.media_group_cache:
+            # 检查媒体组是否已处理过
+            if media_group_id in self.processed_media_groups:
+                logger.info(f"媒体组 {media_group_id} 已处理，跳过")
                 return
             
-            media_group = self.media_group_cache.pop(media_group_id)
-            logger.info(f"媒体组 {media_group_id} 收集完成，共 {len(media_group)} 条消息")
+            # 标记为已处理
+            self.processed_media_groups.add(media_group_id)
         
-        # 处理媒体组
-        await self.forward_media_group(media_group)
+        try:
+            # 使用get_media_group直接获取完整的媒体组
+            logger.info(f"正在获取媒体组 {media_group_id} 的所有消息...")
+            media_group = await self.client.get_media_group(
+                chat_id=self.source_channel_id,
+                message_id=message.id
+            )
+            
+            logger.info(f"媒体组 {media_group_id} 获取完成，共 {len(media_group)} 条消息")
+            
+            # 处理媒体组
+            await self.forward_media_group(media_group)
+        except Exception as e:
+            logger.error(f"获取媒体组 {media_group_id} 失败: {e}", exc_info=True)
+            # 如果出错，从已处理集合中移除，以便下次可以重试
+            async with self.media_group_lock:
+                self.processed_media_groups.discard(media_group_id)
+            
+        # 限制已处理媒体组集合的大小，防止内存泄漏
+        async with self.media_group_lock:
+            if len(self.processed_media_groups) > 1000:
+                # 只保留最近的500个
+                self.processed_media_groups = set(list(self.processed_media_groups)[-500:])
     
     async def forward_media_group(self, media_group: List[Message]):
         """
