@@ -17,6 +17,7 @@ from src.modules.forward.message_downloader import MessageDownloader
 from src.modules.forward.media_uploader import MediaUploader
 from src.modules.forward.media_group_download import MediaGroupDownload
 from src.modules.forward.utils import get_safe_path_name, ensure_temp_dir, clean_directory
+from src.utils.video_processor import VideoProcessor
 
 _logger = get_logger()
 
@@ -44,8 +45,15 @@ class RestrictedForwardHandler:
         self.message_downloader = MessageDownloader(client)
         self.media_uploader = MediaUploader(client, None, {'max_retries': 3})
         
+        # 创建视频处理器，用于处理视频缩略图和元数据
+        self.video_processor = VideoProcessor()
+        
         # 创建临时会话目录
         self.temp_dir = self._create_temp_dir()
+        
+        # 视频元数据缓存
+        self._video_dimensions = {}
+        self._video_durations = {}
     
     def _create_temp_dir(self) -> Path:
         """
@@ -55,6 +63,45 @@ class RestrictedForwardHandler:
             Path: 临时目录路径
         """
         return ensure_temp_dir(self.tmp_path, 'monitor')
+    
+    def _process_video_metadata(self, video_path: str) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[int]]:
+        """
+        处理视频元数据，提取缩略图、尺寸和时长
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Tuple[Optional[str], Optional[int], Optional[int], Optional[int]]: 
+                (缩略图路径, 宽度, 高度, 时长)，如果提取失败则相应值为None
+        """
+        try:
+            # 使用视频处理器提取缩略图和元数据
+            result = self.video_processor.extract_thumbnail(str(video_path))
+            
+            if not result:
+                _logger.warning(f"无法为视频生成缩略图和元数据: {video_path}")
+                return None, None, None, None
+            
+            # 分析返回结果，提取缩略图路径和视频元数据
+            if isinstance(result, tuple):
+                if len(result) >= 4:
+                    thumb_path, width, height, duration = result
+                    # 确保时长是整数类型
+                    if duration is not None:
+                        duration = int(duration)
+                    return thumb_path, width, height, duration
+                elif len(result) >= 3:
+                    thumb_path, width, height = result
+                    return thumb_path, width, height, None
+                else:
+                    thumb_path = result[0]
+                    return thumb_path, None, None, None
+            else:
+                return result, None, None, None
+        except Exception as e:
+            _logger.error(f"处理视频元数据失败: {e}")
+            return None, None, None, None
     
     async def process_restricted_message(self, 
                                        message: Message, 
@@ -146,6 +193,22 @@ class RestrictedForwardHandler:
                     _logger.debug(f"使用替换后的标题: '{caption}'")
                 else:
                     final_caption = message.caption or message.text
+                
+                # 预处理视频元数据
+                thumbnails = {}
+                if message.video:
+                    for file_path, media_type in downloaded_files:
+                        if media_type == "video":
+                            # 提取视频元数据并生成缩略图
+                            thumb_path, width, height, duration = self._process_video_metadata(str(file_path))
+                            if thumb_path:
+                                thumbnails[str(file_path)] = thumb_path
+                                # 缓存视频尺寸和时长信息
+                                if width and height:
+                                    self._video_dimensions[str(file_path)] = (width, height)
+                                if duration:
+                                    self._video_durations[str(file_path)] = duration
+                                _logger.debug(f"为视频 {file_path.name} 生成缩略图和元数据成功: 尺寸={width}x{height}, 时长={duration}秒")
                     
                 # 创建MediaGroupDownload对象，即使只有一个消息
                 media_group_download = MediaGroupDownload(
@@ -158,12 +221,10 @@ class RestrictedForwardHandler:
                 )
                 
                 # 准备上传的媒体组
-                media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download)
-                
-                # 生成缩略图
-                thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+                media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
                 
                 # 上传到第一个目标频道
+                _logger.debug(f"开始上传媒体到目标频道 {first_target[2]}，缩略图数量: {len(thumbnails)}")
                 sent_messages = await self.media_uploader.upload_media_group_to_channel(
                     media_group,
                     media_group_download,
@@ -174,7 +235,13 @@ class RestrictedForwardHandler:
                 )
                 
                 # 清理缩略图
-                self.media_uploader.cleanup_thumbnails(thumbnails)
+                if thumbnails:
+                    for thumb_path in thumbnails.values():
+                        try:
+                            Path(thumb_path).unlink(missing_ok=True)
+                            _logger.debug(f"已删除缩略图: {thumb_path}")
+                        except Exception as e:
+                            _logger.warning(f"删除缩略图失败: {e}")
                 
                 # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
                 if sent_messages and other_targets:
@@ -303,6 +370,21 @@ class RestrictedForwardHandler:
                 else:
                     final_caption = None
             
+            # 预处理视频元数据
+            thumbnails = {}
+            for file_path, media_type in downloaded_files:
+                if media_type == "video":
+                    # 提取视频元数据并生成缩略图
+                    thumb_path, width, height, duration = self._process_video_metadata(str(file_path))
+                    if thumb_path:
+                        thumbnails[str(file_path)] = thumb_path
+                        # 缓存视频尺寸和时长信息
+                        if width and height:
+                            self._video_dimensions[str(file_path)] = (width, height)
+                        if duration:
+                            self._video_durations[str(file_path)] = duration
+                        _logger.debug(f"为视频 {file_path.name} 生成缩略图和元数据成功: 尺寸={width}x{height}, 时长={duration}秒")
+            
             # 创建MediaGroupDownload对象
             media_group_download = MediaGroupDownload(
                 source_channel=source_channel,
@@ -314,12 +396,10 @@ class RestrictedForwardHandler:
             )
             
             # 准备上传的媒体组
-            media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download)
-            
-            # 生成缩略图
-            thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+            media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
             
             # 上传到第一个目标频道
+            _logger.debug(f"开始上传媒体组到目标频道 {first_target[2]}，缩略图数量: {len(thumbnails)}")
             sent_messages = await self.media_uploader.upload_media_group_to_channel(
                 media_group,
                 media_group_download,
@@ -330,7 +410,13 @@ class RestrictedForwardHandler:
             )
             
             # 清理缩略图
-            self.media_uploader.cleanup_thumbnails(thumbnails)
+            if thumbnails:
+                for thumb_path in thumbnails.values():
+                    try:
+                        Path(thumb_path).unlink(missing_ok=True)
+                        _logger.debug(f"已删除缩略图: {thumb_path}")
+                    except Exception as e:
+                        _logger.warning(f"删除缩略图失败: {e}")
             
             # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
             if sent_messages and other_targets and isinstance(sent_messages, list) and len(sent_messages) > 0:

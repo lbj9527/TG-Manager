@@ -58,7 +58,7 @@ class MessageProcessor:
             replace_caption: 用于替换的标题
             remove_caption: 是否移除标题
             
-        Returns:
+        Returns: 
             bool: 是否成功转发
         """
         if not target_channels:
