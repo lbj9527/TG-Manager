@@ -60,34 +60,7 @@ SOURCE_CHANNEL = "https://t.me/joisiid"  # 替换为您要监听的频道链接
 TARGET_CHANNEL = "https://t.me/xgyvcu"   # 替换为您要转发到的目标频道链接
 
 # 并行下载配置
-MAX_CONCURRENT_DOWNLOADS = 5  # 最大并发下载数
-
-# 自定义信号量类，用于限制并发下载数量
-class ThrottledSemaphore(asyncio.Semaphore):
-    """带限流功能的信号量类"""
-    
-    def __init__(self, value: int = 1, interval: float = 0.5):
-        """
-        初始化信号量
-        
-        Args:
-            value: 信号量初始值
-            interval: 获取信号量的最小间隔时间（秒）
-        """
-        super().__init__(value)
-        self.interval = interval
-        self.last_acquire = 0
-    
-    async def acquire(self):
-        """获取信号量，并限制获取频率"""
-        now = datetime.now().timestamp()
-        time_diff = now - self.last_acquire
-        
-        if time_diff < self.interval:
-            await asyncio.sleep(self.interval - time_diff)
-        
-        await super().acquire()
-        self.last_acquire = datetime.now().timestamp()
+MAX_CONCURRENT_TRANSMISSIONS = 2  # 最大并发传输数（上传和下载），降低并发数以减少错误
 
 
 class ChannelResolver:
@@ -180,9 +153,6 @@ class RestrictedChannelForwarder:
         # 已处理的媒体组ID集合，防止重复处理
         self.processed_media_groups = set()
         self.media_group_lock = asyncio.Lock()
-        
-        # 创建限流信号量
-        self.download_semaphore = ThrottledSemaphore(MAX_CONCURRENT_DOWNLOADS, 0.5)
     
     async def initialize(self):
         """初始化频道ID"""
@@ -292,9 +262,91 @@ class RestrictedChannelForwarder:
                 # 只保留最近的500个
                 self.processed_media_groups = set(list(self.processed_media_groups)[-500:])
     
-    async def _parallel_stream_media(self, message: Message) -> Tuple[Optional[BytesIO], Dict[str, Any]]:
+    async def _download_media(self, message: Message) -> Optional[BytesIO]:
         """
-        并行流式下载媒体文件
+        使用下载方法将媒体文件下载到内存
+        
+        Args:
+            message: 媒体消息
+            
+        Returns:
+            内存中的文件对象，如果下载失败则返回None
+        """
+        try:
+            buffer = BytesIO()
+            
+            # 直接使用download_media方法下载文件
+            file_path = await self.client.download_media(
+                message,
+                in_memory=True
+            )
+            
+            if not file_path:
+                logger.error(f"下载媒体文件失败: {message.id}")
+                return None
+            
+            # 如果是内存文件，返回该文件
+            if isinstance(file_path, BytesIO):
+                logger.info(f"媒体文件下载成功，ID: {message.id}")
+                
+                # 确保文件有名称
+                file_path = self._set_buffer_name(file_path, message)
+                return file_path
+            else:
+                logger.error(f"媒体文件不是内存对象: {file_path}")
+                return None
+        except Exception as e:
+            logger.error(f"下载媒体文件失败: {e}", exc_info=True)
+            return None
+    
+    def _set_buffer_name(self, buffer: BytesIO, message: Message) -> BytesIO:
+        """
+        为BytesIO对象设置文件名
+        
+        Args:
+            buffer: BytesIO对象
+            message: 消息对象
+            
+        Returns:
+            设置了文件名的BytesIO对象
+        """
+        # 根据消息类型推断文件扩展名，并为BytesIO对象添加name属性
+        if message.video:
+            filename = f"video_{message.id}.mp4"
+            buffer.name = filename
+        elif message.photo:
+            filename = f"photo_{message.id}.jpg"
+            buffer.name = filename
+        elif message.audio:
+            filename = f"audio_{message.id}.mp3"
+            buffer.name = filename
+        elif message.voice:
+            filename = f"voice_{message.id}.ogg"
+            buffer.name = filename
+        elif message.document:
+            # 尝试从原始文件名获取扩展名
+            orig_filename = message.document.file_name
+            if orig_filename:
+                buffer.name = orig_filename
+            else:
+                buffer.name = f"document_{message.id}"
+        elif message.sticker:
+            if message.sticker.is_animated:
+                buffer.name = f"sticker_{message.id}.tgs"
+            elif message.sticker.is_video:
+                buffer.name = f"sticker_{message.id}.webm"
+            else:
+                buffer.name = f"sticker_{message.id}.webp"
+        elif message.animation:
+            buffer.name = f"animation_{message.id}.mp4"
+        else:
+            buffer.name = f"media_{message.id}"
+        
+        return buffer
+
+    async def _stream_media_wrapper(self, message: Message) -> Tuple[Optional[BytesIO], Dict[str, Any]]:
+        """
+        媒体文件下载包装器函数
         
         Args:
             message: 媒体消息
@@ -302,44 +354,37 @@ class RestrictedChannelForwarder:
         Returns:
             包含媒体缓冲区和元数据的元组
         """
-        # 获取信号量，限制并发下载数
-        await self.download_semaphore.acquire()
+        # 下载媒体
+        media_buffer = await self._download_media(message)
         
-        try:
-            # 流式下载媒体
-            media_buffer = await self._stream_media(message)
-            
-            # 如果下载失败，返回None和空字典
-            if not media_buffer:
-                return None, {}
-            
-            # 根据媒体类型准备元数据
+        # 如果下载失败，返回None和空字典
+        if not media_buffer:
+            return None, {}
+        
+        # 根据媒体类型准备元数据
+        meta = {}
+        media_type = None
+        
+        if message.video:
+            media_type = InputMediaVideo
+            meta = {
+                "duration": message.video.duration if message.video.duration else None,
+                "width": message.video.width if message.video.width else None,
+                "height": message.video.height if message.video.height else None
+            }
+        elif message.photo:
+            media_type = InputMediaPhoto
             meta = {}
-            media_type = None
-            
-            if message.video:
-                media_type = InputMediaVideo
-                meta = {
-                    "duration": message.video.duration if message.video.duration else None,
-                    "width": message.video.width if message.video.width else None,
-                    "height": message.video.height if message.video.height else None
-                }
-            elif message.photo:
-                media_type = InputMediaPhoto
-                meta = {}
-            elif message.document:
-                media_type = InputMediaDocument
-                meta = {}
-            elif message.audio:
-                media_type = InputMediaAudio
-                meta = {
-                    "duration": message.audio.duration if message.audio.duration else None
-                }
-            
-            return media_buffer, {"media_type": media_type, "meta": meta}
-        finally:
-            # 释放信号量
-            self.download_semaphore.release()
+        elif message.document:
+            media_type = InputMediaDocument
+            meta = {}
+        elif message.audio:
+            media_type = InputMediaAudio
+            meta = {
+                "duration": message.audio.duration if message.audio.duration else None
+            }
+        
+        return media_buffer, {"media_type": media_type, "meta": meta}
     
     async def forward_media_group(self, media_group: List[Message]):
         """
@@ -367,11 +412,21 @@ class RestrictedChannelForwarder:
             # 创建并行下载任务
             download_tasks = []
             for message in media_group:
-                download_tasks.append(self._parallel_stream_media(message))
+                download_tasks.append(self._stream_media_wrapper(message))
             
-            # 并行执行所有下载任务
+            # 并行执行所有下载任务，但限制并发数
             logger.info("开始并行下载媒体文件...")
-            download_results = await asyncio.gather(*download_tasks)
+            download_results = []
+            
+            # 分批下载，每批最多5个
+            batch_size = 5
+            for i in range(0, len(download_tasks), batch_size):
+                batch = download_tasks[i:i+batch_size]
+                batch_results = await asyncio.gather(*batch)
+                download_results.extend(batch_results)
+                # 每批之间添加短暂延迟，避免触发限流
+                if i + batch_size < len(download_tasks):
+                    await asyncio.sleep(1)
             
             # 构建媒体列表
             media_list = []
@@ -379,6 +434,15 @@ class RestrictedChannelForwarder:
             
             for index, (media_buffer, meta_info) in enumerate(download_results):
                 if not media_buffer or not meta_info:
+                    continue
+                
+                # 验证文件大小不为0
+                media_buffer.seek(0, os.SEEK_END)
+                size = media_buffer.tell()
+                media_buffer.seek(0)
+                
+                if size == 0:
+                    logger.warning(f"跳过大小为0的媒体文件: {index}")
                     continue
                 
                 media_buffers.append(media_buffer)
@@ -400,12 +464,19 @@ class RestrictedChannelForwarder:
             
             # 批量发送媒体组
             if media_list:
-                logger.info("开始发送媒体组...")
-                await self.client.send_media_group(
-                    chat_id=self.target_channel_id,
-                    media=media_list,
-                    disable_notification=True
-                )
+                logger.info(f"开始发送媒体组，共 {len(media_list)} 个文件...")
+                # 如果媒体太多，分批发送
+                max_group_size = 10  # Telegram限制每组最多10个媒体
+                for i in range(0, len(media_list), max_group_size):
+                    batch = media_list[i:i+max_group_size]
+                    await self.client.send_media_group(
+                        chat_id=self.target_channel_id,
+                        media=batch,
+                        disable_notification=True
+                    )
+                    # 每批之间添加短暂延迟，避免触发限流
+                    if i + max_group_size < len(media_list):
+                        await asyncio.sleep(2)
                 logger.info("媒体组发送成功")
             else:
                 logger.warning("媒体组中没有可发送的媒体")
@@ -427,11 +498,20 @@ class RestrictedChannelForwarder:
         logger.info(f"处理单条媒体消息: {message.id}")
         
         try:
-            # 流式获取媒体到内存
-            media_buffer = await self._stream_media(message)
+            # 下载媒体到内存
+            media_buffer = await self._download_media(message)
             
             if not media_buffer:
-                logger.error(f"无法流式获取媒体文件: {message.id}")
+                logger.error(f"无法获取媒体文件: {message.id}")
+                return
+            
+            # 验证文件大小不为0
+            media_buffer.seek(0, os.SEEK_END)
+            size = media_buffer.tell()
+            media_buffer.seek(0)
+            
+            if size == 0:
+                logger.error(f"媒体文件大小为0，跳过: {message.id}")
                 return
             
             # 根据媒体类型进行处理
@@ -557,67 +637,6 @@ class RestrictedChannelForwarder:
             message.voice or 
             message.video_note
         )
-    
-    async def _stream_media(self, message: Message) -> Optional[BytesIO]:
-        """
-        使用流式API将媒体文件流式下载到内存
-        
-        Args:
-            message: 媒体消息
-            
-        Returns:
-            内存中的文件对象，如果下载失败则返回None
-        """
-        try:
-            buffer = BytesIO()
-            
-            # 使用stream_media逐块下载到内存
-            downloaded_size = 0
-            async for chunk in self.client.stream_media(message):
-                buffer.write(chunk)
-                downloaded_size += len(chunk)
-            
-            logger.info(f"媒体文件流式下载成功，大小: {downloaded_size} 字节")
-            
-            # 将缓冲区指针重置到开头
-            buffer.seek(0)
-            
-            # 根据消息类型推断文件扩展名，并为BytesIO对象添加name属性
-            if message.video:
-                filename = f"video_{message.id}.mp4"
-                buffer.name = filename
-            elif message.photo:
-                filename = f"photo_{message.id}.jpg"
-                buffer.name = filename
-            elif message.audio:
-                filename = f"audio_{message.id}.mp3"
-                buffer.name = filename
-            elif message.voice:
-                filename = f"voice_{message.id}.ogg"
-                buffer.name = filename
-            elif message.document:
-                # 尝试从原始文件名获取扩展名
-                orig_filename = message.document.file_name
-                if orig_filename:
-                    buffer.name = orig_filename
-                else:
-                    buffer.name = f"document_{message.id}"
-            elif message.sticker:
-                if message.sticker.is_animated:
-                    buffer.name = f"sticker_{message.id}.tgs"
-                elif message.sticker.is_video:
-                    buffer.name = f"sticker_{message.id}.webm"
-                else:
-                    buffer.name = f"sticker_{message.id}.webp"
-            elif message.animation:
-                buffer.name = f"animation_{message.id}.mp4"
-            else:
-                buffer.name = f"media_{message.id}"
-            
-            return buffer
-        except Exception as e:
-            logger.error(f"流式下载媒体文件失败: {e}", exc_info=True)
-            return None
 
 
 async def main():
@@ -640,7 +659,8 @@ async def main():
         api_id=API_ID,
         api_hash=API_HASH,
         phone_number=PHONE_NUMBER,
-        proxy=proxy
+        proxy=proxy,
+        max_concurrent_transmissions=MAX_CONCURRENT_TRANSMISSIONS  # 设置最大并发传输数
     )
     
     # 创建转发器
