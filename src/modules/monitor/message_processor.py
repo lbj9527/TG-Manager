@@ -186,70 +186,48 @@ class MessageProcessor:
                     # 转发间隔
                     await asyncio.sleep(0.5)
             else:
-                # 源频道禁止转发且消息是媒体消息，使用下载-上传方式处理
-                logger.info(f"源频道禁止转发，将使用下载后上传的方式处理媒体消息")
+                # 源频道禁止转发，使用下载-上传方式或copy方式处理
+                logger.info(f"源频道禁止转发，将使用适当的处理方式")
                 
-                # 处理媒体消息
-                if message.media:
-                    try:
-                        # 使用禁止转发处理器处理媒体消息
-                        sent_messages = await self.restricted_handler.process_restricted_message(
-                            message=message,
-                            source_channel=source_channel,
-                            source_id=source_chat_id,
-                            target_channels=target_channels,
-                            caption=replace_caption,
-                            remove_caption=remove_caption
-                        )
-                        
-                        if sent_messages:
-                            success_count = len(target_channels)
+                try:
+                    # 使用禁止转发处理器处理消息(无论是否为媒体消息)
+                    sent_messages = await self.restricted_handler.process_restricted_message(
+                        message=message,
+                        source_channel=source_channel,
+                        source_id=source_chat_id,
+                        target_channels=target_channels,
+                        caption=replace_caption,
+                        remove_caption=remove_caption
+                    )
+                    
+                    if sent_messages:
+                        success_count = len(target_channels)
+                        if message.media:
                             logger.info(f"已使用下载-上传方式成功将媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
                         else:
-                            # 媒体消息处理失败，尝试使用send_modified_message
-                            logger.warning(f"下载-上传处理失败，尝试使用修改后的消息发送")
-                            for target, target_id, target_info in target_channels:
-                                try:
-                                    # 获取原始消息的文本或标题
-                                    text = message.text or message.caption or ""
-                                    if replace_caption is not None:
-                                        text = replace_caption
-                                    if remove_caption:
-                                        text = None
-                                    await self.send_modified_message(message, text, [(target, target_id, target_info)])
-                                    success_count += 1
-                                    logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                except Exception as modified_e:
-                                    failed_count += 1
-                                    logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
-                    except Exception as e:
-                        failed_count = len(target_channels)
-                        logger.error(f"处理禁止转发的媒体消息失败: {str(e)}", error_type="RESTRICTED_MEDIA", recoverable=True)
-                else:
-                    # 非媒体消息使用copy_message
-                    for target, target_id, target_info in target_channels:
-                        try:
-                            # 使用copy_message复制消息
-                            caption = None
-                            if message.text or message.caption:
-                                caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                            logger.info(f"已使用copy方式成功将非媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
+                    else:
+                        # 消息处理失败，尝试使用send_modified_message
+                        logger.warning(f"处理失败，尝试使用修改后的消息发送")
+                        for target, target_id, target_info in target_channels:
+                            try:
+                                # 获取原始消息的文本或标题
+                                text = message.text or message.caption or ""
+                                if replace_caption is not None:
+                                    text = replace_caption
                                 if remove_caption:
-                                    caption = None
-                                
-                            await self.client.copy_message(
-                                chat_id=target_id,
-                                from_chat_id=source_chat_id,
-                                message_id=source_message_id,
-                                caption=caption
-                            )
-                            success_count += 1
-                            logger.info(f"已使用复制方式将非媒体消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                        except Exception as e:
-                            failed_count += 1
-                            logger.error(f"复制非媒体消息失败: {str(e)}", error_type="COPY_NON_MEDIA", recoverable=True)
-                        
-                        # 转发间隔
-                        await asyncio.sleep(0.5)
+                                    text = None
+                                await self.send_modified_message(message, text, [(target, target_id, target_info)])
+                                success_count += 1
+                                logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            except Exception as modified_e:
+                                failed_count += 1
+                                logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
+                except Exception as e:
+                    failed_count = len(target_channels)
+                    logger.error(f"处理禁止转发的消息失败: {str(e)}", error_type="RESTRICTED_MESSAGE", recoverable=True)
+                    import traceback
+                    logger.error(f"错误详情: {traceback.format_exc()}", error_type="DETAILED_ERROR", recoverable=True)
             
             # 统计结果
             logger.info(f"消息 [ID: {source_message_id}] 转发完成: 成功 {success_count}, 失败 {failed_count}")    
@@ -359,6 +337,25 @@ class MessageProcessor:
                             chat_id=target_id,
                             audio=original_message.audio.file_id,
                             caption=caption_to_use if not remove_caption else None
+                        )
+                    elif original_message.sticker:
+                        # 贴纸消息
+                        sent_message = await self.client.send_sticker(
+                            chat_id=target_id,
+                            sticker=original_message.sticker.file_id
+                        )
+                    elif original_message.voice:
+                        # 语音消息
+                        sent_message = await self.client.send_voice(
+                            chat_id=target_id,
+                            voice=original_message.voice.file_id,
+                            caption=caption_to_use if not remove_caption else None
+                        )
+                    elif original_message.video_note:
+                        # 视频笔记消息
+                        sent_message = await self.client.send_video_note(
+                            chat_id=target_id,
+                            video_note=original_message.video_note.file_id
                         )
                     else:
                         # 纯文本消息

@@ -87,6 +87,41 @@ class RestrictedForwardHandler:
                 # 分离第一个目标频道和其余目标频道
                 first_target, *other_targets = target_channels
                 
+                # 特殊处理贴纸消息 - 贴纸是一种特殊的媒体消息，但不需要下载
+                if message.sticker:
+                    _logger.info(f"处理禁止转发的贴纸消息 [ID: {message.id}]，使用copy_message方式")
+                    
+                    # 处理所有目标频道
+                    sent_messages = []
+                    
+                    # 复制到所有目标频道
+                    for target, target_id, target_info in target_channels:
+                        try:
+                            # 首先尝试copy_message
+                            try:
+                                sent_message = await self.client.copy_message(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message.id
+                                )
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已将贴纸消息从源频道复制到 {target_info}")
+                            except Exception as copy_e:
+                                # 如果复制失败，直接发送贴纸
+                                _logger.warning(f"复制贴纸失败，尝试直接发送: {copy_e}")
+                                sent_message = await self.client.send_sticker(
+                                    chat_id=target_id,
+                                    sticker=message.sticker.file_id
+                                )
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已直接发送贴纸到 {target_info}")
+                            
+                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        except Exception as e:
+                            _logger.error(f"发送贴纸到目标频道 {target_info} 失败: {e}")
+                    
+                    return sent_messages
+                
                 # 为消息创建单独的临时目录
                 safe_source_name = get_safe_path_name(source_channel)
                 safe_target_name = get_safe_path_name(first_target[0])
@@ -165,9 +200,38 @@ class RestrictedForwardHandler:
                 
                 return sent_messages if isinstance(sent_messages, list) else [sent_messages]
             else:
-                # 非媒体消息(文本/表情/位置等)，无需下载上传
+                # 非媒体消息(文本/表情/位置等)，无需下载上传，直接使用copy_message
                 _logger.info(f"处理禁止转发的非媒体消息 [ID: {message.id}]，使用copy_message方式")
-                return []
+                
+                # 处理所有目标频道
+                sent_messages = []
+                
+                # 确定标题
+                if remove_caption:
+                    final_text = None
+                    _logger.debug(f"移除标题模式")
+                elif caption is not None:
+                    final_text = caption
+                    _logger.debug(f"使用替换后的标题: '{caption}'")
+                else:
+                    final_text = message.text or message.caption
+                
+                # 复制到所有目标频道
+                for target, target_id, target_info in target_channels:
+                    try:
+                        sent_message = await self.client.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=source_id,
+                            message_id=message.id,
+                            caption=final_text
+                        )
+                        sent_messages.append(sent_message)
+                        _logger.info(f"已将非媒体消息从源频道复制到 {target_info}")
+                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                    except Exception as e:
+                        _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
+                
+                return sent_messages
         
         except Exception as e:
             _logger.error(f"处理禁止转发的消息失败: {e}")
