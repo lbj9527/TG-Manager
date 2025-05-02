@@ -273,14 +273,12 @@ class RestrictedChannelForwarder:
         # 按消息ID排序，确保顺序正确
         media_group.sort(key=lambda msg: msg.id)
         
-        # 创建临时下载目录
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        temp_subdir = TEMP_DIR / f"group_{timestamp}"
-        temp_subdir.mkdir(parents=True, exist_ok=True)
-        
         # 构建媒体列表
         media_list = []
         caption = None
+        
+        # 保存媒体缓冲区列表，确保在发送完成前不会被垃圾回收
+        media_buffers = []
         
         # 优先获取第一条消息的说明文字
         for msg in media_group:
@@ -298,11 +296,8 @@ class RestrictedChannelForwarder:
                     logger.error(f"无法流式获取媒体组文件: {message.id}")
                     continue
                 
-                # 为了与send_media_group兼容，我们需要将内存缓冲区写入临时文件
-                file_name = media_buffer.name  # 使用_stream_media设置的文件名
-                file_path = temp_subdir / file_name
-                with open(file_path, "wb") as f:
-                    f.write(media_buffer.getvalue())
+                # 将缓冲区添加到列表，防止垃圾回收
+                media_buffers.append(media_buffer)
                 
                 # 根据媒体类型构建对应的媒体对象
                 if message.video:
@@ -327,10 +322,10 @@ class RestrictedChannelForwarder:
                     logger.warning(f"不支持的媒体类型: {message}")
                     continue
                 
-                # 添加到媒体列表
+                # 添加到媒体列表，直接使用内存缓冲区对象
                 media_list.append(
                     media_type(
-                        media=str(file_path),  # 传递文件路径字符串
+                        media=media_buffer,  # 直接传递内存缓冲区对象（BytesIO）
                         caption=caption if index == 0 else "",  # 仅第一个媒体保留说明文字
                         parse_mode=ParseMode.HTML,  # 支持HTML格式
                         **meta
@@ -356,8 +351,8 @@ class RestrictedChannelForwarder:
         except Exception as e:
             logger.error(f"发送媒体组出错: {e}", exc_info=True)
         finally:
-            # 清理临时目录
-            await self.clean_directory(temp_subdir)
+            # 清理资源
+            media_buffers.clear()
     
     async def handle_media_message(self, message: Message):
         """
