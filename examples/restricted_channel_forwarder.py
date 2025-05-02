@@ -295,7 +295,8 @@ class RestrictedChannelForwarder:
                     continue
                 
                 # 为了与send_media_group兼容，我们需要将内存缓冲区写入临时文件
-                file_path = temp_subdir / f"media_{message.id}"
+                file_name = media_buffer.name  # 使用_stream_media设置的文件名
+                file_path = temp_subdir / file_name
                 with open(file_path, "wb") as f:
                     f.write(media_buffer.getvalue())
                 
@@ -387,10 +388,11 @@ class RestrictedChannelForwarder:
                     duration=message.video.duration if message.video.duration else None,
                     width=message.video.width if message.video.width else None,
                     height=message.video.height if message.video.height else None,
+                    file_name=media_buffer.name,  # 显式提供文件名
                     disable_notification=True
                 )
             elif message.photo:
-                # 处理图片
+                # 处理图片 (注意：send_photo 不支持 file_name 参数)
                 await self.client.send_photo(
                     chat_id=self.target_channel_id,
                     photo=media_buffer,
@@ -404,6 +406,7 @@ class RestrictedChannelForwarder:
                     chat_id=self.target_channel_id,
                     document=media_buffer,
                     caption=message.caption,
+                    file_name=media_buffer.name,  # 显式提供文件名
                     parse_mode=ParseMode.HTML,
                     disable_notification=True
                 )
@@ -413,6 +416,7 @@ class RestrictedChannelForwarder:
                     chat_id=self.target_channel_id,
                     audio=media_buffer,
                     caption=message.caption,
+                    file_name=media_buffer.name,  # 显式提供文件名
                     parse_mode=ParseMode.HTML,
                     duration=message.audio.duration if message.audio.duration else None,
                     disable_notification=True
@@ -430,6 +434,7 @@ class RestrictedChannelForwarder:
                     chat_id=self.target_channel_id,
                     animation=media_buffer,
                     caption=message.caption,
+                    file_name=media_buffer.name,  # 显式提供文件名
                     parse_mode=ParseMode.HTML,
                     disable_notification=True
                 )
@@ -537,6 +542,39 @@ class RestrictedChannelForwarder:
             
             # 将缓冲区指针重置到开头
             buffer.seek(0)
+            
+            # 根据消息类型推断文件扩展名，并为BytesIO对象添加name属性
+            if message.video:
+                filename = f"video_{message.id}.mp4"
+                buffer.name = filename
+            elif message.photo:
+                filename = f"photo_{message.id}.jpg"
+                buffer.name = filename
+            elif message.audio:
+                filename = f"audio_{message.id}.mp3"
+                buffer.name = filename
+            elif message.voice:
+                filename = f"voice_{message.id}.ogg"
+                buffer.name = filename
+            elif message.document:
+                # 尝试从原始文件名获取扩展名
+                orig_filename = message.document.file_name
+                if orig_filename:
+                    buffer.name = orig_filename
+                else:
+                    buffer.name = f"document_{message.id}"
+            elif message.sticker:
+                if message.sticker.is_animated:
+                    buffer.name = f"sticker_{message.id}.tgs"
+                elif message.sticker.is_video:
+                    buffer.name = f"sticker_{message.id}.webm"
+                else:
+                    buffer.name = f"sticker_{message.id}.webp"
+            elif message.animation:
+                buffer.name = f"animation_{message.id}.mp4"
+            else:
+                buffer.name = f"media_{message.id}"
+            
             return buffer
         except Exception as e:
             logger.error(f"流式下载媒体文件失败: {e}", exc_info=True)
