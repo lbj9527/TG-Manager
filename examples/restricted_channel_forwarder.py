@@ -6,6 +6,7 @@
 此示例展示如何实现对禁止转发频道的监听，以及如何将单条消息和媒体组消息转发到目标频道。
 对于媒体消息使用流式下载上传，对于非媒体消息使用普通方式转发。
 支持SOCKS5代理和频道链接解析。
+支持媒体组并行下载。
 """
 
 import os
@@ -13,7 +14,7 @@ import re
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Union, Dict, Optional, Tuple
+from typing import List, Union, Dict, Optional, Tuple, Any
 from datetime import datetime
 from io import BytesIO  # 添加BytesIO导入
 
@@ -35,6 +36,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 禁用pyrogram日志输出
+logging.getLogger("pyrogram").setLevel(logging.CRITICAL)
+logging.getLogger("pyrogram.session").setLevel(logging.CRITICAL)
+logging.getLogger("pyrogram.connection").setLevel(logging.CRITICAL)
+logging.getLogger("pyrogram.dispatcher").setLevel(logging.CRITICAL)
+
 # 配置信息
 API_ID = 25448404  # 替换为您的 API ID
 API_HASH = "0c910748a61fc30bb14e073a31933fb6"  # 替换为您的 API HASH
@@ -52,8 +59,35 @@ PROXY_PASSWORD = None  # 代理密码，如果不需要认证则为None
 SOURCE_CHANNEL = "https://t.me/joisiid"  # 替换为您要监听的频道链接
 TARGET_CHANNEL = "https://t.me/xgyvcu"   # 替换为您要转发到的目标频道链接
 
-# 临时目录配置
-TEMP_DIR = Path("tmp/restricted_forward")
+# 并行下载配置
+MAX_CONCURRENT_DOWNLOADS = 5  # 最大并发下载数
+
+# 自定义信号量类，用于限制并发下载数量
+class ThrottledSemaphore(asyncio.Semaphore):
+    """带限流功能的信号量类"""
+    
+    def __init__(self, value: int = 1, interval: float = 0.5):
+        """
+        初始化信号量
+        
+        Args:
+            value: 信号量初始值
+            interval: 获取信号量的最小间隔时间（秒）
+        """
+        super().__init__(value)
+        self.interval = interval
+        self.last_acquire = 0
+    
+    async def acquire(self):
+        """获取信号量，并限制获取频率"""
+        now = datetime.now().timestamp()
+        time_diff = now - self.last_acquire
+        
+        if time_diff < self.interval:
+            await asyncio.sleep(self.interval - time_diff)
+        
+        await super().acquire()
+        self.last_acquire = datetime.now().timestamp()
 
 
 class ChannelResolver:
@@ -139,9 +173,6 @@ class RestrictedChannelForwarder:
         self.client = client
         self.channel_resolver = ChannelResolver(client)
         
-        # 确保临时目录存在
-        TEMP_DIR.mkdir(parents=True, exist_ok=True)
-        
         # 频道ID缓存
         self.source_channel_id = None
         self.target_channel_id = None
@@ -149,6 +180,9 @@ class RestrictedChannelForwarder:
         # 已处理的媒体组ID集合，防止重复处理
         self.processed_media_groups = set()
         self.media_group_lock = asyncio.Lock()
+        
+        # 创建限流信号量
+        self.download_semaphore = ThrottledSemaphore(MAX_CONCURRENT_DOWNLOADS, 0.5)
     
     async def initialize(self):
         """初始化频道ID"""
@@ -258,6 +292,55 @@ class RestrictedChannelForwarder:
                 # 只保留最近的500个
                 self.processed_media_groups = set(list(self.processed_media_groups)[-500:])
     
+    async def _parallel_stream_media(self, message: Message) -> Tuple[Optional[BytesIO], Dict[str, Any]]:
+        """
+        并行流式下载媒体文件
+        
+        Args:
+            message: 媒体消息
+            
+        Returns:
+            包含媒体缓冲区和元数据的元组
+        """
+        # 获取信号量，限制并发下载数
+        await self.download_semaphore.acquire()
+        
+        try:
+            # 流式下载媒体
+            media_buffer = await self._stream_media(message)
+            
+            # 如果下载失败，返回None和空字典
+            if not media_buffer:
+                return None, {}
+            
+            # 根据媒体类型准备元数据
+            meta = {}
+            media_type = None
+            
+            if message.video:
+                media_type = InputMediaVideo
+                meta = {
+                    "duration": message.video.duration if message.video.duration else None,
+                    "width": message.video.width if message.video.width else None,
+                    "height": message.video.height if message.video.height else None
+                }
+            elif message.photo:
+                media_type = InputMediaPhoto
+                meta = {}
+            elif message.document:
+                media_type = InputMediaDocument
+                meta = {}
+            elif message.audio:
+                media_type = InputMediaAudio
+                meta = {
+                    "duration": message.audio.duration if message.audio.duration else None
+                }
+            
+            return media_buffer, {"media_type": media_type, "meta": meta}
+        finally:
+            # 释放信号量
+            self.download_semaphore.release()
+    
     async def forward_media_group(self, media_group: List[Message]):
         """
         转发媒体组
@@ -273,61 +356,44 @@ class RestrictedChannelForwarder:
         # 按消息ID排序，确保顺序正确
         media_group.sort(key=lambda msg: msg.id)
         
-        # 构建媒体列表
-        media_list = []
+        # 获取第一条消息的说明文字
         caption = None
-        
-        # 保存媒体缓冲区列表，确保在发送完成前不会被垃圾回收
-        media_buffers = []
-        
-        # 优先获取第一条消息的说明文字
         for msg in media_group:
             if msg.caption:
                 caption = msg.caption
                 break
         
         try:
-            # 下载所有媒体文件到内存
-            for index, message in enumerate(media_group):
-                # 流式下载媒体文件到内存
-                media_buffer = await self._stream_media(message)
-                
-                if not media_buffer:
-                    logger.error(f"无法流式获取媒体组文件: {message.id}")
+            # 创建并行下载任务
+            download_tasks = []
+            for message in media_group:
+                download_tasks.append(self._parallel_stream_media(message))
+            
+            # 并行执行所有下载任务
+            logger.info("开始并行下载媒体文件...")
+            download_results = await asyncio.gather(*download_tasks)
+            
+            # 构建媒体列表
+            media_list = []
+            media_buffers = []  # 保存引用，防止被垃圾回收
+            
+            for index, (media_buffer, meta_info) in enumerate(download_results):
+                if not media_buffer or not meta_info:
                     continue
                 
-                # 将缓冲区添加到列表，防止垃圾回收
                 media_buffers.append(media_buffer)
+                media_type = meta_info["media_type"]
+                meta = meta_info["meta"]
                 
-                # 根据媒体类型构建对应的媒体对象
-                if message.video:
-                    media_type = InputMediaVideo
-                    meta = {
-                        "duration": message.video.duration if message.video.duration else None,
-                        "width": message.video.width if message.video.width else None,
-                        "height": message.video.height if message.video.height else None
-                    }
-                elif message.photo:
-                    media_type = InputMediaPhoto
-                    meta = {}
-                elif message.document:
-                    media_type = InputMediaDocument
-                    meta = {}
-                elif message.audio:
-                    media_type = InputMediaAudio
-                    meta = {
-                        "duration": message.audio.duration if message.audio.duration else None
-                    }
-                else:
-                    logger.warning(f"不支持的媒体类型: {message}")
+                if not media_type:
                     continue
                 
-                # 添加到媒体列表，直接使用内存缓冲区对象
+                # 添加到媒体列表
                 media_list.append(
                     media_type(
-                        media=media_buffer,  # 直接传递内存缓冲区对象（BytesIO）
+                        media=media_buffer,
                         caption=caption if index == 0 else "",  # 仅第一个媒体保留说明文字
-                        parse_mode=ParseMode.HTML,  # 支持HTML格式
+                        parse_mode=ParseMode.HTML,
                         **meta
                     )
                 )
@@ -350,9 +416,6 @@ class RestrictedChannelForwarder:
             await self.forward_media_group(media_group)
         except Exception as e:
             logger.error(f"发送媒体组出错: {e}", exc_info=True)
-        finally:
-            # 清理资源
-            media_buffers.clear()
     
     async def handle_media_message(self, message: Message):
         """
@@ -362,11 +425,6 @@ class RestrictedChannelForwarder:
             message: 收到的媒体消息
         """
         logger.info(f"处理单条媒体消息: {message.id}")
-        
-        # 创建临时下载目录
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        temp_subdir = TEMP_DIR / f"single_{timestamp}"
-        temp_subdir.mkdir(parents=True, exist_ok=True)
         
         try:
             # 流式获取媒体到内存
@@ -448,9 +506,6 @@ class RestrictedChannelForwarder:
             await self.handle_media_message(message)
         except Exception as e:
             logger.error(f"发送媒体消息出错: {e}", exc_info=True)
-        finally:
-            # 清理临时目录
-            await self.clean_directory(temp_subdir)
     
     async def handle_text_message(self, message: Message):
         """
@@ -502,21 +557,6 @@ class RestrictedChannelForwarder:
             message.voice or 
             message.video_note
         )
-    
-    async def clean_directory(self, directory: Path):
-        """
-        清理目录
-        
-        Args:
-            directory: 要清理的目录
-        """
-        try:
-            if directory.exists():
-                import shutil
-                shutil.rmtree(directory)
-                logger.info(f"清理目录成功: {directory}")
-        except Exception as e:
-            logger.error(f"清理目录出错: {e}", exc_info=True)
     
     async def _stream_media(self, message: Message) -> Optional[BytesIO]:
         """
