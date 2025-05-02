@@ -292,53 +292,49 @@ class Monitor:
         处理单条消息
         
         Args:
-            message: Pyrogram消息对象
+            message: 消息对象
             pair_config: 频道对配置
         """
-        # 检查消息是否有文本
-        if not message.text and not message.caption:
-            # 无文本消息，直接转发
-            await self.message_processor.forward_message(message, pair_config['target_channels'])
-            return
-        
-        # 获取消息文本
-        text = message.text or message.caption
-        
-        # 应用文本替换规则
-        text_replacements = pair_config['text_replacements']
-        remove_captions = pair_config['remove_captions']
-        
-        if text_replacements:
-            modified_text = self.text_filter.apply_text_replacements(text, text_replacements)
-            if modified_text != text:
-                # 文本已被修改，需要重新发送
-                await self.message_processor.send_modified_message(message, modified_text, pair_config['target_channels'], remove_captions)
+        try:
+            # 获取目标频道列表
+            target_channels = pair_config.get('target_channels', [])
+            
+            if not target_channels:
+                logger.warning("没有配置目标频道，跳过单条消息处理")
                 return
-        
-        # 检查是否需要移除标题
-        if remove_captions and message.caption:
-            # 需要移除标题，重新发送
-            await self.message_processor.send_modified_message(message, "", pair_config['target_channels'], True)
-            return
-        
-        # 正常转发消息
-        await self.message_processor.forward_message(message, pair_config['target_channels'])
-        
-        # 调用所有注册的消息处理器
-        for handler in self.message_handlers:
-            try:
-                # 如果消息处理器是协程函数，异步调用它
-                if asyncio.iscoroutinefunction(handler):
-                    await handler(message)
-                else:
-                    handler(message)
-                    
-            except Exception as handler_error:
-                logger.error(f"消息处理器 {handler.__name__} 处理消息 [ID: {message.id}] 失败: {str(handler_error)}", 
-                              error_type="HANDLER_ERROR", recoverable=True)
-        
-        # 日志记录消息处理完成
-        logger.debug(f"消息 [ID: {message.id}] 处理完成")
+                
+            # 获取文本替换和标题移除配置
+            text_replacements = pair_config.get('text_replacements', {})
+            remove_captions = pair_config.get('remove_captions', False)
+            
+            # 获取原始文本
+            text = message.text or message.caption or ""
+            replaced_text = None
+            
+            # 应用文本替换
+            if text and text_replacements:
+                replaced_text = text
+                for find_text, replace_text in text_replacements.items():
+                    if find_text in replaced_text:
+                        replaced_text = replaced_text.replace(find_text, replace_text)
+                
+                if replaced_text != text:
+                    logger.info(f"已替换消息 [ID: {message.id}] 的文本")
+            
+            # 转发消息
+            await self.message_processor.forward_message(
+                message=message, 
+                target_channels=target_channels,
+                use_copy=True,  # 使用copy_message方式
+                replace_caption=replaced_text,
+                remove_caption=remove_captions
+            )
+            
+        except Exception as e:
+            logger.error(f"处理单条消息时发生错误: {str(e)}", error_type="PROCESS_SINGLE_MESSAGE", recoverable=True)
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"错误详情: {error_details}")
     
     async def _handle_network_error(self, error):
         """

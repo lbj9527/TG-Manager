@@ -18,6 +18,7 @@ from pyrogram.errors import FloodWait, ChatForwardsRestricted
 from src.utils.channel_resolver import ChannelResolver
 from src.utils.logger import get_logger
 from src.modules.monitor.text_filter import TextFilter
+from src.modules.monitor.restricted_forward_handler import RestrictedForwardHandler
 
 # 导入消息处理器，但避免循环导入
 from typing import TYPE_CHECKING
@@ -91,6 +92,9 @@ class MediaGroupHandler:
         self.high_traffic_threshold = 10  # 10个以上媒体组同时进入时激活高流量模式
         self.high_traffic_cooldown = 30  # 30秒冷却时间
         self.last_high_traffic_time = 0
+        
+        # 初始化禁止转发处理器
+        self.restricted_handler = RestrictedForwardHandler(client, channel_resolver)
     
     def set_channel_pairs(self, channel_pairs: Dict[int, Dict[str, Any]]):
         """
@@ -471,138 +475,186 @@ class MediaGroupHandler:
                 self.fetching_media_groups.remove(media_group_id)
                     
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
-        """处理完整的媒体组消息
+        """
+        处理媒体组消息
         
         Args:
             messages: 媒体组消息列表
             pair_config: 频道对配置
         """
         if not messages:
-            logger.warning("尝试处理空的媒体组")
             return
             
-        # 排序消息，确保顺序正确
-        messages.sort(key=lambda m: m.id)
-        
-        # 获取源和目标信息
-        source_chat = messages[0].chat
-        source_chat_id = source_chat.id
-        media_group_id = messages[0].media_group_id
-        
         try:
-            source_title = source_chat.title
-        except:
-            source_title = str(source_chat_id)
+            # 获取源频道信息
+            source_id = messages[0].chat.id
+            source_channel = pair_config['source_channel']
+            source_title = pair_config.get('source_title', str(source_id))
             
-        target_channels = pair_config.get('target_channels', [])
-        text_replacements = pair_config.get('text_replacements', {})
-        remove_captions = pair_config.get('remove_captions', False)
-        
-        if not target_channels:
-            logger.warning(f"没有有效的目标频道，跳过媒体组 {media_group_id}")
-            return
-            
-        logger.info(f"开始处理媒体组 {media_group_id} 从 {source_title} 到 {len(target_channels)} 个目标频道")
-        
-        # 获取第一条消息的标题（如果所有消息共用一个标题，通常是这样）
-        caption = ""
-        for msg in messages:
-            if msg.caption:
-                caption = msg.caption
-                break
+            # 获取目标频道列表
+            target_channels = pair_config.get('target_channels', [])
+            if not target_channels:
+                logger.warning(f"没有有效的目标频道，跳过媒体组处理")
+                return
                 
-        # 检查是否需要修改标题或者应用文本替换
-        modified_captions = False
-        if text_replacements or remove_captions:
-            if caption and text_replacements:
-                # 使用TextFilter的静态方法进行文本替换
-                modified_caption = TextFilter.apply_text_replacements_static(caption, text_replacements)
-                if modified_caption != caption:
-                    modified_captions = True
-                    caption = modified_caption
-                    
-            # 如果设置了移除标题
-            if remove_captions:
-                caption = ""
-                modified_captions = True
-        
-        # 如果需要修改标题，使用send_media_group重新发送媒体组
-        if modified_captions:
-            logger.info(f"媒体组 {media_group_id} 需要修改标题，将使用修改后的媒体组发送")
-            await self._send_modified_media_group(messages, caption, target_channels)
-            return
-        
-        # 如果不需要修改标题，直接尝试转发媒体组（将自动处理转发限制情况）
-        await self._forward_media_group(messages, target_channels)
-        
-    async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]]):
-        """转发媒体组消息
+            # 获取媒体组ID
+            media_group_id = messages[0].media_group_id
+            
+            # 检查文本替换和标题移除配置
+            text_replacements = pair_config.get('text_replacements', {})
+            remove_captions = pair_config.get('remove_captions', False)
+            
+            # 应用文本替换
+            replaced_caption = None
+            
+            # 获取媒体组的第一个非空标题
+            original_caption = None
+            for message in messages:
+                if message.caption:
+                    original_caption = message.caption
+                    break
+            
+            # 应用文本替换
+            if original_caption and text_replacements:
+                replaced_caption = original_caption
+                for find_text, replace_text in text_replacements.items():
+                    if find_text in replaced_caption:
+                        replaced_caption = replaced_caption.replace(find_text, replace_text)
+                        
+                if replaced_caption != original_caption:
+                    logger.info(f"已替换媒体组 {media_group_id} 的标题文本")
+            
+            # 检查源频道是否允许转发
+            source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
+            
+            if source_can_forward:
+                # 源频道允许转发，使用copy_media_group
+                await self._forward_media_group(messages, target_channels, replaced_caption, remove_captions)
+            else:
+                # 源频道禁止转发，使用下载上传方式
+                logger.info(f"源频道禁止转发，将使用下载后上传的方式处理媒体组")
+                
+                # 使用禁止转发处理器处理媒体组
+                await self.restricted_handler.process_restricted_media_group(
+                    messages=messages,
+                    source_channel=source_channel,
+                    source_id=source_id,
+                    target_channels=target_channels,
+                    caption=replaced_caption,
+                    remove_caption=remove_captions
+                )
+                
+        except Exception as e:
+            logger.error(f"处理媒体组时发生错误: {str(e)}", error_type="PROCESS_MEDIA_GROUP", recoverable=True)
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"错误详情: {error_details}")
+    
+    async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]], 
+                                 replaced_caption: str = None, remove_captions: bool = False):
+        """
+        转发媒体组到目标频道
         
         Args:
             messages: 媒体组消息列表
             target_channels: 目标频道列表
+            replaced_caption: 替换后的标题文本
+            remove_captions: 是否移除标题
         """
         if not messages or not target_channels:
             return
             
-        source_chat = messages[0].chat
-        source_chat_id = source_chat.id
-        media_group_id = messages[0].media_group_id
-        
         try:
-            source_title = source_chat.title
-        except:
-            source_title = str(source_chat_id)
+            source_chat = messages[0].chat
+            source_chat_id = source_chat.id
+            media_group_id = messages[0].media_group_id
             
-        message_ids = [msg.id for msg in messages]
-        first_message_id = message_ids[0]
-        
-        logger.info(f"转发媒体组 {media_group_id} (IDs: {message_ids}) 从 {source_title} 到 {len(target_channels)} 个目标频道")
-        
-        success_count = 0
-        failed_count = 0
-        
-        # 创建并发任务列表
-        tasks = []
-        for target, target_id, target_info in target_channels:
-            if self.should_stop:
-                logger.info(f"任务已停止，中断转发过程")
-                break
+            # 尝试获取频道信息
+            try:
+                source_title = source_chat.title
+            except:
+                source_title = str(source_chat_id)
                 
-            # 为每个目标频道创建一个异步任务
-            tasks.append(self._forward_media_group_to_target(
-                source_chat_id, target_id, target_info, 
-                first_message_id, message_ids, media_group_id, source_title
-            ))
-        
-        # 并发执行所有转发任务
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # 排序消息，确保顺序一致
+            sorted_messages = sorted(messages, key=lambda m: m.id)
+            first_message_id = sorted_messages[0].id
+            message_ids = [msg.id for msg in sorted_messages]
             
-            # 统计结果
-            for result in results:
-                if isinstance(result, Exception):
-                    failed_count += 1
-                    logger.error(f"转发媒体组时发生异常: {str(result)}", error_type="FORWARD_MEDIA_GROUP", recoverable=True)
-                elif result is True:
-                    success_count += 1
+            logger.info(f"开始转发媒体组 [ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
+            
+            # 标题处理
+            if remove_captions:
+                # 如果需要移除标题
+                logger.debug(f"将移除媒体组 {media_group_id} 的标题")
+                await self._send_modified_media_group(sorted_messages, None, target_channels)
+            elif replaced_caption is not None:
+                # 如果有替换后的标题
+                logger.debug(f"将使用替换后的标题: '{replaced_caption}'")
+                await self._send_modified_media_group(sorted_messages, replaced_caption, target_channels)
+            else:
+                # 使用原始标题或没有标题
+                # 先尝试第一个目标频道
+                first_target = target_channels[0]
+                success = await self._forward_media_group_to_target(
+                    source_chat_id, first_target[1], first_target[2],
+                    first_message_id, message_ids, media_group_id, source_title
+                )
+                
+                if success and len(target_channels) > 1:
+                    # 成功转发到第一个目标频道，从第一个目标频道复制到其余目标频道
+                    other_targets = target_channels[1:]
+                    logger.info(f"将从第一个目标频道复制媒体组到其他 {len(other_targets)} 个目标频道")
+                    
+                    for target, target_id, target_info in other_targets:
+                        try:
+                            # 使用copy_media_group从第一个目标频道复制
+                            await self.client.copy_media_group(
+                                chat_id=target_id,
+                                from_chat_id=first_target[1],
+                                message_id=first_message_id
+                            )
+                            logger.info(f"已将媒体组复制到 {target_info}")
+                        except Exception as e:
+                            logger.error(f"从第一个目标频道复制媒体组到 {target_info} 失败: {str(e)}", 
+                                       error_type="COPY_MEDIA_GROUP", recoverable=True)
+                        
+                        # 添加延迟避免触发限制
+                        await asyncio.sleep(0.5)
                 else:
-                    failed_count += 1
-        
-        # 统计结果
-        logger.info(f"媒体组 {media_group_id} 转发完成: 成功 {success_count}, 失败 {failed_count}")
-        return success_count > 0
-        
+                    # 第一个目标频道转发失败，尝试不同的方式
+                    logger.warning(f"转发媒体组到第一个目标频道失败，尝试逐个发送到所有目标频道")
+                    
+                    # 逐个发送到每个目标频道
+                    for target, target_id, target_info in target_channels:
+                        try:
+                            await self._forward_media_group_to_target(
+                                source_chat_id, target_id, target_info,
+                                first_message_id, message_ids, media_group_id, source_title
+                            )
+                        except Exception as e:
+                            logger.error(f"转发媒体组到 {target_info} 失败: {str(e)}", 
+                                       error_type="FORWARD_MEDIA_GROUP", recoverable=True)
+                        
+                        # 添加延迟避免触发限制
+                        await asyncio.sleep(0.5)
+                        
+        except Exception as e:
+            logger.error(f"转发媒体组失败: {str(e)}", error_type="FORWARD_MEDIA_GROUP", recoverable=True)
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"错误详情: {error_details}")
+    
     async def _forward_media_group_to_target(self, source_chat_id: int, target_id: int, target_info: str,
-                                           first_message_id: int, message_ids: List[int], 
-                                           media_group_id: str, source_title: str) -> bool:
-        """转发媒体组消息到单个目标频道
+                                          first_message_id: int, message_ids: List[int], 
+                                          media_group_id: str, source_title: str) -> bool:
+        """
+        转发媒体组到指定目标频道
         
         Args:
             source_chat_id: 源频道ID
             target_id: 目标频道ID
-            target_info: 目标频道信息字符串
-            first_message_id: 媒体组中第一条消息ID
+            target_info: 目标频道信息
+            first_message_id: 第一条消息ID
             message_ids: 所有消息ID列表
             media_group_id: 媒体组ID
             source_title: 源频道标题
@@ -611,93 +663,58 @@ class MediaGroupHandler:
             bool: 是否成功转发
         """
         try:
-            # 优先尝试使用copy_media_group转发整个媒体组
+            logger.info(f"转发媒体组 {media_group_id} 到 {target_info}")
+            
+            # 优先使用copy_media_group
             try:
                 await self.client.copy_media_group(
                     chat_id=target_id,
                     from_chat_id=source_chat_id,
                     message_id=first_message_id
                 )
-                logger.info(f"已将媒体组 {media_group_id} 从 {source_title} 复制到 {target_info}")
+                logger.info(f"已使用copy_media_group成功转发媒体组到 {target_info}")
                 return True
             except ChatForwardsRestricted:
-                # 如果复制受限，记录日志并继续尝试其他方式
-                logger.warning(f"目标频道 {target_info} 禁止复制消息，尝试逐条转发")
-                
-                # 尝试单独转发媒体组中的每条消息
-                all_succeeded = True
-                for msg_id in message_ids:
-                    try:
-                        await self.client.forward_messages(
-                            chat_id=target_id,
-                            from_chat_id=source_chat_id,
-                            message_ids=msg_id
-                        )
-                        # 减少延迟，但保留最小间隔避免限流
-                        await asyncio.sleep(0.1)
-                    except ChatForwardsRestricted:
-                        all_succeeded = False
-                        logger.warning(f"无法转发媒体组消息 ID:{msg_id} 到 {target_info}，将尝试重新上传")
-                        break
-                    except FloodWait as e:
-                        await asyncio.sleep(e.x)
-                        try:
-                            await self.client.forward_messages(
-                                chat_id=target_id,
-                                from_chat_id=source_chat_id,
-                                message_ids=msg_id
-                            )
-                        except Exception:
-                            all_succeeded = False
-                            break
-                    except Exception:
-                        all_succeeded = False
-                        break
-                        
-                if all_succeeded:
-                    logger.info(f"已将媒体组 {media_group_id} 从 {source_title} 逐条转发到 {target_info}")
-                    return True
-                
-                # 如果转发和复制都失败，尝试重新上传
-                logger.info(f"尝试重新上传媒体组 {media_group_id} 到 {target_info}")
-                messages = []
-                for msg_id in message_ids:
-                    try:
-                        msg = await self.client.get_messages(source_chat_id, msg_id)
-                        if msg:
-                            messages.append(msg)
-                    except Exception as e:
-                        logger.error(f"获取源消息失败: {str(e)}")
-                
-                if messages:
-                    await self._send_modified_media_group(
-                        messages, 
-                        messages[0].caption or "", 
-                        [(None, target_id, target_info)]
+                logger.warning(f"目标频道 {target_info} 禁止转发，尝试使用forward_messages")
+                # 如果禁止转发，尝试使用forward_messages
+                try:
+                    # 尝试直接转发
+                    await self.client.forward_messages(
+                        chat_id=target_id,
+                        from_chat_id=source_chat_id,
+                        message_ids=message_ids
                     )
-                    logger.info(f"成功重新上传媒体组 {media_group_id} 到 {target_info}")
+                    logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
                     return True
-                    
-            except FloodWait as e:
-                logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
-                await asyncio.sleep(e.x)
+                except Exception as forward_e:
+                    logger.warning(f"使用forward_messages失败: {str(forward_e)}，尝试单条发送")
+                    return False
+            except Exception as copy_e:
+                logger.warning(f"使用copy_media_group失败: {str(copy_e)}，尝试使用forward_messages")
+                # 尝试使用forward_messages
+                try:
+                    await self.client.forward_messages(
+                        chat_id=target_id,
+                        from_chat_id=source_chat_id,
+                        message_ids=message_ids
+                    )
+                    logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
+                    return True
+                except Exception as forward_e:
+                    logger.warning(f"使用forward_messages失败: {str(forward_e)}，尝试单条发送")
+                    return False
                 
-                # 重试一次
-                await self.client.copy_media_group(
-                    chat_id=target_id,
-                    from_chat_id=source_chat_id,
-                    message_id=first_message_id
-                )
-                logger.info(f"重试成功：已将媒体组 {media_group_id} 从 {source_title} 发送到 {target_info}")
-                return True
-                
-            except Exception as e:
-                # 所有方法都失败，记录错误并返回失败
-                logger.error(f"转发媒体组 {media_group_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
-                return False
+        except FloodWait as e:
+            logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+            await asyncio.sleep(e.x)
+            # 递归重试
+            return await self._forward_media_group_to_target(
+                source_chat_id, target_id, target_info,
+                first_message_id, message_ids, media_group_id, source_title
+            )
             
         except Exception as e:
-            logger.error(f"处理媒体组转发到 {target_info} 时出错: {str(e)}", error_type="FORWARD_MEDIA_GROUP", recoverable=True)
+            logger.error(f"转发媒体组到 {target_info} 失败: {str(e)}", error_type="FORWARD_TO_TARGET", recoverable=True)
             return False
     
     async def _send_modified_media_group(self, messages: List[Message], caption: str, target_channels: List[Tuple[str, int, str]]):

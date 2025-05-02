@@ -1,0 +1,311 @@
+"""
+处理禁止转发内容的模块，使用生产者-消费者模式进行下载和上传
+"""
+
+import asyncio
+from pathlib import Path
+from typing import List, Dict, Tuple, Any, Union, Optional
+from datetime import datetime
+
+from pyrogram import Client
+from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
+from pyrogram.errors import FloodWait, ChatForwardsRestricted
+
+from src.utils.channel_resolver import ChannelResolver
+from src.utils.logger import get_logger
+from src.modules.forward.message_downloader import MessageDownloader
+from src.modules.forward.media_uploader import MediaUploader
+from src.modules.forward.media_group_download import MediaGroupDownload
+from src.modules.forward.utils import get_safe_path_name, ensure_temp_dir, clean_directory
+
+_logger = get_logger()
+
+class RestrictedForwardHandler:
+    """
+    处理禁止转发内容的处理器，使用下载后重新上传的方式
+    """
+    
+    def __init__(self, client: Client, channel_resolver: ChannelResolver):
+        """
+        初始化处理器
+        
+        Args:
+            client: Pyrogram客户端实例
+            channel_resolver: 频道解析器实例
+        """
+        self.client = client
+        self.channel_resolver = channel_resolver
+        
+        # 创建临时目录
+        self.tmp_path = Path('tmp/monitor')
+        self.tmp_path.mkdir(exist_ok=True, parents=True)
+        
+        # 初始化下载器和上传器
+        self.message_downloader = MessageDownloader(client)
+        self.media_uploader = MediaUploader(client, None, {'max_retries': 3})
+        
+        # 创建临时会话目录
+        self.temp_dir = self._create_temp_dir()
+    
+    def _create_temp_dir(self) -> Path:
+        """
+        创建临时目录
+        
+        Returns:
+            Path: 临时目录路径
+        """
+        return ensure_temp_dir(self.tmp_path, 'monitor')
+    
+    async def process_restricted_message(self, 
+                                       message: Message, 
+                                       source_channel: str, 
+                                       source_id: int,
+                                       target_channels: List[Tuple[str, int, str]],
+                                       caption: str = None,
+                                       remove_caption: bool = False) -> List[Message]:
+        """
+        处理禁止转发的单条消息
+        
+        Args:
+            message: 消息对象
+            source_channel: 源频道标识符
+            source_id: 源频道ID
+            target_channels: 目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
+            caption: 要替换的标题（可选）
+            remove_caption: 是否移除标题
+            
+        Returns:
+            List[Message]: 第一个目标频道的发送结果，失败返回空列表
+        """
+        if not target_channels:
+            _logger.warning("没有有效的目标频道，跳过处理禁止转发的消息")
+            return []
+        
+        try:
+            # 检查是否是媒体消息
+            if message.media:
+                # 分离第一个目标频道和其余目标频道
+                first_target, *other_targets = target_channels
+                
+                # 为消息创建单独的临时目录
+                safe_source_name = get_safe_path_name(source_channel)
+                safe_target_name = get_safe_path_name(first_target[0])
+                message_temp_dir = self.temp_dir / f"{safe_source_name}_to_{safe_target_name}_{message.id}"
+                message_temp_dir.mkdir(exist_ok=True, parents=True)
+                
+                _logger.info(f"处理禁止转发的媒体消息 [ID: {message.id}]")
+                
+                # 下载媒体文件
+                downloaded_files = await self.message_downloader.download_messages([message], message_temp_dir, source_id)
+                
+                if not downloaded_files:
+                    _logger.warning(f"消息 [ID: {message.id}] 没有媒体文件可下载，跳过")
+                    return []
+                
+                # 决定是否使用消息原始标题
+                if remove_caption:
+                    final_caption = None
+                    _logger.debug(f"移除标题模式")
+                elif caption is not None:
+                    final_caption = caption
+                    _logger.debug(f"使用替换后的标题: '{caption}'")
+                else:
+                    final_caption = message.caption or message.text
+                    
+                # 创建MediaGroupDownload对象，即使只有一个消息
+                media_group_download = MediaGroupDownload(
+                    source_channel=source_channel,
+                    source_id=source_id,
+                    messages=[message],
+                    download_dir=message_temp_dir,
+                    downloaded_files=downloaded_files,
+                    caption=final_caption
+                )
+                
+                # 准备上传的媒体组
+                media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download)
+                
+                # 生成缩略图
+                thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+                
+                # 上传到第一个目标频道
+                sent_messages = await self.media_uploader.upload_media_group_to_channel(
+                    media_group,
+                    media_group_download,
+                    first_target[0],
+                    first_target[1],
+                    first_target[2],
+                    thumbnails
+                )
+                
+                # 清理缩略图
+                self.media_uploader.cleanup_thumbnails(thumbnails)
+                
+                # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
+                if sent_messages and other_targets:
+                    _logger.info(f"从第一个目标频道复制到其他 {len(other_targets)} 个目标频道")
+                    first_sent_message = sent_messages[0] if isinstance(sent_messages, list) else sent_messages
+                    
+                    # 处理单条消息
+                    for target, target_id, target_info in other_targets:
+                        try:
+                            await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=first_target[1],
+                                message_id=first_sent_message.id,
+                                caption=final_caption
+                            )
+                            _logger.info(f"已将消息从第一个目标频道复制到 {target_info}")
+                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        except Exception as e:
+                            _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
+                
+                # 清理临时目录
+                self.media_uploader.cleanup_media_group_dir(message_temp_dir)
+                
+                return sent_messages if isinstance(sent_messages, list) else [sent_messages]
+            else:
+                # 非媒体消息(文本/表情/位置等)，无需下载上传
+                _logger.info(f"处理禁止转发的非媒体消息 [ID: {message.id}]，使用copy_message方式")
+                return []
+        
+        except Exception as e:
+            _logger.error(f"处理禁止转发的消息失败: {e}")
+            import traceback
+            _logger.error(f"错误详情: {traceback.format_exc()}")
+            return []
+    
+    async def process_restricted_media_group(self,
+                                          messages: List[Message],
+                                          source_channel: str,
+                                          source_id: int,
+                                          target_channels: List[Tuple[str, int, str]],
+                                          caption: str = None,
+                                          remove_caption: bool = False) -> List[Message]:
+        """
+        处理禁止转发的媒体组
+        
+        Args:
+            messages: 媒体组消息列表
+            source_channel: 源频道标识符
+            source_id: 源频道ID
+            target_channels: 目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
+            caption: 要替换的标题（可选）
+            remove_caption: 是否移除标题
+            
+        Returns:
+            List[Message]: 第一个目标频道的发送结果，失败返回空列表
+        """
+        if not target_channels or not messages:
+            _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
+            return []
+        
+        try:
+            # 分离第一个目标频道和其余目标频道
+            first_target, *other_targets = target_channels
+            
+            # 获取媒体组ID
+            media_group_id = messages[0].media_group_id
+            message_ids = [m.id for m in messages]
+            
+            # 为媒体组创建单独的临时目录
+            safe_source_name = get_safe_path_name(source_channel)
+            safe_target_name = get_safe_path_name(first_target[0])
+            group_temp_dir = self.temp_dir / f"{safe_source_name}_to_{safe_target_name}_{media_group_id}"
+            group_temp_dir.mkdir(exist_ok=True, parents=True)
+            
+            _logger.info(f"处理禁止转发的媒体组 [ID: {media_group_id}]，包含 {len(messages)} 条消息")
+            
+            # 下载媒体文件
+            downloaded_files = await self.message_downloader.download_messages(messages, group_temp_dir, source_id)
+            
+            if not downloaded_files:
+                _logger.warning(f"媒体组 [ID: {media_group_id}] 没有媒体文件可下载，跳过")
+                return []
+            
+            # 决定是否使用消息原始标题
+            if remove_caption:
+                final_caption = None
+                _logger.debug(f"移除标题模式")
+            elif caption is not None:
+                final_caption = caption
+                _logger.debug(f"使用替换后的标题: '{caption}'")
+            else:
+                # 尝试从所有消息中获取标题
+                for msg in messages:
+                    if msg.caption:
+                        final_caption = msg.caption
+                        break
+                else:
+                    final_caption = None
+            
+            # 创建MediaGroupDownload对象
+            media_group_download = MediaGroupDownload(
+                source_channel=source_channel,
+                source_id=source_id,
+                messages=messages,
+                download_dir=group_temp_dir,
+                downloaded_files=downloaded_files,
+                caption=final_caption
+            )
+            
+            # 准备上传的媒体组
+            media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download)
+            
+            # 生成缩略图
+            thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+            
+            # 上传到第一个目标频道
+            sent_messages = await self.media_uploader.upload_media_group_to_channel(
+                media_group,
+                media_group_download,
+                first_target[0],
+                first_target[1],
+                first_target[2],
+                thumbnails
+            )
+            
+            # 清理缩略图
+            self.media_uploader.cleanup_thumbnails(thumbnails)
+            
+            # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
+            if sent_messages and other_targets and isinstance(sent_messages, list) and len(sent_messages) > 0:
+                _logger.info(f"从第一个目标频道复制媒体组到其他 {len(other_targets)} 个目标频道")
+                
+                # 对于媒体组，需要通过第一条消息找到完整的媒体组
+                first_sent_message = sent_messages[0]
+                
+                for target, target_id, target_info in other_targets:
+                    try:
+                        # 使用media_group_id复制整个媒体组
+                        if len(sent_messages) > 1 and hasattr(first_sent_message, 'media_group_id') and first_sent_message.media_group_id:
+                            await self.client.copy_media_group(
+                                chat_id=target_id,
+                                from_chat_id=first_target[1],
+                                message_id=first_sent_message.id
+                            )
+                            _logger.info(f"已将媒体组从第一个目标频道复制到 {target_info}")
+                        else:
+                            # 单条消息复制
+                            await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=first_target[1],
+                                message_id=first_sent_message.id,
+                                caption=final_caption
+                            )
+                            _logger.info(f"已将单条媒体消息从第一个目标频道复制到 {target_info}")
+                        
+                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                    except Exception as e:
+                        _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
+            
+            # 清理临时目录
+            self.media_uploader.cleanup_media_group_dir(group_temp_dir)
+            
+            return sent_messages if isinstance(sent_messages, list) else [sent_messages]
+        
+        except Exception as e:
+            _logger.error(f"处理禁止转发的媒体组失败: {e}")
+            import traceback
+            _logger.error(f"错误详情: {traceback.format_exc()}")
+            return [] 
