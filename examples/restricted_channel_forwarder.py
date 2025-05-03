@@ -419,7 +419,7 @@ class RestrictedChannelForwarder:
             download_results = []
             
             # 分批下载，每批最多5个
-            batch_size = 5
+            batch_size = 2
             for i in range(0, len(download_tasks), batch_size):
                 batch = download_tasks[i:i+batch_size]
                 batch_results = await asyncio.gather(*batch)
