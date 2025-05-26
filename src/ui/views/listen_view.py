@@ -293,6 +293,88 @@ class ListenView(QWidget):
         # 直接添加到选项布局
         options_layout.addLayout(monitor_options_layout)
         
+        # 添加一些间距
+        options_layout.addSpacing(10)
+        
+        # 过滤选项 - 添加缺失的过滤选项
+        filter_options_label = QLabel("过滤选项:")
+        filter_options_label.setStyleSheet("font-weight: bold;")
+        options_layout.addWidget(filter_options_label)
+        
+        # 关键词过滤
+        filter_layout = QFormLayout()
+        filter_layout.setSpacing(8)
+        filter_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+        self.keyword_input = QLineEdit()
+        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用逗号分隔")
+        filter_layout.addRow("关键词:", self.keyword_input)
+        
+        # 过滤复选框
+        filter_checkboxes_layout1 = QHBoxLayout()
+        filter_checkboxes_layout2 = QHBoxLayout()
+        
+        self.exclude_forwards_check = QCheckBox("排除转发消息")
+        self.exclude_replies_check = QCheckBox("排除回复消息")
+        self.exclude_media_check = QCheckBox("排除媒体消息")
+        self.exclude_links_check = QCheckBox("排除包含链接的消息")
+        
+        filter_checkboxes_layout1.addWidget(self.exclude_forwards_check)
+        filter_checkboxes_layout1.addWidget(self.exclude_replies_check)
+        filter_checkboxes_layout1.addStretch(1)
+        
+        filter_checkboxes_layout2.addWidget(self.exclude_media_check)
+        filter_checkboxes_layout2.addWidget(self.exclude_links_check)
+        filter_checkboxes_layout2.addStretch(1)
+        
+        options_layout.addLayout(filter_layout)
+        options_layout.addLayout(filter_checkboxes_layout1)
+        options_layout.addLayout(filter_checkboxes_layout2)
+        
+        # 添加一些间距
+        options_layout.addSpacing(10)
+        
+        # 通知选项 - 添加缺失的通知选项
+        notification_options_label = QLabel("通知选项:")
+        notification_options_label.setStyleSheet("font-weight: bold;")
+        options_layout.addWidget(notification_options_label)
+        
+        notification_layout = QFormLayout()
+        notification_layout.setSpacing(8)
+        notification_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+        # 通知复选框
+        notification_checkboxes_layout1 = QHBoxLayout()
+        notification_checkboxes_layout2 = QHBoxLayout()
+        
+        self.desktop_notify_check = QCheckBox("桌面通知")
+        self.desktop_notify_check.setChecked(True)
+        self.sound_notify_check = QCheckBox("声音通知")
+        self.highlight_check = QCheckBox("高亮新消息")
+        self.highlight_check.setChecked(True)
+        self.auto_scroll_check = QCheckBox("自动滚动到最新消息")
+        self.auto_scroll_check.setChecked(True)
+        
+        notification_checkboxes_layout1.addWidget(self.desktop_notify_check)
+        notification_checkboxes_layout1.addWidget(self.sound_notify_check)
+        notification_checkboxes_layout1.addStretch(1)
+        
+        notification_checkboxes_layout2.addWidget(self.highlight_check)
+        notification_checkboxes_layout2.addWidget(self.auto_scroll_check)
+        notification_checkboxes_layout2.addStretch(1)
+        
+        # 最大消息数
+        self.max_messages = QSpinBox()
+        self.max_messages.setRange(50, 1000)
+        self.max_messages.setValue(200)
+        self.max_messages.setSuffix(" 条")
+        self.max_messages.setMinimumHeight(26)
+        notification_layout.addRow("最大消息数:", self.max_messages)
+        
+        options_layout.addLayout(notification_layout)
+        options_layout.addLayout(notification_checkboxes_layout1)
+        options_layout.addLayout(notification_checkboxes_layout2)
+        
         # 添加弹性空间，使内容靠上对齐
         options_layout.addStretch(1)
         
@@ -302,6 +384,9 @@ class ListenView(QWidget):
     
     def _create_message_panel(self):
         """创建中间消息显示面板"""
+        # 创建消息面板容器
+        message_container = QVBoxLayout()
+        
         # 直接创建消息标签页容器，不使用GroupBox
         self.message_tabs = QTabWidget()
         
@@ -321,8 +406,10 @@ class ListenView(QWidget):
         # 设置最小高度，确保消息区域有足够空间显示
         self.message_tabs.setMinimumHeight(180)
         
-        # 将消息标签页直接添加到主布局，占据剩余空间
-        self.main_layout.addWidget(self.message_tabs, 1)  # 使用较小的伸展因子，让配置面板占据更多空间
+        message_container.addWidget(self.message_tabs, 1)
+        
+        # 将消息容器添加到主布局，占据剩余空间
+        self.main_layout.addLayout(message_container, 1)  # 使用较小的伸展因子，让配置面板占据更多空间
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -568,10 +655,18 @@ class ListenView(QWidget):
             QMessageBox.warning(self, "警告", "请先添加至少一个监听频道对")
             return
         
+        # 检查是否有监听器实例
+        if not hasattr(self, 'monitor') or self.monitor is None:
+            QMessageBox.warning(self, "错误", "监听器未初始化，无法启动监听")
+            return
+        
         # 获取监听配置
         monitor_config = self._get_monitor_config()
         
-        # 发出监听开始信号
+        # 更新监听器的配置
+        self._update_monitor_config(monitor_config)
+        
+        # 发出监听开始信号（保留用于其他组件）
         self.listen_started.emit(monitor_config)
         
         # 添加状态消息
@@ -580,17 +675,85 @@ class ListenView(QWidget):
         # 更新按钮状态
         self.start_listen_button.setEnabled(False)
         self.stop_listen_button.setEnabled(True)
+        
+        # 异步启动监听
+        import asyncio
+        try:
+            # 创建启动监听的任务
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_start_monitoring())
+        except Exception as e:
+            logger.error(f"启动监听时出错: {e}")
+            self._add_status_message(f"启动监听失败: {e}")
+            # 恢复按钮状态
+            self.start_listen_button.setEnabled(True)
+            self.stop_listen_button.setEnabled(False)
     
     def _stop_listen(self):
         """停止监听"""
-        # TODO: 实现停止监听功能
+        # 检查是否有监听器实例
+        if not hasattr(self, 'monitor') or self.monitor is None:
+            self._add_status_message("监听器未初始化")
+            return
         
         # 添加状态消息
-        self._add_status_message("停止监听")
+        self._add_status_message("停止监听...")
         
         # 更新按钮状态
         self.start_listen_button.setEnabled(True)
         self.stop_listen_button.setEnabled(False)
+        
+        # 异步停止监听
+        import asyncio
+        try:
+            # 创建停止监听的任务
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_stop_monitoring())
+        except Exception as e:
+            logger.error(f"停止监听时出错: {e}")
+            self._add_status_message(f"停止监听失败: {e}")
+    
+    async def _async_start_monitoring(self):
+        """异步启动监听"""
+        try:
+            self._add_status_message("正在启动监听器...")
+            await self.monitor.start_monitoring()
+            self._add_status_message("监听器启动成功")
+        except Exception as e:
+            logger.error(f"异步启动监听失败: {e}")
+            self._add_status_message(f"启动监听失败: {e}")
+            # 恢复按钮状态
+            self.start_listen_button.setEnabled(True)
+            self.stop_listen_button.setEnabled(False)
+    
+    async def _async_stop_monitoring(self):
+        """异步停止监听"""
+        try:
+            await self.monitor.stop_monitoring()
+            self._add_status_message("监听器已停止")
+        except Exception as e:
+            logger.error(f"异步停止监听失败: {e}")
+            self._add_status_message(f"停止监听失败: {e}")
+    
+    def _update_monitor_config(self, monitor_config):
+        """更新监听器的配置
+        
+        Args:
+            monitor_config: 监听配置字典
+        """
+        try:
+            # 更新监听器的配置
+            if hasattr(self.monitor, 'monitor_config'):
+                self.monitor.monitor_config.update(monitor_config)
+            
+            # 重新初始化文本过滤器
+            if hasattr(self.monitor, 'text_filter'):
+                from src.modules.monitor.text_filter import TextFilter
+                self.monitor.text_filter = TextFilter(self.monitor.monitor_config)
+                
+            logger.debug("监听器配置已更新")
+        except Exception as e:
+            logger.error(f"更新监听器配置失败: {e}")
     
     def _get_monitor_config(self):
         """获取当前监听配置
@@ -652,6 +815,25 @@ class ListenView(QWidget):
         # 获取监听配置
         monitor_config = self._get_monitor_config()
         
+        # 获取过滤选项
+        keywords = [kw.strip() for kw in self.keyword_input.text().split(',') if kw.strip()]
+        filters = {
+            'keywords': keywords,
+            'exclude_forwards': self.exclude_forwards_check.isChecked(),
+            'exclude_replies': self.exclude_replies_check.isChecked(),
+            'exclude_media': self.exclude_media_check.isChecked(),
+            'exclude_links': self.exclude_links_check.isChecked()
+        }
+        
+        # 获取通知选项
+        notifications = {
+            'desktop_notify': self.desktop_notify_check.isChecked(),
+            'sound_notify': self.sound_notify_check.isChecked(),
+            'highlight': self.highlight_check.isChecked(),
+            'auto_scroll': self.auto_scroll_check.isChecked(),
+            'max_messages': self.max_messages.value()
+        }
+        
         try:
             # 格式化数据以匹配UIMonitorConfig期望的结构
             monitor_channel_pairs = []
@@ -685,6 +867,13 @@ class ListenView(QWidget):
             
             # 使用模型的dict()方法将对象转换为字典
             updated_config['MONITOR'] = ui_monitor_config.dict()
+            
+            # 添加过滤和通知选项到配置
+            if 'LISTEN' not in updated_config:
+                updated_config['LISTEN'] = {}
+            
+            updated_config['LISTEN']['filters'] = filters
+            updated_config['LISTEN']['notifications'] = notifications
             
             # 发送配置保存信号
             logger.debug(f"向主窗口发送配置保存信号，更新监听配置")
@@ -987,7 +1176,7 @@ class ListenView(QWidget):
         Args:
             status: 状态信息
         """
-        self.overall_status_label.setText(status)
+        self.main_message_view.append(status)
         logger.debug(f"监听状态更新: {status}")
     
     def _on_new_message(self, message, channel_id=None, channel_title=None):
@@ -1063,7 +1252,7 @@ class ListenView(QWidget):
             channel_ids: 监听的频道ID列表(可选)
         """
         # 更新UI状态
-        self.overall_status_label.setText("正在监听中...")
+        self.main_message_view.append("正在监听中...")
         
         # 禁用开始按钮，启用停止按钮
         self.start_listen_button.setEnabled(False)
@@ -1072,14 +1261,14 @@ class ListenView(QWidget):
         # 显示正在监听的频道
         if channel_ids:
             channels_str = ", ".join(str(c) for c in channel_ids)
-            self.overall_status_label.setText(f"正在监听: {channels_str}")
+            self.main_message_view.append(f"正在监听: {channels_str}")
         
         logger.info("监听已开始")
     
     def _on_monitoring_stopped(self):
         """监听停止处理"""
         # 更新UI状态
-        self.overall_status_label.setText("监听已停止")
+        self.main_message_view.append("监听已停止")
         
         # 启用开始按钮，禁用停止按钮
         self.start_listen_button.setEnabled(True)
@@ -1121,7 +1310,7 @@ class ListenView(QWidget):
         if message:
             error_msg += f"\n{message}"
             
-        self.overall_status_label.setText(error_msg)
+        self.main_message_view.append(error_msg)
         
         # 恢复按钮状态
         self.start_listen_button.setEnabled(True)
@@ -1135,43 +1324,59 @@ class ListenView(QWidget):
             logger.debug(f"错误详情: {message}")
     
     def _add_message_item(self, from_info, content):
-        """添加消息项到列表
+        """添加消息项到消息面板
         
         Args:
             from_info: 来源信息
             content: 消息内容
         """
-        from PySide6.QtWidgets import QListWidgetItem
-        item = QListWidgetItem(f"{from_info}: {content}")
+        # 使用现有的消息显示机制
+        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        formatted_msg = f"[{time_str}] {from_info}: {content}"
         
-        # 添加到消息列表
-        self.message_list.addItem(item)
+        # 添加到主消息面板
+        self.main_message_view.append(formatted_msg)
         
-        # 保持最新消息可见
-        self.message_list.scrollToBottom()
+        # 自动滚动到底部
+        if self.auto_scroll_check.isChecked():
+            self.main_message_view.moveCursor(QTextCursor.End)
         
-        # 限制显示的消息数量，避免占用过多内存
-        while self.message_list.count() > 100:  # 保留最新的100条消息
-            self.message_list.takeItem(0)  # 移除最早的消息
+        # 限制消息数量
+        max_messages = self.max_messages.value() if hasattr(self, 'max_messages') else 200
+        doc = self.main_message_view.document()
+        if doc.blockCount() > max_messages:
+            cursor = QTextCursor(doc)
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()  # 删除换行符
     
     def _add_forward_item(self, forward_info):
-        """添加转发项到列表
+        """添加转发项到消息面板
         
         Args:
             forward_info: 转发信息
         """
-        from PySide6.QtWidgets import QListWidgetItem
-        item = QListWidgetItem(forward_info)
+        # 使用现有的消息显示机制
+        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        formatted_msg = f"[{time_str}] [转发完成] {forward_info}"
         
-        # 添加到转发列表
-        self.forward_list.addItem(item)
+        # 添加到主消息面板
+        self.main_message_view.append(formatted_msg)
         
-        # 保持最新项可见
-        self.forward_list.scrollToBottom()
+        # 自动滚动到底部
+        if self.auto_scroll_check.isChecked():
+            self.main_message_view.moveCursor(QTextCursor.End)
         
-        # 限制显示的转发数量
-        while self.forward_list.count() > 50:  # 保留最新的50条转发记录
-            self.forward_list.takeItem(0)  # 移除最早的记录
+        # 限制消息数量
+        max_messages = self.max_messages.value() if hasattr(self, 'max_messages') else 200
+        doc = self.main_message_view.document()
+        if doc.blockCount() > max_messages:
+            cursor = QTextCursor(doc)
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()  # 删除换行符
     
     def _show_error_dialog(self, title, message):
         """显示错误对话框
