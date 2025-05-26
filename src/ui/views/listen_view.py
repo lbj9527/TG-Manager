@@ -310,26 +310,22 @@ class ListenView(QWidget):
         self.keyword_input.setPlaceholderText("输入关键词，多个关键词用逗号分隔")
         filter_layout.addRow("关键词:", self.keyword_input)
         
-        # 过滤复选框
-        filter_checkboxes_layout1 = QHBoxLayout()
-        filter_checkboxes_layout2 = QHBoxLayout()
+        # 过滤复选框 - 将四个复选框放在同一行
+        filter_checkboxes_layout = QHBoxLayout()
         
         self.exclude_forwards_check = QCheckBox("排除转发消息")
         self.exclude_replies_check = QCheckBox("排除回复消息")
         self.exclude_media_check = QCheckBox("排除媒体消息")
         self.exclude_links_check = QCheckBox("排除包含链接的消息")
         
-        filter_checkboxes_layout1.addWidget(self.exclude_forwards_check)
-        filter_checkboxes_layout1.addWidget(self.exclude_replies_check)
-        filter_checkboxes_layout1.addStretch(1)
-        
-        filter_checkboxes_layout2.addWidget(self.exclude_media_check)
-        filter_checkboxes_layout2.addWidget(self.exclude_links_check)
-        filter_checkboxes_layout2.addStretch(1)
+        filter_checkboxes_layout.addWidget(self.exclude_forwards_check)
+        filter_checkboxes_layout.addWidget(self.exclude_replies_check)
+        filter_checkboxes_layout.addWidget(self.exclude_media_check)
+        filter_checkboxes_layout.addWidget(self.exclude_links_check)
+        filter_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         
         options_layout.addLayout(filter_layout)
-        options_layout.addLayout(filter_checkboxes_layout1)
-        options_layout.addLayout(filter_checkboxes_layout2)
+        options_layout.addLayout(filter_checkboxes_layout)
         
         # 添加一些间距
         options_layout.addSpacing(10)
@@ -343,9 +339,8 @@ class ListenView(QWidget):
         notification_layout.setSpacing(8)
         notification_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
-        # 通知复选框
-        notification_checkboxes_layout1 = QHBoxLayout()
-        notification_checkboxes_layout2 = QHBoxLayout()
+        # 通知复选框 - 将四个复选框放在同一行
+        notification_checkboxes_layout = QHBoxLayout()
         
         self.desktop_notify_check = QCheckBox("桌面通知")
         self.desktop_notify_check.setChecked(True)
@@ -355,13 +350,11 @@ class ListenView(QWidget):
         self.auto_scroll_check = QCheckBox("自动滚动到最新消息")
         self.auto_scroll_check.setChecked(True)
         
-        notification_checkboxes_layout1.addWidget(self.desktop_notify_check)
-        notification_checkboxes_layout1.addWidget(self.sound_notify_check)
-        notification_checkboxes_layout1.addStretch(1)
-        
-        notification_checkboxes_layout2.addWidget(self.highlight_check)
-        notification_checkboxes_layout2.addWidget(self.auto_scroll_check)
-        notification_checkboxes_layout2.addStretch(1)
+        notification_checkboxes_layout.addWidget(self.desktop_notify_check)
+        notification_checkboxes_layout.addWidget(self.sound_notify_check)
+        notification_checkboxes_layout.addWidget(self.highlight_check)
+        notification_checkboxes_layout.addWidget(self.auto_scroll_check)
+        notification_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         
         # 最大消息数
         self.max_messages = QSpinBox()
@@ -371,9 +364,8 @@ class ListenView(QWidget):
         self.max_messages.setMinimumHeight(26)
         notification_layout.addRow("最大消息数:", self.max_messages)
         
+        options_layout.addLayout(notification_checkboxes_layout)
         options_layout.addLayout(notification_layout)
-        options_layout.addLayout(notification_checkboxes_layout1)
-        options_layout.addLayout(notification_checkboxes_layout2)
         
         # 添加弹性空间，使内容靠上对齐
         options_layout.addStretch(1)
