@@ -93,11 +93,29 @@ class Monitor:
         
         logger.info("开始监听源频道的新消息")
         
+        # 重置停止标志，确保监听器可以正常启动
+        self.should_stop = False
+        
+        # 重新从配置文件读取最新配置
+        logger.info("重新从配置文件读取最新监听配置")
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.monitor_config = self.config.get('MONITOR', {})
+        
+        # 重新初始化文本过滤器
+        self.text_filter = TextFilter(self.monitor_config)
+        logger.debug("文本过滤器已使用最新配置重新初始化")
+        
         # 解析监听频道ID
         self.monitored_channels = set()
         
         # 解析所有源频道及其目标频道
         channel_pairs = {}
+        
+        logger.debug(f"从配置文件读取到 {len(self.monitor_config.get('monitor_channel_pairs', []))} 个频道对:")
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            source_channel = pair.get('source_channel', '')
+            logger.debug(f"  - 源频道: {source_channel} -> 目标频道: {pair.get('target_channels', [])}")
         
         for pair in self.monitor_config.get('monitor_channel_pairs', []):
             source_channel = pair.get('source_channel', '')

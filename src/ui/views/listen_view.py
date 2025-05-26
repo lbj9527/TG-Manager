@@ -652,13 +652,21 @@ class ListenView(QWidget):
             QMessageBox.warning(self, "错误", "监听器未初始化，无法启动监听")
             return
         
-        # 获取监听配置
-        monitor_config = self._get_monitor_config()
+        # 提示用户需要先保存配置
+        reply = QMessageBox.question(
+            self, 
+            "配置确认", 
+            "开始监听前需要保存当前配置到文件。是否现在保存配置？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
         
-        # 更新监听器的配置
-        self._update_monitor_config(monitor_config)
+        if reply == QMessageBox.Yes:
+            # 先保存配置
+            self._save_config()
         
         # 发出监听开始信号（保留用于其他组件）
+        monitor_config = self._get_monitor_config()
         self.listen_started.emit(monitor_config)
         
         # 添加状态消息
@@ -726,26 +734,6 @@ class ListenView(QWidget):
         except Exception as e:
             logger.error(f"异步停止监听失败: {e}")
             self._add_status_message(f"停止监听失败: {e}")
-    
-    def _update_monitor_config(self, monitor_config):
-        """更新监听器的配置
-        
-        Args:
-            monitor_config: 监听配置字典
-        """
-        try:
-            # 更新监听器的配置
-            if hasattr(self.monitor, 'monitor_config'):
-                self.monitor.monitor_config.update(monitor_config)
-            
-            # 重新初始化文本过滤器
-            if hasattr(self.monitor, 'text_filter'):
-                from src.modules.monitor.text_filter import TextFilter
-                self.monitor.text_filter = TextFilter(self.monitor.monitor_config)
-                
-            logger.debug("监听器配置已更新")
-        except Exception as e:
-            logger.error(f"更新监听器配置失败: {e}")
     
     def _get_monitor_config(self):
         """获取当前监听配置
@@ -872,7 +860,7 @@ class ListenView(QWidget):
             self.config_saved.emit(updated_config)
             
             # 显示成功消息
-            QMessageBox.information(self, "配置保存", "监听配置已保存")
+            QMessageBox.information(self, "配置保存", "监听配置已保存到文件，监听器将读取最新配置进行监听")
             
             # 更新本地配置引用
             self.config = updated_config
