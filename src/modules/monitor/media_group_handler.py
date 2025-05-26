@@ -504,9 +504,6 @@ class MediaGroupHandler:
             text_replacements = pair_config.get('text_replacements', {})
             remove_captions = pair_config.get('remove_captions', False)
             
-            # 应用文本替换
-            replaced_caption = None
-            
             # 获取媒体组的第一个非空标题
             original_caption = None
             for message in messages:
@@ -514,22 +511,31 @@ class MediaGroupHandler:
                     original_caption = message.caption
                     break
             
-            # 应用文本替换
-            if original_caption and text_replacements:
-                replaced_caption = original_caption
-                for find_text, replace_text in text_replacements.items():
-                    if find_text in replaced_caption:
-                        replaced_caption = replaced_caption.replace(find_text, replace_text)
-                        
-                if replaced_caption != original_caption:
-                    logger.info(f"已替换媒体组 {media_group_id} 的标题文本")
+            # 根据配置决定处理方式
+            replaced_caption = None
+            should_remove_caption = False
+            
+            if remove_captions:
+                # 设置了移除媒体说明：删除说明，文本替换失效
+                should_remove_caption = True
+                logger.debug(f"媒体组 {media_group_id} 将移除说明文字，文本替换功能失效")
+            else:
+                # 未设置移除媒体说明：正常应用文本替换
+                if original_caption and text_replacements:
+                    replaced_caption = original_caption
+                    for find_text, replace_text in text_replacements.items():
+                        if find_text in replaced_caption:
+                            replaced_caption = replaced_caption.replace(find_text, replace_text)
+                            
+                    if replaced_caption != original_caption:
+                        logger.info(f"媒体组 {media_group_id} 已应用文本替换")
             
             # 检查源频道是否允许转发
             source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
             
             if source_can_forward:
                 # 源频道允许转发，使用copy_media_group
-                await self._forward_media_group(messages, target_channels, replaced_caption, remove_captions)
+                await self._forward_media_group(messages, target_channels, replaced_caption, should_remove_caption)
             else:
                 # 源频道禁止转发，使用下载上传方式
                 logger.info(f"源频道禁止转发，将使用下载后上传的方式处理媒体组")
@@ -540,8 +546,8 @@ class MediaGroupHandler:
                     source_channel=source_channel,
                     source_id=source_id,
                     target_channels=target_channels,
-                    caption=replaced_caption,
-                    remove_caption=remove_captions
+                    caption=replaced_caption if not should_remove_caption else None,
+                    remove_caption=should_remove_caption
                 )
                 
         except Exception as e:

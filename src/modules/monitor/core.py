@@ -115,51 +115,63 @@ class Monitor:
         logger.debug(f"从配置文件读取到 {len(self.monitor_config.get('monitor_channel_pairs', []))} 个频道对:")
         for pair in self.monitor_config.get('monitor_channel_pairs', []):
             source_channel = pair.get('source_channel', '')
-            logger.debug(f"  - 源频道: {source_channel} -> 目标频道: {pair.get('target_channels', [])}")
-        
-        for pair in self.monitor_config.get('monitor_channel_pairs', []):
-            source_channel = pair.get('source_channel', '')
             target_channels = pair.get('target_channels', [])
+            
+            if not source_channel or not target_channels:
+                logger.warning(f"跳过无效的频道对配置: source={source_channel}, targets={target_channels}")
+                continue
+            
+            # 解析源频道ID
             try:
-                channel_id = await self.channel_resolver.get_channel_id(source_channel)
-                if channel_id:
-                    self.monitored_channels.add(channel_id)
-                    source_info_str, (source_title, _) = await self.channel_resolver.format_channel_info(channel_id)
-                    logger.info(f"将监听频道: {source_info_str}")
-                    
-                    # 解析所有目标频道ID
-                    valid_target_channels = []
-                    for target in target_channels:
-                        try:
-                            target_id = await self.channel_resolver.get_channel_id(target)
-                            target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
-                            valid_target_channels.append((target, target_id, target_info_str))
-                            logger.info(f"目标频道: {target_info_str}")
-                        except Exception as e:
-                            logger.error(f"解析目标频道 {target} 失败: {e}", error_type="CHANNEL_RESOLVE", recoverable=True)
-                    
-                    if valid_target_channels:
-                        # 存储源频道-目标频道对应关系
-                        channel_pairs[channel_id] = {
-                            'source_channel': source_channel,
-                            'source_id': channel_id,
-                            'source_title': source_title,
-                            'target_channels': valid_target_channels,
-                            'text_replacements': self.text_filter.channel_text_replacements.get(source_channel, {}),
-                            'remove_captions': self.text_filter.channel_remove_captions.get(source_channel, False)
-                        }
-                    else:
-                        logger.warning(f"源频道 {source_channel} 没有有效的目标频道，跳过")
-                        # 安全地移除频道ID
-                        if channel_id in self.monitored_channels:
-                            self.monitored_channels.remove(channel_id)
-                else:
-                    logger.warning(f"无法解析频道: {source_channel}")
+                source_id = await self.channel_resolver.get_channel_id(source_channel)
             except Exception as e:
-                logger.error(f"解析频道 {source_channel} 失败: {str(e)}", error_type="CHANNEL_RESOLVE", recoverable=True)
+                logger.warning(f"无法解析源频道 {source_channel}，错误: {e}")
+                continue
+            
+            # 解析目标频道ID
+            resolved_targets = []
+            for target_channel in target_channels:
+                try:
+                    target_id = await self.channel_resolver.get_channel_id(target_channel)
+                    target_info = await self.channel_resolver.format_channel_info(target_id)
+                    resolved_targets.append((target_channel, target_id, target_info[0]))
+                except Exception as e:
+                    logger.warning(f"无法解析目标频道 {target_channel}，错误: {e}")
+            
+            if not resolved_targets:
+                logger.warning(f"源频道 {source_channel} 没有有效的目标频道，跳过")
+                continue
+            
+            # 处理文本替换规则
+            text_replacements = {}
+            text_filter_list = pair.get('text_filter', [])
+            for filter_item in text_filter_list:
+                original_text = filter_item.get('original_text', '')
+                target_text = filter_item.get('target_text', '')
+                if original_text:  # 只有当原始文本不为空时才添加替换规则
+                    text_replacements[original_text] = target_text
+            
+            # 获取移除媒体说明配置
+            remove_captions = pair.get('remove_captions', False)
+            
+            # 存储频道对配置
+            channel_pairs[source_id] = {
+                'source_channel': source_channel,
+                'target_channels': resolved_targets,
+                'text_replacements': text_replacements,
+                'remove_captions': remove_captions
+            }
+            
+            # 添加到监听频道集合
+            self.monitored_channels.add(source_id)
+            
+            logger.debug(f"  - 源频道: {source_channel} (ID: {source_id})")
+            logger.debug(f"    目标频道: {[t[0] for t in resolved_targets]}")
+            logger.debug(f"    文本替换规则: {len(text_replacements)} 条")
+            logger.debug(f"    移除媒体说明: {remove_captions}")
         
-        if not self.monitored_channels:
-            logger.error("没有有效的监听频道，监听任务无法启动", error_type="NO_CHANNELS", recoverable=False)
+        if not channel_pairs:
+            logger.warning("没有有效的频道对配置，无法启动监听")
             return
         
         # 设置处理中标志
@@ -328,16 +340,38 @@ class Monitor:
             # 获取原始文本
             text = message.text or message.caption or ""
             replaced_text = None
+            should_remove_caption = False
             
-            # 应用文本替换
-            if text and text_replacements:
-                replaced_text = text
-                for find_text, replace_text in text_replacements.items():
-                    if find_text in replaced_text:
-                        replaced_text = replaced_text.replace(find_text, replace_text)
-                
-                if replaced_text != text:
-                    logger.info(f"已替换消息 [ID: {message.id}] 的文本")
+            # 判断消息类型
+            is_media_message = bool(message.photo or message.video or message.document or 
+                                  message.animation or message.audio or message.voice or 
+                                  message.video_note or message.sticker)
+            
+            # 根据消息类型和配置决定处理方式
+            if is_media_message and remove_captions:
+                # 媒体消息且设置了移除媒体说明：删除说明，文本替换失效
+                should_remove_caption = True
+                logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，文本替换功能失效")
+            elif not is_media_message and remove_captions:
+                # 纯文本消息且设置了移除媒体说明：移除媒体说明失效，文本替换依旧起作用
+                if text and text_replacements:
+                    replaced_text = text
+                    for find_text, replace_text in text_replacements.items():
+                        if find_text in replaced_text:
+                            replaced_text = replaced_text.replace(find_text, replace_text)
+                    
+                    if replaced_text != text:
+                        logger.info(f"纯文本消息 [ID: {message.id}] 已应用文本替换（移除媒体说明对纯文本消息无效）")
+            else:
+                # 其他情况：正常应用文本替换
+                if text and text_replacements:
+                    replaced_text = text
+                    for find_text, replace_text in text_replacements.items():
+                        if find_text in replaced_text:
+                            replaced_text = replaced_text.replace(find_text, replace_text)
+                    
+                    if replaced_text != text:
+                        logger.info(f"消息 [ID: {message.id}] 已应用文本替换")
             
             # 转发消息
             await self.message_processor.forward_message(
@@ -345,7 +379,7 @@ class Monitor:
                 target_channels=target_channels,
                 use_copy=True,  # 使用copy_message方式
                 replace_caption=replaced_text,
-                remove_caption=remove_captions
+                remove_caption=should_remove_caption
             )
             
         except Exception as e:
