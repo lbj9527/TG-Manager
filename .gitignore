@@ -264,3 +264,9 @@ dmypy.json
 *~
 .*.swp
 .directory
+
+# History文件夹 - 忽略历史记录文件
+history/
+history/*
+*.history
+
