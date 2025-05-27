@@ -6,7 +6,7 @@ TG-Manager 消息监听界面
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QLineEdit, QCheckBox, QPushButton,
-    QGroupBox, QScrollArea, QSpinBox, QComboBox,
+    QGroupBox, QScrollArea, QComboBox,
     QListWidget, QListWidgetItem, QMessageBox,
     QTextEdit, QSplitter, QTabWidget, QDateTimeEdit,
     QSizePolicy, QDoubleSpinBox
@@ -275,17 +275,24 @@ class ListenView(QWidget):
         self.forward_delay.setMinimumHeight(26)  # 增加高度
         monitor_options_layout.addRow("转发延迟:", self.forward_delay)
         
-        # 监听截止日期
+        # 监听截止日期 - 将复选框和日期选择器放在同一行
+        duration_layout = QHBoxLayout()
+        
         self.duration_check = QCheckBox("启用监听截止日期")
         self.duration_check.setStyleSheet("padding: 4px;")  # 添加内边距
-        monitor_options_layout.addRow("", self.duration_check)
+        duration_layout.addWidget(self.duration_check)
         
         self.duration_date = QDateTimeEdit(QDateTime.currentDateTime().addDays(365))
         self.duration_date.setCalendarPopup(True)
         self.duration_date.setDisplayFormat("yyyy-MM-dd")
         self.duration_date.setEnabled(False)
         self.duration_date.setMinimumHeight(26)  # 增加高度
-        monitor_options_layout.addRow("截止日期:", self.duration_date)
+        duration_layout.addWidget(self.duration_date)
+        
+        # 添加弹性空间，让控件靠左对齐
+        duration_layout.addStretch(1)
+        
+        monitor_options_layout.addRow("截止日期:", duration_layout)
         
         # 连接时间过滤复选框和日期选择器的启用状态
         self.duration_check.toggled.connect(self.duration_date.setEnabled)
@@ -326,46 +333,6 @@ class ListenView(QWidget):
         
         options_layout.addLayout(filter_layout)
         options_layout.addLayout(filter_checkboxes_layout)
-        
-        # 添加一些间距
-        options_layout.addSpacing(10)
-        
-        # 通知选项 - 添加缺失的通知选项
-        notification_options_label = QLabel("通知选项:")
-        notification_options_label.setStyleSheet("font-weight: bold;")
-        options_layout.addWidget(notification_options_label)
-        
-        notification_layout = QFormLayout()
-        notification_layout.setSpacing(8)
-        notification_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        
-        # 通知复选框 - 将四个复选框放在同一行
-        notification_checkboxes_layout = QHBoxLayout()
-        
-        self.desktop_notify_check = QCheckBox("桌面通知")
-        self.desktop_notify_check.setChecked(True)
-        self.sound_notify_check = QCheckBox("声音通知")
-        self.highlight_check = QCheckBox("高亮新消息")
-        self.highlight_check.setChecked(True)
-        self.auto_scroll_check = QCheckBox("自动滚动到最新消息")
-        self.auto_scroll_check.setChecked(True)
-        
-        notification_checkboxes_layout.addWidget(self.desktop_notify_check)
-        notification_checkboxes_layout.addWidget(self.sound_notify_check)
-        notification_checkboxes_layout.addWidget(self.highlight_check)
-        notification_checkboxes_layout.addWidget(self.auto_scroll_check)
-        notification_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
-        
-        # 最大消息数
-        self.max_messages = QSpinBox()
-        self.max_messages.setRange(50, 1000)
-        self.max_messages.setValue(200)
-        self.max_messages.setSuffix(" 条")
-        self.max_messages.setMinimumHeight(26)
-        notification_layout.addRow("最大消息数:", self.max_messages)
-        
-        options_layout.addLayout(notification_checkboxes_layout)
-        options_layout.addLayout(notification_layout)
         
         # 添加弹性空间，使内容靠上对齐
         options_layout.addStretch(1)
@@ -805,15 +772,6 @@ class ListenView(QWidget):
             'exclude_links': self.exclude_links_check.isChecked()
         }
         
-        # 获取通知选项
-        notifications = {
-            'desktop_notify': self.desktop_notify_check.isChecked(),
-            'sound_notify': self.sound_notify_check.isChecked(),
-            'highlight': self.highlight_check.isChecked(),
-            'auto_scroll': self.auto_scroll_check.isChecked(),
-            'max_messages': self.max_messages.value()
-        }
-        
         try:
             # 格式化数据以匹配UIMonitorConfig期望的结构
             monitor_channel_pairs = []
@@ -853,7 +811,6 @@ class ListenView(QWidget):
                 updated_config['LISTEN'] = {}
             
             updated_config['LISTEN']['filters'] = filters
-            updated_config['LISTEN']['notifications'] = notifications
             
             # 发送配置保存信号
             logger.debug(f"向主窗口发送配置保存信号，更新监听配置")
@@ -882,8 +839,7 @@ class ListenView(QWidget):
         self.main_message_view.append(status_msg)
         
         # 自动滚动到底部
-        if self.auto_scroll_check.isChecked():
-            self.main_message_view.moveCursor(QTextCursor.End)
+        self.main_message_view.moveCursor(QTextCursor.End)
     
     def add_message(self, channel, message_data):
         """添加新消息到消息面板
@@ -918,7 +874,7 @@ class ListenView(QWidget):
         if channel in self.channel_message_views:
             self.channel_message_views[channel].moveCursor(QTextCursor.End)
         
-        # 限制消息数量 - 使用固定值200条
+        # 限制消息数量 - 固定200条
         max_messages = 200
         
         # 删除超出限制的消息
@@ -1071,23 +1027,6 @@ class ListenView(QWidget):
             self.exclude_replies_check.setChecked(filters.get('exclude_replies', False))
             self.exclude_media_check.setChecked(filters.get('exclude_media', False))
             self.exclude_links_check.setChecked(filters.get('exclude_links', False))
-            
-        # 加载通知选项
-        # 同样，注意结构变化
-        notifications = {}
-        
-        if 'LISTEN' in config and 'notifications' in config['LISTEN']:
-            notifications = config['LISTEN'].get('notifications', {})
-        
-        if notifications:
-            self.desktop_notify_check.setChecked(notifications.get('desktop_notify', True))
-            self.sound_notify_check.setChecked(notifications.get('sound_notify', False))
-            self.highlight_check.setChecked(notifications.get('highlight', True))
-            self.auto_scroll_check.setChecked(notifications.get('auto_scroll', True))
-            
-            # 最大消息数
-            max_messages = notifications.get('max_messages', 200)
-            self.max_messages.setValue(max_messages)
     
     def set_monitor(self, monitor):
         """设置监听器实例
@@ -1318,11 +1257,10 @@ class ListenView(QWidget):
         self.main_message_view.append(formatted_msg)
         
         # 自动滚动到底部
-        if self.auto_scroll_check.isChecked():
-            self.main_message_view.moveCursor(QTextCursor.End)
+        self.main_message_view.moveCursor(QTextCursor.End)
         
         # 限制消息数量
-        max_messages = self.max_messages.value() if hasattr(self, 'max_messages') else 200
+        max_messages = 200
         doc = self.main_message_view.document()
         if doc.blockCount() > max_messages:
             cursor = QTextCursor(doc)
@@ -1345,11 +1283,10 @@ class ListenView(QWidget):
         self.main_message_view.append(formatted_msg)
         
         # 自动滚动到底部
-        if self.auto_scroll_check.isChecked():
-            self.main_message_view.moveCursor(QTextCursor.End)
+        self.main_message_view.moveCursor(QTextCursor.End)
         
         # 限制消息数量
-        max_messages = self.max_messages.value() if hasattr(self, 'max_messages') else 200
+        max_messages = 200
         doc = self.main_message_view.document()
         if doc.blockCount() > max_messages:
             cursor = QTextCursor(doc)
