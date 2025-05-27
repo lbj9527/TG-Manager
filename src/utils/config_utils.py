@@ -185,8 +185,8 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             monitor_dict = {}
             monitor = ui_config.MONITOR
             
-            # 添加基本字段
-            for field in ["duration", "forward_delay"]:
+            # 添加基本字段 - 移除forward_delay
+            for field in ["duration"]:
                 if hasattr(monitor, field):
                     monitor_dict[field] = getattr(monitor, field)
             

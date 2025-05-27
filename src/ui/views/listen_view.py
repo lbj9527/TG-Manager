@@ -89,11 +89,6 @@ class ListenView(QWidget):
         # 加载配置
         if self.config:
             self.load_config(self.config)
-            
-            # 记录初始配置中的转发延迟值
-            if 'MONITOR' in self.config and 'forward_delay' in self.config['MONITOR']:
-                initial_delay = self.config['MONITOR']['forward_delay']
-                logger.debug(f"初始配置中的转发延迟值: {initial_delay}, 类型: {type(initial_delay)}")
         
         # 监听配置列表
         self.listen_configs = []
@@ -736,16 +731,11 @@ class ListenView(QWidget):
         if self.duration_check.isChecked():
             duration = self.duration_date.date().toString("yyyy-MM-dd")
         
-        # 固定转发延迟为0.2秒
-        forward_delay = 0.2
-        logger.debug(f"固定转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
-        
-        # 收集监听配置 - 只保留UIMonitorConfig所需的字段
+        # 收集监听配置 - 不包含forward_delay字段
         monitor_config = {
             'monitor_channel_pairs': monitor_channel_pairs,
             'media_types': media_types,
-            'duration': duration,
-            'forward_delay': forward_delay
+            'duration': duration
         }
         
         return monitor_config
@@ -792,8 +782,7 @@ class ListenView(QWidget):
             ui_monitor_config = UIMonitorConfig(
                 monitor_channel_pairs=monitor_channel_pairs,
                 media_types=monitor_config['media_types'],
-                duration=monitor_config['duration'],
-                forward_delay=monitor_config['forward_delay']
+                duration=monitor_config['duration']
             )
             
             # 组织完整配置
