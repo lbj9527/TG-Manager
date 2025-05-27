@@ -394,7 +394,7 @@ class UIMonitorConfig(BaseModel):
         description="要监听的媒体类型"
     )
     duration: Optional[str] = Field(None, description="监听截止日期 (格式: YYYY-MM-DD)")
-    forward_delay: float = Field(1.0, description="转发间隔时间(秒)", ge=0)
+    forward_delay: float = Field(0.2, description="转发间隔时间(秒)", ge=0)
 
     @validator('monitor_channel_pairs')
     def validate_monitor_channel_pairs(cls, v):
@@ -540,7 +540,7 @@ def create_default_config() -> UIConfig:
                 MediaType.VOICE, MediaType.VIDEO_NOTE
             ],
             duration=(datetime.now().replace(year=datetime.now().year + 1)).strftime("%Y-%m-%d"),  # 设置为一年后
-            forward_delay=1.0
+            forward_delay=0.2
         ),
         UI=UIUIConfig(
             theme="深色主题",

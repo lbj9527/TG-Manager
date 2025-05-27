@@ -205,16 +205,6 @@ class ListenView(QWidget):
         monitor_options_layout.setSpacing(8)  # 增加表单项间距
         monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
         
-        # 转发延迟
-        self.forward_delay = QDoubleSpinBox()
-        self.forward_delay.setRange(0, 60)
-        self.forward_delay.setValue(1.0)
-        self.forward_delay.setDecimals(1)
-        self.forward_delay.setSingleStep(0.1)
-        self.forward_delay.setSuffix(" 秒")
-        self.forward_delay.setMinimumHeight(26)  # 增加高度
-        monitor_options_layout.addRow("转发延迟:", self.forward_delay)
-        
         # 监听截止日期 - 将复选框和日期选择器放在同一行
         duration_layout = QHBoxLayout()
         
@@ -746,9 +736,9 @@ class ListenView(QWidget):
         if self.duration_check.isChecked():
             duration = self.duration_date.date().toString("yyyy-MM-dd")
         
-        # 获取转发延迟
-        forward_delay = round(float(self.forward_delay.value()), 1)
-        logger.debug(f"获取到转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
+        # 固定转发延迟为0.2秒
+        forward_delay = 0.2
+        logger.debug(f"固定转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
         
         # 收集监听配置 - 只保留UIMonitorConfig所需的字段
         monitor_config = {
@@ -987,21 +977,6 @@ class ListenView(QWidget):
         for media_type in media_types:
             if media_type in self.media_types_checkboxes:
                 self.media_types_checkboxes[media_type].setChecked(True)
-        
-        # 加载转发延迟
-        forward_delay = monitor_config.get('forward_delay', 1.0)
-        logger.debug(f"从配置中加载转发延迟值: {forward_delay}, 类型: {type(forward_delay)}")
-        if isinstance(forward_delay, (int, float)):
-            self.forward_delay.setValue(float(forward_delay))
-            logger.debug(f"设置转发延迟值为: {float(forward_delay)}")
-        else:
-            try:
-                value = float(forward_delay)
-                self.forward_delay.setValue(value)
-                logger.debug(f"转换并设置转发延迟值为: {value}")
-            except (ValueError, TypeError) as e:
-                logger.error(f"转发延迟值转换失败: {e}, 使用默认值1.0")
-                self.forward_delay.setValue(1.0)
         
         # 加载监听截止日期
         duration = monitor_config.get('duration')
