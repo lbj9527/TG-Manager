@@ -138,9 +138,6 @@ class ListenView(QWidget):
         self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用逗号分隔)")
         form_layout.addRow("目标频道:", self.target_channel_input)
         
-        # 创建复选框 - 移除媒体说明
-        self.remove_captions_check = QCheckBox("移除媒体说明")
-        
         # 文本替换规则
         self.original_text_input = QLineEdit()
         self.original_text_input.setPlaceholderText("要替换的原始文本，多个用逗号分隔如：A,B")
@@ -152,29 +149,6 @@ class ListenView(QWidget):
         
         # 将表单直接添加到配置布局
         config_layout.addLayout(form_layout)
-        
-        # 创建水平布局存放添加按钮和频道列表
-        channel_action_layout = QHBoxLayout()
-        channel_action_layout.setSpacing(8)  # 增加按钮间距
-        
-        # 添加频道对按钮
-        self.add_channel_pair_button = QPushButton("添加频道对")
-        self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
-        channel_action_layout.addWidget(self.add_channel_pair_button)
-        
-        # 删除频道对按钮
-        self.remove_channel_pair_button = QPushButton("删除所选")
-        self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
-        channel_action_layout.addWidget(self.remove_channel_pair_button)
-        
-        # 添加移除媒体说明复选框
-        channel_action_layout.addWidget(self.remove_captions_check)
-        
-        # 添加弹性空间，让按钮靠左对齐
-        channel_action_layout.addStretch(1)
-        
-        # 直接添加到配置布局
-        config_layout.addLayout(channel_action_layout)
         
         # 添加一些间距
         config_layout.addSpacing(8)
@@ -260,6 +234,11 @@ class ListenView(QWidget):
         
         monitor_options_layout.addRow("截止日期:", duration_layout)
         
+        # 移除媒体说明复选框 - 单独一行
+        self.remove_captions_check = QCheckBox("移除媒体说明")
+        self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        monitor_options_layout.addRow("", self.remove_captions_check)  # 空标签，让复选框单独一行
+        
         # 连接时间过滤复选框和日期选择器的启用状态
         self.duration_check.toggled.connect(self.duration_date.setEnabled)
         
@@ -337,6 +316,26 @@ class ListenView(QWidget):
         scroll_area.setWidget(scroll_content)
         channel_widget_layout.addWidget(scroll_area)
         
+        # 频道对操作按钮 - 放在滚动区域下方
+        channel_action_layout = QHBoxLayout()
+        channel_action_layout.setSpacing(8)  # 增加按钮间距
+        
+        # 添加频道对按钮
+        self.add_channel_pair_button = QPushButton("添加频道对")
+        self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.add_channel_pair_button)
+        
+        # 删除频道对按钮
+        self.remove_channel_pair_button = QPushButton("删除所选")
+        self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.remove_channel_pair_button)
+        
+        # 添加弹性空间，让按钮靠左对齐
+        channel_action_layout.addStretch(1)
+        
+        # 将按钮布局添加到频道部件
+        channel_widget_layout.addLayout(channel_action_layout)
+        
         # 直接添加到配置布局
         config_layout.addWidget(channel_widget, 1)  # 添加伸展系数
         
@@ -404,14 +403,9 @@ class ListenView(QWidget):
         self.clear_messages_button.setMinimumHeight(35)
         self.clear_messages_button.setMinimumWidth(80)
         
-        self.export_messages_button = QPushButton("导出消息")
-        self.export_messages_button.setMinimumHeight(35)
-        self.export_messages_button.setMinimumWidth(80)
-        
         # 确保按钮大小合理
         for button in [self.start_listen_button, self.stop_listen_button, 
-                      self.save_config_button, self.clear_messages_button, 
-                      self.export_messages_button]:
+                      self.save_config_button, self.clear_messages_button]:
             button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
         button_layout.addWidget(self.start_listen_button)
@@ -419,7 +413,6 @@ class ListenView(QWidget):
         button_layout.addStretch(1)  # 添加弹性空间分隔主要按钮和辅助按钮
         button_layout.addWidget(self.save_config_button)
         button_layout.addWidget(self.clear_messages_button)
-        button_layout.addWidget(self.export_messages_button)
         
         # 将按钮布局添加到主布局，不使用伸展因子确保按钮固定在底部
         self.main_layout.addLayout(button_layout)
@@ -432,7 +425,6 @@ class ListenView(QWidget):
         
         # 消息操作
         self.clear_messages_button.clicked.connect(self._clear_messages)
-        self.export_messages_button.clicked.connect(self._export_messages)
         
         # 监听控制
         self.start_listen_button.clicked.connect(self._start_listen)
@@ -622,11 +614,6 @@ class ListenView(QWidget):
         # 清空各频道消息面板
         for view in self.channel_message_views.values():
             view.clear()
-    
-    def _export_messages(self):
-        """导出消息"""
-        # TODO: 实现消息导出功能
-        QMessageBox.information(self, "提示", "导出功能尚未实现")
     
     def _start_listen(self):
         """开始监听"""
