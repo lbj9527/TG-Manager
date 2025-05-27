@@ -740,10 +740,127 @@ class ActionsMixin:
                 break 
 
     def _on_settings_saved(self):
-        """处理设置保存信号"""
-        # 显示状态消息
-        self.statusBar().showMessage("设置已保存", 3000)
-        # 不需要关闭设置视图，保持在当前页面 
+        """设置保存后的处理"""
+        # 从设置视图移除焦点
+        pass
+
+    def _open_function_view(self, function_name):
+        """从功能菜单打开对应的功能视图
+        
+        Args:
+            function_name: 功能名称，如'download', 'upload', 'forward', 'monitor'
+        """
+        logger.debug(f"从功能菜单打开视图: {function_name}")
+        
+        try:
+            # 检查应用程序是否正在初始化
+            if hasattr(self, 'app') and hasattr(self.app, 'is_initializing') and self.app.is_initializing:
+                self.show_status_message("系统正在初始化中，请稍等...", 3000)
+                logger.warning(f"用户尝试在初始化完成前访问功能: {function_name}")
+                return
+            
+            # 使用导航树的方法来选择并打开对应的功能
+            if hasattr(self, 'nav_tree') and self.nav_tree:
+                # 先尝试通过导航树API打开功能
+                if self.nav_tree.select_item_by_function(function_name):
+                    logger.debug(f"通过导航树成功打开 {function_name} 视图")
+                    return
+            
+            # 如果导航树方法失败，直接处理各种功能
+            if function_name == "download":
+                self._direct_open_view("download", "普通下载")
+            elif function_name == "upload":
+                self._direct_open_view("upload", "本地上传")
+            elif function_name == "forward":
+                self._direct_open_view("forward", "历史转发")
+            elif function_name == "monitor":
+                self._direct_open_view("monitor", "实时监听")
+            else:
+                logger.warning(f"未知的功能名称: {function_name}")
+                QMessageBox.information(
+                    self,
+                    "功能未实现",
+                    f"功能 '{function_name}' 尚未实现。",
+                    QMessageBox.Ok
+                )
+                
+        except Exception as e:
+            logger.error(f"打开功能视图失败: {function_name}, 错误: {e}")
+            QMessageBox.warning(
+                self,
+                "打开视图失败",
+                f"无法打开 '{function_name}' 视图。\n错误: {str(e)}",
+                QMessageBox.Ok
+            )
+    
+    def _direct_open_view(self, function_name, display_name):
+        """直接打开指定功能的视图
+        
+        Args:
+            function_name: 功能名称
+            display_name: 显示名称
+        """
+        try:
+            # 生成一个唯一的视图ID
+            view_id = f"menu_{function_name}"
+            
+            # 检查视图是否已经存在
+            if view_id in self.opened_views:
+                self.central_layout.setCurrentWidget(self.opened_views[view_id])
+                logger.debug(f"{display_name}视图已存在，切换到该视图")
+                return
+            
+            # 创建对应的视图
+            view = None
+            if function_name == 'download':
+                from src.ui.views.download_view import DownloadView
+                view = DownloadView(self.config)
+                
+            elif function_name == 'upload':
+                from src.ui.views.upload_view import UploadView
+                view = UploadView(self.config)
+                
+            elif function_name == 'forward':
+                from src.ui.views.forward_view import ForwardView
+                view = ForwardView(self.config)
+                
+            elif function_name == 'monitor':
+                from src.ui.views.listen_view import ListenView
+                view = ListenView(self.config)
+            
+            if view:
+                # 连接视图的配置保存信号
+                if hasattr(view, 'config_saved'):
+                    view.config_saved.connect(self.config_saved)
+                
+                # 连接任务相关信号（如适用）
+                if function_name in ['download', 'upload', 'forward'] and hasattr(view, 'tasks_updated'):
+                    view.tasks_updated.connect(self._update_task_statistics)
+                    logger.debug(f"已连接 {function_name} 视图的任务统计信号")
+                
+                # 添加视图到中心区域并记录
+                self.central_layout.addWidget(view)
+                self.opened_views[view_id] = view
+                
+                # 使新添加的视图可见
+                self.central_layout.setCurrentWidget(view)
+                
+                # 连接功能模块
+                if hasattr(self, '_connect_view_to_modules'):
+                    self._connect_view_to_modules(function_name, view)
+                
+                logger.info(f"成功打开{display_name}视图")
+            else:
+                logger.error(f"无法创建{display_name}视图")
+                
+        except ImportError as e:
+            logger.error(f"导入{display_name}视图失败: {e}")
+            QMessageBox.warning(
+                self,
+                "模块加载失败",
+                f"无法加载 '{display_name}' 模块。\n错误: {str(e)}",
+                QMessageBox.Ok
+            )
 
     def get_view(self, view_name):
         """获取指定名称的视图组件

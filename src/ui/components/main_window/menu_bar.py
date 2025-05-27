@@ -21,6 +21,7 @@ class MenuBarMixin:
         
         # 创建各个子菜单
         self._create_file_menu()
+        self._create_function_menu()
         self._create_config_menu()
         self._create_tools_menu()
         self._create_view_menu()
@@ -48,6 +49,54 @@ class MenuBarMixin:
         exit_action.setStatusTip("退出应用程序")
         exit_action.triggered.connect(self.close)
         self.file_menu.addAction(exit_action)
+    
+    def _create_function_menu(self):
+        """创建功能菜单"""
+        # 功能菜单
+        self.function_menu = self.menubar.addMenu("功能")
+        
+        # 回到主界面
+        home_action = QAction("回到主界面", self)
+        home_action.setIcon(self._get_icon("home"))
+        home_action.setShortcut("Ctrl+0")
+        home_action.setStatusTip("返回到欢迎页面")
+        home_action.triggered.connect(self._return_to_welcome)
+        self.function_menu.addAction(home_action)
+        
+        # 分隔线
+        self.function_menu.addSeparator()
+        
+        # 媒体下载
+        download_action = QAction("普通下载", self)
+        download_action.setIcon(self._get_icon("download"))
+        download_action.setShortcut("Ctrl+1")
+        download_action.setStatusTip("从频道批量下载媒体文件")
+        download_action.triggered.connect(lambda: self._open_function_view("download"))
+        self.function_menu.addAction(download_action)
+        
+        # 媒体上传
+        upload_action = QAction("本地上传", self)
+        upload_action.setIcon(self._get_icon("upload"))
+        upload_action.setShortcut("Ctrl+2")
+        upload_action.setStatusTip("将本地媒体文件上传到频道")
+        upload_action.triggered.connect(lambda: self._open_function_view("upload"))
+        self.function_menu.addAction(upload_action)
+        
+        # 消息转发
+        forward_action = QAction("历史转发", self)
+        forward_action.setIcon(self._get_icon("forward"))
+        forward_action.setShortcut("Ctrl+3")
+        forward_action.setStatusTip("转发频道历史消息")
+        forward_action.triggered.connect(lambda: self._open_function_view("forward"))
+        self.function_menu.addAction(forward_action)
+        
+        # 实时监听
+        monitor_action = QAction("实时监听", self)
+        monitor_action.setIcon(self._get_icon("monitor"))
+        monitor_action.setShortcut("Ctrl+4")
+        monitor_action.setStatusTip("监听频道实时消息并转发")
+        monitor_action.triggered.connect(lambda: self._open_function_view("monitor"))
+        self.function_menu.addAction(monitor_action)
     
     def _create_config_menu(self):
         """创建配置菜单"""
