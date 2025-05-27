@@ -148,48 +148,6 @@ class ListenView(QWidget):
         # 添加一些间距
         config_layout.addSpacing(8)
         
-        # 媒体类型选择
-        media_types_label = QLabel("要转发的媒体类型:")
-        media_types_label.setStyleSheet("font-weight: bold;")
-        config_layout.addWidget(media_types_label)
-        
-        # 媒体类型复选框 - 将所有8个类型放在同一行
-        media_types_layout = QHBoxLayout()
-        
-        self.media_types_checkboxes = {}
-        
-        # 所有媒体类型在同一行
-        self.media_types_checkboxes["photo"] = QCheckBox("照片")
-        self.media_types_checkboxes["video"] = QCheckBox("视频")
-        self.media_types_checkboxes["document"] = QCheckBox("文件")
-        self.media_types_checkboxes["audio"] = QCheckBox("音频")
-        self.media_types_checkboxes["animation"] = QCheckBox("动画")
-        self.media_types_checkboxes["sticker"] = QCheckBox("贴纸")
-        self.media_types_checkboxes["voice"] = QCheckBox("语音")
-        self.media_types_checkboxes["video_note"] = QCheckBox("视频笔记")
-        
-        # 将所有复选框添加到水平布局
-        media_types_layout.addWidget(self.media_types_checkboxes["photo"])
-        media_types_layout.addWidget(self.media_types_checkboxes["video"])
-        media_types_layout.addWidget(self.media_types_checkboxes["document"])
-        media_types_layout.addWidget(self.media_types_checkboxes["audio"])
-        media_types_layout.addWidget(self.media_types_checkboxes["animation"])
-        media_types_layout.addWidget(self.media_types_checkboxes["sticker"])
-        media_types_layout.addWidget(self.media_types_checkboxes["voice"])
-        media_types_layout.addWidget(self.media_types_checkboxes["video_note"])
-        media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
-        
-        # 默认选中所有媒体类型
-        for checkbox in self.media_types_checkboxes.values():
-            checkbox.setChecked(True)
-            checkbox.setStyleSheet("padding: 4px;")  # 添加内边距，使复选框更大
-        
-        # 添加到配置布局
-        config_layout.addLayout(media_types_layout)
-        
-        # 添加一些间距
-        config_layout.addSpacing(8)
-        
         # 监听参数
         monitor_options_label = QLabel("监听参数:")
         monitor_options_label.setStyleSheet("font-weight: bold;")
@@ -246,6 +204,39 @@ class ListenView(QWidget):
         self.keyword_input = QLineEdit()
         self.keyword_input.setPlaceholderText("输入关键词，多个关键词用逗号分隔")
         filter_layout.addRow("关键词:", self.keyword_input)
+        
+        # 媒体类型选择 - 移动到过滤选项中
+        self.media_types_checkboxes = {}
+        
+        # 所有媒体类型在同一行
+        self.media_types_checkboxes["photo"] = QCheckBox("照片")
+        self.media_types_checkboxes["video"] = QCheckBox("视频")
+        self.media_types_checkboxes["document"] = QCheckBox("文件")
+        self.media_types_checkboxes["audio"] = QCheckBox("音频")
+        self.media_types_checkboxes["animation"] = QCheckBox("动画")
+        self.media_types_checkboxes["sticker"] = QCheckBox("贴纸")
+        self.media_types_checkboxes["voice"] = QCheckBox("语音")
+        self.media_types_checkboxes["video_note"] = QCheckBox("视频笔记")
+        
+        # 媒体类型复选框布局 - 将所有8个类型放在同一行
+        media_types_layout = QHBoxLayout()
+        media_types_layout.addWidget(self.media_types_checkboxes["photo"])
+        media_types_layout.addWidget(self.media_types_checkboxes["video"])
+        media_types_layout.addWidget(self.media_types_checkboxes["document"])
+        media_types_layout.addWidget(self.media_types_checkboxes["audio"])
+        media_types_layout.addWidget(self.media_types_checkboxes["animation"])
+        media_types_layout.addWidget(self.media_types_checkboxes["sticker"])
+        media_types_layout.addWidget(self.media_types_checkboxes["voice"])
+        media_types_layout.addWidget(self.media_types_checkboxes["video_note"])
+        media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        
+        # 默认选中所有媒体类型
+        for checkbox in self.media_types_checkboxes.values():
+            checkbox.setChecked(True)
+            # checkbox.setStyleSheet("padding: 2px;")  # 添加内边距，使复选框更大
+        
+        # 添加媒体类型行到表单布局
+        filter_layout.addRow("媒体类型:", media_types_layout)
         
         # 过滤复选框 - 将四个复选框放在同一行
         filter_checkboxes_layout = QHBoxLayout()
