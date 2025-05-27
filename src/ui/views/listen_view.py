@@ -148,7 +148,7 @@ class ListenView(QWidget):
         # 添加一些间距
         config_layout.addSpacing(8)
         
-        # 监听参数
+        # 监听参数 - 只保留移除媒体说明
         monitor_options_label = QLabel("监听参数:")
         monitor_options_label.setStyleSheet("font-weight: bold;")
         config_layout.addWidget(monitor_options_label)
@@ -158,32 +158,10 @@ class ListenView(QWidget):
         monitor_options_layout.setSpacing(8)  # 增加表单项间距
         monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
         
-        # 监听截止日期 - 将复选框和日期选择器放在同一行
-        duration_layout = QHBoxLayout()
-        
-        self.duration_check = QCheckBox("启用监听截止日期")
-        self.duration_check.setStyleSheet("padding: 4px;")  # 添加内边距
-        duration_layout.addWidget(self.duration_check)
-        
-        self.duration_date = QDateTimeEdit(QDateTime.currentDateTime().addDays(365))
-        self.duration_date.setCalendarPopup(True)
-        self.duration_date.setDisplayFormat("yyyy-MM-dd")
-        self.duration_date.setEnabled(False)
-        self.duration_date.setMinimumHeight(26)  # 增加高度
-        duration_layout.addWidget(self.duration_date)
-        
-        # 添加弹性空间，让控件靠左对齐
-        duration_layout.addStretch(1)
-        
-        monitor_options_layout.addRow("截止日期:", duration_layout)
-        
         # 移除媒体说明复选框 - 单独一行
         self.remove_captions_check = QCheckBox("移除媒体说明")
         self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
         monitor_options_layout.addRow("", self.remove_captions_check)  # 空标签，让复选框单独一行
-        
-        # 连接时间过滤复选框和日期选择器的启用状态
-        self.duration_check.toggled.connect(self.duration_date.setEnabled)
         
         # 添加到配置布局
         config_layout.addLayout(monitor_options_layout)
@@ -233,7 +211,6 @@ class ListenView(QWidget):
         # 默认选中所有媒体类型
         for checkbox in self.media_types_checkboxes.values():
             checkbox.setChecked(True)
-            # checkbox.setStyleSheet("padding: 2px;")  # 添加内边距，使复选框更大
         
         # 添加媒体类型行到表单布局
         filter_layout.addRow("媒体类型:", media_types_layout)
@@ -321,6 +298,50 @@ class ListenView(QWidget):
         # 将滚动区域添加到主配置布局
         main_config_layout.addWidget(config_scroll_area)
         
+        # 通用配置标签页 - 新增的选项卡
+        self.general_config_tab = QWidget()
+        general_config_layout = QVBoxLayout(self.general_config_tab)
+        general_config_layout.setContentsMargins(12, 12, 12, 12)  # 增加边距
+        general_config_layout.setSpacing(15)  # 增加间距
+        
+        # 通用配置标题
+        general_config_label = QLabel("通用配置:")
+        general_config_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        general_config_layout.addWidget(general_config_label)
+        
+        # 使用表单布局
+        general_form_layout = QFormLayout()
+        general_form_layout.setSpacing(10)  # 增加表单项间距
+        general_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
+        
+        # 监听截止日期 - 从监听参数移动到这里
+        duration_layout = QHBoxLayout()
+        
+        self.duration_check = QCheckBox("启用监听截止日期")
+        self.duration_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        duration_layout.addWidget(self.duration_check)
+        
+        self.duration_date = QDateTimeEdit(QDateTime.currentDateTime().addDays(365))
+        self.duration_date.setCalendarPopup(True)
+        self.duration_date.setDisplayFormat("yyyy-MM-dd")
+        self.duration_date.setEnabled(False)
+        self.duration_date.setMinimumHeight(26)  # 增加高度
+        duration_layout.addWidget(self.duration_date)
+        
+        # 添加弹性空间，让控件靠左对齐
+        duration_layout.addStretch(1)
+        
+        general_form_layout.addRow("截止日期:", duration_layout)
+        
+        # 连接时间过滤复选框和日期选择器的启用状态
+        self.duration_check.toggled.connect(self.duration_date.setEnabled)
+        
+        # 添加表单布局到通用配置布局
+        general_config_layout.addLayout(general_form_layout)
+        
+        # 添加弹性空间，让内容靠顶部对齐
+        general_config_layout.addStretch(1)
+        
         # 监听日志标签页
         self.log_tab = QWidget()
         log_layout = QVBoxLayout(self.log_tab)
@@ -349,8 +370,9 @@ class ListenView(QWidget):
         # 将消息标签页容器添加到监听日志标签页
         log_layout.addWidget(self.message_tabs, 1)
         
-        # 将两个标签页添加到配置标签页部件
+        # 将三个标签页添加到配置标签页部件
         self.config_tabs.addTab(self.config_tab, "频道配置")
+        self.config_tabs.addTab(self.general_config_tab, "通用配置")
         self.config_tabs.addTab(self.log_tab, "监听日志")
     
     def _create_action_buttons(self):
