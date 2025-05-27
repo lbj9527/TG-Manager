@@ -42,8 +42,8 @@ class ListenView(QWidget):
         
         # 设置布局
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setSpacing(2)  # 进一步减小主布局的垂直间距
-        self.main_layout.setContentsMargins(4, 4, 4, 4)  # 进一步减小主布局边距
+        self.main_layout.setSpacing(8)  # 增加主布局的垂直间距
+        self.main_layout.setContentsMargins(8, 8, 8, 8)  # 增加主布局边距
         self.setLayout(self.main_layout)
         
         # # 统一设置群组框样式，减小标题高度
@@ -73,16 +73,12 @@ class ListenView(QWidget):
         
         # 创建配置标签页
         self.config_tabs = QTabWidget()
-        # 增加配置区域的高度，确保控件显示清晰
-        self.config_tabs.setMaximumHeight(420)
-        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.main_layout.addWidget(self.config_tabs)
+        # 移除高度限制，让配置区域可以自由扩展
+        self.config_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.main_layout.addWidget(self.config_tabs, 1)  # 添加伸展因子，让标签页占据主要空间
         
         # 创建配置标签页
         self._create_config_panel()
-        
-        # 创建中间消息显示面板（直接添加到主布局）
-        self._create_message_panel()
         
         # 创建底部操作按钮
         self._create_action_buttons()
@@ -108,13 +104,27 @@ class ListenView(QWidget):
         """创建配置标签页"""
         # 监听配置标签页
         self.config_tab = QWidget()
-        config_layout = QVBoxLayout(self.config_tab)
-        config_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
-        config_layout.setSpacing(4)  # 减小间距
+        # 创建主布局，只包含滚动区域
+        main_config_layout = QVBoxLayout(self.config_tab)
+        main_config_layout.setContentsMargins(0, 0, 0, 0)  # 移除主布局边距
+        main_config_layout.setSpacing(0)  # 移除主布局间距
+        
+        # 创建滚动区域
+        config_scroll_area = QScrollArea()
+        config_scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
+        config_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        config_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        config_scroll_area.setFrameShape(QScrollArea.NoFrame)  # 移除边框，使界面更简洁
+        
+        # 创建滚动内容容器
+        scroll_content_widget = QWidget()
+        config_layout = QVBoxLayout(scroll_content_widget)
+        config_layout.setContentsMargins(12, 12, 12, 12)  # 增加滚动内容边距
+        config_layout.setSpacing(15)  # 增加间距，使界面更舒适
         
         # 创建顶部表单面板 - 直接添加到配置布局，移除QGroupBox
         form_layout = QFormLayout()
-        form_layout.setSpacing(6)  # 增加表单项间距
+        form_layout.setSpacing(10)  # 增加表单项间距
         form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 字段可扩展
         
@@ -166,101 +176,57 @@ class ListenView(QWidget):
         # 直接添加到配置布局
         config_layout.addLayout(channel_action_layout)
         
-        # 创建频道列表部分 - 使用滚动区域显示
-        channel_widget = QWidget()
-        channel_widget_layout = QVBoxLayout(channel_widget)
-        channel_widget_layout.setContentsMargins(0, 0, 0, 0)
-        channel_widget_layout.setSpacing(2)
+        # 添加一些间距
+        config_layout.addSpacing(8)
         
-        # 已配置监听频道对标签 - 使用与下载界面一致的样式
-        self.pairs_list_label = QLabel("已配置监听频道对: 0个")
-        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
-        channel_widget_layout.addWidget(self.pairs_list_label)
-        
-        # 创建滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
-        scroll_area.setFixedHeight(100)  # 设置滚动区域的固定高度
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        
-        # 创建一个容器部件来包含列表
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(0)
-        
-        # 频道对列表
-        self.pairs_list = QListWidget()
-        self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
-        scroll_layout.addWidget(self.pairs_list)
-        
-        # 设置滚动区域的内容
-        scroll_area.setWidget(scroll_content)
-        channel_widget_layout.addWidget(scroll_area)
-        
-        # 直接添加到配置布局
-        config_layout.addWidget(channel_widget, 1)  # 添加伸展系数
-        
-        # 监听选项标签页
-        self.options_tab = QWidget()
-        options_layout = QVBoxLayout(self.options_tab)
-        options_layout.setContentsMargins(4, 4, 4, 4)  # 减小外边距
-        options_layout.setSpacing(8)  # 增加垂直间距
-        
-        # 媒体类型选择 - 直接添加到选项布局，移除QGroupBox
+        # 媒体类型选择
         media_types_label = QLabel("要转发的媒体类型:")
         media_types_label.setStyleSheet("font-weight: bold;")
-        options_layout.addWidget(media_types_label)
+        config_layout.addWidget(media_types_label)
         
-        # 媒体类型复选框
-        media_types_row1 = QHBoxLayout()
-        media_types_row2 = QHBoxLayout()
+        # 媒体类型复选框 - 将所有8个类型放在同一行
+        media_types_layout = QHBoxLayout()
         
         self.media_types_checkboxes = {}
         
-        # 第一行
+        # 所有媒体类型在同一行
         self.media_types_checkboxes["photo"] = QCheckBox("照片")
         self.media_types_checkboxes["video"] = QCheckBox("视频")
         self.media_types_checkboxes["document"] = QCheckBox("文件")
         self.media_types_checkboxes["audio"] = QCheckBox("音频")
-        
-        media_types_row1.addWidget(self.media_types_checkboxes["photo"])
-        media_types_row1.addWidget(self.media_types_checkboxes["video"])
-        media_types_row1.addWidget(self.media_types_checkboxes["document"])
-        media_types_row1.addWidget(self.media_types_checkboxes["audio"])
-        media_types_row1.addStretch(1)
-        
-        # 第二行
         self.media_types_checkboxes["animation"] = QCheckBox("动画")
         self.media_types_checkboxes["sticker"] = QCheckBox("贴纸")
         self.media_types_checkboxes["voice"] = QCheckBox("语音")
         self.media_types_checkboxes["video_note"] = QCheckBox("视频笔记")
         
-        media_types_row2.addWidget(self.media_types_checkboxes["animation"])
-        media_types_row2.addWidget(self.media_types_checkboxes["sticker"])
-        media_types_row2.addWidget(self.media_types_checkboxes["voice"])
-        media_types_row2.addWidget(self.media_types_checkboxes["video_note"])
-        media_types_row2.addStretch(1)
+        # 将所有复选框添加到水平布局
+        media_types_layout.addWidget(self.media_types_checkboxes["photo"])
+        media_types_layout.addWidget(self.media_types_checkboxes["video"])
+        media_types_layout.addWidget(self.media_types_checkboxes["document"])
+        media_types_layout.addWidget(self.media_types_checkboxes["audio"])
+        media_types_layout.addWidget(self.media_types_checkboxes["animation"])
+        media_types_layout.addWidget(self.media_types_checkboxes["sticker"])
+        media_types_layout.addWidget(self.media_types_checkboxes["voice"])
+        media_types_layout.addWidget(self.media_types_checkboxes["video_note"])
+        media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         
         # 默认选中所有媒体类型
         for checkbox in self.media_types_checkboxes.values():
             checkbox.setChecked(True)
             checkbox.setStyleSheet("padding: 4px;")  # 添加内边距，使复选框更大
         
-        # 直接添加到选项布局
-        options_layout.addLayout(media_types_row1)
-        options_layout.addLayout(media_types_row2)
+        # 添加到配置布局
+        config_layout.addLayout(media_types_layout)
         
         # 添加一些间距
-        options_layout.addSpacing(10)
+        config_layout.addSpacing(8)
         
-        # 监听参数 - 直接添加到选项布局，移除QGroupBox
+        # 监听参数
         monitor_options_label = QLabel("监听参数:")
         monitor_options_label.setStyleSheet("font-weight: bold;")
-        options_layout.addWidget(monitor_options_label)
+        config_layout.addWidget(monitor_options_label)
         
-        # 使用表单布局直接添加到选项布局
+        # 使用表单布局
         monitor_options_layout = QFormLayout()
         monitor_options_layout.setSpacing(8)  # 增加表单项间距
         monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
@@ -297,16 +263,16 @@ class ListenView(QWidget):
         # 连接时间过滤复选框和日期选择器的启用状态
         self.duration_check.toggled.connect(self.duration_date.setEnabled)
         
-        # 直接添加到选项布局
-        options_layout.addLayout(monitor_options_layout)
+        # 添加到配置布局
+        config_layout.addLayout(monitor_options_layout)
         
         # 添加一些间距
-        options_layout.addSpacing(10)
+        config_layout.addSpacing(8)
         
-        # 过滤选项 - 添加缺失的过滤选项
+        # 过滤选项
         filter_options_label = QLabel("过滤选项:")
         filter_options_label.setStyleSheet("font-weight: bold;")
-        options_layout.addWidget(filter_options_label)
+        config_layout.addWidget(filter_options_label)
         
         # 关键词过滤
         filter_layout = QFormLayout()
@@ -331,22 +297,62 @@ class ListenView(QWidget):
         filter_checkboxes_layout.addWidget(self.exclude_links_check)
         filter_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         
-        options_layout.addLayout(filter_layout)
-        options_layout.addLayout(filter_checkboxes_layout)
+        config_layout.addLayout(filter_layout)
+        config_layout.addLayout(filter_checkboxes_layout)
         
-        # 添加弹性空间，使内容靠上对齐
-        options_layout.addStretch(1)
+        # 添加一些间距
+        config_layout.addSpacing(8)
         
-        # 将标签页添加到配置标签页部件
-        self.config_tabs.addTab(self.config_tab, "频道配置")
-        self.config_tabs.addTab(self.options_tab, "媒体和参数")
-    
-    def _create_message_panel(self):
-        """创建中间消息显示面板"""
-        # 创建消息面板容器
-        message_container = QVBoxLayout()
+        # 创建频道列表部分 - 使用滚动区域显示
+        channel_widget = QWidget()
+        channel_widget_layout = QVBoxLayout(channel_widget)
+        channel_widget_layout.setContentsMargins(0, 0, 0, 0)
+        channel_widget_layout.setSpacing(2)
         
-        # 直接创建消息标签页容器，不使用GroupBox
+        # 已配置监听频道对标签 - 使用与下载界面一致的样式
+        self.pairs_list_label = QLabel("已配置监听频道对: 0个")
+        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        channel_widget_layout.addWidget(self.pairs_list_label)
+        
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
+        scroll_area.setMinimumHeight(120)  # 增加滚动区域的最小高度
+        scroll_area.setMaximumHeight(150)  # 设置合理的最大高度
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # 创建一个容器部件来包含列表
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(0)
+        
+        # 频道对列表
+        self.pairs_list = QListWidget()
+        self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
+        scroll_layout.addWidget(self.pairs_list)
+        
+        # 设置滚动区域的内容
+        scroll_area.setWidget(scroll_content)
+        channel_widget_layout.addWidget(scroll_area)
+        
+        # 直接添加到配置布局
+        config_layout.addWidget(channel_widget, 1)  # 添加伸展系数
+        
+        # 设置滚动区域的内容
+        config_scroll_area.setWidget(scroll_content_widget)
+        
+        # 将滚动区域添加到主配置布局
+        main_config_layout.addWidget(config_scroll_area)
+        
+        # 监听日志标签页
+        self.log_tab = QWidget()
+        log_layout = QVBoxLayout(self.log_tab)
+        log_layout.setContentsMargins(8, 8, 8, 8)  # 增加边距
+        log_layout.setSpacing(8)  # 增加间距
+        
+        # 创建消息标签页容器
         self.message_tabs = QTabWidget()
         
         # 主消息面板
@@ -360,47 +366,62 @@ class ListenView(QWidget):
         # 添加主消息面板
         self.message_tabs.addTab(self.main_message_view, "所有消息")
         
-        # 设置消息面板的尺寸策略，让它能够占据可用空间但不要太大
+        # 设置消息面板的尺寸策略
         self.message_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         # 设置最小高度，确保消息区域有足够空间显示
         self.message_tabs.setMinimumHeight(180)
         
-        message_container.addWidget(self.message_tabs, 1)
+        # 将消息标签页容器添加到监听日志标签页
+        log_layout.addWidget(self.message_tabs, 1)
         
-        # 将消息容器添加到主布局，占据剩余空间
-        self.main_layout.addLayout(message_container, 1)  # 使用较小的伸展因子，让配置面板占据更多空间
+        # 将两个标签页添加到配置标签页部件
+        self.config_tabs.addTab(self.config_tab, "频道配置")
+        self.config_tabs.addTab(self.log_tab, "监听日志")
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
+        # 添加一些垂直间距
+        self.main_layout.addSpacing(10)
+        
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)  # 增加按钮间距
+        button_layout.setSpacing(12)  # 增加按钮间距
+        button_layout.setContentsMargins(8, 8, 8, 8)  # 添加按钮区域边距
         
         self.start_listen_button = QPushButton("开始监听")
         self.start_listen_button.setMinimumHeight(40)
+        self.start_listen_button.setMinimumWidth(100)  # 设置最小宽度
         
         self.stop_listen_button = QPushButton("停止监听")
         self.stop_listen_button.setEnabled(False)
         self.stop_listen_button.setMinimumHeight(40)
+        self.stop_listen_button.setMinimumWidth(100)
         
         self.save_config_button = QPushButton("保存配置")
-        self.save_config_button.setMinimumHeight(30)  # 稍微降低其他按钮的高度，与主按钮区分
+        self.save_config_button.setMinimumHeight(35)  # 稍微增加高度
+        self.save_config_button.setMinimumWidth(80)
         
         self.clear_messages_button = QPushButton("清空消息")
-        self.clear_messages_button.setMinimumHeight(30)
+        self.clear_messages_button.setMinimumHeight(35)
+        self.clear_messages_button.setMinimumWidth(80)
         
         self.export_messages_button = QPushButton("导出消息")
-        self.export_messages_button.setMinimumHeight(30)
+        self.export_messages_button.setMinimumHeight(35)
+        self.export_messages_button.setMinimumWidth(80)
         
         # 确保按钮大小合理
-        for button in [self.save_config_button, self.clear_messages_button, self.export_messages_button]:
+        for button in [self.start_listen_button, self.stop_listen_button, 
+                      self.save_config_button, self.clear_messages_button, 
+                      self.export_messages_button]:
             button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
         button_layout.addWidget(self.start_listen_button)
         button_layout.addWidget(self.stop_listen_button)
+        button_layout.addStretch(1)  # 添加弹性空间分隔主要按钮和辅助按钮
         button_layout.addWidget(self.save_config_button)
         button_layout.addWidget(self.clear_messages_button)
         button_layout.addWidget(self.export_messages_button)
         
+        # 将按钮布局添加到主布局，不使用伸展因子确保按钮固定在底部
         self.main_layout.addLayout(button_layout)
     
     def _connect_signals(self):
