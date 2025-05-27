@@ -5,12 +5,10 @@ TG-Manager 主窗口功能操作模块
 
 import json
 import datetime
-from copy import deepcopy
 from loguru import logger
 from PySide6.QtWidgets import (
     QMessageBox, QInputDialog, QDialog, QVBoxLayout, 
-    QFormLayout, QLineEdit, QDialogButtonBox, QLabel,
-    QFileDialog
+    QFormLayout, QLineEdit, QDialogButtonBox, QLabel
 )
 from PySide6.QtCore import QRegularExpression, QTimer, Signal, Qt
 from PySide6.QtGui import QRegularExpressionValidator, QAction
@@ -628,101 +626,6 @@ class ActionsMixin:
             "检查更新功能尚未实现。\n当前版本: 1.7.1",
             QMessageBox.Ok
         )
-    
-    def _import_config(self):
-        """导入配置文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, 
-            "导入配置文件",
-            "",
-            "JSON文件 (*.json);;所有文件 (*.*)"
-        )
-        
-        if not file_path:
-            return
-            
-        try:
-            # 读取配置文件
-            with open(file_path, 'r', encoding='utf-8') as file:
-                imported_config = json.load(file)
-            
-            # 验证导入的配置文件结构
-            if not isinstance(imported_config, dict):
-                raise ValueError("导入的配置文件格式无效，应为JSON对象")
-            
-            # 提示用户确认
-            reply = QMessageBox.question(
-                self,
-                "确认导入",
-                "导入此配置文件将覆盖当前配置，是否继续？\n"
-                "注意：某些设置可能需要重启应用才能生效。",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if reply != QMessageBox.Yes:
-                return
-            
-            # 合并配置
-            self.config.update(imported_config)
-            
-            # 发出配置更新信号
-            self.config_saved.emit(self.config)
-            
-            # 显示成功消息
-            QMessageBox.information(
-                self,
-                "导入成功",
-                "配置文件已成功导入。\n"
-                "某些设置可能需要重启应用才能生效。",
-                QMessageBox.Ok
-            )
-            
-        except Exception as e:
-            logger.error(f"导入配置文件失败: {e}")
-            QMessageBox.critical(
-                self,
-                "导入失败",
-                f"导入配置文件失败: {str(e)}",
-                QMessageBox.Ok
-            )
-    
-    def _export_config(self):
-        """导出配置文件"""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, 
-            "导出配置文件",
-            f"tg_manager_config_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            "JSON文件 (*.json);;所有文件 (*.*)"
-        )
-        
-        if not file_path:
-            return
-            
-        try:
-            # 创建配置的副本，去除可能无法序列化的内容
-            config_copy = deepcopy(self.config)
-            
-            # 写入配置文件，美化格式
-            with open(file_path, 'w', encoding='utf-8') as file:
-                json.dump(config_copy, file, ensure_ascii=False, indent=4)
-            
-            # 显示成功消息
-            QMessageBox.information(
-                self,
-                "导出成功",
-                f"配置文件已成功导出到:\n{file_path}",
-                QMessageBox.Ok
-            )
-            
-        except Exception as e:
-            logger.error(f"导出配置文件失败: {e}")
-            QMessageBox.critical(
-                self,
-                "导出失败",
-                f"导出配置文件失败: {str(e)}",
-                QMessageBox.Ok
-            )
     
     def _close_settings_view(self):
         """关闭设置视图并返回到之前的视图"""

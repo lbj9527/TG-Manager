@@ -22,7 +22,6 @@ class MenuBarMixin:
         # 创建各个子菜单
         self._create_file_menu()
         self._create_function_menu()
-        self._create_config_menu()
         self._create_tools_menu()
         self._create_view_menu()
         self._create_help_menu()
@@ -97,27 +96,6 @@ class MenuBarMixin:
         monitor_action.setStatusTip("监听频道实时消息并转发")
         monitor_action.triggered.connect(lambda: self._open_function_view("monitor"))
         self.function_menu.addAction(monitor_action)
-    
-    def _create_config_menu(self):
-        """创建配置菜单"""
-        # 配置菜单
-        self.config_menu = self.menubar.addMenu("配置")
-        
-        # 导入配置
-        import_config_action = QAction("导入配置", self)
-        import_config_action.setIcon(self._get_icon("import"))
-        import_config_action.setShortcut("Ctrl+I")
-        import_config_action.setStatusTip("从文件导入配置")
-        import_config_action.triggered.connect(self._import_config)
-        self.config_menu.addAction(import_config_action)
-        
-        # 导出配置
-        export_config_action = QAction("导出配置", self)
-        export_config_action.setIcon(self._get_icon("export"))
-        export_config_action.setShortcut("Ctrl+E")
-        export_config_action.setStatusTip("导出配置到文件")
-        export_config_action.triggered.connect(self._export_config)
-        self.config_menu.addAction(export_config_action)
     
     def _create_tools_menu(self):
         """创建工具菜单"""
