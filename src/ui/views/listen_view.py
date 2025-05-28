@@ -1635,13 +1635,27 @@ class ListenView(QWidget):
         # 创建编辑对话框
         edit_dialog = QDialog(self)
         edit_dialog.setWindowTitle("编辑监听频道对")
-        edit_dialog.setMinimumWidth(500)
-        edit_dialog.setMinimumHeight(600)
+        edit_dialog.setMinimumWidth(600)
+        edit_dialog.setMinimumHeight(400)  # 降低最小高度，允许更小的窗口
+        edit_dialog.resize(650, 700)  # 设置默认大小
         
-        # 对话框布局
-        dialog_layout = QVBoxLayout(edit_dialog)
-        dialog_layout.setSpacing(15)
-        dialog_layout.setContentsMargins(20, 20, 20, 20)
+        # 主布局 - 只包含滚动区域和按钮
+        main_layout = QVBoxLayout(edit_dialog)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+        
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        
+        # 创建滚动内容容器
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(15, 15, 15, 15)
+        scroll_layout.setSpacing(15)
         
         # 基本信息表单
         basic_form = QFormLayout()
@@ -1659,7 +1673,7 @@ class ListenView(QWidget):
         target_input.setPlaceholderText("多个频道用逗号分隔")
         basic_form.addRow("目标频道:", target_input)
         
-        dialog_layout.addLayout(basic_form)
+        scroll_layout.addLayout(basic_form)
         
         # 文本替换规则组
         text_filter_group = QGroupBox("文本替换规则")
@@ -1687,7 +1701,7 @@ class ListenView(QWidget):
         target_text_input.setPlaceholderText("替换后的目标文本，多个用逗号分隔")
         text_filter_layout.addRow("替换为:", target_text_input)
         
-        dialog_layout.addWidget(text_filter_group)
+        scroll_layout.addWidget(text_filter_group)
         
         # 媒体类型选择组
         media_group = QGroupBox("媒体类型")
@@ -1735,7 +1749,7 @@ class ListenView(QWidget):
         voice_check.setChecked(MediaType.VOICE in media_types_str)
         video_note_check.setChecked(MediaType.VIDEO_NOTE in media_types_str)
         
-        dialog_layout.addWidget(media_group)
+        scroll_layout.addWidget(media_group)
         
         # 过滤选项组
         filter_group = QGroupBox("过滤选项")
@@ -1771,7 +1785,7 @@ class ListenView(QWidget):
         exclude_layout.addStretch()
         filter_layout.addLayout(exclude_layout)
         
-        dialog_layout.addWidget(filter_group)
+        scroll_layout.addWidget(filter_group)
         
         # 其他选项组
         other_group = QGroupBox("其他选项")
@@ -1781,21 +1795,34 @@ class ListenView(QWidget):
         remove_captions_check.setChecked(channel_pair.get('remove_captions', False))
         other_layout.addWidget(remove_captions_check)
         
-        dialog_layout.addWidget(other_group)
+        scroll_layout.addWidget(other_group)
         
-        # 按钮布局
+        # 添加弹性空间，确保内容顶部对齐
+        scroll_layout.addStretch()
+        
+        # 设置滚动区域的内容
+        scroll_area.setWidget(scroll_content)
+        
+        # 将滚动区域添加到主布局
+        main_layout.addWidget(scroll_area, 1)  # 使用伸展因子让滚动区域占据主要空间
+        
+        # 按钮布局 - 固定在底部，不在滚动区域内
         button_layout = QHBoxLayout()
         save_button = QPushButton("保存")
         cancel_button = QPushButton("取消")
         
         save_button.setMinimumHeight(35)
         cancel_button.setMinimumHeight(35)
+        save_button.setMinimumWidth(80)
+        cancel_button.setMinimumWidth(80)
         
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
+        button_layout.addSpacing(10)
         button_layout.addWidget(cancel_button)
         
-        dialog_layout.addLayout(button_layout)
+        # 将按钮布局添加到主布局，不使用伸展因子，固定在底部
+        main_layout.addLayout(button_layout)
         
         # 连接按钮信号
         save_button.clicked.connect(edit_dialog.accept)
