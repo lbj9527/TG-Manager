@@ -811,10 +811,27 @@ class ForwardView(QWidget):
                 final_message_html_file=self.final_message_html_file.text()
             )
             
-            # 组织完整配置
+            # 组织完整配置，确保保留现有的其他配置项（特别是主题设置）
             updated_config = {}
             if isinstance(self.config, dict):
                 updated_config = self.config.copy()  # 复制当前配置
+            
+            # 获取主题管理器，确保保留当前主题设置
+            try:
+                from src.utils.theme_manager import get_theme_manager
+                theme_manager = get_theme_manager()
+                current_theme = theme_manager.get_current_theme_name()
+                
+                # 确保UI配置部分存在，并保留当前主题
+                if 'UI' not in updated_config:
+                    updated_config['UI'] = {}
+                
+                # 保留当前应用的主题设置，防止被覆盖
+                updated_config['UI']['theme'] = current_theme
+                logger.debug(f"保存配置时保留当前主题设置: {current_theme}")
+                
+            except Exception as e:
+                logger.warning(f"获取当前主题设置时出错: {e}")
             
             # 使用模型的dict()方法将对象转换为字典
             updated_config['FORWARD'] = forward_config.dict()
