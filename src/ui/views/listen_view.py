@@ -9,10 +9,10 @@ from PySide6.QtWidgets import (
     QGroupBox, QScrollArea, QComboBox,
     QListWidget, QListWidgetItem, QMessageBox,
     QTextEdit, QSplitter, QTabWidget, QDateTimeEdit,
-    QSizePolicy, QDoubleSpinBox
+    QSizePolicy, QDoubleSpinBox, QDialog, QMenu, QSpinBox
 )
-from PySide6.QtCore import Qt, Signal, Slot, QDateTime
-from PySide6.QtGui import QIcon, QTextCursor
+from PySide6.QtCore import Qt, Signal, Slot, QDateTime, QPoint
+from PySide6.QtGui import QIcon, QTextCursor, QCursor
 from datetime import datetime
 
 from src.utils.logger import get_logger
@@ -288,6 +288,8 @@ class ListenView(QWidget):
         # 频道对列表
         self.pairs_list = QListWidget()
         self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.pairs_list.setContextMenuPolicy(Qt.CustomContextMenu)  # 设置自定义右键菜单
+        self.pairs_list.customContextMenuRequested.connect(self._show_context_menu)  # 连接右键菜单事件
         scroll_layout.addWidget(self.pairs_list)
         
         # 设置滚动区域的内容
@@ -1580,4 +1582,356 @@ class ListenView(QWidget):
         msg_box.setIcon(QMessageBox.Critical)
         msg_box.setWindowTitle(title)
         msg_box.setText(message)
-        msg_box.exec() 
+        msg_box.exec()
+
+    def _show_context_menu(self, pos):
+        """显示右键菜单
+        
+        Args:
+            pos: 鼠标位置
+        """
+        # 确保有选中的项目
+        current_item = self.pairs_list.itemAt(pos)
+        if not current_item:
+            return
+        
+        # 创建菜单
+        context_menu = QMenu(self)
+        
+        # 添加菜单项
+        edit_action = context_menu.addAction("编辑")
+        delete_action = context_menu.addAction("删除")
+        
+        # 显示菜单并获取用户选择的操作
+        action = context_menu.exec(QCursor.pos())
+        
+        # 处理用户选择
+        if action == edit_action:
+            self._edit_channel_pair(current_item)
+        elif action == delete_action:
+            # 删除操作直接调用已有的删除方法
+            self._remove_channel_pairs()
+    
+    def _edit_channel_pair(self, item):
+        """编辑监听频道对
+        
+        Args:
+            item: 要编辑的列表项
+        """
+        # 获取项目索引
+        row = self.pairs_list.row(item)
+        
+        # 获取频道对数据
+        channel_pair = item.data(Qt.UserRole)
+        if not channel_pair:
+            return
+        
+        # 创建编辑对话框
+        edit_dialog = QDialog(self)
+        edit_dialog.setWindowTitle("编辑监听频道对")
+        edit_dialog.setMinimumWidth(500)
+        edit_dialog.setMinimumHeight(600)
+        
+        # 对话框布局
+        dialog_layout = QVBoxLayout(edit_dialog)
+        dialog_layout.setSpacing(15)
+        dialog_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 基本信息表单
+        basic_form = QFormLayout()
+        basic_form.setSpacing(10)
+        basic_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        
+        # 源频道输入
+        source_input = QLineEdit(channel_pair.get('source_channel', ''))
+        source_input.setPlaceholderText("频道链接或ID")
+        basic_form.addRow("源频道:", source_input)
+        
+        # 目标频道输入
+        target_channels = channel_pair.get('target_channels', [])
+        target_input = QLineEdit(', '.join(target_channels))
+        target_input.setPlaceholderText("多个频道用逗号分隔")
+        basic_form.addRow("目标频道:", target_input)
+        
+        dialog_layout.addLayout(basic_form)
+        
+        # 文本替换规则组
+        text_filter_group = QGroupBox("文本替换规则")
+        text_filter_layout = QFormLayout(text_filter_group)
+        text_filter_layout.setSpacing(8)
+        
+        # 获取文本替换规则
+        text_filter = channel_pair.get('text_filter', [])
+        original_texts = []
+        target_texts = []
+        
+        for rule in text_filter:
+            if isinstance(rule, dict):
+                original_text = rule.get('original_text', '')
+                target_text = rule.get('target_text', '')
+                if original_text or target_text:
+                    original_texts.append(original_text)
+                    target_texts.append(target_text)
+        
+        original_text_input = QLineEdit(', '.join(original_texts))
+        original_text_input.setPlaceholderText("要替换的原始文本，多个用逗号分隔")
+        text_filter_layout.addRow("替换:", original_text_input)
+        
+        target_text_input = QLineEdit(', '.join(target_texts))
+        target_text_input.setPlaceholderText("替换后的目标文本，多个用逗号分隔")
+        text_filter_layout.addRow("替换为:", target_text_input)
+        
+        dialog_layout.addWidget(text_filter_group)
+        
+        # 媒体类型选择组
+        media_group = QGroupBox("媒体类型")
+        media_layout = QVBoxLayout(media_group)
+        
+        # 第一行媒体类型
+        media_row1 = QHBoxLayout()
+        photo_check = QCheckBox("照片")
+        video_check = QCheckBox("视频")
+        document_check = QCheckBox("文档")
+        audio_check = QCheckBox("音频")
+        
+        media_row1.addWidget(photo_check)
+        media_row1.addWidget(video_check)
+        media_row1.addWidget(document_check)
+        media_row1.addWidget(audio_check)
+        media_row1.addStretch()
+        
+        # 第二行媒体类型
+        media_row2 = QHBoxLayout()
+        animation_check = QCheckBox("动画")
+        sticker_check = QCheckBox("贴纸")
+        voice_check = QCheckBox("语音")
+        video_note_check = QCheckBox("视频笔记")
+        
+        media_row2.addWidget(animation_check)
+        media_row2.addWidget(sticker_check)
+        media_row2.addWidget(voice_check)
+        media_row2.addWidget(video_note_check)
+        media_row2.addStretch()
+        
+        media_layout.addLayout(media_row1)
+        media_layout.addLayout(media_row2)
+        
+        # 设置当前媒体类型
+        media_types = channel_pair.get('media_types', [])
+        media_types_str = [str(t) for t in media_types]
+        
+        photo_check.setChecked(MediaType.PHOTO in media_types_str)
+        video_check.setChecked(MediaType.VIDEO in media_types_str)
+        document_check.setChecked(MediaType.DOCUMENT in media_types_str)
+        audio_check.setChecked(MediaType.AUDIO in media_types_str)
+        animation_check.setChecked(MediaType.ANIMATION in media_types_str)
+        sticker_check.setChecked(MediaType.STICKER in media_types_str)
+        voice_check.setChecked(MediaType.VOICE in media_types_str)
+        video_note_check.setChecked(MediaType.VIDEO_NOTE in media_types_str)
+        
+        dialog_layout.addWidget(media_group)
+        
+        # 过滤选项组
+        filter_group = QGroupBox("过滤选项")
+        filter_layout = QVBoxLayout(filter_group)
+        
+        # 关键词输入
+        keywords_layout = QFormLayout()
+        keywords = channel_pair.get('keywords', [])
+        keywords_input = QLineEdit(', '.join(keywords))
+        keywords_input.setPlaceholderText("关键词，多个用逗号分隔")
+        keywords_layout.addRow("关键词:", keywords_input)
+        filter_layout.addLayout(keywords_layout)
+        
+        # 排除选项
+        exclude_layout = QHBoxLayout()
+        
+        exclude_forwards_check = QCheckBox("排除转发消息")
+        exclude_forwards_check.setChecked(channel_pair.get('exclude_forwards', False))
+        exclude_layout.addWidget(exclude_forwards_check)
+        
+        exclude_replies_check = QCheckBox("排除回复消息")
+        exclude_replies_check.setChecked(channel_pair.get('exclude_replies', False))
+        exclude_layout.addWidget(exclude_replies_check)
+        
+        exclude_media_check = QCheckBox("排除媒体消息")
+        exclude_media_check.setChecked(channel_pair.get('exclude_media', False))
+        exclude_layout.addWidget(exclude_media_check)
+        
+        exclude_links_check = QCheckBox("排除包含链接的消息")
+        exclude_links_check.setChecked(channel_pair.get('exclude_links', False))
+        exclude_layout.addWidget(exclude_links_check)
+        
+        exclude_layout.addStretch()
+        filter_layout.addLayout(exclude_layout)
+        
+        dialog_layout.addWidget(filter_group)
+        
+        # 其他选项组
+        other_group = QGroupBox("其他选项")
+        other_layout = QVBoxLayout(other_group)
+        
+        remove_captions_check = QCheckBox("移除媒体说明")
+        remove_captions_check.setChecked(channel_pair.get('remove_captions', False))
+        other_layout.addWidget(remove_captions_check)
+        
+        dialog_layout.addWidget(other_group)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("保存")
+        cancel_button = QPushButton("取消")
+        
+        save_button.setMinimumHeight(35)
+        cancel_button.setMinimumHeight(35)
+        
+        button_layout.addStretch(1)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        
+        dialog_layout.addLayout(button_layout)
+        
+        # 连接按钮信号
+        save_button.clicked.connect(edit_dialog.accept)
+        cancel_button.clicked.connect(edit_dialog.reject)
+        
+        # 显示对话框并处理结果
+        if edit_dialog.exec() == QDialog.Accepted:
+            try:
+                # 收集编辑后的数据
+                new_source = source_input.text().strip()
+                new_target_text = target_input.text().strip()
+                new_targets = [t.strip() for t in new_target_text.split(',') if t.strip()]
+                
+                # 验证输入
+                if not new_source:
+                    raise ValueError("源频道不能为空")
+                if not new_targets:
+                    raise ValueError("目标频道不能为空")
+                
+                # 收集媒体类型
+                new_media_types = []
+                if photo_check.isChecked():
+                    new_media_types.append(MediaType.PHOTO)
+                if video_check.isChecked():
+                    new_media_types.append(MediaType.VIDEO)
+                if document_check.isChecked():
+                    new_media_types.append(MediaType.DOCUMENT)
+                if audio_check.isChecked():
+                    new_media_types.append(MediaType.AUDIO)
+                if animation_check.isChecked():
+                    new_media_types.append(MediaType.ANIMATION)
+                if sticker_check.isChecked():
+                    new_media_types.append(MediaType.STICKER)
+                if voice_check.isChecked():
+                    new_media_types.append(MediaType.VOICE)
+                if video_note_check.isChecked():
+                    new_media_types.append(MediaType.VIDEO_NOTE)
+                
+                if not new_media_types:
+                    raise ValueError("至少需要选择一种媒体类型")
+                
+                # 收集文本替换规则
+                original_texts = [t.strip() for t in original_text_input.text().split(',') if t.strip()]
+                target_texts = [t.strip() for t in target_text_input.text().split(',') if t.strip()]
+                
+                new_text_filter = []
+                # 确保原始文本和目标文本数量匹配
+                max_len = max(len(original_texts), len(target_texts))
+                for i in range(max_len):
+                    original = original_texts[i] if i < len(original_texts) else ""
+                    target = target_texts[i] if i < len(target_texts) else ""
+                    if original or target:
+                        new_text_filter.append({
+                            "original_text": original,
+                            "target_text": target
+                        })
+                
+                # 如果没有文本替换规则，添加一个空的
+                if not new_text_filter:
+                    new_text_filter = [{"original_text": "", "target_text": ""}]
+                
+                # 收集关键词
+                keywords_text = keywords_input.text().strip()
+                new_keywords = [k.strip() for k in keywords_text.split(',') if k.strip()] if keywords_text else []
+                
+                # 使用UIMonitorChannelPair进行验证
+                from src.utils.ui_config_models import UIChannelPair
+                validated_source = UIChannelPair.validate_channel_id(new_source, "源频道")
+                validated_targets = [UIChannelPair.validate_channel_id(t, f"目标频道 {i+1}") 
+                                    for i, t in enumerate(new_targets)]
+                
+                # 创建更新后的频道对
+                updated_pair = {
+                    'source_channel': validated_source,
+                    'target_channels': validated_targets,
+                    'remove_captions': remove_captions_check.isChecked(),
+                    'text_filter': new_text_filter,
+                    'media_types': new_media_types,
+                    'keywords': new_keywords,
+                    'exclude_forwards': exclude_forwards_check.isChecked(),
+                    'exclude_replies': exclude_replies_check.isChecked(),
+                    'exclude_media': exclude_media_check.isChecked(),
+                    'exclude_links': exclude_links_check.isChecked(),
+                    'start_id': channel_pair.get('start_id', 0),
+                    'end_id': channel_pair.get('end_id', 0)
+                }
+                
+                # 更新列表项和数据
+                self._update_channel_pair(row, updated_pair)
+                
+            except ValueError as e:
+                QMessageBox.warning(self, "输入错误", str(e))
+    
+    def _update_channel_pair(self, row, updated_pair):
+        """更新频道对
+        
+        Args:
+            row: 行索引
+            updated_pair: 更新后的频道对数据
+        """
+        try:
+            # 获取要更新的列表项
+            item = self.pairs_list.item(row)
+            if not item:
+                logger.error(f"无法找到行索引为 {row} 的列表项")
+                return
+            
+            # 构建显示文本
+            source_channel = updated_pair['source_channel']
+            target_channels = updated_pair['target_channels']
+            target_channels_str = ', '.join(target_channels)
+            
+            # 格式化文本替换规则显示
+            text_filter_str = self._format_text_filter_display(updated_pair.get('text_filter', []))
+            
+            # 格式化媒体类型显示
+            media_types_str = self._format_media_types_display(updated_pair.get('media_types', []))
+            
+            # 格式化过滤选项显示
+            filter_options_str = self._format_filter_options_display(
+                updated_pair.get('keywords', []),
+                updated_pair.get('exclude_forwards', False),
+                updated_pair.get('exclude_replies', False),
+                updated_pair.get('exclude_media', False),
+                updated_pair.get('exclude_links', False)
+            )
+            
+            # 构建完整显示文本
+            display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
+            if updated_pair.get('remove_captions', False):
+                display_text += " (移除媒体说明)"
+            
+            # 更新列表项
+            item.setText(display_text)
+            item.setData(Qt.UserRole, updated_pair)
+            
+            # 记录日志
+            logger.debug(f"频道对已更新: {display_text}")
+            
+            # 显示成功消息
+            QMessageBox.information(self, "更新成功", "频道对已成功更新，请点击保存配置")
+            
+        except Exception as e:
+            logger.error(f"更新频道对时出错: {e}")
+            QMessageBox.warning(self, "更新失败", f"更新频道对时出错: {e}") 
