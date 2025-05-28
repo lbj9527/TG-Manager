@@ -146,28 +146,30 @@ class ListenView(QWidget):
         config_layout.addLayout(form_layout)
         
         # 添加一些间距
-        config_layout.addSpacing(8)
+        config_layout.addSpacing(6)
         
-        # 监听参数 - 只保留移除媒体说明
+        # 监听参数 - 将标签和移除媒体说明放在同一行
+        monitor_options_layout = QHBoxLayout()
+        monitor_options_layout.setSpacing(10)  # 设置合适的间距
+        
+        # 监听参数标签
         monitor_options_label = QLabel("监听参数:")
         monitor_options_label.setStyleSheet("font-weight: bold;")
-        config_layout.addWidget(monitor_options_label)
+        monitor_options_layout.addWidget(monitor_options_label)
         
-        # 使用表单布局
-        monitor_options_layout = QFormLayout()
-        monitor_options_layout.setSpacing(8)  # 增加表单项间距
-        monitor_options_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
-        
-        # 移除媒体说明复选框 - 单独一行
+        # 移除媒体说明复选框
         self.remove_captions_check = QCheckBox("移除媒体说明")
         self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
-        monitor_options_layout.addRow("", self.remove_captions_check)  # 空标签，让复选框单独一行
+        monitor_options_layout.addWidget(self.remove_captions_check)
+        
+        # 添加弹性空间，让控件靠左对齐
+        monitor_options_layout.addStretch(1)
         
         # 添加到配置布局
         config_layout.addLayout(monitor_options_layout)
         
         # 添加一些间距
-        config_layout.addSpacing(8)
+        config_layout.addSpacing(6)
         
         # 过滤选项
         filter_options_label = QLabel("过滤选项:")
@@ -235,6 +237,29 @@ class ListenView(QWidget):
         # 添加一些间距
         config_layout.addSpacing(8)
         
+        # 频道对操作按钮 - 移动到这里，放在已配置监听频道对标签上方
+        channel_action_layout = QHBoxLayout()
+        channel_action_layout.setSpacing(8)  # 增加按钮间距
+        
+        # 添加频道对按钮
+        self.add_channel_pair_button = QPushButton("添加频道对")
+        self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.add_channel_pair_button)
+        
+        # 删除频道对按钮
+        self.remove_channel_pair_button = QPushButton("删除所选")
+        self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        channel_action_layout.addWidget(self.remove_channel_pair_button)
+        
+        # 添加弹性空间，让按钮靠左对齐
+        channel_action_layout.addStretch(1)
+        
+        # 添加按钮布局到配置布局
+        config_layout.addLayout(channel_action_layout)
+        
+        # 添加一些间距
+        config_layout.addSpacing(8)
+        
         # 创建频道列表部分 - 使用滚动区域显示
         channel_widget = QWidget()
         channel_widget_layout = QVBoxLayout(channel_widget)
@@ -268,26 +293,6 @@ class ListenView(QWidget):
         # 设置滚动区域的内容
         scroll_area.setWidget(scroll_content)
         channel_widget_layout.addWidget(scroll_area)
-        
-        # 频道对操作按钮 - 放在滚动区域下方
-        channel_action_layout = QHBoxLayout()
-        channel_action_layout.setSpacing(8)  # 增加按钮间距
-        
-        # 添加频道对按钮
-        self.add_channel_pair_button = QPushButton("添加频道对")
-        self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
-        channel_action_layout.addWidget(self.add_channel_pair_button)
-        
-        # 删除频道对按钮
-        self.remove_channel_pair_button = QPushButton("删除所选")
-        self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
-        channel_action_layout.addWidget(self.remove_channel_pair_button)
-        
-        # 添加弹性空间，让按钮靠左对齐
-        channel_action_layout.addStretch(1)
-        
-        # 将按钮布局添加到频道部件
-        channel_widget_layout.addLayout(channel_action_layout)
         
         # 直接添加到配置布局
         config_layout.addWidget(channel_widget, 1)  # 添加伸展系数
