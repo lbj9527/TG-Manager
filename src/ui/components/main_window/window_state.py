@@ -5,6 +5,7 @@ TG-Manager 主窗口状态管理模块
 
 from loguru import logger
 from PySide6.QtCore import QByteArray, QTimer
+import time
 
 class WindowStateMixin:
     """窗口状态管理混入类
@@ -69,26 +70,76 @@ class WindowStateMixin:
             state_data: 窗口状态数据
         """
         try:
-            ui_config = self.config.get('UI', {})
-            
-            # 更新窗口状态数据
-            if 'geometry' in state_data:
-                ui_config['window_geometry'] = state_data['geometry'].toBase64().data().decode()
-                logger.debug("保存了窗口几何形状")
-            
-            if 'state' in state_data:
-                ui_config['window_state'] = state_data['state'].toBase64().data().decode()
-                logger.debug("保存了窗口状态，包括工具栏位置")
-            
-            # 更新配置
-            self.config['UI'] = ui_config
-            
-            # 发送配置保存信号，传递完整配置字典
-            self.config_saved.emit(self.config)
-            
-            logger.debug("窗口状态已成功保存到配置")
+            # 直接调用app的配置管理器来保存窗口状态，避免信号循环
+            if hasattr(self, 'app') and hasattr(self.app, 'config_manager'):
+                config_manager = self.app.config_manager
+                
+                # 检查是否在短时间内多次触发保存
+                current_time = time.time()
+                if hasattr(config_manager, '_last_window_state_save_time'):
+                    # 如果上次保存时间距现在不足500毫秒，则跳过本次保存
+                    if current_time - config_manager._last_window_state_save_time < 0.5:
+                        logger.debug("窗口状态保存请求过于频繁，跳过本次保存")
+                        return
+                
+                # 更新上次保存时间
+                config_manager._last_window_state_save_time = current_time
+                
+                try:
+                    # 更新内存中的窗口状态配置
+                    ui_config = self.config.get('UI', {})
+                    
+                    # 更新窗口状态数据
+                    if 'geometry' in state_data:
+                        ui_config['window_geometry'] = state_data['geometry'].toBase64().data().decode()
+                        logger.debug("保存了窗口几何形状")
+                    
+                    if 'state' in state_data:
+                        ui_config['window_state'] = state_data['state'].toBase64().data().decode()
+                        logger.debug("保存了窗口状态，包括工具栏位置")
+                    
+                    # 更新配置
+                    self.config['UI'] = ui_config
+                    config_manager.config['UI'] = ui_config
+                    
+                    # 仅保存窗口布局相关的配置项，不修改其他配置
+                    try:
+                        import json
+                        # 从文件读取当前配置
+                        with open(config_manager.ui_config_manager.config_path, 'r', encoding='utf-8') as f:
+                            file_config = json.load(f)
+                        
+                        # 确保UI部分存在
+                        if 'UI' not in file_config:
+                            file_config['UI'] = {}
+                        
+                        # 只更新窗口几何信息和状态，不影响其他配置
+                        file_config['UI']['window_geometry'] = ui_config['window_geometry']
+                        file_config['UI']['window_state'] = ui_config['window_state']
+                        
+                        # 保存回文件
+                        with open(config_manager.ui_config_manager.config_path, 'w', encoding='utf-8') as f:
+                            json.dump(file_config, f, ensure_ascii=False, indent=2)
+                        
+                        logger.debug("窗口布局状态已单独保存，未影响其他配置")
+                    except PermissionError:
+                        logger.warning("保存窗口布局状态时遇到权限问题，将在下次完整保存配置时一并处理")
+                    except Exception as e:
+                        logger.error(f"保存窗口布局状态失败: {e}")
+                        import traceback
+                        logger.debug(f"保存窗口布局状态错误详情:\n{traceback.format_exc()}")
+                        
+                except Exception as e:
+                    logger.error(f"获取窗口状态失败: {e}")
+                    import traceback
+                    logger.debug(f"获取窗口状态错误详情:\n{traceback.format_exc()}")
+            else:
+                logger.warning("无法访问配置管理器，窗口状态保存失败")
+                
         except Exception as e:
             logger.error(f"保存窗口状态失败: {e}")
+            import traceback
+            logger.debug(f"保存窗口状态错误详情:\n{traceback.format_exc()}")
     
     def _save_current_state(self):
         """保存当前窗口状态（只保存窗口几何信息和工具栏位置等布局状态）

@@ -73,22 +73,50 @@ class ConfigManager(QObject):
                 # 使用默认转发设置
                 self.config["FORWARD"]["forward_channel_pairs"] = []
             
-            # 处理监听配置中的嵌套对象
+            # 处理监听配置
             try:
                 monitor_pairs = []
-                for pair in ui_config.MONITOR.monitor_channel_pairs:
-                    pair_dict = pair.dict()
-                    # 处理文本过滤器
-                    text_filters = []
-                    for filter_item in pair.text_filter:
-                        text_filters.append(filter_item.dict())
-                    pair_dict["text_filter"] = text_filters
-                    monitor_pairs.append(pair_dict)
+                for pair in self.config["MONITOR"]["monitor_channel_pairs"]:
+                    # 检查pair是否已经是字典格式
+                    if isinstance(pair, dict):
+                        pair_dict = pair.copy()
+                        # 处理文本过滤器
+                        text_filters = []
+                        text_filter = pair_dict.get("text_filter", [])
+                        for filter_item in text_filter:
+                            if isinstance(filter_item, dict):
+                                text_filters.append(filter_item)
+                            elif hasattr(filter_item, 'dict'):
+                                text_filters.append(filter_item.dict())
+                            else:
+                                # 如果是其他格式，尝试转换
+                                text_filters.append({
+                                    "original_text": getattr(filter_item, 'original_text', ''),
+                                    "target_text": getattr(filter_item, 'target_text', '')
+                                })
+                        pair_dict["text_filter"] = text_filters
+                        monitor_pairs.append(pair_dict)
+                    elif hasattr(pair, 'dict'):
+                        # 如果是模型对象，使用dict()方法
+                        pair_dict = pair.dict()
+                        # 处理文本过滤器
+                        text_filters = []
+                        for filter_item in pair.text_filter:
+                            text_filters.append(filter_item.dict())
+                        pair_dict["text_filter"] = text_filters
+                        monitor_pairs.append(pair_dict)
+                    else:
+                        logger.warning(f"未知的监听频道对格式: {type(pair)}")
+                
                 self.config["MONITOR"]["monitor_channel_pairs"] = monitor_pairs
             except Exception as e:
                 logger.error(f"处理监听配置时出错: {e}")
-                # 使用默认监听设置
-                self.config["MONITOR"]["monitor_channel_pairs"] = []
+                # 保持原有的监听配置，不要清空
+                if "MONITOR" not in self.config:
+                    self.config["MONITOR"] = {}
+                if "monitor_channel_pairs" not in self.config["MONITOR"]:
+                    self.config["MONITOR"]["monitor_channel_pairs"] = []
+                logger.warning("保持原有监听配置不变")
             
             logger.info("已加载配置文件")
             

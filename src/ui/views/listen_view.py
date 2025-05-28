@@ -86,12 +86,12 @@ class ListenView(QWidget):
         # 连接信号
         self._connect_signals()
         
-        # 加载配置
-        if self.config:
-            self.load_config(self.config)
-        
         # 监听配置列表
         self.listen_configs = []
+        
+        # 界面组件创建完成后再加载配置
+        if self.config:
+            self.load_config(self.config)
         
         logger.info("监听界面初始化完成")
     
@@ -464,6 +464,112 @@ class ListenView(QWidget):
         else:
             return ""
     
+    def _format_media_types_display(self, media_types):
+        """格式化媒体类型的显示
+        
+        Args:
+            media_types: 媒体类型列表
+            
+        Returns:
+            str: 格式化后的媒体类型字符串
+        """
+        if not media_types:
+            return ""
+        
+        # 媒体类型中文名映射
+        media_type_names = {
+            MediaType.PHOTO: "照片",
+            MediaType.VIDEO: "视频", 
+            MediaType.DOCUMENT: "文件",
+            MediaType.AUDIO: "音频",
+            MediaType.ANIMATION: "动画",
+            MediaType.STICKER: "贴纸",
+            MediaType.VOICE: "语音",
+            MediaType.VIDEO_NOTE: "视频笔记"
+        }
+        
+        # 对于字符串类型的媒体类型（从配置文件加载的）
+        string_media_type_names = {
+            "photo": "照片",
+            "video": "视频", 
+            "document": "文件",
+            "audio": "音频",
+            "animation": "动画",
+            "sticker": "贴纸",
+            "voice": "语音",
+            "video_note": "视频笔记"
+        }
+        
+        # 转换媒体类型为中文名称
+        type_names = []
+        for mt in media_types:
+            if isinstance(mt, MediaType):
+                name = media_type_names.get(mt, str(mt))
+            elif isinstance(mt, str):
+                name = string_media_type_names.get(mt, mt)
+            else:
+                name = str(mt)
+            type_names.append(name)
+        
+        # 如果包含所有8种类型，显示"全部"
+        all_types = {MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, 
+                    MediaType.ANIMATION, MediaType.STICKER, MediaType.VOICE, MediaType.VIDEO_NOTE}
+        
+        # 检查是否包含所有类型（考虑字符串和枚举两种格式）
+        current_types = set()
+        for mt in media_types:
+            if isinstance(mt, MediaType):
+                current_types.add(mt)
+            elif isinstance(mt, str):
+                try:
+                    current_types.add(MediaType(mt))
+                except ValueError:
+                    pass
+        
+        if current_types == all_types:
+            return " - 媒体类型：全部"
+        else:
+            return f" - 媒体类型：{', '.join(type_names)}"
+    
+    def _format_filter_options_display(self, keywords, exclude_forwards, exclude_replies, exclude_media, exclude_links):
+        """格式化过滤选项的显示
+        
+        Args:
+            keywords: 关键词列表
+            exclude_forwards: 是否排除转发消息
+            exclude_replies: 是否排除回复消息
+            exclude_media: 是否排除媒体消息
+            exclude_links: 是否排除包含链接的消息
+            
+        Returns:
+            str: 格式化后的过滤选项字符串
+        """
+        filter_options = []
+        
+        # 关键词过滤
+        if keywords:
+            keywords_str = ", ".join(keywords)
+            filter_options.append(f"关键词({keywords_str})")
+        
+        # 排除选项
+        exclude_options = []
+        if exclude_forwards:
+            exclude_options.append("转发")
+        if exclude_replies:
+            exclude_options.append("回复")
+        if exclude_media:
+            exclude_options.append("媒体")
+        if exclude_links:
+            exclude_options.append("链接")
+        
+        if exclude_options:
+            filter_options.append(f"排除({', '.join(exclude_options)})")
+        
+        if filter_options:
+            return f" - 过滤：{', '.join(filter_options)}"
+        else:
+            return ""
+    
     def _add_channel_pair(self):
         """添加频道对到监听列表"""
         source_channel = self.source_channel_input.text().strip()
@@ -540,21 +646,75 @@ class ListenView(QWidget):
                     "target_text": target
                 })
         
-        # 存储完整数据
+        # 获取选中的媒体类型
+        selected_media_types = []
+        for media_type, checkbox in self.media_types_checkboxes.items():
+            if checkbox.isChecked():
+                if media_type == "photo":
+                    selected_media_types.append(MediaType.PHOTO)
+                elif media_type == "video":
+                    selected_media_types.append(MediaType.VIDEO)
+                elif media_type == "document":
+                    selected_media_types.append(MediaType.DOCUMENT)
+                elif media_type == "audio":
+                    selected_media_types.append(MediaType.AUDIO)
+                elif media_type == "animation":
+                    selected_media_types.append(MediaType.ANIMATION)
+                elif media_type == "sticker":
+                    selected_media_types.append(MediaType.STICKER)
+                elif media_type == "voice":
+                    selected_media_types.append(MediaType.VOICE)
+                elif media_type == "video_note":
+                    selected_media_types.append(MediaType.VIDEO_NOTE)
+        
+        # 如果没有选择任何媒体类型，使用默认的所有类型
+        if not selected_media_types:
+            selected_media_types = [
+                MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                MediaType.VOICE, MediaType.VIDEO_NOTE
+            ]
+        
+        # 获取过滤选项
+        keywords = [kw.strip() for kw in self.keyword_input.text().split(',') if kw.strip()]
+        
+        # 存储完整数据，包括媒体类型
         pair_data = {
             "source_channel": source_channel,
             "target_channels": target_channels,
             "remove_captions": self.remove_captions_check.isChecked(),
-            "text_filter": text_filter
+            "text_filter": text_filter,
+            "media_types": selected_media_types,
+            "keywords": keywords,
+            "exclude_forwards": self.exclude_forwards_check.isChecked(),
+            "exclude_replies": self.exclude_replies_check.isChecked(),
+            "exclude_media": self.exclude_media_check.isChecked(),
+            "exclude_links": self.exclude_links_check.isChecked()
         }
         
         # 添加到列表，采用与下载界面类似的样式
         target_channels_str = ", ".join(target_channels)
         text_filter_str = self._format_text_filter_display(text_filter)
+        media_types_str = self._format_media_types_display(selected_media_types)
         
-        display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
+        # 添加过滤选项显示
+        filter_options_str = self._format_filter_options_display(
+            keywords,
+            self.exclude_forwards_check.isChecked(),
+            self.exclude_replies_check.isChecked(),
+            self.exclude_media_check.isChecked(),
+            self.exclude_links_check.isChecked()
+        )
+        
+        # 添加调试信息
+        logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={self.exclude_forwards_check.isChecked()}, replies={self.exclude_replies_check.isChecked()}, media={self.exclude_media_check.isChecked()}, links={self.exclude_links_check.isChecked()}")
+        logger.debug(f"频道对 {source_channel} - 过滤选项显示字符串: '{filter_options_str}'")
+        
+        display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
         if self.remove_captions_check.isChecked():
             display_text += " (移除媒体说明)"
+        
+        logger.debug(f"频道对 {source_channel} - 完整显示文本: '{display_text}'")
         
         item = QListWidgetItem(display_text)
         item.setData(Qt.UserRole, pair_data)
@@ -580,6 +740,17 @@ class ListenView(QWidget):
         self.original_text_input.clear()
         self.target_text_input.clear()
         self.remove_captions_check.setChecked(False)
+        
+        # 将媒体类型复选框设置为全选状态作为默认
+        for checkbox in self.media_types_checkboxes.values():
+            checkbox.setChecked(True)
+        
+        # 将过滤选项UI重置为默认状态（用于添加新频道对时的默认设置）
+        self.keyword_input.clear()
+        self.exclude_forwards_check.setChecked(False)
+        self.exclude_replies_check.setChecked(False)
+        self.exclude_media_check.setChecked(False)
+        self.exclude_links_check.setChecked(False)
     
     def _remove_channel_pairs(self):
         """删除选中的监听频道对"""
@@ -726,33 +897,82 @@ class ListenView(QWidget):
             data = item.data(Qt.UserRole)
             text_filter = data.get("text_filter", [])
             
+            # 添加详细的原始数据调试信息
+            logger.debug(f"频道对 {data['source_channel']} - 从配置读取的原始数据:")
+            logger.debug(f"  keywords: {data['keywords']} (类型: {type(data['keywords'])})")
+            logger.debug(f"  exclude_forwards: {data['exclude_forwards']} (类型: {type(data['exclude_forwards'])})")
+            logger.debug(f"  exclude_replies: {data['exclude_replies']} (类型: {type(data['exclude_replies'])})")
+            logger.debug(f"  exclude_media: {data['exclude_media']} (类型: {type(data['exclude_media'])})")
+            logger.debug(f"  exclude_links: {data['exclude_links']} (类型: {type(data['exclude_links'])})")
+            logger.debug(f"  完整配置项: {data}")
+            
             # 确保text_filter至少有一项，即使是空的
             if not text_filter:
                 text_filter = [{"original_text": "", "target_text": ""}]
                 logger.debug(f"获取监听配置时，频道对 {data['source_channel']} 的text_filter为空，添加默认空项")
             
+            # 获取该频道对的媒体类型
+            media_types = data.get("media_types", [])
+            # 如果没有媒体类型，使用默认的所有类型
+            if not media_types:
+                media_types = [
+                    MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                    MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                    MediaType.VOICE, MediaType.VIDEO_NOTE
+                ]
+            else:
+                # 确保媒体类型是MediaType枚举而不是字符串
+                converted_media_types = []
+                for mt in media_types:
+                    if isinstance(mt, str):
+                        try:
+                            converted_media_types.append(MediaType(mt))
+                        except ValueError:
+                            logger.warning(f"无效的媒体类型字符串: {mt}")
+                    elif isinstance(mt, MediaType):
+                        converted_media_types.append(mt)
+                    else:
+                        logger.warning(f"未知的媒体类型格式: {mt} (类型: {type(mt)})")
+                
+                # 如果转换后没有有效的媒体类型，使用默认值
+                if converted_media_types:
+                    media_types = converted_media_types
+                else:
+                    logger.warning("转换后没有有效的媒体类型，使用默认值")
+                    media_types = [
+                        MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                        MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                        MediaType.VOICE, MediaType.VIDEO_NOTE
+                    ]
+            
+            # 获取该频道对的过滤选项
+            keywords = data.get("keywords", [])
+            exclude_forwards = data.get("exclude_forwards", False)
+            exclude_replies = data.get("exclude_replies", False)
+            exclude_media = data.get("exclude_media", False)
+            exclude_links = data.get("exclude_links", False)
+            
             monitor_channel_pairs.append({
                 "source_channel": data["source_channel"],
                 "target_channels": data["target_channels"],
                 "remove_captions": data["remove_captions"],
-                "text_filter": text_filter
+                "text_filter": text_filter,
+                "media_types": media_types,
+                "keywords": keywords,
+                "exclude_forwards": exclude_forwards,
+                "exclude_replies": exclude_replies,
+                "exclude_media": exclude_media,
+                "exclude_links": exclude_links
             })
-        
-        # 获取媒体类型
-        media_types = []
-        for media_type, checkbox in self.media_types_checkboxes.items():
-            if checkbox.isChecked():
-                media_types.append(media_type)
         
         # 获取监听截止日期
         duration = None
         if self.duration_check.isChecked():
             duration = self.duration_date.date().toString("yyyy-MM-dd")
         
-        # 收集监听配置 - 不包含forward_delay字段
+        # 收集监听配置 - 移除全局media_types字段
         monitor_config = {
             'monitor_channel_pairs': monitor_channel_pairs,
-            'media_types': media_types,
             'duration': duration
         }
         
@@ -768,16 +988,6 @@ class ListenView(QWidget):
         # 获取监听配置
         monitor_config = self._get_monitor_config()
         
-        # 获取过滤选项
-        keywords = [kw.strip() for kw in self.keyword_input.text().split(',') if kw.strip()]
-        filters = {
-            'keywords': keywords,
-            'exclude_forwards': self.exclude_forwards_check.isChecked(),
-            'exclude_replies': self.exclude_replies_check.isChecked(),
-            'exclude_media': self.exclude_media_check.isChecked(),
-            'exclude_links': self.exclude_links_check.isChecked()
-        }
-        
         try:
             # 格式化数据以匹配UIMonitorConfig期望的结构
             monitor_channel_pairs = []
@@ -788,18 +998,39 @@ class ListenView(QWidget):
                     text_filter = [{"original_text": "", "target_text": ""}]
                     logger.debug(f"保存配置时，频道对 {pair['source_channel']} 的text_filter为空，添加默认空项")
                 
+                # 获取该频道对的媒体类型
+                media_types = pair.get('media_types', [])
+                if not media_types:
+                    media_types = [
+                        MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                        MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                        MediaType.VOICE, MediaType.VIDEO_NOTE
+                    ]
+                
+                # 获取该频道对的过滤选项
+                keywords = pair.get('keywords', [])
+                exclude_forwards = pair.get('exclude_forwards', False)
+                exclude_replies = pair.get('exclude_replies', False)
+                exclude_media = pair.get('exclude_media', False)
+                exclude_links = pair.get('exclude_links', False)
+                
                 # 创建UIMonitorChannelPair对象
                 monitor_channel_pairs.append(UIMonitorChannelPair(
                     source_channel=pair['source_channel'],
                     target_channels=pair['target_channels'],
                     remove_captions=pair['remove_captions'],
-                    text_filter=text_filter
+                    text_filter=text_filter,
+                    media_types=media_types,
+                    keywords=keywords,
+                    exclude_forwards=exclude_forwards,
+                    exclude_replies=exclude_replies,
+                    exclude_media=exclude_media,
+                    exclude_links=exclude_links
                 ))
             
             # 创建UIMonitorConfig对象
             ui_monitor_config = UIMonitorConfig(
                 monitor_channel_pairs=monitor_channel_pairs,
-                media_types=monitor_config['media_types'],
                 duration=monitor_config['duration']
             )
             
@@ -811,11 +1042,9 @@ class ListenView(QWidget):
             # 使用模型的dict()方法将对象转换为字典
             updated_config['MONITOR'] = ui_monitor_config.dict()
             
-            # 添加过滤和通知选项到配置
-            if 'LISTEN' not in updated_config:
-                updated_config['LISTEN'] = {}
-            
-            updated_config['LISTEN']['filters'] = filters
+            # 移除原有的全局LISTEN过滤配置（如果存在）
+            if 'LISTEN' in updated_config:
+                del updated_config['LISTEN']
             
             # 发送配置保存信号
             logger.debug(f"向主窗口发送配置保存信号，更新监听配置")
@@ -907,6 +1136,9 @@ class ListenView(QWidget):
         Args:
             config: 配置字典
         """
+        logger.info(f"监听界面开始加载配置，配置数据: {type(config)}")
+        logger.debug(f"配置内容: {config}")
+        
         # 清空现有项目
         self.pairs_list.clear()
         
@@ -931,11 +1163,60 @@ class ListenView(QWidget):
             target_channels = pair.get('target_channels', [])
             remove_captions = pair.get('remove_captions', False)
             text_filter = pair.get('text_filter', [])
+            media_types = pair.get('media_types', [])
+            
+            # 加载过滤选项
+            keywords = pair.get('keywords', [])
+            exclude_forwards = pair.get('exclude_forwards', False)
+            exclude_replies = pair.get('exclude_replies', False)
+            exclude_media = pair.get('exclude_media', False)
+            exclude_links = pair.get('exclude_links', False)
+            
+            # 添加详细的原始数据调试信息
+            logger.debug(f"频道对 {source_channel} - 从配置读取的原始数据:")
+            logger.debug(f"  keywords: {keywords} (类型: {type(keywords)})")
+            logger.debug(f"  exclude_forwards: {exclude_forwards} (类型: {type(exclude_forwards)})")
+            logger.debug(f"  exclude_replies: {exclude_replies} (类型: {type(exclude_replies)})")
+            logger.debug(f"  exclude_media: {exclude_media} (类型: {type(exclude_media)})")
+            logger.debug(f"  exclude_links: {exclude_links} (类型: {type(exclude_links)})")
+            logger.debug(f"  完整配置项: {pair}")
             
             # 确保text_filter至少有一项，即使是空的
             if not text_filter:
                 text_filter = [{"original_text": "", "target_text": ""}]
                 logger.debug(f"频道对 {source_channel} 的text_filter为空，添加默认空项")
+            
+            # 如果没有媒体类型，使用默认的所有类型
+            if not media_types:
+                media_types = [
+                    MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                    MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                    MediaType.VOICE, MediaType.VIDEO_NOTE
+                ]
+            else:
+                # 确保媒体类型是MediaType枚举而不是字符串
+                converted_media_types = []
+                for mt in media_types:
+                    if isinstance(mt, str):
+                        try:
+                            converted_media_types.append(MediaType(mt))
+                        except ValueError:
+                            logger.warning(f"无效的媒体类型字符串: {mt}")
+                    elif isinstance(mt, MediaType):
+                        converted_media_types.append(mt)
+                    else:
+                        logger.warning(f"未知的媒体类型格式: {mt} (类型: {type(mt)})")
+                
+                # 如果转换后没有有效的媒体类型，使用默认值
+                if converted_media_types:
+                    media_types = converted_media_types
+                else:
+                    logger.warning("转换后没有有效的媒体类型，使用默认值")
+                    media_types = [
+                        MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                        MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                        MediaType.VOICE, MediaType.VIDEO_NOTE
+                    ]
             
             if not source_channel or not target_channels:
                 continue
@@ -943,18 +1224,40 @@ class ListenView(QWidget):
             # 添加到列表，采用与下载界面类似的样式
             target_channels_str = ", ".join(target_channels)
             text_filter_str = self._format_text_filter_display(text_filter)
+            media_types_str = self._format_media_types_display(media_types)
             
-            display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}"
+            # 添加过滤选项显示
+            filter_options_str = self._format_filter_options_display(
+                keywords,
+                exclude_forwards,
+                exclude_replies,
+                exclude_media,
+                exclude_links
+            )
+            
+            # 添加调试信息
+            logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={exclude_forwards}, replies={exclude_replies}, media={exclude_media}, links={exclude_links}")
+            logger.debug(f"频道对 {source_channel} - 过滤选项显示字符串: '{filter_options_str}'")
+            
+            display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
             if remove_captions:
                 display_text += " (移除媒体说明)"
             
+            logger.debug(f"频道对 {source_channel} - 完整显示文本: '{display_text}'")
+            
             item = QListWidgetItem(display_text)
-            # 存储完整数据
+            # 存储完整数据，包括媒体类型
             pair_data = {
                 "source_channel": source_channel,
                 "target_channels": target_channels,
                 "remove_captions": remove_captions,
-                "text_filter": text_filter
+                "text_filter": text_filter,
+                "media_types": media_types,
+                "keywords": keywords,
+                "exclude_forwards": exclude_forwards,
+                "exclude_replies": exclude_replies,
+                "exclude_media": exclude_media,
+                "exclude_links": exclude_links
             }
             item.setData(Qt.UserRole, pair_data)
             self.pairs_list.addItem(item)
@@ -973,17 +1276,17 @@ class ListenView(QWidget):
         # 更新频道数量标签
         self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
         
-        # 加载媒体类型
-        media_types = monitor_config.get('media_types', [])
-        
-        # 先取消选中所有复选框
+        # 将媒体类型复选框设置为全选状态作为默认
         for checkbox in self.media_types_checkboxes.values():
-            checkbox.setChecked(False)
+            checkbox.setChecked(True)
         
-        # 选中配置中指定的媒体类型
-        for media_type in media_types:
-            if media_type in self.media_types_checkboxes:
-                self.media_types_checkboxes[media_type].setChecked(True)
+        # 注释掉：不在加载配置时重置过滤选项UI，保持为空白状态供用户添加新频道对时使用
+        # 将过滤选项UI重置为默认状态（用于添加新频道对时的默认设置）
+        # self.keyword_input.clear()
+        # self.exclude_forwards_check.setChecked(False)
+        # self.exclude_replies_check.setChecked(False)
+        # self.exclude_media_check.setChecked(False)
+        # self.exclude_links_check.setChecked(False)
         
         # 加载监听截止日期
         duration = monitor_config.get('duration')
@@ -997,26 +1300,6 @@ class ListenView(QWidget):
                 self.duration_check.setChecked(False)
         else:
             self.duration_check.setChecked(False)
-        
-        # 加载过滤选项
-        # 注意：现在过滤选项存储在配置的filters字段中，而不是直接在MONITOR中
-        # 由于结构变化，我们需要适应旧配置格式和新格式
-        filters = {}
-        
-        # 首先检查是否有新格式的filters字段
-        if 'LISTEN' in config and 'filters' in config['LISTEN']:
-            filters = config['LISTEN'].get('filters', {})
-        
-        if filters:
-            # 关键字
-            keywords = filters.get('keywords', [])
-            self.keyword_input.setText(", ".join(keywords))
-            
-            # 其他过滤选项
-            self.exclude_forwards_check.setChecked(filters.get('exclude_forwards', False))
-            self.exclude_replies_check.setChecked(filters.get('exclude_replies', False))
-            self.exclude_media_check.setChecked(filters.get('exclude_media', False))
-            self.exclude_links_check.setChecked(filters.get('exclude_links', False))
     
     def set_monitor(self, monitor):
         """设置监听器实例

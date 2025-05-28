@@ -195,18 +195,96 @@ class UIChannelPair(BaseModel):
         title = "频道配对"
 
 
-class UIMonitorChannelPair(UIChannelPair):
-    """监听频道对配置模型"""
-    remove_captions: bool = Field(False, description="是否移除媒体说明文字")
-    text_filter: List[UITextFilterItem] = Field(
-        default_factory=lambda: [
-            UITextFilterItem(original_text="示例文本", target_text="替换后的文本")
-        ], 
-        description="文本替换规则"
+class UIMonitorChannelPair(BaseModel):
+    """监听频道对模型"""
+    source_channel: str = Field(..., description="源频道链接或ID")
+    target_channels: List[str] = Field(..., description="目标频道列表")
+    remove_captions: bool = Field(False, description="是否移除媒体说明")
+    text_filter: List[Dict[str, str]] = Field(
+        default_factory=lambda: [{"original_text": "", "target_text": ""}],
+        description="文本替换规则列表"
     )
+    media_types: List[MediaType] = Field(
+        default_factory=lambda: [
+            MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+            MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+            MediaType.VOICE, MediaType.VIDEO_NOTE
+        ],
+        description="该频道对要监听的媒体类型"
+    )
+    # 过滤选项
+    keywords: List[str] = Field(default_factory=list, description="关键词列表(用于关键词过滤)")
+    exclude_forwards: bool = Field(False, description="是否排除转发消息")
+    exclude_replies: bool = Field(False, description="是否排除回复消息")
+    exclude_media: bool = Field(False, description="是否排除媒体消息")
+    exclude_links: bool = Field(False, description="是否排除包含链接的消息")
+
+    @validator('source_channel')
+    def validate_source_channel(cls, v):
+        return UIChannelPair.validate_channel_id(v, "源频道")
+
+    @validator('target_channels')
+    def validate_target_channels(cls, v):
+        if not v:
+            raise ValueError("至少需要一个目标频道")
+        
+        validated_channels = []
+        for i, channel in enumerate(v):
+            if not channel or not channel.strip():
+                continue  # 跳过空的频道
+            validated_channel = UIChannelPair.validate_channel_id(channel, f"第{i+1}个目标频道")
+            validated_channels.append(validated_channel)
+        
+        if not validated_channels:
+            raise ValueError("至少需要一个有效的目标频道")
+        
+        return validated_channels
+
+    @validator('text_filter')
+    def validate_text_filter(cls, v):
+        if not v:
+            return [{"original_text": "", "target_text": ""}]
+        
+        # 确保每个规则都有必要的字段
+        validated_rules = []
+        for rule in v:
+            if isinstance(rule, dict):
+                validated_rule = {
+                    "original_text": rule.get("original_text", ""),
+                    "target_text": rule.get("target_text", "")
+                }
+                validated_rules.append(validated_rule)
+        
+        # 如果没有有效规则，添加一个空规则
+        if not validated_rules:
+            validated_rules = [{"original_text": "", "target_text": ""}]
+        
+        return validated_rules
+
+    @validator('media_types')
+    def validate_media_types(cls, v):
+        if not v:
+            # 如果为空，返回默认的所有媒体类型
+            return [
+                MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                MediaType.VOICE, MediaType.VIDEO_NOTE
+            ]
+        return v
+
+    @validator('keywords')
+    def validate_keywords(cls, v):
+        # 过滤空关键词并去除首尾空格
+        if not v:
+            return []
+        validated_keywords = []
+        for keyword in v:
+            if keyword and keyword.strip():
+                validated_keywords.append(keyword.strip())
+        return validated_keywords
 
     class Config:
-        title = "监听频道配对"
+        title = "监听频道对"
 
 
 class UIDownloadSettingItem(BaseModel):
@@ -385,14 +463,6 @@ class UIForwardConfig(BaseModel):
 class UIMonitorConfig(BaseModel):
     """监听配置模型"""
     monitor_channel_pairs: List[UIMonitorChannelPair] = Field(..., description="监听频道对列表")
-    media_types: List[MediaType] = Field(
-        default_factory=lambda: [
-            MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
-            MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
-            MediaType.VOICE, MediaType.VIDEO_NOTE
-        ],
-        description="要监听的媒体类型"
-    )
     duration: Optional[str] = Field(None, description="监听截止日期 (格式: YYYY-MM-DD)")
 
     @validator('monitor_channel_pairs')
@@ -514,22 +584,19 @@ def create_default_config() -> UIConfig:
         MONITOR=UIMonitorConfig(
             monitor_channel_pairs=[
                 UIMonitorChannelPair(
-                    source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
-                    target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
+                    source_channel="@example_source",
+                    target_channels=["@example_target1", "@example_target2"],
                     remove_captions=False,
                     text_filter=[
-                        UITextFilterItem(
-                            original_text="示例文本",
-                            target_text="替换后的文本"
-                        )
+                        {"original_text": "示例文本", "target_text": "替换后的文本"}
                     ],
-                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION]
+                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
+                    keywords=["示例关键词1", "示例关键词2"],
+                    exclude_forwards=False,
+                    exclude_replies=False,
+                    exclude_media=False,
+                    exclude_links=False
                 )
-            ],
-            media_types=[
-                MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
-                MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
-                MediaType.VOICE, MediaType.VIDEO_NOTE
             ],
             duration=(datetime.now().replace(year=datetime.now().year + 1)).strftime("%Y-%m-%d"),  # 设置为一年后
         ),

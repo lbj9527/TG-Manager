@@ -290,8 +290,14 @@ class UIConfigManager:
             
             # 修复 MONITOR 部分
             monitor_config = config_data.get("MONITOR", {})
+            if not monitor_config:
+                # 如果没有监听配置，创建默认的
+                monitor_config = {
+                    "monitor_channel_pairs": [],
+                    "duration": None
+                }
             
-            # 修复 duration
+            # 确保 duration 字段存在且有效
             if "duration" in monitor_config:
                 current_date = datetime.now()
                 future_date = current_date.replace(year=current_date.year + 1)
@@ -306,56 +312,34 @@ class UIConfigManager:
                     monitor_config["duration"] = future_date_str
                     logger.warning(f"无效的监听截止日期，已设置为未来日期: {future_date_str}")
             
-            # 转换媒体类型
-            if "media_types" in monitor_config:
-                media_types = []
-                for mt in monitor_config["media_types"]:
-                    try:
-                        if mt in [e.value for e in MediaType]:
-                            media_types.append(MediaType(mt))
-                    except Exception:
-                        pass
-                
-                # 如果没有有效的媒体类型，使用默认值
-                if not media_types:
-                    media_types = [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT]
-                    logger.warning("监听媒体类型列表为空，已使用默认值")
-                
-                monitor_config["media_types"] = media_types
-            
-            # 修复monitor_channel_pairs
+            # 修复监听频道对
             if "monitor_channel_pairs" in monitor_config:
                 valid_pairs = []
                 for pair in monitor_config["monitor_channel_pairs"]:
                     try:
+                        # 验证源频道
                         source_channel = pair.get("source_channel", "")
-                        target_channels = pair.get("target_channels", [])
-                        
-                        # 跳过无效的源频道
                         if not source_channel:
                             continue
                         
-                        # 修复源频道
                         try:
                             source_channel = UIChannelPair.validate_channel_id(source_channel, "源频道")
-                        except ValueError:
-                            continue  # 跳过无效项
+                        except ValueError as e:
+                            logger.warning(f"无效的源频道: {source_channel}, {e}")
+                            continue
                         
-                        # 修复目标频道
+                        # 验证目标频道
+                        target_channels = pair.get("target_channels", [])
+                        if not target_channels:
+                            continue
+                        
                         valid_targets = []
                         for target in target_channels:
                             try:
-                                valid_target = UIChannelPair.validate_channel_id(target, "目标频道")
-                                valid_targets.append(valid_target)
-                            except ValueError:
-                                # 如果遇到无效链接，尝试修复
-                                if target.startswith('https://t.me/+'):
-                                    # 私有链接，可能是格式不符合要求的链接
-                                    valid_target = '+' + target.split('/+')[1]
-                                    valid_targets.append(valid_target)
-                                    logger.warning(f"已尝试修复不规范的私有链接: {target} -> {valid_target}")
-                                else:
-                                    logger.warning(f"无效的目标频道: {target}，已跳过")
+                                target_channel = UIChannelPair.validate_channel_id(target, "目标频道")
+                                valid_targets.append(target_channel)
+                            except ValueError as e:
+                                logger.warning(f"无效的目标频道: {target}, {e}")
                         
                         # 如果没有有效的目标频道，跳过这一对
                         if not valid_targets:
@@ -370,65 +354,92 @@ class UIConfigManager:
                             "end_id": pair.get("end_id", 0)      # 保留原始的end_id
                         }
                         
-                        # 保留媒体类型设置如果存在
+                        # 处理文本替换规则
+                        if "text_filter" in pair:
+                            try:
+                                text_filter = []
+                                for item in pair["text_filter"]:
+                                    if isinstance(item, dict):
+                                        text_filter.append({
+                                            "original_text": item.get("original_text", ""),
+                                            "target_text": item.get("target_text", "")
+                                        })
+                                
+                                # 确保至少有一个空的文本替换规则
+                                if not text_filter:
+                                    text_filter = [{"original_text": "", "target_text": ""}]
+                                
+                                valid_pair["text_filter"] = text_filter
+                            except Exception as e:
+                                logger.warning(f"处理监听频道对文本替换规则时出错: {e}")
+                                valid_pair["text_filter"] = [{"original_text": "", "target_text": ""}]
+                        else:
+                            valid_pair["text_filter"] = [{"original_text": "", "target_text": ""}]
+                        
+                        # 处理媒体类型设置
                         if "media_types" in pair:
                             try:
                                 media_types = []
                                 for mt in pair["media_types"]:
                                     if mt in [e.value for e in MediaType]:
                                         media_types.append(MediaType(mt))
-                                if media_types:
-                                    valid_pair["media_types"] = media_types
+                                # 如果没有有效的媒体类型，使用默认值
+                                if not media_types:
+                                    media_types = [
+                                        MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                                        MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                                        MediaType.VOICE, MediaType.VIDEO_NOTE
+                                    ]
+                                valid_pair["media_types"] = media_types
                             except Exception as e:
                                 logger.warning(f"处理监听频道对媒体类型时出错: {e}")
-                        
-                        # 处理文本过滤器
-                        if "text_filter" in pair:
-                            valid_filters = []
-                            for filter_item in pair["text_filter"]:
-                                if isinstance(filter_item, dict) and "original_text" in filter_item:
-                                    valid_filters.append({
-                                        "original_text": filter_item["original_text"],
-                                        "target_text": filter_item.get("target_text", "")
-                                    })
-                            
-                            # 如果过滤器列表为空，添加一个默认示例
-                            if not valid_filters:
-                                valid_filters = [
-                                    {
-                                        "original_text": "示例文本",
-                                        "target_text": "替换后的文本"
-                                    }
+                                # 使用默认媒体类型
+                                valid_pair["media_types"] = [
+                                    MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                                    MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                                    MediaType.VOICE, MediaType.VIDEO_NOTE
                                 ]
-                                logger.warning("文本过滤器为空，添加默认示例")
-                            
-                            valid_pair["text_filter"] = valid_filters
                         else:
-                            # 如果没有text_filter字段，添加默认的
-                            valid_pair["text_filter"] = [
-                                {
-                                    "original_text": "示例文本",
-                                    "target_text": "替换后的文本"
-                                }
+                            # 如果配置中没有媒体类型，使用默认值
+                            valid_pair["media_types"] = [
+                                MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                                MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                                MediaType.VOICE, MediaType.VIDEO_NOTE
                             ]
+                        
+                        # 处理关键词设置
+                        keywords = pair.get("keywords", [])
+                        if isinstance(keywords, list):
+                            # 确保每个关键词都是字符串并过滤空值
+                            valid_keywords = []
+                            for keyword in keywords:
+                                if keyword and isinstance(keyword, str) and keyword.strip():
+                                    valid_keywords.append(keyword.strip())
+                            valid_pair["keywords"] = valid_keywords
+                        else:
+                            valid_pair["keywords"] = []
+                        
+                        # 处理排除项设置
+                        valid_pair["exclude_forwards"] = bool(pair.get("exclude_forwards", False))
+                        valid_pair["exclude_replies"] = bool(pair.get("exclude_replies", False))
+                        valid_pair["exclude_media"] = bool(pair.get("exclude_media", False))
+                        valid_pair["exclude_links"] = bool(pair.get("exclude_links", False))
                         
                         valid_pairs.append(valid_pair)
                     except Exception as e:
                         logger.warning(f"处理监听频道对时出错: {e}")
                 
-                # 如果没有有效的监听频道对，添加一个空的
+                # 如果没有有效的监听频道对，添加一个默认的
                 if not valid_pairs:
                     valid_pairs = [{
-                        "source_channel": "",
-                        "target_channels": [""],
+                        "source_channel": "@example_source",
+                        "target_channels": ["@example_target"],
                         "remove_captions": False,
-                        "start_id": 0,
-                        "end_id": 0,
-                        "text_filter": [
-                            {
-                                "original_text": "示例文本",
-                                "target_text": "替换后的文本"
-                            }
+                        "text_filter": [{"original_text": "", "target_text": ""}],
+                        "media_types": [
+                            MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
+                            MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
+                            MediaType.VOICE, MediaType.VIDEO_NOTE
                         ]
                     }]
                     logger.warning("监听频道对列表为空，已添加默认项")
@@ -576,6 +587,22 @@ class UIConfigManager:
         for section in ["FORWARD", "MONITOR"]:
             if section in config_dict and "media_types" in config_dict[section]:
                 config_dict[section]["media_types"] = [mt.value for mt in config_dict[section]["media_types"]]
+        
+        # 处理MonitorConfig中的monitor_channel_pairs
+        if "MONITOR" in config_dict and "monitor_channel_pairs" in config_dict["MONITOR"]:
+            for pair in config_dict["MONITOR"]["monitor_channel_pairs"]:
+                # 处理媒体类型
+                if "media_types" in pair:
+                    pair["media_types"] = [mt.value for mt in pair["media_types"]]
+                
+                # 确保关键词是字符串列表
+                if "keywords" in pair and isinstance(pair["keywords"], list):
+                    pair["keywords"] = [str(kw) for kw in pair["keywords"]]
+                
+                # 确保排除项是布尔值
+                for exclude_field in ["exclude_forwards", "exclude_replies", "exclude_media", "exclude_links"]:
+                    if exclude_field in pair:
+                        pair[exclude_field] = bool(pair[exclude_field])
     
     def get_ui_config(self) -> UIConfig:
         """

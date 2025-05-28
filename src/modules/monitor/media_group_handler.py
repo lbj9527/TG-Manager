@@ -312,6 +312,50 @@ class MediaGroupHandler:
             message: 媒体组中的一条消息
             pair_config: 频道对配置
         """
+        # 获取该频道对的过滤选项
+        keywords = pair_config.get('keywords', [])
+        exclude_forwards = pair_config.get('exclude_forwards', False)
+        exclude_replies = pair_config.get('exclude_replies', False)
+        exclude_media = pair_config.get('exclude_media', False)
+        exclude_links = pair_config.get('exclude_links', False)
+        
+        # 应用过滤逻辑
+        if exclude_forwards and message.forward_from:
+            logger.debug(f"媒体组消息 [ID: {message.id}] 是转发消息，根据过滤规则跳过")
+            return
+        
+        if exclude_replies and message.reply_to_message:
+            logger.debug(f"媒体组消息 [ID: {message.id}] 是回复消息，根据过滤规则跳过")
+            return
+        
+        # 检查是否为媒体消息（媒体组都是媒体消息）
+        if exclude_media:
+            logger.debug(f"媒体组消息 [ID: {message.id}] 是媒体消息，根据过滤规则跳过")
+            return
+        
+        # 检查是否包含链接
+        if exclude_links:
+            text_content = message.text or message.caption or ""
+            if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
+                logger.debug(f"媒体组消息 [ID: {message.id}] 包含链接，根据过滤规则跳过")
+                return
+        
+        # 关键词过滤
+        if keywords:
+            text_content = message.text or message.caption or ""
+            if not any(keyword.lower() in text_content.lower() for keyword in keywords):
+                logger.debug(f"媒体组消息 [ID: {message.id}] 不包含指定关键词，根据过滤规则跳过")
+                return
+        
+        # 获取该频道对允许的媒体类型
+        allowed_media_types = pair_config.get('media_types', [])
+        
+        # 检查消息的媒体类型是否被允许
+        message_media_type = self._get_message_media_type(message)
+        if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
+            logger.debug(f"媒体组消息 [ID: {message.id}] 的媒体类型 {message_media_type.value} 不在允许列表中，跳过处理")
+            return
+        
         channel_id = message.chat.id
         media_group_id = message.media_group_id
         
@@ -1013,7 +1057,8 @@ class MediaGroupHandler:
             logger.info("积压消息处理任务已取消")
     
     def _add_to_backlog(self, message: Message, media_group_id: str, channel_id: int, pair_config: dict):
-        """将消息添加到积压队列
+        """
+        将消息添加到积压队列
         
         Args:
             message: 媒体组消息
@@ -1021,15 +1066,102 @@ class MediaGroupHandler:
             channel_id: 频道ID
             pair_config: 频道对配置
         """
-        # 检查媒体组是否已处理
-        if media_group_id in self.processed_media_groups:
-            return
-            
-        # 确保频道存在于积压队列中
         if channel_id not in self.message_backlog:
             self.message_backlog[channel_id] = {}
             
-        # 如果媒体组不存在，添加它
-        if media_group_id not in self.message_backlog[channel_id]:
-            self.message_backlog[channel_id][media_group_id] = (message, pair_config)
-            logger.debug(f"添加媒体组 {media_group_id} 到积压队列") 
+        self.message_backlog[channel_id][media_group_id] = (message, pair_config)
+        logger.debug(f"媒体组消息 [ID: {message.id}] 已添加到积压队列")
+    
+    def _get_message_media_type(self, message: Message):
+        """
+        获取消息的媒体类型
+        
+        Args:
+            message: 消息对象
+            
+        Returns:
+            MediaType: 媒体类型枚举，如果是纯文本消息则返回None
+        """
+        from src.utils.ui_config_models import MediaType
+        
+        if message.photo:
+            return MediaType.PHOTO
+        elif message.video:
+            return MediaType.VIDEO
+        elif message.document:
+            return MediaType.DOCUMENT
+        elif message.audio:
+            return MediaType.AUDIO
+        elif message.animation:
+            return MediaType.ANIMATION
+        elif message.sticker:
+            return MediaType.STICKER
+        elif message.voice:
+            return MediaType.VOICE
+        elif message.video_note:
+            return MediaType.VIDEO_NOTE
+        else:
+            # 纯文本消息，不需要媒体类型过滤
+            return None
+    
+    def _is_media_type_allowed(self, message_media_type, allowed_media_types):
+        """
+        检查消息的媒体类型是否在允许列表中
+        
+        Args:
+            message_media_type: 消息的媒体类型
+            allowed_media_types: 允许的媒体类型列表
+            
+        Returns:
+            bool: 是否允许该媒体类型
+        """
+        if not allowed_media_types:
+            # 如果没有配置允许的媒体类型，默认允许所有类型
+            return True
+        
+        # 检查媒体类型是否在允许列表中
+        for allowed_type in allowed_media_types:
+            # 处理字符串和枚举类型的兼容性
+            if hasattr(allowed_type, 'value'):
+                allowed_value = allowed_type.value
+            else:
+                allowed_value = allowed_type
+                
+            if hasattr(message_media_type, 'value'):
+                message_value = message_media_type.value
+            else:
+                message_value = message_media_type
+                
+            if allowed_value == message_value:
+                return True
+        
+        return False
+    
+    def _contains_links(self, text: str) -> bool:
+        """
+        检查文本中是否包含链接
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 是否包含链接
+        """
+        import re
+        
+        if not text:
+            return False
+        
+        # 简单的URL正则匹配
+        url_patterns = [
+            r'https?://[^\s]+',  # http或https链接
+            r'www\.[^\s]+',      # www链接
+            r't\.me/[^\s]+',     # Telegram链接
+            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
+        ]
+        
+        for pattern in url_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        return False 

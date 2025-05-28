@@ -185,48 +185,53 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             monitor_dict = {}
             monitor = ui_config.MONITOR
             
-            # 添加基本字段 - 移除forward_delay
+            # 添加基本字段
             for field in ["duration"]:
                 if hasattr(monitor, field):
                     monitor_dict[field] = getattr(monitor, field)
             
-            # 处理media_types字段，转换枚举为字符串
-            if hasattr(monitor, 'media_types'):
-                media_types = []
-                for media_type in monitor.media_types:
-                    if hasattr(media_type, 'value'):
-                        media_types.append(media_type.value)
-                    else:
-                        media_types.append(media_type)
-                monitor_dict['media_types'] = media_types
-            
             # 处理monitor_channel_pairs字段
             if hasattr(monitor, 'monitor_channel_pairs'):
-                channel_pairs = []
+                monitor_channel_pairs = []
                 for pair in monitor.monitor_channel_pairs:
                     pair_dict = {}
-                    if hasattr(pair, 'source_channel'):
-                        pair_dict['source_channel'] = pair.source_channel
-                    if hasattr(pair, 'target_channels'):
-                        pair_dict['target_channels'] = pair.target_channels
-                    if hasattr(pair, 'remove_captions'):
-                        pair_dict['remove_captions'] = pair.remove_captions
+                    
+                    # 处理基本字段
+                    for field in ["source_channel", "target_channels", "remove_captions"]:
+                        if hasattr(pair, field):
+                            pair_dict[field] = getattr(pair, field)
                     
                     # 处理text_filter字段
                     if hasattr(pair, 'text_filter'):
-                        text_filters = []
+                        text_filter = []
                         for filter_item in pair.text_filter:
-                            filter_dict = {}
-                            if hasattr(filter_item, 'original_text'):
-                                filter_dict['original_text'] = filter_item.original_text
-                            if hasattr(filter_item, 'target_text'):
-                                filter_dict['target_text'] = filter_item.target_text
-                            text_filters.append(filter_dict)
-                        pair_dict['text_filter'] = text_filters
+                            if isinstance(filter_item, dict):
+                                text_filter.append(filter_item)
+                            elif hasattr(filter_item, 'dict'):
+                                text_filter.append(filter_item.dict())
+                            else:
+                                # 如果是其他格式，尝试转换
+                                text_filter.append({
+                                    "original_text": getattr(filter_item, 'original_text', ''),
+                                    "target_text": getattr(filter_item, 'target_text', '')
+                                })
+                        pair_dict['text_filter'] = text_filter
                     
-                    channel_pairs.append(pair_dict)
-                monitor_dict['monitor_channel_pairs'] = channel_pairs
+                    # 处理media_types字段，转换枚举为字符串
+                    if hasattr(pair, 'media_types'):
+                        media_types = []
+                        for media_type in pair.media_types:
+                            if hasattr(media_type, 'value'):
+                                media_types.append(media_type.value)
+                            else:
+                                media_types.append(media_type)
+                        pair_dict['media_types'] = media_types
+                    
+                    monitor_channel_pairs.append(pair_dict)
+                
+                monitor_dict['monitor_channel_pairs'] = monitor_channel_pairs
             
+            # 将监听配置添加到结果字典
             config_dict['MONITOR'] = monitor_dict
         
         # 添加UI配置的处理
