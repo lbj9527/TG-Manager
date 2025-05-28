@@ -170,7 +170,7 @@ class DownloaderSerial():
         # 重新获取最新配置
         logger.info("下载前重新获取最新配置...")
         try:
-            ui_config = self.ui_config_manager.get_ui_config()
+            ui_config = self.ui_config_manager.reload_config()
             self.config = convert_ui_config_to_dict(ui_config)
             
             # 更新下载配置和通用配置

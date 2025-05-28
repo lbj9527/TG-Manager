@@ -618,6 +618,17 @@ class UIConfigManager:
             self.ui_config = create_default_config()
         return self.ui_config
     
+    def reload_config(self) -> UIConfig:
+        """
+        强制从配置文件重新加载配置，更新内存中的缓存
+        
+        Returns:
+            UIConfig: 重新加载的UI配置对象
+        """
+        logger.debug("强制从配置文件重新加载配置")
+        self.ui_config = self._load_or_create_config()
+        return self.ui_config
+    
     def get_download_config(self) -> UIDownloadConfig:
         """
         获取下载配置对象

@@ -73,8 +73,11 @@ class Monitor:
         self.message_processor = MessageProcessor(self.client, self.channel_resolver, self._handle_network_error)
         self.media_group_handler = MediaGroupHandler(self.client, self.channel_resolver, self.message_processor)
         
-        # 消息处理器字典，用于跟踪每个源频道的消息处理器
+        # 消息处理器列表，用于跟踪注册的处理器
         self.message_handlers = []
+        
+        # 当前活跃的消息处理器，用于正确清理
+        self.current_message_handler = None
     
     def add_message_handler(self, handler_func: Callable[[Message], Any]) -> None:
         """
@@ -93,12 +96,15 @@ class Monitor:
         
         logger.info("开始监听源频道的新消息")
         
+        # 在启动新监听之前，先清理旧的处理器和状态
+        await self._cleanup_old_handlers()
+        
         # 重置停止标志，确保监听器可以正常启动
         self.should_stop = False
         
         # 重新从配置文件读取最新配置
         logger.info("重新从配置文件读取最新监听配置")
-        ui_config = self.ui_config_manager.get_ui_config()
+        ui_config = self.ui_config_manager.reload_config()
         self.config = convert_ui_config_to_dict(ui_config)
         self.monitor_config = self.config.get('MONITOR', {})
         
@@ -106,7 +112,7 @@ class Monitor:
         self.text_filter = TextFilter(self.monitor_config)
         logger.debug("文本过滤器已使用最新配置重新初始化")
         
-        # 解析监听频道ID
+        # 清空并重新解析监听频道ID
         self.monitored_channels = set()
         
         # 解析所有源频道及其目标频道
@@ -208,8 +214,9 @@ class Monitor:
             # 将需要的配置传递给消息处理器
             self.message_processor.set_monitor_config(self.monitor_config)
             
-            # 注册消息处理函数
-            @self.client.on_message(filters.chat(list(self.monitored_channels)))
+            # 创建并注册消息处理函数
+            from pyrogram.handlers import MessageHandler
+            
             async def handle_new_message(client: Client, message: Message):
                 if not self.is_processing:
                     return
@@ -253,7 +260,15 @@ class Monitor:
                 except Exception as e:
                     logger.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
             
+            # 创建处理器并注册
+            handler = MessageHandler(handle_new_message, filters.chat(list(self.monitored_channels)))
+            self.client.add_handler(handler)
+            
+            # 保存当前处理器引用以便后续清理
+            self.current_message_handler = handler
+            
             logger.info(f"正在监听 {len(self.monitored_channels)} 个频道的新消息")
+            logger.debug(f"监听的频道ID列表: {list(self.monitored_channels)}")
             
             # 启动清理任务
             self.cleanup_task = asyncio.create_task(self._cleanup_processed_messages())
@@ -282,6 +297,9 @@ class Monitor:
         # 设置停止标志
         self.should_stop = True
         
+        # 清理消息处理器
+        await self._cleanup_old_handlers()
+        
         # 停止媒体组处理器
         await self.media_group_handler.stop()
         
@@ -297,9 +315,29 @@ class Monitor:
             
             self.cleanup_task = None
         
-        # 移除消息处理器
+        # 清空已处理消息集合
+        previous_count = len(self.processed_messages)
+        self.processed_messages.clear()
+        logger.info(f"已清理 {previous_count} 条已处理消息记录")
+        
+        logger.info("所有监听任务已停止")
+    
+    async def _cleanup_old_handlers(self):
+        """
+        清理旧的消息处理器
+        """
         try:
-            # 移除所有注册的处理器
+            # 移除当前活跃的处理器
+            if self.current_message_handler:
+                try:
+                    self.client.remove_handler(self.current_message_handler)
+                    logger.debug("已移除当前消息处理器")
+                except Exception as e:
+                    logger.error(f"移除当前消息处理器时异常: {str(e)}")
+                finally:
+                    self.current_message_handler = None
+            
+            # 移除所有注册的处理器（兼容旧代码）
             for handler in self.message_handlers:
                 try:
                     self.client.remove_handler(handler)
@@ -308,16 +346,15 @@ class Monitor:
             
             # 清空处理器列表
             self.message_handlers.clear()
-            logger.debug(f"已清理所有消息处理器")
+            
+            # 重置处理状态
+            self.is_processing = False
+            
+            # 注意：不清空 monitored_channels，它会在 start_monitoring 中重新构建
+            
+            logger.debug("已清理所有消息处理器和相关状态")
         except Exception as e:
             logger.error(f"清理消息处理器时异常: {str(e)}", error_type="HANDLER_CLEANUP", recoverable=True)
-        
-        # 清空已处理消息集合
-        previous_count = len(self.processed_messages)
-        self.processed_messages.clear()
-        logger.info(f"已清理 {previous_count} 条已处理消息记录")
-        
-        logger.info("所有监听任务已停止")
     
     async def _cleanup_processed_messages(self):
         """
