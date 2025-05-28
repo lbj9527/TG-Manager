@@ -91,14 +91,31 @@ class MessageProcessor:
                 # 源频道允许转发或消息是非媒体消息，使用copy_message
                 for target, target_id, target_info in target_channels:
                     try:
-                        # 使用copy_message复制消息
-                        if use_copy:
+                        # 检查是否为纯文本消息且需要文本替换
+                        is_text_message = not message.media and message.text
+                        needs_text_replacement = replace_caption is not None and replace_caption != message.text
+                        
+                        if is_text_message and needs_text_replacement:
+                            # 对于纯文本消息且需要文本替换，直接使用send_message
+                            text_to_send = replace_caption if not remove_caption else ""
+                            
+                            await self.client.send_message(
+                                chat_id=target_id,
+                                text=text_to_send
+                            )
+                            success_count += 1
+                            logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                        elif use_copy:
+                            # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
                             caption = None
                             if message.text or message.caption:
                                 caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                                if remove_caption:
-                                    caption = None
                             
+                            # 如果需要移除caption，对于copy_message必须传递空字符串
+                            if remove_caption:
+                                caption = ""
+                                
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
@@ -119,21 +136,38 @@ class MessageProcessor:
                     except ChatForwardsRestricted:
                         logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
                         try:
-                            # 使用copy_message复制消息
-                            caption = None
-                            if message.text or message.caption:
-                                caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                                if remove_caption:
-                                    caption = None
+                            # 检查是否为纯文本消息且需要文本替换
+                            is_text_message = not message.media and message.text
+                            needs_text_replacement = replace_caption is not None and replace_caption != message.text
+                            
+                            if is_text_message and needs_text_replacement:
+                                # 对于纯文本消息且需要文本替换，直接使用send_message
+                                text_to_send = replace_caption if not remove_caption else ""
+                                
+                                await self.client.send_message(
+                                    chat_id=target_id,
+                                    text=text_to_send
+                                )
+                                success_count += 1
+                                logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            else:
+                                # 使用copy_message复制消息
+                                caption = None
+                                if message.text or message.caption:
+                                    caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                                     
-                            await self.client.copy_message(
-                                chat_id=target_id,
-                                from_chat_id=source_chat_id,
-                                message_id=source_message_id,
-                                caption=caption
-                            )
-                            success_count += 1
-                            logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                    # 如果需要移除caption，对于copy_message必须传递空字符串
+                                    if remove_caption:
+                                        caption = ""
+                                        
+                                await self.client.copy_message(
+                                    chat_id=target_id,
+                                    from_chat_id=source_chat_id,
+                                    message_id=source_message_id,
+                                    caption=caption
+                                )
+                                success_count += 1
+                                logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
                         except Exception as copy_e:
                             failed_count += 1
                             logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
@@ -156,21 +190,36 @@ class MessageProcessor:
                         await asyncio.sleep(e.x)
                         # 重试转发
                         try:
-                            # 使用copy_message复制消息
-                            caption = None
-                            if message.text or message.caption:
-                                caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                                if remove_caption:
-                                    caption = None
-                                    
-                            await self.client.copy_message(
-                                chat_id=target_id,
-                                from_chat_id=source_chat_id,
-                                message_id=source_message_id,
-                                caption=caption
-                            )
-                            success_count += 1
-                            logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            # 检查是否为纯文本消息且需要文本替换
+                            is_text_message = not message.media and message.text
+                            needs_text_replacement = replace_caption is not None and replace_caption != message.text
+                            
+                            if is_text_message and needs_text_replacement:
+                                # 对于纯文本消息且需要文本替换，直接使用send_message
+                                text_to_send = replace_caption if not remove_caption else ""
+                                
+                                await self.client.send_message(
+                                    chat_id=target_id,
+                                    text=text_to_send
+                                )
+                                success_count += 1
+                                logger.info(f"重试成功：已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            else:
+                                # 使用copy_message复制消息
+                                caption = None
+                                if message.text or message.caption:
+                                    caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                                    if remove_caption:
+                                        caption = ""
+                                        
+                                await self.client.copy_message(
+                                    chat_id=target_id,
+                                    from_chat_id=source_chat_id,
+                                    message_id=source_message_id,
+                                    caption=caption
+                                )
+                                success_count += 1
+                                logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
                         except Exception as retry_e:
                             failed_count += 1
                             logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
@@ -304,40 +353,50 @@ class MessageProcessor:
                     # 根据消息类型重新发送
                     if original_message.photo:
                         # 照片消息
-                        sent_message = await self.client.send_photo(
-                            chat_id=target_id,
-                            photo=original_message.photo.file_id,
-                            caption=caption_to_use if not remove_caption else None
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'photo': original_message.photo.file_id
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_photo(**kwargs)
                     elif original_message.video:
                         # 视频消息
-                        sent_message = await self.client.send_video(
-                            chat_id=target_id,
-                            video=original_message.video.file_id,
-                            caption=caption_to_use if not remove_caption else None,
-                            supports_streaming=True
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'video': original_message.video.file_id,
+                            'supports_streaming': True
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_video(**kwargs)
                     elif original_message.document:
                         # 文档消息
-                        sent_message = await self.client.send_document(
-                            chat_id=target_id,
-                            document=original_message.document.file_id,
-                            caption=caption_to_use if not remove_caption else None
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'document': original_message.document.file_id
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_document(**kwargs)
                     elif original_message.animation:
                         # 动画/GIF消息
-                        sent_message = await self.client.send_animation(
-                            chat_id=target_id,
-                            animation=original_message.animation.file_id,
-                            caption=caption_to_use if not remove_caption else None
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'animation': original_message.animation.file_id
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_animation(**kwargs)
                     elif original_message.audio:
                         # 音频消息
-                        sent_message = await self.client.send_audio(
-                            chat_id=target_id,
-                            audio=original_message.audio.file_id,
-                            caption=caption_to_use if not remove_caption else None
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'audio': original_message.audio.file_id
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_audio(**kwargs)
                     elif original_message.sticker:
                         # 贴纸消息
                         sent_message = await self.client.send_sticker(
@@ -346,11 +405,13 @@ class MessageProcessor:
                         )
                     elif original_message.voice:
                         # 语音消息
-                        sent_message = await self.client.send_voice(
-                            chat_id=target_id,
-                            voice=original_message.voice.file_id,
-                            caption=caption_to_use if not remove_caption else None
-                        )
+                        kwargs = {
+                            'chat_id': target_id,
+                            'voice': original_message.voice.file_id
+                        }
+                        if not remove_caption and caption_to_use:
+                            kwargs['caption'] = caption_to_use
+                        sent_message = await self.client.send_voice(**kwargs)
                     elif original_message.video_note:
                         # 视频笔记消息
                         sent_message = await self.client.send_video_note(

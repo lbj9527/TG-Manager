@@ -186,7 +186,7 @@ class RestrictedForwardHandler:
                 
                 # 决定是否使用消息原始标题
                 if remove_caption:
-                    final_caption = None
+                    final_caption = ""  # 使用空字符串而不是None来移除caption
                     _logger.debug(f"移除标题模式")
                 elif caption is not None:
                     final_caption = caption
@@ -251,11 +251,16 @@ class RestrictedForwardHandler:
                     # 处理单条消息
                     for target, target_id, target_info in other_targets:
                         try:
+                            # 确定要使用的caption
+                            caption_to_use = final_caption
+                            if remove_caption:
+                                caption_to_use = ""  # 确保移除caption时使用空字符串
+                                
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
                                 message_id=first_sent_message.id,
-                                caption=final_caption
+                                caption=caption_to_use
                             )
                             _logger.info(f"已将消息从第一个目标频道复制到 {target_info}")
                             await asyncio.sleep(0.5)  # 添加延迟避免触发限制
@@ -275,7 +280,7 @@ class RestrictedForwardHandler:
                 
                 # 确定标题
                 if remove_caption:
-                    final_text = None
+                    final_text = ""  # 使用空字符串而不是None来移除caption
                     _logger.debug(f"移除标题模式")
                 elif caption is not None:
                     final_text = caption
@@ -356,7 +361,7 @@ class RestrictedForwardHandler:
             
             # 决定是否使用消息原始标题
             if remove_caption:
-                final_caption = None
+                final_caption = ""  # 使用空字符串而不是None来移除caption
                 _logger.debug(f"移除标题模式")
             elif caption is not None:
                 final_caption = caption
