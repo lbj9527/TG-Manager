@@ -102,10 +102,6 @@ class NavigationTree(QWidget):
             
             # 开发工具分类
             NavigationItem("开发工具", "dev_tools_category", None, "category"),
-            NavigationItem("QtAsyncio测试", "qt_asyncio_test", "dev_tools_category", "function", {
-                "function": "qt_asyncio_test",
-                "description": "测试QtAsyncio与界面的集成"
-            }),
         ]
         
         # 构建导航项字典和树形结构

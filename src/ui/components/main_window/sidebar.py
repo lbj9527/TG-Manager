@@ -174,10 +174,6 @@ class SidebarMixin:
                 from src.ui.views.log_viewer_view import LogViewerView
                 view = LogViewerView(self.config, self)
                 
-            elif function_name == 'qt_asyncio_test':
-                from src.ui.views.qt_asyncio_test_view import AsyncTestView
-                view = AsyncTestView(self.config, self)
-                
             else:
                 # 未知功能，显示提示信息
                 QMessageBox.information(

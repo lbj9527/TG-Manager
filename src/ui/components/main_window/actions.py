@@ -783,8 +783,8 @@ class ActionsMixin:
             'task': 'function.task_manager',
             'log': 'function.logs',
             'help': 'function.help',
-            'settings': 'settings_view',
-            'qt_asyncio_test': 'function.qt_asyncio_test'
+            'settings': 'settings_view'
+            # QtAsyncio测试已移除
         }
         
         view_id = view_id_map.get(view_name)

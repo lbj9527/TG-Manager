@@ -803,18 +803,7 @@ class ListenView(QWidget):
             QMessageBox.warning(self, "错误", "监听器未初始化，无法启动监听")
             return
         
-        # 提示用户需要先保存配置
-        reply = QMessageBox.question(
-            self, 
-            "配置确认", 
-            "开始监听前需要保存当前配置到文件。是否现在保存配置？",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        
-        if reply == QMessageBox.Yes:
-            # 先保存配置
-            self._save_config()
+        # 移除保存配置对话框，用户可通过单独的保存配置按钮保存配置
         
         # 发出监听开始信号（保留用于其他组件）
         monitor_config = self._get_monitor_config()
