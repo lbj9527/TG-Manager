@@ -4,7 +4,7 @@ TG-Manager 事件发射器监听器
 """
 
 from PySide6.QtCore import Signal
-from src.modules.monitor import Monitor as OriginalMonitor
+from src.modules.monitor.core import Monitor as NewMonitor  # 使用新的监听器架构
 from src.utils.logger import get_logger
 from src.utils.event_emitter import BaseEventEmitter
 from typing import Any, Dict, List, Optional
@@ -14,19 +14,21 @@ logger = get_logger()
 class EventEmitterMonitor(BaseEventEmitter):
     """基于Qt Signal的监听器包装类，包装原始监听器以提供信号支持"""
     
-    # 监听器特有的信号定义
-    message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
-    keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
-    message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
+    # 定义信号
     monitoring_started = Signal()  # 监听开始信号
     monitoring_stopped = Signal()  # 监听停止信号
     new_message_updated = Signal(int, str)  # 新消息更新信号 (消息ID, 来源信息)
-    forward_updated = Signal(int, int, int, bool, bool)  # 转发状态更新信号 (源消息ID, 源频道ID, 目标ID, 成功标志, 修改标志)
+    message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
+    keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
+    message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
+    forward_updated = Signal(int, 'long long', 'long long', bool, bool)  # 转发状态更新信号 (源消息ID, 源频道ID, 目标ID, 成功标志, 修改标志)
     text_replaced = Signal(str, str, List)  # 文本替换信号 (原文本, 修改后文本, 替换规则)
     history_progress = Signal(int, int)  # 历史消息获取进度信号 (已获取消息数, 限制数)
     history_complete = Signal(int)  # 历史消息获取完成信号 (总消息数)
+    status_updated = Signal(str)  # 状态更新信号
+    error_occurred = Signal(str, str)  # 错误信号 (错误信息, 详细消息)
     
-    def __init__(self, original_monitor: OriginalMonitor):
+    def __init__(self, original_monitor: NewMonitor):
         """初始化监听器包装类
         
         Args:

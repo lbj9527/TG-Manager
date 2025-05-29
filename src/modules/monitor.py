@@ -44,8 +44,6 @@ class Monitor():
             app: 应用程序实例，用于网络错误时立即检查连接状态
         """
         # 初始化
-        super().__init__()
-        
         self.client = client
         self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
@@ -209,6 +207,10 @@ class Monitor():
                     # 日志记录消息接收
                     logger.info(f"收到来自 {source_info_str} 的新消息 [ID: {message.id}]")
                     
+                    # 发射新消息事件给UI
+                    if hasattr(self, 'emit'):
+                        self.emit("new_message", message.id, source_info_str)
+                    
                     # 检查关键词过滤
                     if self.monitor_config.get('keywords', []) and not any(re.search(keyword, message.text or "", re.IGNORECASE) for keyword in self.monitor_config.get('keywords', [])):
                         logger.debug(f"消息 [ID: {message.id}] 不包含任何关键词，忽略")
@@ -220,6 +222,9 @@ class Monitor():
                         if matched_keywords:
                             keywords_str = ", ".join(matched_keywords)
                             logger.info(f"消息 [ID: {message.id}] 匹配关键词: {keywords_str}")
+                            # 发射关键词匹配事件
+                            if hasattr(self, 'emit'):
+                                self.emit("keyword_matched", message.id, keywords_str)
                     
                     # 如果消息ID已经处理过，跳过
                     if message.id in self.processed_messages:
@@ -280,6 +285,10 @@ class Monitor():
                     
                     # 日志记录消息处理完成
                     logger.debug(f"消息 [ID: {message.id}] 处理完成")
+                    
+                    # 发射消息处理完成事件
+                    if hasattr(self, 'emit'):
+                        self.emit("message_processed", message.id)
                     
                 except Exception as e:
                     logger.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
@@ -435,6 +444,10 @@ class Monitor():
                     success_count += 1
                     logger.info(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
                     
+                    # 发射转发成功事件
+                    if hasattr(self, 'emit'):
+                        self.emit("forward", source_message_id, source_chat_id, target_id, True)
+                    
                 except ChatForwardsRestricted:
                     logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
                     try:
@@ -446,9 +459,18 @@ class Monitor():
                         )
                         success_count += 1
                         logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                        
+                        # 发射转发成功事件（使用复制方式）
+                        if hasattr(self, 'emit'):
+                            self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                     except Exception as copy_e:
                         failed_count += 1
                         logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
+                        
+                        # 发射转发失败事件（复制失败）
+                        if hasattr(self, 'emit'):
+                            self.emit("forward", source_message_id, source_chat_id, target_id, False)
+                        
                         # 尝试重新发送修改后的消息
                         try:
                             # 获取原始消息的文本或标题
@@ -456,33 +478,52 @@ class Monitor():
                             await self._send_modified_message(message, text, [(target, target_id, target_info)])
                             success_count += 1
                             logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件（使用修改方式）
+                            if hasattr(self, 'emit'):
+                                self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                         except Exception as modified_e:
                             logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
+                    except FloodWait as e:
+                        logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+                        await asyncio.sleep(e.x)
+                        # 重试转发
+                        try:
+                            # 优先使用copy_message避免转发限制
+                            await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_chat_id,
+                                message_id=source_message_id
+                            )
+                            success_count += 1
+                            logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件（重试成功）
+                            if hasattr(self, 'emit'):
+                                self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
+                        except Exception as retry_e:
+                            failed_count += 1
+                            logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
+                            
+                            # 发射转发失败事件
+                            if hasattr(self, 'emit'):
+                                self.emit("forward", source_message_id, source_chat_id, target_id, False)
                     
-                except FloodWait as e:
-                    logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
-                    await asyncio.sleep(e.x)
-                    # 重试转发
-                    try:
-                        # 优先使用copy_message避免转发限制
-                        await self.client.copy_message(
-                            chat_id=target_id,
-                            from_chat_id=source_chat_id,
-                            message_id=source_message_id
-                        )
-                        success_count += 1
-                        logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                    except Exception as retry_e:
-                        failed_count += 1
-                        logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
-                        
                 except ChannelPrivate:
                     failed_count += 1
                     logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
                     
+                    # 发射转发失败事件
+                    if hasattr(self, 'emit'):
+                        self.emit("forward", source_message_id, source_chat_id, target_id, False)
+                    
                 except Exception as e:
                     failed_count += 1
                     logger.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
+                    
+                    # 发射转发失败事件
+                    if hasattr(self, 'emit'):
+                        self.emit("forward", source_message_id, source_chat_id, target_id, False)
                 
                 # 转发间隔
                 await asyncio.sleep(0.5)
@@ -607,6 +648,10 @@ class Monitor():
                     if sent_message:
                         success_count += 1
                         logger.info(f"已将修改后的消息从 {source_title} 发送到 {target_info}")
+                        
+                        # 发射转发成功事件（使用修改方式）
+                        if hasattr(self, 'emit'):
+                            self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                     
                 except FloodWait as e:
                     logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
@@ -617,6 +662,10 @@ class Monitor():
                 except Exception as e:
                     failed_count += 1
                     logger.error(f"发送修改后的消息到 {target_info} 失败: {str(e)}", error_type="SEND_MODIFIED", recoverable=True)
+                    
+                    # 发射转发失败事件
+                    if hasattr(self, 'emit'):
+                        self.emit("forward", source_message_id, source_chat_id, target_id, False)
                 
                 # 发送间隔
                 await asyncio.sleep(0.5)

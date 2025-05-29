@@ -230,7 +230,7 @@ class AsyncServicesInitializer:
                 # 8. 初始化监听模块
                 logger.info("正在初始化监听模块...")
                 try:
-                    from src.modules.monitor import Monitor
+                    from src.modules.monitor.core import Monitor  # 使用新的监听器架构
                     original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
                                              self.app.channel_resolver, self.app)
                     

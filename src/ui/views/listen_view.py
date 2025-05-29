@@ -1333,39 +1333,113 @@ class ListenView(QWidget):
             # 检查monitor是否有信号属性并连接
             if hasattr(self.monitor, 'status_updated'):
                 self.monitor.status_updated.connect(self._update_status)
+                logger.debug("已连接status_updated信号")
             
-            if hasattr(self.monitor, 'new_message_received'):
-                self.monitor.new_message_received.connect(self._on_new_message)
+            # 连接新消息信号 - 使用正确的信号名称
+            if hasattr(self.monitor, 'new_message_updated'):
+                self.monitor.new_message_updated.connect(self._on_new_message_signal)
+                logger.debug("已连接new_message_updated信号")
             
-            if hasattr(self.monitor, 'monitoring_started_signal'):
-                self.monitor.monitoring_started_signal.connect(self._on_monitoring_started)
+            # 连接消息接收信号
+            if hasattr(self.monitor, 'message_received'):
+                self.monitor.message_received.connect(self._on_message_received_signal)
+                logger.debug("已连接message_received信号")
             
-            if hasattr(self.monitor, 'monitoring_stopped_signal'):
-                self.monitor.monitoring_stopped_signal.connect(self._on_monitoring_stopped)
+            # 连接监听开始/停止信号
+            if hasattr(self.monitor, 'monitoring_started'):
+                self.monitor.monitoring_started.connect(self._on_monitoring_started)
+                logger.debug("已连接monitoring_started信号")
             
-            if hasattr(self.monitor, 'forward_completed'):
-                self.monitor.forward_completed.connect(self._on_forward_complete)
+            if hasattr(self.monitor, 'monitoring_stopped'):
+                self.monitor.monitoring_stopped.connect(self._on_monitoring_stopped)
+                logger.debug("已连接monitoring_stopped信号")
             
+            # 连接转发完成信号
+            if hasattr(self.monitor, 'forward_updated'):
+                self.monitor.forward_updated.connect(self._on_forward_updated_signal)
+                logger.debug("已连接forward_updated信号")
+            
+            # 连接错误信号
             if hasattr(self.monitor, 'error_occurred'):
                 self.monitor.error_occurred.connect(self._on_monitor_error)
+                logger.debug("已连接error_occurred信号")
             
             logger.debug("监听器信号连接成功")
-            
-            # 如果监听器没有这些信号属性，我们需要手动添加事件监听
-            # 这是为了兼容不同版本的监听器实现
-            if not hasattr(self.monitor, 'status_updated') and hasattr(self.monitor, 'add_event_listener'):
-                self.monitor.add_event_listener("status", self._update_status)
-                self.monitor.add_event_listener("new_message", self._on_new_message)
-                self.monitor.add_event_listener("monitoring_started", self._on_monitoring_started)
-                self.monitor.add_event_listener("monitoring_stopped", self._on_monitoring_stopped)
-                self.monitor.add_event_listener("forward_complete", self._on_forward_complete)
-                self.monitor.add_event_listener("error", self._on_monitor_error)
-                logger.debug("使用事件监听器连接监听器事件")
             
         except Exception as e:
             logger.error(f"连接监听器信号时出错: {e}")
             import traceback
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _on_new_message_signal(self, message_id, source_info):
+        """处理新消息信号
+        
+        Args:
+            message_id: 消息ID
+            source_info: 源信息
+        """
+        try:
+            # 构建消息显示内容
+            content = f"收到新消息 [ID: {message_id}]"
+            
+            # 添加到消息列表 - 使用源信息作为来源
+            self._add_message_item(source_info, content)
+            
+            # 尝试将消息添加到对应的频道标签页
+            # 查找匹配的频道标签页
+            for source_channel, view in self.channel_message_views.items():
+                if source_channel in source_info or str(message_id) in source_info:
+                    # 添加到该频道的消息面板
+                    time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                    formatted_msg = f"[{time_str}] {source_info}: {content}"
+                    view.append(formatted_msg)
+                    view.moveCursor(QTextCursor.End)
+                    break
+            
+            logger.debug(f"处理新消息信号: {message_id} - {source_info}")
+        except Exception as e:
+            logger.error(f"处理新消息信号时出错: {e}")
+    
+    def _on_message_received_signal(self, message_id, source_info):
+        """处理消息接收信号
+        
+        Args:
+            message_id: 消息ID
+            source_info: 源信息
+        """
+        try:
+            # 构建消息显示内容
+            content = f"接收到消息 [ID: {message_id}]"
+            
+            # 添加到消息列表
+            self._add_message_item(source_info, content)
+            
+            logger.debug(f"处理消息接收信号: {message_id} - {source_info}")
+        except Exception as e:
+            logger.error(f"处理消息接收信号时出错: {e}")
+    
+    def _on_forward_updated_signal(self, source_message_id, source_chat_id, target_id, success, modified):
+        """处理转发更新信号
+        
+        Args:
+            source_message_id: 源消息ID
+            source_chat_id: 源频道ID
+            target_id: 目标频道ID
+            success: 是否成功
+            modified: 是否修改
+        """
+        try:
+            # 构建转发信息
+            status = "成功" if success else "失败"
+            mod_info = " (已修改)" if modified else ""
+            forward_info = f"消息ID: {source_message_id}, 从频道: {source_chat_id} 到频道: {target_id} - {status}{mod_info}"
+            
+            # 添加到转发列表
+            self._add_forward_item(forward_info)
+            
+            logger.debug(f"处理转发更新信号: {forward_info}")
+        except Exception as e:
+            logger.error(f"处理转发更新信号时出错: {e}")
     
     def _update_status(self, status):
         """更新状态信息
@@ -1375,72 +1449,6 @@ class ListenView(QWidget):
         """
         self.main_message_view.append(status)
         logger.debug(f"监听状态更新: {status}")
-    
-    def _on_new_message(self, message, channel_id=None, channel_title=None):
-        """新消息处理
-        
-        Args:
-            message: 消息对象
-            channel_id: 频道ID(可选)
-            channel_title: 频道标题(可选)
-        """
-        # 获取消息内容和发送者信息
-        try:
-            # 构建消息显示内容
-            content = ""
-            if hasattr(message, 'text') and message.text:
-                content = message.text[:100]  # 限制长度
-                if len(message.text) > 100:
-                    content += "..."
-            elif hasattr(message, 'caption') and message.caption:
-                content = f"[带附件] {message.caption[:100]}"
-                if len(message.caption) > 100:
-                    content += "..."
-            else:
-                # 确定媒体类型
-                media_type = "未知类型"
-                if hasattr(message, 'photo') and message.photo:
-                    media_type = "图片"
-                elif hasattr(message, 'video') and message.video:
-                    media_type = "视频"
-                elif hasattr(message, 'document') and message.document:
-                    media_type = "文档"
-                elif hasattr(message, 'audio') and message.audio:
-                    media_type = "音频"
-                elif hasattr(message, 'animation') and message.animation:
-                    media_type = "动画"
-                elif hasattr(message, 'sticker') and message.sticker:
-                    media_type = "贴纸"
-                elif hasattr(message, 'voice') and message.voice:
-                    media_type = "语音消息"
-                elif hasattr(message, 'video_note') and message.video_note:
-                    media_type = "视频笔记"
-                
-                content = f"[{media_type}]"
-            
-            # 获取频道/发送者信息
-            from_info = f"消息ID: {message.id}"
-            if channel_title:
-                from_info = f"{channel_title} [消息ID: {message.id}]"
-            elif channel_id:
-                from_info = f"频道ID: {channel_id} [消息ID: {message.id}]"
-            elif hasattr(message, 'chat') and message.chat:
-                chat = message.chat
-                if hasattr(chat, 'title') and chat.title:
-                    from_info = f"{chat.title} [消息ID: {message.id}]"
-                elif hasattr(chat, 'username') and chat.username:
-                    from_info = f"@{chat.username} [消息ID: {message.id}]"
-                elif hasattr(chat, 'id') and chat.id:
-                    from_info = f"聊天ID: {chat.id} [消息ID: {message.id}]"
-            
-            # 添加到消息列表
-            self._add_message_item(from_info, content)
-            
-            logger.debug(f"收到新消息: {from_info} - {content}")
-        except Exception as e:
-            logger.error(f"处理新消息时出错: {e}")
-            import traceback
-            logger.debug(f"错误详情:\n{traceback.format_exc()}")
     
     def _on_monitoring_started(self, channel_ids=None):
         """监听开始处理

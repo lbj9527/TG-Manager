@@ -27,15 +27,18 @@ class MessageProcessor:
         Args:
             client: Pyrogram客户端实例
             channel_resolver: 频道解析器实例
-            network_error_handler: 网络错误处理函数
+            network_error_handler: 网络错误处理器回调函数
         """
         self.client = client
         self.channel_resolver = channel_resolver
         self.network_error_handler = network_error_handler
         self.monitor_config = {}
         
-        # 初始化禁止转发处理器
-        self.restricted_handler = RestrictedForwardHandler(client, channel_resolver)
+        # 创建禁止转发处理器 - 延迟初始化，在设置配置时创建
+        self.restricted_handler = None
+        
+        # 事件发射器引用 - 将在Monitor中设置
+        self.emit = None
         
     def set_monitor_config(self, monitor_config: Dict[str, Any]):
         """
@@ -45,6 +48,9 @@ class MessageProcessor:
             monitor_config: 监控配置字典
         """
         self.monitor_config = monitor_config
+        
+        # 初始化禁止转发处理器
+        self.restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
     
     async def forward_message(self, message: Message, target_channels: List[Tuple[str, int, str]], 
                               use_copy: bool = True, replace_caption: str = None, remove_caption: bool = False) -> bool:
@@ -106,6 +112,9 @@ class MessageProcessor:
                             success_count += 1
                             logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
                             
+                            # 发射转发成功事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                         elif use_copy:
                             # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
                             caption = None
@@ -124,6 +133,10 @@ class MessageProcessor:
                             )
                             success_count += 1
                             logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                         else:
                             # 使用forward_messages保留原始信息
                             await self.client.forward_messages(
@@ -133,6 +146,10 @@ class MessageProcessor:
                             )
                             success_count += 1
                             logger.info(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                            
+                            # 发射转发成功事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=False)
                     except ChatForwardsRestricted:
                         logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
                         try:
@@ -150,6 +167,10 @@ class MessageProcessor:
                                 )
                                 success_count += 1
                                 logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                
+                                # 发射转发成功事件
+                                if self.emit:
+                                    self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                             else:
                                 # 使用copy_message复制消息
                                 caption = None
@@ -171,6 +192,11 @@ class MessageProcessor:
                         except Exception as copy_e:
                             failed_count += 1
                             logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
+                            
+                            # 发射转发失败事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_chat_id, target_id, False)
+                            
                             # 尝试重新发送修改后的消息
                             try:
                                 # 获取原始消息的文本或标题
@@ -182,6 +208,10 @@ class MessageProcessor:
                                 await self.send_modified_message(message, text, [(target, target_id, target_info)])
                                 success_count += 1
                                 logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                
+                                # 发射转发成功事件（重试成功）
+                                if self.emit:
+                                    self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                             except Exception as modified_e:
                                 logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
                         
@@ -228,9 +258,17 @@ class MessageProcessor:
                         failed_count += 1
                         logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
                         
+                        # 发射转发失败事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_chat_id, target_id, False)
+                        
                     except Exception as e:
                         failed_count += 1
                         logger.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
+                        
+                        # 发射转发失败事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_chat_id, target_id, False)
                     
                     # 转发间隔
                     await asyncio.sleep(0.5)
