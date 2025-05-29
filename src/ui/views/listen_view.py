@@ -806,6 +806,9 @@ class ListenView(QWidget):
         # 添加状态消息
         self._add_status_message("开始监听...")
         
+        # 自动切换到监听日志选项卡
+        self.config_tabs.setCurrentIndex(2)  # 监听日志选项卡是第3个（索引为2）
+        
         # 更新按钮状态
         self.start_listen_button.setEnabled(False)
         self.stop_listen_button.setEnabled(True)
