@@ -73,9 +73,6 @@ class Monitor:
         self.message_processor = MessageProcessor(self.client, self.channel_resolver, self._handle_network_error)
         self.media_group_handler = MediaGroupHandler(self.client, self.channel_resolver, self.message_processor)
         
-        # 设置事件发射器引用
-        self.message_processor.emit = getattr(self, 'emit', None)
-        
         # 消息处理器列表，用于跟踪注册的处理器
         self.message_handlers = []
         
@@ -240,7 +237,7 @@ class Monitor:
                     logger.info(f"收到来自 {source_info_str} 的新消息 [ID: {message.id}]")
                     
                     # 发射新消息事件给UI
-                    if hasattr(self, 'emit'):
+                    if hasattr(self, 'emit') and self.emit:
                         self.emit("new_message", message.id, source_info_str)
                     
                     # 检查关键词过滤
@@ -265,7 +262,7 @@ class Monitor:
                     await self._process_single_message(message, pair_config)
                     
                     # 发射消息处理完成事件
-                    if hasattr(self, 'emit'):
+                    if hasattr(self, 'emit') and self.emit:
                         self.emit("message_processed", message.id)
                     
                 except Exception as e:

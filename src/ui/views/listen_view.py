@@ -1382,19 +1382,111 @@ class ListenView(QWidget):
             # 构建消息显示内容
             content = f"收到新消息 [ID: {message_id}]"
             
-            # 添加到消息列表 - 使用源信息作为来源
+            # 添加到主消息面板（所有消息）
             self._add_message_item(source_info, content)
             
-            # 尝试将消息添加到对应的频道标签页
-            # 查找匹配的频道标签页
+            # 添加到对应的频道标签页
+            matched_channel = None
             for source_channel, view in self.channel_message_views.items():
-                if source_channel in source_info or str(message_id) in source_info:
-                    # 添加到该频道的消息面板
+                # 使用改进的匹配逻辑
+                if self._is_channel_match(source_channel, source_info):
                     time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                    formatted_msg = f"[{time_str}] {source_info}: {content}"
+                    formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
                     view.append(formatted_msg)
                     view.moveCursor(QTextCursor.End)
+                    
+                    # 限制消息数量
+                    max_messages = 200
+                    doc = view.document()
+                    if doc.blockCount() > max_messages:
+                        cursor = QTextCursor(doc)
+                        cursor.movePosition(QTextCursor.Start)
+                        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deleteChar()  # 删除换行符
+                    
+                    logger.debug(f"新消息已添加到频道标签页: {source_channel}")
+                    matched_channel = source_channel
                     break
+            
+            # 如果没有匹配的标签页，尝试创建新的标签页
+            if not matched_channel:
+                logger.info(f"未找到匹配的频道标签页，为新消息创建标签页: {source_info}")
+                try:
+                    # 从源信息中提取ID
+                    import re
+                    display_id = None
+                    id_match = re.search(r'\(ID:\s*(-?\d+)\)', source_info)
+                    if id_match:
+                        display_id = id_match.group(1)
+                        logger.info(f"从源信息提取的ID: {display_id}")
+                        
+                        # 直接为这个ID创建标签页
+                        if display_id and display_id not in self.channel_message_views:
+                            logger.info(f"为频道ID {display_id} 创建新的标签页")
+                            channel_view = QTextEdit()
+                            channel_view.setReadOnly(True)
+                            channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                            
+                            # 从源信息中提取频道名称作为标签页标题
+                            channel_title = source_info
+                            if ' (ID:' in source_info:
+                                channel_title = source_info.split(' (ID:')[0]
+                            
+                            self.message_tabs.addTab(channel_view, channel_title)
+                            self.channel_message_views[display_id] = channel_view
+                            
+                            logger.info(f"成功创建标签页: {channel_title} -> {display_id}")
+                            
+                        # 添加消息到标签页
+                        if display_id and display_id in self.channel_message_views:
+                            view = self.channel_message_views[display_id]
+                            time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                            formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
+                            view.append(formatted_msg)
+                            view.moveCursor(QTextCursor.End)
+                            
+                            # 限制消息数量
+                            max_messages = 200
+                            doc = view.document()
+                            if doc.blockCount() > max_messages:
+                                cursor = QTextCursor(doc)
+                                cursor.movePosition(QTextCursor.Start)
+                                cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                                cursor.removeSelectedText()
+                                cursor.deleteChar()  # 删除换行符
+                            
+                            logger.info(f"成功在标签页 {display_id} 中添加新消息")
+                            matched_channel = display_id
+                    else:
+                        logger.info("无法从源信息中提取ID，使用完整源信息作为key")
+                        # 如果无法提取ID，直接使用源信息作为key
+                        if source_info not in self.channel_message_views:
+                            logger.info(f"为源信息 '{source_info}' 创建新的标签页")
+                            channel_view = QTextEdit()
+                            channel_view.setReadOnly(True)
+                            channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                            
+                            # 使用简化的频道名称作为标签页标题
+                            channel_title = source_info
+                            if len(channel_title) > 20:
+                                channel_title = channel_title[:20] + "..."
+                            
+                            self.message_tabs.addTab(channel_view, channel_title)
+                            self.channel_message_views[source_info] = channel_view
+                            
+                        # 添加消息到标签页
+                        view = self.channel_message_views[source_info]
+                        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                        formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
+                        view.append(formatted_msg)
+                        view.moveCursor(QTextCursor.End)
+                        
+                        logger.info(f"成功在标签页 '{source_info}' 中添加新消息")
+                        matched_channel = source_info
+                        
+                except Exception as e:
+                    logger.error(f"为新消息创建标签页时发生错误: {e}")
             
             logger.debug(f"处理新消息信号: {message_id} - {source_info}")
         except Exception as e:
@@ -1418,13 +1510,13 @@ class ListenView(QWidget):
         except Exception as e:
             logger.error(f"处理消息接收信号时出错: {e}")
     
-    def _on_forward_updated_signal(self, source_message_id, source_chat_id, target_id, success, modified):
+    def _on_forward_updated_signal(self, source_message_id, source_display_name, target_display_name, success, modified):
         """处理转发更新信号
         
         Args:
             source_message_id: 源消息ID
-            source_chat_id: 源频道ID
-            target_id: 目标频道ID
+            source_display_name: 源频道显示名称
+            target_display_name: 目标频道显示名称
             success: 是否成功
             modified: 是否修改
         """
@@ -1432,14 +1524,254 @@ class ListenView(QWidget):
             # 构建转发信息
             status = "成功" if success else "失败"
             mod_info = " (已修改)" if modified else ""
-            forward_info = f"消息ID: {source_message_id}, 从频道: {source_chat_id} 到频道: {target_id} - {status}{mod_info}"
             
-            # 添加到转发列表
+            forward_info = f"消息[{source_message_id}] 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
+            
+            # 添加到主消息面板（所有消息）
             self._add_forward_item(forward_info)
+            
+            # 添加到对应源频道的标签页
+            logger.debug(f"尝试为源频道匹配标签页: source_display_name='{source_display_name}'")
+            logger.debug(f"可用的频道标签页: {list(self.channel_message_views.keys())}")
+            
+            # 添加详细的匹配调试信息
+            for i, (source_channel, view) in enumerate(self.channel_message_views.items()):
+                logger.debug(f"频道标签页 {i+1}: key='{source_channel}', type={type(source_channel)}")
+            
+            matched_channel = None
+            for source_channel, view in self.channel_message_views.items():
+                # 调试每个匹配尝试
+                logger.debug(f"尝试匹配: source_channel='{source_channel}' vs source_display_name='{source_display_name}'")
+                
+                # 改进的匹配逻辑
+                if self._is_channel_match(source_channel, source_display_name):
+                    matched_channel = source_channel
+                    time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                    formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                    view.append(formatted_msg)
+                    view.moveCursor(QTextCursor.End)
+                    
+                    # 限制消息数量
+                    max_messages = 200
+                    doc = view.document()
+                    if doc.blockCount() > max_messages:
+                        cursor = QTextCursor(doc)
+                        cursor.movePosition(QTextCursor.Start)
+                        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deleteChar()  # 删除换行符
+                    
+                    logger.debug(f"成功匹配到频道标签页: {source_channel}")
+                    break
+            
+            if not matched_channel:
+                logger.warning(f"未找到匹配的频道标签页，source_display_name: {source_display_name}")
+                
+                # 直接为接收到的频道创建标签页
+                logger.info("开始为新频道创建标签页...")
+                try:
+                    # 从显示名称中提取ID
+                    import re
+                    display_id = None
+                    id_match = re.search(r'\(ID:\s*(-?\d+)\)', source_display_name)
+                    if id_match:
+                        display_id = id_match.group(1)
+                        logger.info(f"从显示名称提取的ID: {display_id}")
+                        
+                        # 直接为这个ID创建标签页
+                        if display_id and display_id not in self.channel_message_views:
+                            logger.info(f"为频道ID {display_id} 创建新的标签页")
+                            channel_view = QTextEdit()
+                            channel_view.setReadOnly(True)
+                            channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                            
+                            # 从显示名称中提取频道名称作为标签页标题
+                            channel_title = source_display_name
+                            if ' (ID:' in source_display_name:
+                                channel_title = source_display_name.split(' (ID:')[0]
+                            
+                            self.message_tabs.addTab(channel_view, channel_title)
+                            self.channel_message_views[display_id] = channel_view
+                            
+                            logger.info(f"成功创建标签页: {channel_title} -> {display_id}")
+                            
+                        # 添加消息到标签页
+                        if display_id and display_id in self.channel_message_views:
+                            view = self.channel_message_views[display_id]
+                            time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                            formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                            view.append(formatted_msg)
+                            view.moveCursor(QTextCursor.End)
+                            
+                            # 限制消息数量
+                            max_messages = 200
+                            doc = view.document()
+                            if doc.blockCount() > max_messages:
+                                cursor = QTextCursor(doc)
+                                cursor.movePosition(QTextCursor.Start)
+                                cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                                cursor.removeSelectedText()
+                                cursor.deleteChar()  # 删除换行符
+                            
+                            logger.info(f"成功在标签页 {display_id} 中添加转发消息")
+                            matched_channel = display_id
+                        else:
+                            logger.warning(f"无法找到或创建频道ID {display_id} 的标签页")
+                    else:
+                        logger.info("无法从显示名称中提取ID，尝试使用完整显示名称作为key")
+                        # 如果无法提取ID，直接使用显示名称作为key
+                        if source_display_name not in self.channel_message_views:
+                            logger.info(f"为显示名称 '{source_display_name}' 创建新的标签页")
+                            channel_view = QTextEdit()
+                            channel_view.setReadOnly(True)
+                            channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                            
+                            # 使用简化的频道名称作为标签页标题
+                            channel_title = source_display_name
+                            if len(channel_title) > 20:
+                                channel_title = channel_title[:20] + "..."
+                            
+                            self.message_tabs.addTab(channel_view, channel_title)
+                            self.channel_message_views[source_display_name] = channel_view
+                            
+                        # 添加消息到标签页
+                        view = self.channel_message_views[source_display_name]
+                        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+                        formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                        view.append(formatted_msg)
+                        view.moveCursor(QTextCursor.End)
+                        
+                        logger.info(f"成功在标签页 '{source_display_name}' 中添加转发消息")
+                        matched_channel = source_display_name
+                        
+                except Exception as e:
+                    logger.error(f"创建新标签页时发生错误: {e}")
             
             logger.debug(f"处理转发更新信号: {forward_info}")
         except Exception as e:
             logger.error(f"处理转发更新信号时出错: {e}")
+    
+    def _is_channel_match(self, source_channel, source_display_name):
+        """检查源频道是否匹配显示名称
+        
+        Args:
+            source_channel: 配置中的源频道（可能是ID、链接等）
+            source_display_name: 显示名称（格式化后的频道信息）
+            
+        Returns:
+            bool: 是否匹配
+        """
+        logger.debug(f"    开始匹配: source_channel='{source_channel}' (类型: {type(source_channel)}) vs source_display_name='{source_display_name}' (类型: {type(source_display_name)})")
+        
+        # 1. 直接匹配
+        if source_channel == source_display_name:
+            logger.debug(f"    ✓ 直接匹配成功")
+            return True
+        logger.debug(f"    ✗ 直接匹配失败")
+        
+        # 2. 互相包含匹配
+        if (source_channel in source_display_name or 
+            source_display_name in source_channel):
+            logger.debug(f"    ✓ 包含匹配成功")
+            return True
+        logger.debug(f"    ✗ 包含匹配失败")
+        
+        # 3. 去除@符号的匹配
+        clean_source = source_channel.replace('@', '')
+        clean_display = source_display_name.replace('@', '')
+        if (clean_source in clean_display or 
+            clean_display in clean_source):
+            logger.debug(f"    ✓ 清理@后匹配成功: '{clean_source}' vs '{clean_display}'")
+            return True
+        logger.debug(f"    ✗ 清理@后匹配失败: '{clean_source}' vs '{clean_display}'")
+        
+        # 4. 提取ID进行匹配（处理类似"-1002382449514"的ID）
+        import re
+        
+        # 从source_channel提取ID
+        source_id = None
+        if source_channel.startswith('-') and source_channel[1:].isdigit():
+            source_id = source_channel
+        elif source_channel.isdigit():
+            source_id = source_channel
+        elif 't.me/' in source_channel:
+            # 从链接中提取用户名或ID
+            parts = source_channel.split('/')
+            if parts:
+                last_part = parts[-1]
+                if last_part.startswith('-') and last_part[1:].isdigit():
+                    source_id = last_part
+        
+        logger.debug(f"    提取的source_id: '{source_id}'")
+        
+        # 从source_display_name提取ID (格式如 "频道名 (ID: -1002382449514)")
+        display_id = None
+        id_match = re.search(r'\(ID:\s*(-?\d+)\)', source_display_name)
+        if id_match:
+            display_id = id_match.group(1)
+        
+        logger.debug(f"    提取的display_id: '{display_id}'")
+        
+        # ID匹配
+        if source_id and display_id and source_id == display_id:
+            logger.debug(f"    ✓ ID匹配成功: {source_id} == {display_id}")
+            return True
+        logger.debug(f"    ✗ ID匹配失败: {source_id} != {display_id}")
+        
+        # 5. 反向ID匹配：如果display_name中有ID，但source_channel没有ID，
+        #    可能是用户界面中使用ID作为source_channel，但显示时转换为了友好名称
+        if display_id and not source_id:
+            # 检查是否source_channel可能是这个ID的其他表示形式
+            # 比如用户在界面上输入"-1002382449514"，然后在运行时显示为"频道名 (ID: -1002382449514)"
+            logger.debug(f"    尝试反向ID匹配: display_id='{display_id}' vs source_channel='{source_channel}'")
+            
+            # 检查source_channel是否是display_id去掉前缀
+            if display_id.startswith('-100') and source_channel == display_id[4:]:
+                logger.debug(f"    ✓ 反向ID匹配成功: {source_channel} == {display_id[4:]}")
+                return True
+        
+        # 6. 特殊情况：如果source_channel看起来像是一个纯数字ID，尝试添加-100前缀匹配
+        if source_channel.isdigit() and display_id:
+            full_id = f"-100{source_channel}"
+            if full_id == display_id:
+                logger.debug(f"    ✓ 完整ID匹配成功: {full_id} == {display_id}")
+                return True
+        
+        # 7. 频道用户名匹配（处理@username格式）
+        source_username = None
+        if source_channel.startswith('@'):
+            source_username = source_channel[1:]
+        elif 't.me/' in source_channel and not source_channel.split('/')[-1].startswith('-'):
+            source_username = source_channel.split('/')[-1]
+        
+        logger.debug(f"    提取的source_username: '{source_username}'")
+        
+        if source_username:
+            # 检查显示名称中是否包含用户名
+            if f"@{source_username}" in source_display_name:
+                logger.debug(f"    ✓ 用户名匹配成功: @{source_username}")
+                return True
+            # 检查显示名称中的链接
+            if f"t.me/{source_username}" in source_display_name:
+                logger.debug(f"    ✓ 链接匹配成功: t.me/{source_username}")
+                return True
+        logger.debug(f"    ✗ 用户名匹配失败")
+        
+        # 8. 频道标题匹配（从显示名称中提取标题部分）
+        display_title = source_display_name
+        if ' (ID:' in source_display_name:
+            display_title = source_display_name.split(' (ID:')[0]
+        
+        logger.debug(f"    提取的display_title: '{display_title}'")
+        
+        # 检查source_channel是否就是频道标题
+        if source_channel == display_title:
+            logger.debug(f"    ✓ 标题匹配成功: {display_title}")
+            return True
+        logger.debug(f"    ✗ 标题匹配失败: '{source_channel}' != '{display_title}'")
+        
+        logger.debug(f"    ✗ 所有匹配方式都失败")
+        return False
     
     def _update_status(self, status):
         """更新状态信息
@@ -1563,7 +1895,7 @@ class ListenView(QWidget):
         """
         # 使用现有的消息显示机制
         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        formatted_msg = f"[{time_str}] [转发完成] {forward_info}"
+        formatted_msg = f"[{time_str}] [转发] {forward_info}"
         
         # 添加到主消息面板
         self.main_message_view.append(formatted_msg)

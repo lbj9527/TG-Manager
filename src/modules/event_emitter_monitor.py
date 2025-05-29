@@ -21,7 +21,7 @@ class EventEmitterMonitor(BaseEventEmitter):
     message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
     keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
     message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
-    forward_updated = Signal(int, 'long long', 'long long', bool, bool)  # 转发状态更新信号 (源消息ID, 源频道ID, 目标ID, 成功标志, 修改标志)
+    forward_updated = Signal(int, str, str, bool, bool)  # 转发状态更新信号 (源消息ID, 源频道显示名, 目标频道显示名, 成功标志, 修改标志)
     text_replaced = Signal(str, str, List)  # 文本替换信号 (原文本, 修改后文本, 替换规则)
     history_progress = Signal(int, int)  # 历史消息获取进度信号 (已获取消息数, 限制数)
     history_complete = Signal(int)  # 历史消息获取完成信号 (总消息数)
@@ -49,6 +49,26 @@ class EventEmitterMonitor(BaseEventEmitter):
         # 监听任务控制变量
         self.should_stop = self.monitor.should_stop
         self.monitor_tasks = self.monitor.monitor_tasks
+        
+        # 重要：为原始Monitor设置emit方法引用，使用BaseEventEmitter的emit方法
+        self.monitor.emit = self._emit_event
+        
+        # 同时为消息处理器设置emit方法引用
+        if hasattr(self.monitor, 'message_processor'):
+            self.monitor.message_processor.emit = self._emit_event
+    
+    def _emit_event(self, event_type, *args, **kwargs):
+        """事件发射方法，将事件转换为Qt信号
+        
+        Args:
+            event_type: 事件类型
+            *args: 位置参数
+            **kwargs: 关键字参数
+        """
+        try:
+            self._emit_qt_signal(event_type, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"发射事件时出错: {e}")
     
     def _emit_qt_signal(self, event_type, *args, **kwargs):
         """根据事件类型发射对应的Qt信号
@@ -94,15 +114,16 @@ class EventEmitterMonitor(BaseEventEmitter):
                     logger.debug(f"发射message_processed信号: msg_id={message_id}")
                     
             elif event_type == "forward":
-                # forward(source_message_id, source_chat_id, target_id, success, modified=False)
+                # forward(source_message_id, source_display_name, target_display_name, success, modified=False)
                 if len(args) >= 4:
                     source_message_id = args[0]
-                    source_chat_id = args[1]
-                    target_id = args[2]
+                    source_display_name = args[1]
+                    target_display_name = args[2]
                     success = args[3]
                     modified = kwargs.get("modified", False)
-                    self.forward_updated.emit(source_message_id, source_chat_id, target_id, success, modified)
-                    logger.debug(f"发射forward_updated信号: msg_id={source_message_id}, target={target_id}, success={success}")
+                    self.forward_updated.emit(source_message_id, source_display_name, target_display_name, success, modified)
+                else:
+                    logger.warning(f"EventEmitterMonitor收到forward事件但参数不足: args={args}, kwargs={kwargs}")
                     
             elif event_type == "text_replaced":
                 if len(args) >= 3:
