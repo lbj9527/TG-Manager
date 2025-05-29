@@ -484,31 +484,31 @@ class Monitor():
                                 self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
                         except Exception as modified_e:
                             logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
-                        await asyncio.sleep(e.x)
-                        # 重试转发
-                        try:
-                            # 优先使用copy_message避免转发限制
-                            await self.client.copy_message(
-                                chat_id=target_id,
-                                from_chat_id=source_chat_id,
-                                message_id=source_message_id
-                            )
-                            success_count += 1
-                            logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                except FloodWait as e:
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+                    await asyncio.sleep(e.x)
+                    # 重试转发
+                    try:
+                        # 优先使用copy_message避免转发限制
+                        await self.client.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=source_chat_id,
+                            message_id=source_message_id
+                        )
+                        success_count += 1
+                        logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
                             
                             # 发射转发成功事件（重试成功）
                             if hasattr(self, 'emit'):
                                 self.emit("forward", source_message_id, source_chat_id, target_id, True, modified=True)
-                        except Exception as retry_e:
-                            failed_count += 1
-                            logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
+                    except Exception as retry_e:
+                        failed_count += 1
+                        logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
                             
                             # 发射转发失败事件
                             if hasattr(self, 'emit'):
                                 self.emit("forward", source_message_id, source_chat_id, target_id, False)
-                    
+                        
                 except ChannelPrivate:
                     failed_count += 1
                     logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)

@@ -722,17 +722,6 @@ class ListenView(QWidget):
         item.setData(Qt.UserRole, pair_data)
         self.pairs_list.addItem(item)
         
-        # 为该频道创建一个消息标签页
-        channel_view = QTextEdit()
-        channel_view.setReadOnly(True)
-        channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
-        
-        channel_name = source_channel.split('/')[-1] if '/' in source_channel else source_channel
-        self.message_tabs.addTab(channel_view, channel_name)
-        
-        # 保存标签页引用
-        self.channel_message_views[source_channel] = channel_view
-        
         # 更新频道数量标签
         self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
         
@@ -769,15 +758,9 @@ class ListenView(QWidget):
             row = self.pairs_list.row(item)
             self.pairs_list.takeItem(row)
             
-            # 找到并删除对应的标签页
-            if source_channel in self.channel_message_views:
-                view = self.channel_message_views[source_channel]
-                index = self.message_tabs.indexOf(view)
-                if index != -1:
-                    self.message_tabs.removeTab(index)
-                
-                # 从字典中删除引用
-                del self.channel_message_views[source_channel]
+            # 注意：不再自动删除对应的标签页，因为标签页现在是动态创建的
+            # 用户可能希望保留标签页中的历史消息记录
+            logger.debug(f"已删除频道对: {source_channel}，保留对应的消息标签页")
         
         # 更新频道数量标签
         self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
@@ -1147,10 +1130,11 @@ class ListenView(QWidget):
         # 清空现有项目
         self.pairs_list.clear()
         
-        # 清除所有频道标签页
+        # 清除所有频道标签页（保留"所有消息"标签页）
         while self.message_tabs.count() > 1:  # 保留"所有消息"标签页
             self.message_tabs.removeTab(1)
         
+        # 清空频道消息视图字典（现在标签页是动态创建的）
         self.channel_message_views = {}
         
         # 从配置加载监听配置
@@ -1267,16 +1251,8 @@ class ListenView(QWidget):
             item.setData(Qt.UserRole, pair_data)
             self.pairs_list.addItem(item)
             
-            # 为该频道创建一个消息标签页
-            channel_view = QTextEdit()
-            channel_view.setReadOnly(True)
-            channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
-            
-            channel_name = source_channel.split('/')[-1] if '/' in source_channel else source_channel
-            self.message_tabs.addTab(channel_view, channel_name)
-            
-            # 保存标签页引用
-            self.channel_message_views[source_channel] = channel_view
+            # 注意：不再预先创建标签页，现在标签页是在收到消息时动态创建的
+            logger.debug(f"已加载频道对: {source_channel}，标签页将在收到消息时自动创建")
         
         # 更新频道数量标签
         self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
@@ -1284,14 +1260,6 @@ class ListenView(QWidget):
         # 将媒体类型复选框设置为全选状态作为默认
         for checkbox in self.media_types_checkboxes.values():
             checkbox.setChecked(True)
-        
-        # 注释掉：不在加载配置时重置过滤选项UI，保持为空白状态供用户添加新频道对时使用
-        # 将过滤选项UI重置为默认状态（用于添加新频道对时的默认设置）
-        # self.keyword_input.clear()
-        # self.exclude_forwards_check.setChecked(False)
-        # self.exclude_replies_check.setChecked(False)
-        # self.exclude_media_check.setChecked(False)
-        # self.exclude_links_check.setChecked(False)
         
         # 加载监听截止日期
         duration = monitor_config.get('duration')
