@@ -538,6 +538,7 @@ class MediaGroupHandler:
         if media_group_id not in self.media_group_cache[channel_id]:
             self.media_group_cache[channel_id][media_group_id] = {
                 'messages': [],
+                'first_message_time': time.time(),  # 记录第一条消息的时间
                 'last_update_time': time.time(),
                 'pair_config': pair_config
             }
@@ -560,9 +561,25 @@ class MediaGroupHandler:
         
         logger.debug(f"添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 现有 {len(messages)} 条消息")
         
-        # 如果我们接收到了整个媒体组（根据media_group_count），处理它
+        # 检查是否应该处理媒体组
+        should_process = False
+        process_reason = ""
+        
+        # 1. 如果我们接收到了整个媒体组（根据media_group_count），处理它
         if hasattr(message, 'media_group_count') and len(messages) >= message.media_group_count:
-            logger.info(f"媒体组 {media_group_id} 已完整接收 ({len(messages)}/{message.media_group_count}), 开始处理")
+            should_process = True
+            process_reason = f"已完整接收 ({len(messages)}/{message.media_group_count})"
+        # 2. 如果从第一条消息开始已经超过5秒，强制处理避免永远等待
+        elif time.time() - group_data['first_message_time'] > 5:
+            should_process = True
+            process_reason = f"等待超时 ({len(messages)} 条消息，等待 {time.time() - group_data['first_message_time']:.1f}s)"
+        # 3. 如果消息数量达到阈值（10条），强制处理避免内存占用
+        elif len(messages) >= 10:
+            should_process = True
+            process_reason = f"消息数量达到阈值 ({len(messages)} 条消息)"
+        
+        if should_process:
+            logger.info(f"媒体组 {media_group_id} {process_reason}，开始处理")
             # 标记为已处理
             self.processed_media_groups.add(media_group_id)
             # 处理完整的媒体组
@@ -578,6 +595,60 @@ class MediaGroupHandler:
             # 移除获取标记，如果存在的话
             if media_group_id in self.fetching_media_groups:
                 self.fetching_media_groups.remove(media_group_id)
+        else:
+            # 如果当前消息较少，安排一个延迟检查任务
+            if len(messages) <= 3:
+                # 延迟3秒后检查是否需要处理
+                asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 3.0))
+    
+    async def _delayed_media_group_check(self, media_group_id: str, channel_id: int, delay: float):
+        """延迟检查媒体组是否需要处理
+        
+        Args:
+            media_group_id: 媒体组ID
+            channel_id: 频道ID  
+            delay: 延迟时间(秒)
+        """
+        try:
+            await asyncio.sleep(delay)
+            
+            # 检查媒体组是否已被处理
+            if media_group_id in self.processed_media_groups:
+                return
+            
+            # 检查媒体组是否还在缓存中
+            if (channel_id not in self.media_group_cache or 
+                media_group_id not in self.media_group_cache[channel_id]):
+                return
+            
+            group_data = self.media_group_cache[channel_id][media_group_id]
+            messages = group_data['messages']
+            pair_config = group_data['pair_config']
+            
+            # 如果距离最后更新已经超过3秒，且消息数量大于0，则强制处理
+            if (time.time() - group_data['first_message_time'] > 3.0 and 
+                len(messages) > 0):
+                
+                logger.info(f"延迟检查: 媒体组 {media_group_id} 收集到 {len(messages)} 条消息，强制处理避免丢失")
+                
+                # 标记为已处理
+                self.processed_media_groups.add(media_group_id)
+                # 处理媒体组
+                await self._process_media_group(messages, pair_config)
+                
+                # 从缓存中删除此媒体组
+                del self.media_group_cache[channel_id][media_group_id]
+                
+                # 如果此频道没有更多媒体组，移除整个频道条目
+                if not self.media_group_cache[channel_id]:
+                    del self.media_group_cache[channel_id]
+                    
+                # 移除获取标记，如果存在的话
+                if media_group_id in self.fetching_media_groups:
+                    self.fetching_media_groups.remove(media_group_id)
+            
+        except Exception as e:
+            logger.error(f"延迟检查媒体组 {media_group_id} 时出错: {str(e)}")
                     
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
         """
