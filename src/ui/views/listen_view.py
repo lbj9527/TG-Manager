@@ -92,21 +92,30 @@ class ListenView(QWidget):
         config_layout.setContentsMargins(12, 12, 12, 12)  # 增加滚动内容边距
         config_layout.setSpacing(15)  # 增加间距，使界面更舒适
         
-        # 创建顶部表单面板 - 直接添加到配置布局，移除QGroupBox
-        form_layout = QFormLayout()
-        form_layout.setSpacing(10)  # 增加表单项间距
-        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
-        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 字段可扩展
+        # 创建顶部表单面板 - 源频道和目标频道使用简单的表单布局
+        basic_form_layout = QFormLayout()
+        basic_form_layout.setSpacing(10)  # 增加表单项间距
+        basic_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
+        basic_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 字段可扩展
         
         # 源频道
         self.source_channel_input = QLineEdit()
         self.source_channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("源频道:", self.source_channel_input)
+        basic_form_layout.addRow("源频道:", self.source_channel_input)
         
         # 目标频道
         self.target_channel_input = QLineEdit()
         self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用逗号分隔)")
-        form_layout.addRow("目标频道:", self.target_channel_input)
+        basic_form_layout.addRow("目标频道:", self.target_channel_input)
+        
+        # 将基本表单添加到配置布局
+        config_layout.addLayout(basic_form_layout)
+        
+        # 创建文本替换规则表单
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)  # 增加表单项间距
+        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)  # 标签右对齐
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 字段可扩展
         
         # 文本替换规则
         self.original_text_input = QLineEdit()
@@ -123,33 +132,29 @@ class ListenView(QWidget):
         # 添加一些间距
         config_layout.addSpacing(6)
         
-        # 监听参数 - 将标签和移除媒体说明放在同一行
-        monitor_options_layout = QHBoxLayout()
-        monitor_options_layout.setSpacing(10)  # 设置合适的间距
-        
-        # 监听参数标签
-        monitor_options_label = QLabel("监听参数:")
-        monitor_options_label.setStyleSheet("font-weight: bold;")
-        monitor_options_layout.addWidget(monitor_options_label)
-        
-        # 移除媒体说明复选框
-        self.remove_captions_check = QCheckBox("移除媒体说明")
-        self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
-        monitor_options_layout.addWidget(self.remove_captions_check)
-        
-        # 添加弹性空间，让控件靠左对齐
-        monitor_options_layout.addStretch(1)
-        
-        # 添加到配置布局
-        config_layout.addLayout(monitor_options_layout)
-        
-        # 添加一些间距
-        config_layout.addSpacing(6)
-        
         # 过滤选项
         filter_options_label = QLabel("过滤选项:")
         filter_options_label.setStyleSheet("font-weight: bold;")
         config_layout.addWidget(filter_options_label)
+        
+        # 过滤复选框 - 将四个复选框放在同一行，移动到过滤选项标签下方
+        filter_checkboxes_layout = QHBoxLayout()
+        
+        self.exclude_forwards_check = QCheckBox("排除转发消息")
+        self.exclude_replies_check = QCheckBox("排除回复消息")
+        self.exclude_media_check = QCheckBox("排除媒体消息")
+        self.exclude_links_check = QCheckBox("排除包含链接的消息")
+        
+        filter_checkboxes_layout.addWidget(self.exclude_forwards_check)
+        filter_checkboxes_layout.addWidget(self.exclude_replies_check)
+        filter_checkboxes_layout.addWidget(self.exclude_media_check)
+        filter_checkboxes_layout.addWidget(self.exclude_links_check)
+        filter_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        
+        config_layout.addLayout(filter_checkboxes_layout)
+        
+        # 添加一些间距
+        config_layout.addSpacing(6)
         
         # 关键词过滤
         filter_layout = QFormLayout()
@@ -192,25 +197,33 @@ class ListenView(QWidget):
         # 添加媒体类型行到表单布局
         filter_layout.addRow("媒体类型:", media_types_layout)
         
-        # 过滤复选框 - 将四个复选框放在同一行
-        filter_checkboxes_layout = QHBoxLayout()
-        
-        self.exclude_forwards_check = QCheckBox("排除转发消息")
-        self.exclude_replies_check = QCheckBox("排除回复消息")
-        self.exclude_media_check = QCheckBox("排除媒体消息")
-        self.exclude_links_check = QCheckBox("排除包含链接的消息")
-        
-        filter_checkboxes_layout.addWidget(self.exclude_forwards_check)
-        filter_checkboxes_layout.addWidget(self.exclude_replies_check)
-        filter_checkboxes_layout.addWidget(self.exclude_media_check)
-        filter_checkboxes_layout.addWidget(self.exclude_links_check)
-        filter_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
-        
         config_layout.addLayout(filter_layout)
-        config_layout.addLayout(filter_checkboxes_layout)
         
         # 添加一些间距
-        config_layout.addSpacing(8)
+        config_layout.addSpacing(4)
+        
+        # 监听参数 - 移动到这里，放在排除复选框下方，添加频道对按钮上方
+        monitor_options_layout = QHBoxLayout()
+        monitor_options_layout.setSpacing(10)  # 设置合适的间距
+        
+        # 监听参数标签
+        monitor_options_label = QLabel("监听参数:")
+        monitor_options_label.setStyleSheet("font-weight: bold;")
+        monitor_options_layout.addWidget(monitor_options_label)
+        
+        # 移除媒体说明复选框
+        self.remove_captions_check = QCheckBox("移除媒体说明")
+        self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        monitor_options_layout.addWidget(self.remove_captions_check)
+        
+        # 添加弹性空间，让控件靠左对齐
+        monitor_options_layout.addStretch(1)
+        
+        # 添加到配置布局
+        config_layout.addLayout(monitor_options_layout)
+        
+        # 添加一些间距
+        config_layout.addSpacing(4)
         
         # 频道对操作按钮 - 移动到这里，放在已配置监听频道对标签上方
         channel_action_layout = QHBoxLayout()
@@ -249,8 +262,8 @@ class ListenView(QWidget):
         # 创建滚动区域
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
-        scroll_area.setMinimumHeight(120)  # 增加滚动区域的最小高度
-        scroll_area.setMaximumHeight(150)  # 设置合理的最大高度
+        scroll_area.setMinimumHeight(240)  # 将滚动区域的最小高度加倍（从120增加到240）
+        scroll_area.setMaximumHeight(300)  # 将滚动区域的最大高度加倍（从150增加到300）
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
