@@ -21,7 +21,7 @@ class EventEmitterMonitor(BaseEventEmitter):
     message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
     keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
     message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
-    forward_updated = Signal(int, str, str, bool, bool)  # 转发状态更新信号 (源消息ID, 源频道显示名, 目标频道显示名, 成功标志, 修改标志)
+    forward_updated = Signal(str, str, str, bool, bool)  # 转发状态更新信号 (源消息ID或媒体组显示ID, 源频道显示名, 目标频道显示名, 成功标志, 修改标志)
     text_replaced = Signal(str, str, List)  # 文本替换信号 (原文本, 修改后文本, 替换规则)
     history_progress = Signal(int, int)  # 历史消息获取进度信号 (已获取消息数, 限制数)
     history_complete = Signal(int)  # 历史消息获取完成信号 (总消息数)
@@ -125,6 +125,11 @@ class EventEmitterMonitor(BaseEventEmitter):
                     target_display_name = args[2]
                     success = args[3]
                     modified = kwargs.get("modified", False)
+                    
+                    # 确保source_message_id是字符串类型，以支持媒体组显示ID
+                    if isinstance(source_message_id, int):
+                        source_message_id = str(source_message_id)
+                    
                     self.forward_updated.emit(source_message_id, source_display_name, target_display_name, success, modified)
                 else:
                     logger.warning(f"EventEmitterMonitor收到forward事件但参数不足: args={args}, kwargs={kwargs}")

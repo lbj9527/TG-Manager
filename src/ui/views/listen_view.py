@@ -1468,7 +1468,7 @@ class ListenView(QWidget):
         """处理转发更新信号
         
         Args:
-            source_message_id: 源消息ID
+            source_message_id: 源消息ID（字符串类型，可能是数字ID或媒体组显示ID格式）
             source_display_name: 源频道显示名称
             target_display_name: 目标频道显示名称
             success: 是否成功
@@ -1479,10 +1479,16 @@ class ListenView(QWidget):
             status = "成功" if success else "失败"
             mod_info = " (标题已修改)" if modified else ""
             
-            forward_info = f"消息[{source_message_id}] 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
+            # 检查是否是媒体组格式的ID
+            if isinstance(source_message_id, str) and source_message_id.startswith("媒体组"):
+                # 媒体组格式：显示"媒体组发送成功"
+                forward_info = f"{source_message_id} 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
+            else:
+                # 单条消息格式：使用传统的"消息[ID]"格式
+                forward_info = f"消息[{source_message_id}] 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
             
             # 添加到主消息面板（所有消息）
-            self._add_forward_item(forward_info)
+            self._add_forward_item(forward_info, success)
             
             # 添加到对应源频道的标签页
             logger.debug(f"尝试为源频道匹配标签页: source_display_name='{source_display_name}'")
@@ -1503,6 +1509,12 @@ class ListenView(QWidget):
                     time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
                     formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
                     view.append(formatted_msg)
+                    
+                    # 如果转发成功，添加分割线
+                    if success:
+                        separator = "#" * 50
+                        view.append(separator)
+                    
                     view.moveCursor(QTextCursor.End)
                     
                     # 限制消息数量
@@ -1553,6 +1565,12 @@ class ListenView(QWidget):
                             time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
                             formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
                             view.append(formatted_msg)
+                            
+                            # 如果转发成功，添加分割线
+                            if success:
+                                separator = "#" * 50
+                                view.append(separator)
+                            
                             view.moveCursor(QTextCursor.End)
                             
                             # 限制消息数量
@@ -1591,6 +1609,12 @@ class ListenView(QWidget):
                         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
                         formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
                         view.append(formatted_msg)
+                        
+                        # 如果转发成功，添加分割线
+                        if success:
+                            separator = "#" * 50
+                            view.append(separator)
+                        
                         view.moveCursor(QTextCursor.End)
                         
                         logger.info(f"成功在标签页 '{source_display_name}' 中添加转发消息")
@@ -1602,6 +1626,38 @@ class ListenView(QWidget):
             logger.debug(f"处理转发更新信号: {forward_info}")
         except Exception as e:
             logger.error(f"处理转发更新信号时出错: {e}")
+    
+    def _add_forward_item(self, forward_info, success=True):
+        """添加转发项到消息面板
+        
+        Args:
+            forward_info: 转发信息
+            success: 是否成功转发
+        """
+        # 使用现有的消息显示机制
+        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        formatted_msg = f"[{time_str}] [转发] {forward_info}"
+        
+        # 添加到主消息面板
+        self.main_message_view.append(formatted_msg)
+        
+        # 如果转发成功，添加分割线
+        if success:
+            separator = "#" * 50
+            self.main_message_view.append(separator)
+        
+        # 自动滚动到底部
+        self.main_message_view.moveCursor(QTextCursor.End)
+        
+        # 限制消息数量
+        max_messages = 200
+        doc = self.main_message_view.document()
+        if doc.blockCount() > max_messages:
+            cursor = QTextCursor(doc)
+            cursor.movePosition(QTextCursor.Start)
+            cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.deleteChar()  # 删除换行符
     
     def _is_channel_match(self, source_channel, source_display_name):
         """检查源频道是否匹配显示名称
@@ -1822,32 +1878,6 @@ class ListenView(QWidget):
         # 使用现有的消息显示机制
         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         formatted_msg = f"[{time_str}] {from_info}: {content}"
-        
-        # 添加到主消息面板
-        self.main_message_view.append(formatted_msg)
-        
-        # 自动滚动到底部
-        self.main_message_view.moveCursor(QTextCursor.End)
-        
-        # 限制消息数量
-        max_messages = 200
-        doc = self.main_message_view.document()
-        if doc.blockCount() > max_messages:
-            cursor = QTextCursor(doc)
-            cursor.movePosition(QTextCursor.Start)
-            cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
-            cursor.removeSelectedText()
-            cursor.deleteChar()  # 删除换行符
-    
-    def _add_forward_item(self, forward_info):
-        """添加转发项到消息面板
-        
-        Args:
-            forward_info: 转发信息
-        """
-        # 使用现有的消息显示机制
-        time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        formatted_msg = f"[{time_str}] [转发] {forward_info}"
         
         # 添加到主消息面板
         self.main_message_view.append(formatted_msg)

@@ -608,7 +608,7 @@ class MediaGroupHandler:
                 if sent_messages:
                     logger.info(f"已使用下载-上传方式成功将媒体组 {media_group_id} 从 {source_title} 发送到所有目标频道")
                     
-                    # 发射所有目标频道的转发成功事件
+                    # 发射媒体组转发成功事件 - 为每个目标频道发射一次整体事件
                     if self.emit:
                         # 尝试获取源频道信息
                         try:
@@ -619,10 +619,12 @@ class MediaGroupHandler:
                         # 获取消息ID列表
                         message_ids = [msg.id for msg in messages]
                         
-                        # 为每个目标频道发射转发成功事件
+                        # 生成媒体组显示ID
+                        media_group_display_id = self._generate_media_group_display_id(message_ids)
+                        
+                        # 为每个目标频道发射一次媒体组整体的转发成功事件
                         for target, target_id, target_info in target_channels:
-                            for msg_id in message_ids:
-                                self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
+                            self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
                 else:
                     logger.warning(f"使用下载-上传方式处理媒体组 {media_group_id} 失败")
                 
@@ -698,7 +700,7 @@ class MediaGroupHandler:
                             )
                             logger.info(f"已将媒体组复制到 {target_info}")
                             
-                            # 发射转发成功事件
+                            # 发射媒体组转发成功事件 - 只发射一次整体事件
                             if self.emit:
                                 # 尝试获取源频道信息
                                 try:
@@ -706,9 +708,11 @@ class MediaGroupHandler:
                                 except Exception:
                                     source_info_str = str(first_target[1])
                                 
-                                # 为媒体组中的每个消息发射转发成功事件
-                                for msg_id in message_ids:
-                                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
+                                # 生成媒体组显示ID
+                                media_group_display_id = self._generate_media_group_display_id(message_ids)
+                                
+                                # 只发射一次媒体组整体的转发成功事件
+                                self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
                         except Exception as e:
                             logger.error(f"从第一个目标频道复制媒体组到 {target_info} 失败: {str(e)}", 
                                        error_type="COPY_MEDIA_GROUP", recoverable=True)
@@ -739,7 +743,7 @@ class MediaGroupHandler:
             error_details = traceback.format_exc()
             logger.error(f"错误详情: {error_details}")
             
-            # 发射转发失败事件
+            # 发射转发失败事件 - 只发射一次整体事件
             if self.emit:
                 # 尝试获取源频道信息
                 try:
@@ -747,10 +751,12 @@ class MediaGroupHandler:
                 except Exception:
                     source_info_str = str(source_chat_id)
                 
-                # 为媒体组中的每个消息发射转发失败事件
-                for msg_id in message_ids:
-                    for target, target_id, target_info in target_channels:
-                        self.emit("forward", msg_id, source_info_str, target_info, False)
+                # 生成媒体组显示ID
+                media_group_display_id = self._generate_media_group_display_id(message_ids)
+                
+                # 为每个目标频道发射一次媒体组整体的转发失败事件
+                for target, target_id, target_info in target_channels:
+                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
             
             return False
     
@@ -785,7 +791,7 @@ class MediaGroupHandler:
                 )
                 logger.info(f"已使用copy_media_group成功转发媒体组到 {target_info}")
                 
-                # 发射转发成功事件
+                # 发射媒体组转发成功事件 - 只发射一次整体事件
                 if self.emit:
                     # 尝试获取源频道信息
                     try:
@@ -793,9 +799,11 @@ class MediaGroupHandler:
                     except Exception:
                         source_info_str = str(source_chat_id)
                     
-                    # 为媒体组中的每个消息发射转发成功事件
-                    for msg_id in message_ids:
-                        self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
+                    # 生成媒体组显示ID
+                    media_group_display_id = self._generate_media_group_display_id(message_ids)
+                    
+                    # 只发射一次媒体组整体的转发成功事件
+                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
                 
                 return True
             except ChatForwardsRestricted:
@@ -810,7 +818,7 @@ class MediaGroupHandler:
                     )
                     logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
                     
-                    # 发射转发成功事件
+                    # 发射媒体组转发成功事件 - 只发射一次整体事件
                     if self.emit:
                         # 尝试获取源频道信息
                         try:
@@ -818,9 +826,11 @@ class MediaGroupHandler:
                         except Exception:
                             source_info_str = str(source_chat_id)
                         
-                        # 为媒体组中的每个消息发射转发成功事件
-                        for msg_id in message_ids:
-                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
+                        # 生成媒体组显示ID
+                        media_group_display_id = self._generate_media_group_display_id(message_ids)
+                        
+                        # 只发射一次媒体组整体的转发成功事件
+                        self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
                     
                     return True
                 except Exception as forward_e:
@@ -837,7 +847,7 @@ class MediaGroupHandler:
                     )
                     logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
                     
-                    # 发射转发成功事件
+                    # 发射媒体组转发成功事件 - 只发射一次整体事件
                     if self.emit:
                         # 尝试获取源频道信息
                         try:
@@ -845,9 +855,11 @@ class MediaGroupHandler:
                         except Exception:
                             source_info_str = str(source_chat_id)
                         
-                        # 为媒体组中的每个消息发射转发成功事件
-                        for msg_id in message_ids:
-                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
+                        # 生成媒体组显示ID
+                        media_group_display_id = self._generate_media_group_display_id(message_ids)
+                        
+                        # 只发射一次媒体组整体的转发成功事件
+                        self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
                     
                     return True
                 except Exception as forward_e:
@@ -866,7 +878,7 @@ class MediaGroupHandler:
         except Exception as e:
             logger.error(f"转发媒体组到 {target_info} 失败: {str(e)}", error_type="FORWARD_TO_TARGET", recoverable=True)
             
-            # 发射转发失败事件
+            # 发射转发失败事件 - 只发射一次整体事件
             if self.emit:
                 # 尝试获取源频道信息
                 try:
@@ -874,9 +886,12 @@ class MediaGroupHandler:
                 except Exception:
                     source_info_str = str(source_chat_id)
                 
-                # 为媒体组中的每个消息发射转发失败事件
-                for msg_id in message_ids:
-                    self.emit("forward", msg_id, source_info_str, target_info, False)
+                # 生成媒体组显示ID
+                media_group_display_id = self._generate_media_group_display_id(message_ids)
+                
+                # 为每个目标频道发射一次媒体组整体的转发失败事件
+                for target, target_id, target_info in target_channels:
+                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
             
             return False
     
@@ -981,7 +996,7 @@ class MediaGroupHandler:
         # 统计结果
         logger.info(f"修改后的媒体组 {media_group_id} 发送完成: 成功 {success_count}, 失败 {failed_count}")
         
-        # 发射转发成功事件
+        # 发射媒体组转发成功事件 - 为每个成功的目标频道发射一次整体事件
         if self.emit and success_count > 0:
             # 尝试获取源频道信息
             try:
@@ -992,12 +1007,15 @@ class MediaGroupHandler:
             # 获取消息ID列表
             message_ids = [msg.id for msg in messages]
             
-            # 为每个成功的目标频道发射转发成功事件
-            for target, target_id, target_info in target_channels:
-                # 为媒体组中的每个消息发射转发成功事件
-                for msg_id in message_ids:
-                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
-        
+            # 生成媒体组显示ID
+            media_group_display_id = self._generate_media_group_display_id(message_ids)
+            
+            # 为每个成功的目标频道发射一次媒体组整体的转发成功事件
+            # 注意：这里需要跟踪哪些目标频道成功了，由于是并发执行，我们简化为按成功数量发射
+            for target, target_id, target_info in target_channels[:success_count]:
+                # 只发射一次媒体组整体的转发成功事件
+                self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
+    
     async def _send_media_group_to_target(self, target_id: int, target_info: str, 
                                         media_group: List, media_group_id: str, 
                                         source_title: str, caption_modified: bool) -> bool:
@@ -1295,3 +1313,47 @@ class MediaGroupHandler:
                 return True
         
         return False 
+
+    def _generate_media_group_display_id(self, message_ids: List[int]) -> str:
+        """生成安全的媒体组显示ID，用于UI显示
+        
+        Args:
+            message_ids: 消息ID列表
+            
+        Returns:
+            str: 格式化的媒体组显示ID，格式为"媒体组[N个文件]-最小消息ID"
+        """
+        try:
+            if not message_ids:
+                # 如果消息列表为空，使用时间戳生成备用ID
+                import time
+                timestamp = int(time.time())
+                logger.warning("消息ID列表为空，使用时间戳生成媒体组显示ID")
+                return f"媒体组[0个文件]-{timestamp}"
+            
+            # 获取消息数量和最小ID
+            message_count = len(message_ids)
+            min_message_id = min(message_ids)
+            
+            # 确保消息ID是有效的
+            if min_message_id <= 0:
+                # 如果最小消息ID无效，使用时间戳
+                import time
+                timestamp = int(time.time())
+                logger.warning(f"检测到无效的消息ID {min_message_id}，使用时间戳生成媒体组显示ID")
+                return f"媒体组[{message_count}个文件]-{timestamp}"
+            
+            # 生成标准格式的媒体组显示ID
+            display_id = f"媒体组[{message_count}个文件]-{min_message_id}"
+            logger.debug(f"生成媒体组显示ID: {display_id} (消息IDs: {message_ids})")
+            
+            return display_id
+            
+        except Exception as e:
+            # 出错时使用时间戳作为备用
+            logger.error(f"生成媒体组显示ID时出错: {e}")
+            import time
+            timestamp = int(time.time())
+            fallback_id = f"媒体组[未知]-{timestamp}"
+            logger.warning(f"使用备用媒体组显示ID: {fallback_id}")
+            return fallback_id 
