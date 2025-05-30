@@ -1320,6 +1320,11 @@ class ListenView(QWidget):
                 self.monitor.error_occurred.connect(self._on_monitor_error)
                 logger.debug("已连接error_occurred信号")
             
+            # 连接过滤消息信号
+            if hasattr(self.monitor, 'message_filtered'):
+                self.monitor.message_filtered.connect(self._on_message_filtered)
+                logger.debug("已连接message_filtered信号")
+            
             logger.debug("监听器信号连接成功")
             
         except Exception as e:
@@ -1867,6 +1872,151 @@ class ListenView(QWidget):
         logger.error(f"监听错误: {error}")
         if message:
             logger.debug(f"错误详情: {message}")
+    
+    def _on_message_filtered(self, message_id, source_info, filter_reason):
+        """处理被过滤的消息信号
+        
+        Args:
+            message_id: 消息ID
+            source_info: 源频道信息
+            filter_reason: 过滤原因
+        """
+        try:
+            # 构建过滤消息显示内容
+            filter_content = f"消息 [ID: {message_id}] 被过滤 - 原因：{filter_reason}"
+            
+            # 添加到主消息面板
+            time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+            formatted_msg = f"[{time_str}] [过滤] {source_info}: {filter_content}"
+            
+            self.main_message_view.append(formatted_msg)
+            
+            # 添加50个星号作为分隔符
+            separator = "*" * 50
+            self.main_message_view.append(separator)
+            
+            self.main_message_view.moveCursor(QTextCursor.End)
+            
+            # 添加到对应的频道标签页
+            matched_channel = None
+            for source_channel, view in self.channel_message_views.items():
+                # 使用改进的匹配逻辑
+                if self._is_channel_match(source_channel, source_info):
+                    view.append(formatted_msg)
+                    # 在频道标签页中也添加星号分隔符
+                    view.append(separator)
+                    view.moveCursor(QTextCursor.End)
+                    
+                    # 限制消息数量
+                    max_messages = 200
+                    doc = view.document()
+                    if doc.blockCount() > max_messages:
+                        cursor = QTextCursor(doc)
+                        cursor.movePosition(QTextCursor.Start)
+                        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deleteChar()  # 删除换行符
+                    
+                    logger.debug(f"过滤消息已添加到频道标签页: {source_channel}")
+                    matched_channel = source_channel
+                    break
+            
+            # 如果没有匹配的标签页，创建新标签页
+            if not matched_channel:
+                self._create_channel_tab_for_filtered_message(source_info, formatted_msg, separator)
+            
+            # 限制主消息面板的消息数量
+            max_messages = 200
+            doc = self.main_message_view.document()
+            if doc.blockCount() > max_messages:
+                cursor = QTextCursor(doc)
+                cursor.movePosition(QTextCursor.Start)
+                cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+                cursor.deleteChar()  # 删除换行符
+            
+            logger.debug(f"处理过滤消息信号: {message_id} - {source_info} - {filter_reason}")
+        except Exception as e:
+            logger.error(f"处理过滤消息信号时出错: {e}")
+    
+    def _create_channel_tab_for_filtered_message(self, source_info, formatted_msg, separator):
+        """为过滤消息创建频道标签页
+        
+        Args:
+            source_info: 源频道信息
+            formatted_msg: 格式化的消息
+            separator: 星号分隔符
+        """
+        try:
+            import re
+            display_id = None
+            id_match = re.search(r'\(ID:\s*(-?\d+)\)', source_info)
+            if id_match:
+                display_id = id_match.group(1)
+                logger.info(f"从源信息提取的ID: {display_id}")
+                
+                # 直接为这个ID创建标签页
+                if display_id and display_id not in self.channel_message_views:
+                    logger.info(f"为频道ID {display_id} 创建新的标签页")
+                    channel_view = QTextEdit()
+                    channel_view.setReadOnly(True)
+                    channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                    
+                    # 从源信息中提取频道名称作为标签页标题
+                    channel_title = self._extract_channel_title_from_source_info(source_info)
+                    
+                    self.message_tabs.addTab(channel_view, channel_title)
+                    self.channel_message_views[display_id] = channel_view
+                    
+                    logger.info(f"成功创建标签页: {channel_title} -> {display_id}")
+                    
+                # 添加消息到标签页
+                if display_id and display_id in self.channel_message_views:
+                    view = self.channel_message_views[display_id]
+                    view.append(formatted_msg)
+                    # 在频道标签页中也添加星号分隔符
+                    view.append(separator)
+                    view.moveCursor(QTextCursor.End)
+                    
+                    # 限制消息数量
+                    max_messages = 200
+                    doc = view.document()
+                    if doc.blockCount() > max_messages:
+                        cursor = QTextCursor(doc)
+                        cursor.movePosition(QTextCursor.Start)
+                        cursor.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+                        cursor.removeSelectedText()
+                        cursor.deleteChar()  # 删除换行符
+                    
+                    logger.info(f"成功在标签页 {display_id} 中添加过滤消息")
+            else:
+                logger.info("无法从源信息中提取ID，使用完整源信息作为key")
+                # 如果无法提取ID，直接使用源信息作为key
+                if source_info not in self.channel_message_views:
+                    logger.info(f"为源信息 '{source_info}' 创建新的标签页")
+                    channel_view = QTextEdit()
+                    channel_view.setReadOnly(True)
+                    channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
+                    
+                    # 使用智能提取的频道名称作为标签页标题
+                    channel_title = self._extract_channel_title_from_source_info(source_info)
+                    
+                    self.message_tabs.addTab(channel_view, channel_title)
+                    self.channel_message_views[source_info] = channel_view
+                    
+                    logger.info(f"成功创建标签页: {channel_title} -> {source_info}")
+                    
+                # 添加消息到标签页
+                view = self.channel_message_views[source_info]
+                view.append(formatted_msg)
+                # 在频道标签页中也添加星号分隔符
+                view.append(separator)
+                view.moveCursor(QTextCursor.End)
+                
+                logger.info(f"成功在标签页 '{source_info}' 中添加过滤消息")
+                
+        except Exception as e:
+            logger.error(f"为过滤消息创建标签页时发生错误: {e}")
     
     def _add_message_item(self, from_info, content):
         """添加消息项到消息面板

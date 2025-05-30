@@ -324,30 +324,70 @@ class MediaGroupHandler:
         
         # 应用过滤逻辑
         if exclude_forwards and message.forward_from:
-            logger.debug(f"媒体组消息 [ID: {message.id}] 是转发消息，根据过滤规则跳过")
+            filter_reason = "转发消息"
+            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 发送过滤消息事件到UI
+            if hasattr(self, 'emit') and self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                except Exception:
+                    source_info_str = str(message.chat.id)
+                self.emit("message_filtered", message.id, source_info_str, filter_reason)
             return
         
         if exclude_replies and message.reply_to_message:
-            logger.debug(f"媒体组消息 [ID: {message.id}] 是回复消息，根据过滤规则跳过")
+            filter_reason = "回复消息"
+            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 发送过滤消息事件到UI
+            if hasattr(self, 'emit') and self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                except Exception:
+                    source_info_str = str(message.chat.id)
+                self.emit("message_filtered", message.id, source_info_str, filter_reason)
             return
         
         # 检查是否为媒体消息（媒体组都是媒体消息）
         if exclude_media:
-            logger.debug(f"媒体组消息 [ID: {message.id}] 是媒体消息，根据过滤规则跳过")
+            filter_reason = "媒体消息"
+            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 发送过滤消息事件到UI
+            if hasattr(self, 'emit') and self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                except Exception:
+                    source_info_str = str(message.chat.id)
+                self.emit("message_filtered", message.id, source_info_str, filter_reason)
             return
         
         # 检查是否包含链接
         if exclude_links:
             text_content = message.text or message.caption or ""
             if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
-                logger.debug(f"媒体组消息 [ID: {message.id}] 包含链接，根据过滤规则跳过")
+                filter_reason = "包含链接"
+                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                # 发送过滤消息事件到UI
+                if hasattr(self, 'emit') and self.emit:
+                    try:
+                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                    except Exception:
+                        source_info_str = str(message.chat.id)
+                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
                 return
         
         # 关键词过滤
         if keywords:
             text_content = message.text or message.caption or ""
             if not any(keyword.lower() in text_content.lower() for keyword in keywords):
-                logger.debug(f"媒体组消息 [ID: {message.id}] 不包含指定关键词，根据过滤规则跳过")
+                filter_reason = f"不包含关键词({', '.join(keywords)})"
+                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                # 发送过滤消息事件到UI
+                if hasattr(self, 'emit') and self.emit:
+                    try:
+                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                    except Exception:
+                        source_info_str = str(message.chat.id)
+                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
                 return
         
         # 获取该频道对允许的媒体类型
@@ -356,7 +396,21 @@ class MediaGroupHandler:
         # 检查消息的媒体类型是否被允许
         message_media_type = self._get_message_media_type(message)
         if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
-            logger.debug(f"媒体组消息 [ID: {message.id}] 的媒体类型 {message_media_type.value} 不在允许列表中，跳过处理")
+            # 获取媒体类型的中文名称
+            media_type_names = {
+                "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
+                "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
+            }
+            media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
+            filter_reason = f"媒体类型({media_type_name})不在允许列表中"
+            logger.info(f"媒体组消息 [ID: {message.id}] 的{filter_reason}，跳过处理")
+            # 发送过滤消息事件到UI
+            if hasattr(self, 'emit') and self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+                except Exception:
+                    source_info_str = str(message.chat.id)
+                self.emit("message_filtered", message.id, source_info_str, filter_reason)
             return
         
         channel_id = message.chat.id

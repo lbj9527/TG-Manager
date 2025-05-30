@@ -19,6 +19,7 @@ class EventEmitterMonitor(BaseEventEmitter):
     monitoring_stopped = Signal()  # 监听停止信号
     new_message_updated = Signal(int, str)  # 新消息更新信号 (消息ID, 来源信息)
     message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
+    message_filtered = Signal(int, str, str)  # 消息过滤信号 (消息ID, 来源信息, 过滤原因)
     keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
     message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
     forward_updated = Signal(str, str, str, bool, bool)  # 转发状态更新信号 (源消息ID或媒体组显示ID, 源频道显示名, 目标频道显示名, 成功标志, 修改标志)
@@ -103,6 +104,14 @@ class EventEmitterMonitor(BaseEventEmitter):
                     source_info = args[1]
                     self.new_message_updated.emit(message_id, source_info)
                     logger.debug(f"发射new_message_updated信号: msg_id={message_id}, source={source_info}")
+            
+            elif event_type == "message_filtered":
+                if len(args) >= 3:
+                    message_id = args[0]
+                    source_info = args[1]
+                    filter_reason = args[2]
+                    self.message_filtered.emit(message_id, source_info, filter_reason)
+                    logger.debug(f"发射message_filtered信号: msg_id={message_id}, source={source_info}, reason={filter_reason}")
             
             elif event_type == "keyword_matched":
                 if len(args) >= 2:
