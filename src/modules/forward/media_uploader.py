@@ -361,17 +361,63 @@ class MediaUploader:
     
     def cleanup_media_group_dir(self, media_group_dir: Path):
         """
-        清理媒体组目录
+        清理媒体组目录，并递归清理空的父目录
         
         Args:
             media_group_dir: 媒体组目录
         """
         if media_group_dir and media_group_dir.exists():
             try:
+                # 删除媒体组目录
                 shutil.rmtree(media_group_dir)
                 _logger.debug(f"已删除媒体组目录: {media_group_dir}")
+                
+                # 递归清理空的父目录
+                self._cleanup_empty_parent_dirs(media_group_dir.parent)
+                
             except Exception as e:
                 _logger.error(f"删除媒体组目录失败: {e}")
+    
+    def _cleanup_empty_parent_dirs(self, dir_path: Path):
+        """
+        递归清理空的父目录，但不删除根临时目录
+        
+        Args:
+            dir_path: 要检查和清理的目录路径
+        """
+        try:
+            # 定义不应删除的根目录（如tmp、tmp/monitor等）
+            protected_dirs = {'tmp', 'monitor', 'forward'}
+            
+            # 如果目录不存在或者是受保护的目录，停止清理
+            if not dir_path.exists() or dir_path.name in protected_dirs:
+                return
+            
+            # 检查目录是否为空
+            try:
+                # 列出目录中的所有项目
+                dir_contents = list(dir_path.iterdir())
+                
+                # 如果目录为空，删除它并继续检查父目录
+                if not dir_contents:
+                    _logger.debug(f"发现空目录，准备删除: {dir_path}")
+                    dir_path.rmdir()
+                    _logger.debug(f"已删除空目录: {dir_path}")
+                    
+                    # 递归检查父目录
+                    self._cleanup_empty_parent_dirs(dir_path.parent)
+                else:
+                    # 目录不为空，停止清理
+                    _logger.debug(f"目录不为空，停止清理: {dir_path} (包含 {len(dir_contents)} 个项目)")
+                    
+            except PermissionError:
+                _logger.debug(f"没有权限访问目录: {dir_path}")
+            except OSError as e:
+                _logger.debug(f"无法访问目录 {dir_path}: {e}")
+                
+        except Exception as e:
+            _logger.debug(f"清理空父目录时发生错误: {e}")
+            # 这里只记录debug级别的日志，因为清理失败不是致命错误
     
     def _get_video_width(self, video_path: str) -> Optional[int]:
         """

@@ -134,6 +134,9 @@ class RestrictedForwardHandler:
         # 确定实际修改状态
         actually_modified = False
         
+        # 临时目录变量，用于清理
+        message_temp_dir = None
+        
         try:
             # 检查是否是媒体消息
             if message.media:
@@ -282,9 +285,6 @@ class RestrictedForwardHandler:
                         except Exception as e:
                             _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
                 
-                # 清理临时目录
-                self.media_uploader.cleanup_media_group_dir(message_temp_dir)
-                
                 sent_result = sent_messages if isinstance(sent_messages, list) else [sent_messages]
                 return sent_result, actually_modified
             else:
@@ -334,6 +334,10 @@ class RestrictedForwardHandler:
             import traceback
             _logger.error(f"错误详情: {traceback.format_exc()}")
             return [], False
+        finally:
+            # 确保清理临时目录
+            if message_temp_dir:
+                self.media_uploader.cleanup_media_group_dir(message_temp_dir)
     
     async def process_restricted_media_group(self,
                                           messages: List[Message],
@@ -359,6 +363,9 @@ class RestrictedForwardHandler:
         if not target_channels or not messages:
             _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
             return [], False
+        
+        # 临时目录变量，用于清理
+        group_temp_dir = None
         
         try:
             # 分离第一个目标频道和其余目标频道
@@ -491,9 +498,6 @@ class RestrictedForwardHandler:
                     except Exception as e:
                         _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
             
-            # 清理临时目录
-            self.media_uploader.cleanup_media_group_dir(group_temp_dir)
-            
             sent_result = sent_messages if isinstance(sent_messages, list) else [sent_messages]
             return sent_result, actually_modified
         
@@ -501,4 +505,50 @@ class RestrictedForwardHandler:
             _logger.error(f"处理禁止转发的媒体组失败: {e}")
             import traceback
             _logger.error(f"错误详情: {traceback.format_exc()}")
-            return [], False 
+            return [], False
+        finally:
+            # 确保清理临时目录
+            if group_temp_dir:
+                self.media_uploader.cleanup_media_group_dir(group_temp_dir) 
+    
+    def cleanup_temp_dirs(self):
+        """
+        清理临时目录中残留的空文件夹
+        """
+        try:
+            if self.temp_dir.exists():
+                # 清理temp_dir下的所有子目录
+                for sub_dir in self.temp_dir.iterdir():
+                    if sub_dir.is_dir():
+                        try:
+                            # 检查目录是否为空
+                            if not list(sub_dir.iterdir()):
+                                sub_dir.rmdir()
+                                _logger.debug(f"清理空的临时子目录: {sub_dir}")
+                            else:
+                                # 如果不为空，尝试递归清理
+                                self.media_uploader.cleanup_media_group_dir(sub_dir)
+                                _logger.debug(f"清理非空的临时子目录: {sub_dir}")
+                        except Exception as e:
+                            _logger.debug(f"清理临时子目录 {sub_dir} 失败: {e}")
+                
+                # 尝试删除temp_dir自身（如果为空）
+                try:
+                    if not list(self.temp_dir.iterdir()):
+                        self.temp_dir.rmdir()
+                        _logger.debug(f"清理空的临时根目录: {self.temp_dir}")
+                except Exception as e:
+                    _logger.debug(f"清理临时根目录失败: {e}")
+                    
+        except Exception as e:
+            _logger.debug(f"清理临时目录时发生错误: {e}")
+    
+    def __del__(self):
+        """
+        析构函数，确保临时目录被清理
+        """
+        try:
+            self.cleanup_temp_dirs()
+        except Exception:
+            # 析构函数中不应该抛出异常
+            pass 

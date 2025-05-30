@@ -311,6 +311,14 @@ class Monitor:
         # 停止媒体组处理器
         await self.media_group_handler.stop()
         
+        # 清理RestrictedForwardHandler的临时目录
+        if hasattr(self.message_processor, 'restricted_handler') and self.message_processor.restricted_handler:
+            try:
+                self.message_processor.restricted_handler.cleanup_temp_dirs()
+                logger.debug("已清理RestrictedForwardHandler的临时目录")
+            except Exception as e:
+                logger.error(f"清理RestrictedForwardHandler临时目录失败: {e}")
+        
         # 取消清理任务
         if self.cleanup_task:
             self.cleanup_task.cancel()
