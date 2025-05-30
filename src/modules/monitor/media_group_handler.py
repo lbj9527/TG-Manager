@@ -434,17 +434,21 @@ class MediaGroupHandler:
                 # 根据缓存消息数量决定是否需要API调用
                 cached_messages = self.media_group_cache[channel_id][media_group_id].get('messages', [])
                 
-                # 如果缓存中已经有消息，可以跳过API调用，因为一条消息就能获取整个媒体组
-                if len(cached_messages) >= 1:  # 只要有一条消息就跳过API调用
-                    logger.info(f"媒体组 {media_group_id} 在缓存中已有 {len(cached_messages)} 条消息，跳过API调用")
-                    can_fetch = False
-                    
+                # 修改逻辑：不应该因为缓存中有消息就直接跳过API调用
+                # 只有当缓存中的消息数量接近完整媒体组时才考虑跳过
                 # 如果消息中包含media_group_count字段，根据已收集比例决定是否需要API调用
                 if hasattr(message, 'media_group_count') and message.media_group_count > 0:
                     completion_ratio = len(cached_messages) / message.media_group_count
-                    if completion_ratio > 0.7:  # 如果已收集超过70%的消息，不调用API
+                    if completion_ratio >= 0.8:  # 如果已收集80%或更多的消息，跳过API调用
                         logger.info(f"媒体组 {media_group_id} 已收集 {completion_ratio:.1%} 的消息({len(cached_messages)}/{message.media_group_count})，跳过API调用")
                         can_fetch = False
+                    else:
+                        logger.debug(f"媒体组 {media_group_id} 只收集了 {completion_ratio:.1%} 的消息({len(cached_messages)}/{message.media_group_count})，需要API调用获取完整媒体组")
+                elif len(cached_messages) >= 5:  # 如果没有media_group_count信息，当缓存消息超过5条时才考虑跳过
+                    logger.info(f"媒体组 {media_group_id} 在缓存中已有 {len(cached_messages)} 条消息，跳过API调用")
+                    can_fetch = False
+                else:
+                    logger.debug(f"媒体组 {media_group_id} 在缓存中有 {len(cached_messages)} 条消息，仍需API调用获取完整媒体组")
             else:
                 # 如果是首次收到该媒体组的消息，先将消息添加到缓存
                 await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
