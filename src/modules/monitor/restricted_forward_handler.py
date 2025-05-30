@@ -109,12 +109,12 @@ class RestrictedForwardHandler:
                                        source_id: int,
                                        target_channels: List[Tuple[str, int, str]],
                                        caption: str = None,
-                                       remove_caption: bool = False) -> List[Message]:
+                                       remove_caption: bool = False) -> Tuple[List[Message], bool]:
         """
         处理禁止转发的单条消息
         
         Args:
-            message: 消息对象
+            message: 要处理的消息
             source_channel: 源频道标识符
             source_id: 源频道ID
             target_channels: 目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
@@ -122,11 +122,17 @@ class RestrictedForwardHandler:
             remove_caption: 是否移除标题
             
         Returns:
-            List[Message]: 第一个目标频道的发送结果，失败返回空列表
+            Tuple[List[Message], bool]: (发送结果列表, 是否实际修改了标题)
         """
-        if not target_channels:
-            _logger.warning("没有有效的目标频道，跳过处理禁止转发的消息")
-            return []
+        if not target_channels or not message:
+            _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的消息")
+            return [], False
+        
+        # 获取原始标题
+        original_caption = message.caption or message.text
+        
+        # 确定实际修改状态
+        actually_modified = False
         
         try:
             # 检查是否是媒体消息
@@ -167,7 +173,8 @@ class RestrictedForwardHandler:
                         except Exception as e:
                             _logger.error(f"发送贴纸到目标频道 {target_info} 失败: {e}")
                     
-                    return sent_messages
+                    # 贴纸消息通常没有标题，不算修改
+                    return sent_messages, False
                 
                 # 为消息创建单独的临时目录
                 safe_source_name = get_safe_path_name(source_channel)
@@ -182,17 +189,25 @@ class RestrictedForwardHandler:
                 
                 if not downloaded_files:
                     _logger.warning(f"消息 [ID: {message.id}] 没有媒体文件可下载，跳过")
-                    return []
+                    return [], False
                 
                 # 决定是否使用消息原始标题
                 if remove_caption:
                     final_caption = ""  # 使用空字符串而不是None来移除caption
-                    _logger.debug(f"移除标题模式")
+                    # 只有原本有标题时，移除才算修改
+                    if original_caption:
+                        actually_modified = True
+                    _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
                 elif caption is not None:
                     final_caption = caption
-                    _logger.debug(f"使用替换后的标题: '{caption}'")
+                    # 只有替换后的标题与原始标题不同时才算修改
+                    if original_caption != caption:
+                        actually_modified = True
+                    _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
                 else:
                     final_caption = message.caption or message.text
+                    actually_modified = False
+                    _logger.debug(f"使用原始标题，无修改")
                 
                 # 预处理视频元数据
                 thumbnails = {}
@@ -270,7 +285,8 @@ class RestrictedForwardHandler:
                 # 清理临时目录
                 self.media_uploader.cleanup_media_group_dir(message_temp_dir)
                 
-                return sent_messages if isinstance(sent_messages, list) else [sent_messages]
+                sent_result = sent_messages if isinstance(sent_messages, list) else [sent_messages]
+                return sent_result, actually_modified
             else:
                 # 非媒体消息(文本/表情/位置等)，无需下载上传，直接使用copy_message
                 _logger.info(f"处理禁止转发的非媒体消息 [ID: {message.id}]，使用copy_message方式")
@@ -281,12 +297,20 @@ class RestrictedForwardHandler:
                 # 确定标题
                 if remove_caption:
                     final_text = ""  # 使用空字符串而不是None来移除caption
-                    _logger.debug(f"移除标题模式")
+                    # 只有原本有标题时，移除才算修改
+                    if original_caption:
+                        actually_modified = True
+                    _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
                 elif caption is not None:
                     final_text = caption
-                    _logger.debug(f"使用替换后的标题: '{caption}'")
+                    # 只有替换后的标题与原始标题不同时才算修改
+                    if original_caption != caption:
+                        actually_modified = True
+                    _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
                 else:
                     final_text = message.text or message.caption
+                    actually_modified = False
+                    _logger.debug(f"使用原始文本，无修改")
                 
                 # 复制到所有目标频道
                 for target, target_id, target_info in target_channels:
@@ -303,13 +327,13 @@ class RestrictedForwardHandler:
                     except Exception as e:
                         _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
                 
-                return sent_messages
+                return sent_messages, actually_modified
         
         except Exception as e:
             _logger.error(f"处理禁止转发的消息失败: {e}")
             import traceback
             _logger.error(f"错误详情: {traceback.format_exc()}")
-            return []
+            return [], False
     
     async def process_restricted_media_group(self,
                                           messages: List[Message],
@@ -317,7 +341,7 @@ class RestrictedForwardHandler:
                                           source_id: int,
                                           target_channels: List[Tuple[str, int, str]],
                                           caption: str = None,
-                                          remove_caption: bool = False) -> List[Message]:
+                                          remove_caption: bool = False) -> Tuple[List[Message], bool]:
         """
         处理禁止转发的媒体组
         
@@ -330,11 +354,11 @@ class RestrictedForwardHandler:
             remove_caption: 是否移除标题
             
         Returns:
-            List[Message]: 第一个目标频道的发送结果，失败返回空列表
+            Tuple[List[Message], bool]: (第一个目标频道的发送结果, 是否实际修改了标题)
         """
         if not target_channels or not messages:
             _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
-            return []
+            return [], False
         
         try:
             # 分离第一个目标频道和其余目标频道
@@ -357,23 +381,36 @@ class RestrictedForwardHandler:
             
             if not downloaded_files:
                 _logger.warning(f"媒体组 [ID: {media_group_id}] 没有媒体文件可下载，跳过")
-                return []
+                return [], False
+            
+            # 获取原始标题
+            original_caption = None
+            for msg in messages:
+                if msg.caption:
+                    original_caption = msg.caption
+                    break
+            
+            # 确定实际修改状态
+            actually_modified = False
             
             # 决定是否使用消息原始标题
             if remove_caption:
                 final_caption = ""  # 使用空字符串而不是None来移除caption
-                _logger.debug(f"移除标题模式")
+                # 只有原本有标题时，移除才算修改
+                if original_caption:
+                    actually_modified = True
+                _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
             elif caption is not None:
                 final_caption = caption
-                _logger.debug(f"使用替换后的标题: '{caption}'")
+                # 只有替换后的标题与原始标题不同时才算修改
+                if original_caption != caption:
+                    actually_modified = True
+                _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
             else:
-                # 尝试从所有消息中获取标题
-                for msg in messages:
-                    if msg.caption:
-                        final_caption = msg.caption
-                        break
-                else:
-                    final_caption = None
+                # 使用原始标题，不算修改
+                final_caption = original_caption
+                actually_modified = False
+                _logger.debug(f"使用原始标题，无修改")
             
             # 预处理视频元数据
             thumbnails = {}
@@ -457,10 +494,11 @@ class RestrictedForwardHandler:
             # 清理临时目录
             self.media_uploader.cleanup_media_group_dir(group_temp_dir)
             
-            return sent_messages if isinstance(sent_messages, list) else [sent_messages]
+            sent_result = sent_messages if isinstance(sent_messages, list) else [sent_messages]
+            return sent_result, actually_modified
         
         except Exception as e:
             _logger.error(f"处理禁止转发的媒体组失败: {e}")
             import traceback
             _logger.error(f"错误详情: {traceback.format_exc()}")
-            return [] 
+            return [], False 

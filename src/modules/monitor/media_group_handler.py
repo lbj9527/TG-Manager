@@ -596,7 +596,7 @@ class MediaGroupHandler:
                 logger.info(f"源频道禁止转发，将使用下载后上传的方式处理媒体组")
                 
                 # 使用禁止转发处理器处理媒体组
-                sent_messages = await self.restricted_handler.process_restricted_media_group(
+                sent_messages, actually_modified = await self.restricted_handler.process_restricted_media_group(
                     messages=messages,
                     source_channel=source_channel,
                     source_id=source_id,
@@ -623,8 +623,9 @@ class MediaGroupHandler:
                         media_group_display_id = self._generate_media_group_display_id(message_ids)
                         
                         # 为每个目标频道发射一次媒体组整体的转发成功事件
+                        # 使用RestrictedForwardHandler返回的actually_modified状态
                         for target, target_id, target_info in target_channels:
-                            self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=caption_modified)
+                            self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=actually_modified)
                 else:
                     logger.warning(f"使用下载-上传方式处理媒体组 {media_group_id} 失败")
                 

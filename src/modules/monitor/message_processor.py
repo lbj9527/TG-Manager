@@ -310,7 +310,7 @@ class MessageProcessor:
                 
                 try:
                     # 使用禁止转发处理器处理消息(无论是否为媒体消息)
-                    sent_messages = await self.restricted_handler.process_restricted_message(
+                    sent_messages, actually_modified = await self.restricted_handler.process_restricted_message(
                         message=message,
                         source_channel=source_channel,
                         source_id=source_chat_id,
@@ -329,7 +329,7 @@ class MessageProcessor:
                         # 发射所有目标频道的转发成功事件
                         if self.emit:
                             for target, target_id, target_info in target_channels:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=actually_modified)
                     else:
                         # 消息处理失败，尝试使用send_modified_message
                         logger.warning(f"处理失败，尝试使用修改后的消息发送")
