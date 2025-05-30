@@ -560,11 +560,14 @@ class MediaGroupHandler:
             
             # 根据配置决定处理方式
             replaced_caption = None
-            should_remove_caption = False
+            
+            # 判断是否真正修改了标题
+            caption_modified = False
             
             if remove_captions:
                 # 设置了移除媒体说明：删除说明，文本替换失效
-                should_remove_caption = True
+                if original_caption:  # 只有原本有标题时，移除才算修改
+                    caption_modified = True
                 logger.debug(f"媒体组 {media_group_id} 将移除说明文字，文本替换功能失效")
             else:
                 # 未设置移除媒体说明：正常应用文本替换
@@ -575,6 +578,7 @@ class MediaGroupHandler:
                             replaced_caption = replaced_caption.replace(find_text, replace_text)
                             
                     if replaced_caption != original_caption:
+                        caption_modified = True
                         logger.info(f"媒体组 {media_group_id} 已应用文本替换")
             
             # 检查源频道是否允许转发
@@ -582,7 +586,7 @@ class MediaGroupHandler:
             
             if source_can_forward:
                 # 源频道允许转发，使用copy_media_group
-                await self._forward_media_group(messages, target_channels, replaced_caption, should_remove_caption)
+                await self._forward_media_group(messages, target_channels, replaced_caption, remove_captions, caption_modified)
             else:
                 # 源频道禁止转发，使用下载上传方式
                 logger.info(f"源频道禁止转发，将使用下载后上传的方式处理媒体组")
@@ -593,8 +597,8 @@ class MediaGroupHandler:
                     source_channel=source_channel,
                     source_id=source_id,
                     target_channels=target_channels,
-                    caption=replaced_caption if not should_remove_caption else None,
-                    remove_caption=should_remove_caption
+                    caption=replaced_caption if not remove_captions else None,
+                    remove_caption=remove_captions
                 )
                 
                 if sent_messages:
@@ -614,7 +618,7 @@ class MediaGroupHandler:
                         # 为每个目标频道发射转发成功事件
                         for target, target_id, target_info in target_channels:
                             for msg_id in message_ids:
-                                self.emit("forward", msg_id, source_info_str, target_info, True, modified=True)
+                                self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
                 else:
                     logger.warning(f"使用下载-上传方式处理媒体组 {media_group_id} 失败")
                 
@@ -625,7 +629,7 @@ class MediaGroupHandler:
             logger.error(f"错误详情: {error_details}")
     
     async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]], 
-                                 replaced_caption: str = None, remove_captions: bool = False):
+                                 replaced_caption: str = None, remove_captions: bool = False, caption_modified: bool = False):
         """
         转发媒体组到目标频道
         
@@ -634,6 +638,7 @@ class MediaGroupHandler:
             target_channels: 目标频道列表
             replaced_caption: 替换后的标题文本
             remove_captions: 是否移除标题
+            caption_modified: 是否修改了标题
         """
         if not messages or not target_channels:
             return
@@ -658,20 +663,20 @@ class MediaGroupHandler:
             
             # 标题处理
             if remove_captions:
-                # 如果需要移除标题
-                logger.debug(f"将移除媒体组 {media_group_id} 的标题")
-                await self._send_modified_media_group(sorted_messages, None, target_channels)
+                # 移除媒体说明
+                logger.debug(f"将移除媒体组的说明文字")
+                await self._send_modified_media_group(sorted_messages, None, target_channels, caption_modified)
             elif replaced_caption is not None:
                 # 如果有替换后的标题
                 logger.debug(f"将使用替换后的标题: '{replaced_caption}'")
-                await self._send_modified_media_group(sorted_messages, replaced_caption, target_channels)
+                await self._send_modified_media_group(sorted_messages, replaced_caption, target_channels, caption_modified)
             else:
                 # 使用原始标题或没有标题
                 # 先尝试第一个目标频道
                 first_target = target_channels[0]
                 success = await self._forward_media_group_to_target(
                     source_chat_id, first_target[1], first_target[2],
-                    first_message_id, message_ids, media_group_id, source_title
+                    first_message_id, message_ids, media_group_id, source_title, caption_modified
                 )
                 
                 if success and len(target_channels) > 1:
@@ -699,7 +704,7 @@ class MediaGroupHandler:
                                 
                                 # 为媒体组中的每个消息发射转发成功事件
                                 for msg_id in message_ids:
-                                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=False)
+                                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
                         except Exception as e:
                             logger.error(f"从第一个目标频道复制媒体组到 {target_info} 失败: {str(e)}", 
                                        error_type="COPY_MEDIA_GROUP", recoverable=True)
@@ -715,7 +720,7 @@ class MediaGroupHandler:
                         try:
                             await self._forward_media_group_to_target(
                                 source_chat_id, target_id, target_info,
-                                first_message_id, message_ids, media_group_id, source_title
+                                first_message_id, message_ids, media_group_id, source_title, caption_modified
                             )
                         except Exception as e:
                             logger.error(f"转发媒体组到 {target_info} 失败: {str(e)}", 
@@ -740,13 +745,14 @@ class MediaGroupHandler:
                 
                 # 为媒体组中的每个消息发射转发失败事件
                 for msg_id in message_ids:
-                    self.emit("forward", msg_id, source_info_str, target_info, False)
+                    for target, target_id, target_info in target_channels:
+                        self.emit("forward", msg_id, source_info_str, target_info, False)
             
             return False
     
     async def _forward_media_group_to_target(self, source_chat_id: int, target_id: int, target_info: str,
                                           first_message_id: int, message_ids: List[int], 
-                                          media_group_id: str, source_title: str) -> bool:
+                                          media_group_id: str, source_title: str, caption_modified: bool) -> bool:
         """
         转发媒体组到指定目标频道
         
@@ -758,6 +764,7 @@ class MediaGroupHandler:
             message_ids: 所有消息ID列表
             media_group_id: 媒体组ID
             source_title: 源频道标题
+            caption_modified: 是否修改了标题
             
         Returns:
             bool: 是否成功转发
@@ -784,7 +791,7 @@ class MediaGroupHandler:
                     
                     # 为媒体组中的每个消息发射转发成功事件
                     for msg_id in message_ids:
-                        self.emit("forward", msg_id, source_info_str, target_info, True, modified=False)
+                        self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
                 
                 return True
             except ChatForwardsRestricted:
@@ -809,7 +816,7 @@ class MediaGroupHandler:
                         
                         # 为媒体组中的每个消息发射转发成功事件
                         for msg_id in message_ids:
-                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=False)
+                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
                     
                     return True
                 except Exception as forward_e:
@@ -836,7 +843,7 @@ class MediaGroupHandler:
                         
                         # 为媒体组中的每个消息发射转发成功事件
                         for msg_id in message_ids:
-                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=False)
+                            self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
                     
                     return True
                 except Exception as forward_e:
@@ -849,7 +856,7 @@ class MediaGroupHandler:
             # 递归重试
             return await self._forward_media_group_to_target(
                 source_chat_id, target_id, target_info,
-                first_message_id, message_ids, media_group_id, source_title
+                first_message_id, message_ids, media_group_id, source_title, caption_modified
             )
             
         except Exception as e:
@@ -869,7 +876,7 @@ class MediaGroupHandler:
             
             return False
     
-    async def _send_modified_media_group(self, messages: List[Message], caption: str, target_channels: List[Tuple[str, int, str]]):
+    async def _send_modified_media_group(self, messages: List[Message], caption: str, target_channels: List[Tuple[str, int, str]], caption_modified: bool):
         """发送修改后的媒体组消息
         
         Args:
@@ -950,7 +957,7 @@ class MediaGroupHandler:
                 
             # 为每个目标频道创建一个异步任务
             tasks.append(self._send_media_group_to_target(
-                target_id, target_info, media_group, media_group_id, source_title
+                target_id, target_info, media_group, media_group_id, source_title, caption_modified
             ))
         
         # 并发执行所有发送任务
@@ -985,11 +992,11 @@ class MediaGroupHandler:
             for target, target_id, target_info in target_channels:
                 # 为媒体组中的每个消息发射转发成功事件
                 for msg_id in message_ids:
-                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=True)
+                    self.emit("forward", msg_id, source_info_str, target_info, True, modified=caption_modified)
         
     async def _send_media_group_to_target(self, target_id: int, target_info: str, 
                                         media_group: List, media_group_id: str, 
-                                        source_title: str) -> bool:
+                                        source_title: str, caption_modified: bool) -> bool:
         """发送媒体组到单个目标频道
         
         Args:

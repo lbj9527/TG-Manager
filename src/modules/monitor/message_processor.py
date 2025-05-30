@@ -97,6 +97,18 @@ class MessageProcessor:
             # 检查源频道是否允许转发
             source_can_forward = await self.channel_resolver.check_forward_permission(source_chat_id)
             
+            # 判断是否真正修改了文本/标题
+            original_text = message.text or message.caption or ""
+            text_modified = False
+            
+            # 检查是否有文本替换
+            if replace_caption is not None and replace_caption != original_text:
+                text_modified = True
+            
+            # 检查是否移除了标题
+            if remove_caption and original_text:
+                text_modified = True
+            
             # 转发到所有目标频道
             success_count = 0
             failed_count = 0
@@ -122,9 +134,7 @@ class MessageProcessor:
                             
                             # 发射转发成功事件
                             if self.emit:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
-                            else:
-                                logger.warning(f"MessageProcessor的emit方法不存在，无法发射转发事件")
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                         elif use_copy:
                             # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
                             caption = None
@@ -146,9 +156,7 @@ class MessageProcessor:
                             
                             # 发射转发成功事件
                             if self.emit:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
-                            else:
-                                logger.warning(f"MessageProcessor的emit方法不存在，无法发射转发事件")
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                         else:
                             # 使用forward_messages保留原始信息
                             await self.client.forward_messages(
@@ -161,9 +169,7 @@ class MessageProcessor:
                             
                             # 发射转发成功事件
                             if self.emit:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
-                            else:
-                                logger.warning(f"MessageProcessor的emit方法不存在，无法发射转发事件")
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=False)
                     except ChatForwardsRestricted:
                         logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
                         try:
@@ -184,7 +190,7 @@ class MessageProcessor:
                                 
                                 # 发射转发成功事件
                                 if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                             else:
                                 # 使用copy_message复制消息
                                 caption = None
@@ -203,6 +209,10 @@ class MessageProcessor:
                                 )
                                 success_count += 1
                                 logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                
+                                # 发射转发成功事件
+                                if self.emit:
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                         except Exception as copy_e:
                             failed_count += 1
                             logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
@@ -225,7 +235,7 @@ class MessageProcessor:
                                 
                                 # 发射转发成功事件（重试成功）
                                 if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                             except Exception as modified_e:
                                 logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
                         
@@ -248,6 +258,10 @@ class MessageProcessor:
                                 )
                                 success_count += 1
                                 logger.info(f"重试成功：已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                
+                                # 发射转发成功事件
+                                if self.emit:
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                             else:
                                 # 使用copy_message复制消息
                                 caption = None
@@ -264,6 +278,10 @@ class MessageProcessor:
                                 )
                                 success_count += 1
                                 logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                                
+                                # 发射转发成功事件
+                                if self.emit:
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                         except Exception as retry_e:
                             failed_count += 1
                             logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
@@ -311,7 +329,7 @@ class MessageProcessor:
                         # 发射所有目标频道的转发成功事件
                         if self.emit:
                             for target, target_id, target_info in target_channels:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                     else:
                         # 消息处理失败，尝试使用send_modified_message
                         logger.warning(f"处理失败，尝试使用修改后的消息发送")
@@ -329,7 +347,7 @@ class MessageProcessor:
                                 
                                 # 发射转发成功事件
                                 if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=True)
+                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                             except Exception as modified_e:
                                 failed_count += 1
                                 logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)

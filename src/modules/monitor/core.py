@@ -489,7 +489,7 @@ class Monitor:
             await self.message_processor.forward_message(
                 message=message, 
                 target_channels=target_channels,
-                use_copy=True,  # 使用copy_message方式
+                use_copy=True,  # 使用copy_message方式以支持文本替换
                 replace_caption=replaced_text,
                 remove_caption=should_remove_caption
             )

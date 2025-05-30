@@ -1489,7 +1489,7 @@ class ListenView(QWidget):
         try:
             # 构建转发信息
             status = "成功" if success else "失败"
-            mod_info = " (已修改)" if modified else ""
+            mod_info = " (标题已修改)" if modified else ""
             
             forward_info = f"消息[{source_message_id}] 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
             
