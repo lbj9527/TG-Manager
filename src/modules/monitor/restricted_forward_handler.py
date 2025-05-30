@@ -179,6 +179,93 @@ class RestrictedForwardHandler:
                     # 贴纸消息通常没有标题，不算修改
                     return sent_messages, False
                 
+                # 特殊处理语音消息 - 语音消息不需要下载上传，直接使用file_id
+                if message.voice:
+                    _logger.info(f"处理禁止转发的语音消息 [ID: {message.id}]，使用send_voice方式")
+                    
+                    # 处理所有目标频道
+                    sent_messages = []
+                    
+                    # 决定使用的标题
+                    final_caption = None
+                    if remove_caption:
+                        final_caption = ""  # 移除标题
+                        actually_modified = bool(original_caption)
+                    elif caption is not None:
+                        final_caption = caption
+                        actually_modified = (original_caption != caption)
+                    else:
+                        final_caption = original_caption
+                        actually_modified = False
+                    
+                    # 发送到所有目标频道
+                    for target, target_id, target_info in target_channels:
+                        try:
+                            # 首先尝试copy_message
+                            try:
+                                sent_message = await self.client.copy_message(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message.id,
+                                    caption=final_caption
+                                )
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已将语音消息从源频道复制到 {target_info}")
+                            except Exception as copy_e:
+                                # 如果复制失败，直接发送语音
+                                _logger.warning(f"复制语音失败，尝试直接发送: {copy_e}")
+                                kwargs = {
+                                    'chat_id': target_id,
+                                    'voice': message.voice.file_id
+                                }
+                                if final_caption:
+                                    kwargs['caption'] = final_caption
+                                sent_message = await self.client.send_voice(**kwargs)
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已直接发送语音到 {target_info}")
+                            
+                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        except Exception as e:
+                            _logger.error(f"发送语音到目标频道 {target_info} 失败: {e}")
+                    
+                    return sent_messages, actually_modified
+                
+                # 特殊处理视频笔记消息 - 视频笔记不需要下载上传，直接使用file_id
+                if message.video_note:
+                    _logger.info(f"处理禁止转发的视频笔记消息 [ID: {message.id}]，使用send_video_note方式")
+                    
+                    # 处理所有目标频道
+                    sent_messages = []
+                    
+                    # 发送到所有目标频道（视频笔记没有标题）
+                    for target, target_id, target_info in target_channels:
+                        try:
+                            # 首先尝试copy_message
+                            try:
+                                sent_message = await self.client.copy_message(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message.id
+                                )
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已将视频笔记消息从源频道复制到 {target_info}")
+                            except Exception as copy_e:
+                                # 如果复制失败，直接发送视频笔记
+                                _logger.warning(f"复制视频笔记失败，尝试直接发送: {copy_e}")
+                                sent_message = await self.client.send_video_note(
+                                    chat_id=target_id,
+                                    video_note=message.video_note.file_id
+                                )
+                                sent_messages.append(sent_message)
+                                _logger.info(f"已直接发送视频笔记到 {target_info}")
+                            
+                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        except Exception as e:
+                            _logger.error(f"发送视频笔记到目标频道 {target_info} 失败: {e}")
+                    
+                    # 视频笔记消息没有标题，不算修改
+                    return sent_messages, False
+                
                 # 为消息创建单独的临时目录
                 safe_source_name = get_safe_path_name(source_channel)
                 safe_target_name = get_safe_path_name(first_target[0])
