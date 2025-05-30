@@ -56,6 +56,10 @@ class EventEmitterMonitor(BaseEventEmitter):
         # 同时为消息处理器设置emit方法引用
         if hasattr(self.monitor, 'message_processor'):
             self.monitor.message_processor.emit = self._emit_event
+            
+        # 同时为媒体组处理器设置emit方法引用
+        if hasattr(self.monitor, 'media_group_handler'):
+            self.monitor.media_group_handler.emit = self._emit_event
     
     def _emit_event(self, event_type, *args, **kwargs):
         """事件发射方法，将事件转换为Qt信号
