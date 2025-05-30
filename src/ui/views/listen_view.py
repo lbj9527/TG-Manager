@@ -1397,9 +1397,7 @@ class ListenView(QWidget):
                             channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
                             
                             # 从源信息中提取频道名称作为标签页标题
-                            channel_title = source_info
-                            if ' (ID:' in source_info:
-                                channel_title = source_info.split(' (ID:')[0]
+                            channel_title = self._extract_channel_title_from_source_info(source_info)
                             
                             self.message_tabs.addTab(channel_view, channel_title)
                             self.channel_message_views[display_id] = channel_view
@@ -1435,13 +1433,13 @@ class ListenView(QWidget):
                             channel_view.setReadOnly(True)
                             channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
                             
-                            # 使用简化的频道名称作为标签页标题
-                            channel_title = source_info
-                            if len(channel_title) > 20:
-                                channel_title = channel_title[:20] + "..."
+                            # 使用智能提取的频道名称作为标签页标题
+                            channel_title = self._extract_channel_title_from_source_info(source_info)
                             
                             self.message_tabs.addTab(channel_view, channel_title)
                             self.channel_message_views[source_info] = channel_view
+                            
+                            logger.info(f"成功创建标签页: {channel_title} -> {source_info}")
                             
                         # 添加消息到标签页
                         view = self.channel_message_views[source_info]
@@ -1554,9 +1552,7 @@ class ListenView(QWidget):
                             channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
                             
                             # 从显示名称中提取频道名称作为标签页标题
-                            channel_title = source_display_name
-                            if ' (ID:' in source_display_name:
-                                channel_title = source_display_name.split(' (ID:')[0]
+                            channel_title = self._extract_channel_title_from_source_info(source_display_name)
                             
                             self.message_tabs.addTab(channel_view, channel_title)
                             self.channel_message_views[display_id] = channel_view
@@ -1594,13 +1590,13 @@ class ListenView(QWidget):
                             channel_view.setReadOnly(True)
                             channel_view.setLineWrapMode(QTextEdit.WidgetWidth)
                             
-                            # 使用简化的频道名称作为标签页标题
-                            channel_title = source_display_name
-                            if len(channel_title) > 20:
-                                channel_title = channel_title[:20] + "..."
+                            # 使用智能提取的频道名称作为标签页标题
+                            channel_title = self._extract_channel_title_from_source_info(source_display_name)
                             
                             self.message_tabs.addTab(channel_view, channel_title)
                             self.channel_message_views[source_display_name] = channel_view
+                            
+                            logger.info(f"成功创建标签页: {channel_title} -> {source_display_name}")
                             
                         # 添加消息到标签页
                         view = self.channel_message_views[source_display_name]
@@ -2273,3 +2269,59 @@ class ListenView(QWidget):
         except Exception as e:
             logger.error(f"更新频道对时出错: {e}")
             QMessageBox.warning(self, "更新失败", f"更新频道对时出错: {e}") 
+    
+    def _extract_channel_title_from_source_info(self, source_info: str) -> str:
+        """从源信息中智能提取频道名称作为标签页标题
+        
+        Args:
+            source_info: 源信息字符串，可能的格式：
+                - "频道名称 (ID: -1001234567890)"
+                - "@username (ID: -1001234567890)"
+                - "-1001234567890"
+                - "@username"
+                - "https://t.me/username"
+                
+        Returns:
+            str: 提取的频道名称，适合作为标签页标题
+        """
+        if not source_info:
+            return "未知频道"
+            
+        # 去除首尾空格
+        source_info = source_info.strip()
+        
+        # 情况1: 标准格式 "频道名称 (ID: -1001234567890)"
+        if ' (ID:' in source_info:
+            channel_title = source_info.split(' (ID:')[0].strip()
+            if channel_title and not channel_title.isdigit() and not (channel_title.startswith('-') and channel_title[1:].isdigit()):
+                # 限制标签页标题长度，避免过长
+                if len(channel_title) > 20:
+                    return channel_title[:20] + "..."
+                return channel_title
+        
+        # 情况2: 纯数字ID "-1001234567890"
+        if source_info.isdigit() or (source_info.startswith('-') and source_info[1:].isdigit()):
+            return f"频道{source_info}"
+        
+        # 情况3: @username格式
+        if source_info.startswith('@'):
+            username = source_info[1:]  # 去掉@符号
+            if len(username) > 20:
+                return f"@{username[:17]}..."
+            return source_info
+        
+        # 情况4: https://t.me/username格式
+        if source_info.startswith('https://t.me/'):
+            import re
+            match = re.search(r'https://t\.me/([^/\s]+)', source_info)
+            if match:
+                username = match.group(1)
+                if len(username) > 20:
+                    return f"@{username[:17]}..."
+                return f"@{username}"
+        
+        # 情况5: 其他格式，直接使用但限制长度
+        if len(source_info) > 20:
+            return source_info[:20] + "..."
+        
+        return source_info

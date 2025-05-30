@@ -266,9 +266,42 @@ class ChannelResolver:
             
             # 同时返回(标题, ID)元组，方便其他模块使用
             return formatted_info, (title, chat.id)
-        except Exception:
-            # 如果无法获取频道信息，则返回原始ID
-            return str(channel_id), ("未知频道", channel_id)
+        except Exception as e:
+            logger.debug(f"无法获取频道 {channel_id} 的详细信息: {e}")
+            # 如果无法获取频道信息，尝试提供更智能的显示名称
+            fallback_title = self._generate_fallback_channel_title(channel_id)
+            fallback_info = f"{fallback_title} (ID: {channel_id})"
+            return fallback_info, (fallback_title, channel_id)
+    
+    def _generate_fallback_channel_title(self, channel_id: Union[str, int]) -> str:
+        """为无法获取详细信息的频道生成备用显示名称
+        
+        Args:
+            channel_id: 频道ID或用户名
+            
+        Returns:
+            str: 备用显示名称
+        """
+        channel_str = str(channel_id)
+        
+        # 如果是@username格式，直接返回
+        if channel_str.startswith('@'):
+            return channel_str
+        
+        # 如果是https://t.me/username格式，提取username
+        if channel_str.startswith('https://t.me/'):
+            import re
+            match = re.search(r'https://t\.me/([^/\s]+)', channel_str)
+            if match:
+                username = match.group(1)
+                return f"@{username}"
+        
+        # 如果是纯数字ID，返回"频道ID"格式
+        if channel_str.isdigit() or (channel_str.startswith('-') and channel_str[1:].isdigit()):
+            return f"频道{channel_str}"
+        
+        # 其他情况，返回原始字符串
+        return channel_str
     
     async def get_message_range(self, chat_id: Union[str, int], start_id: int = 0, end_id: int = 0) -> Tuple[Optional[int], Optional[int]]:
         """
