@@ -46,31 +46,6 @@ class ListenView(QWidget):
         self.main_layout.setContentsMargins(8, 8, 8, 8)  # 增加主布局边距
         self.setLayout(self.main_layout)
         
-        # # 统一设置群组框样式，减小标题高度
-        # self.setStyleSheet("""
-        #     QGroupBox { 
-        #         font-weight: bold; 
-        #         padding-top: 2px; 
-        #         margin-top: 0.5em; 
-        #         border: 1px solid #444;
-        #         border-radius: 3px;
-        #     }
-        #     QGroupBox::title {
-        #         subcontrol-origin: margin;
-        #         subcontrol-position: top left;
-        #         left: 7px;
-        #         padding: 0 3px;
-        #         background-color: palette(window);
-        #     }
-        #     QTabWidget::pane {
-        #         border: 1px solid #444;
-        #         padding: 1px;
-        #     }
-        #     QTabBar::tab {
-        #         padding: 3px 8px;
-        #     }
-        # """)
-        
         # 创建配置标签页
         self.config_tabs = QTabWidget()
         # 移除高度限制，让配置区域可以自由扩展
