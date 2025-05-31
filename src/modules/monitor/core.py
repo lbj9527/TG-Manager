@@ -78,7 +78,7 @@ class Monitor:
         
         # 当前活跃的消息处理器，用于正确清理
         self.current_message_handler = None
-        
+    
         # 连接emit信号
         self.media_group_handler.emit = self._emit_signal
         self.message_processor.emit = self._emit_signal
