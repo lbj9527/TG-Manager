@@ -124,7 +124,7 @@ class ForwardView(QWidget):
         form_layout.addRow("源频道:", self.source_input)
         
         self.target_input = QLineEdit()
-        self.target_input.setPlaceholderText("目标频道，多个用逗号分隔 (例如: @channel1, @channel2)")
+        self.target_input.setPlaceholderText("目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)")
         form_layout.addRow("目标频道:", self.target_input)
         
         channel_layout.addLayout(form_layout)

@@ -1761,7 +1761,7 @@ class DownloadView(QWidget):
         keywords_layout.addWidget(QLabel("关键词:"))
         
         keywords_input = QLineEdit()
-        keywords_input.setPlaceholderText("多个关键词用逗号分隔，同义词用横杠'-'连接")
+        keywords_input.setPlaceholderText("多个关键词用英文逗号分隔，同义词用横杠'-'连接")
         keywords_str = ','.join(channel_data.get('keywords', []))
         keywords_input.setText(keywords_str)
         

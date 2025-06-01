@@ -105,7 +105,7 @@ class ListenView(QWidget):
         
         # 目标频道
         self.target_channel_input = QLineEdit()
-        self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用逗号分隔)")
+        self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用英文逗号分隔)")
         basic_form_layout.addRow("目标频道:", self.target_channel_input)
         
         # 将基本表单添加到配置布局
@@ -119,11 +119,11 @@ class ListenView(QWidget):
         
         # 文本替换规则
         self.original_text_input = QLineEdit()
-        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用逗号分隔如：A,B")
+        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔如：A,B")
         form_layout.addRow("文本替换:", self.original_text_input)
         
         self.target_text_input = QLineEdit()
-        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用逗号分隔如：C,D")
+        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
         form_layout.addRow("替换为:", self.target_text_input)
         
         # 将表单直接添加到配置布局
@@ -160,10 +160,25 @@ class ListenView(QWidget):
         filter_layout = QFormLayout()
         filter_layout.setSpacing(8)
         filter_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        filter_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)  # 设置字段可扩展增长
+        
+        # 关键词输入框和备注布局
+        keyword_layout = QHBoxLayout()
+        keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用逗号分隔")
-        filter_layout.addRow("关键词:", self.keyword_input)
+        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用英文逗号分隔")
+        self.keyword_input.setMinimumWidth(540)  # 设置最小宽度为540像素
+        self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # 设置水平可扩展，垂直固定
+        keyword_layout.addWidget(self.keyword_input)
+        
+        # 添加备注文字
+        keyword_note = QLabel("只转发含关键词的消息")
+        keyword_note.setStyleSheet("color: #ff0000; font-size: 12px;")  # 设置为红色小字
+        keyword_note.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)  # 备注文字使用最小空间
+        keyword_layout.addWidget(keyword_note)
+        
+        filter_layout.addRow("关键词:", keyword_layout)
         
         # 媒体类型选择 - 移动到过滤选项中
         self.media_types_checkboxes = {}
@@ -2140,7 +2155,7 @@ class ListenView(QWidget):
         # 目标频道输入
         target_channels = channel_pair.get('target_channels', [])
         target_input = QLineEdit(', '.join(target_channels))
-        target_input.setPlaceholderText("多个频道用逗号分隔")
+        target_input.setPlaceholderText("多个频道用英文逗号分隔")
         basic_form.addRow("目标频道:", target_input)
         
         scroll_layout.addLayout(basic_form)
@@ -2164,11 +2179,11 @@ class ListenView(QWidget):
                     target_texts.append(target_text)
         
         original_text_input = QLineEdit(', '.join(original_texts))
-        original_text_input.setPlaceholderText("要替换的原始文本，多个用逗号分隔")
+        original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔")
         text_filter_layout.addRow("替换:", original_text_input)
         
         target_text_input = QLineEdit(', '.join(target_texts))
-        target_text_input.setPlaceholderText("替换后的目标文本，多个用逗号分隔")
+        target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔")
         text_filter_layout.addRow("替换为:", target_text_input)
         
         scroll_layout.addWidget(text_filter_group)
@@ -2228,9 +2243,25 @@ class ListenView(QWidget):
         # 关键词输入
         keywords_layout = QFormLayout()
         keywords = channel_pair.get('keywords', [])
+        
+        # 关键词输入框和备注布局
+        keywords_input_layout = QHBoxLayout()
+        keywords_input_layout.setSpacing(8)
+        
         keywords_input = QLineEdit(', '.join(keywords))
-        keywords_input.setPlaceholderText("关键词，多个用逗号分隔")
-        keywords_layout.addRow("关键词:", keywords_input)
+        keywords_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        keywords_input.setMinimumWidth(400)  # 设置最小宽度为400像素
+        keywords_input_layout.addWidget(keywords_input)
+        
+        # 添加备注文字
+        keywords_note = QLabel("只转发含关键词的消息")
+        keywords_note.setStyleSheet("color: #ff0000; font-size: 12px;")  # 设置为红色小字
+        keywords_input_layout.addWidget(keywords_note)
+        
+        # 添加弹性空间，让备注文字靠近输入框
+        keywords_input_layout.addStretch(1)
+        
+        keywords_layout.addRow("关键词:", keywords_input_layout)
         filter_layout.addLayout(keywords_layout)
         
         # 排除选项
