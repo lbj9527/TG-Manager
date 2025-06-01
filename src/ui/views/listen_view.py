@@ -142,12 +142,12 @@ class ListenView(QWidget):
         
         self.exclude_forwards_check = QCheckBox("排除转发消息")
         self.exclude_replies_check = QCheckBox("排除回复消息")
-        self.exclude_media_check = QCheckBox("排除媒体消息")
+        self.exclude_text_check = QCheckBox("排除纯文本消息")
         self.exclude_links_check = QCheckBox("排除包含链接的消息")
         
         filter_checkboxes_layout.addWidget(self.exclude_forwards_check)
         filter_checkboxes_layout.addWidget(self.exclude_replies_check)
-        filter_checkboxes_layout.addWidget(self.exclude_media_check)
+        filter_checkboxes_layout.addWidget(self.exclude_text_check)
         filter_checkboxes_layout.addWidget(self.exclude_links_check)
         filter_checkboxes_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         
@@ -521,14 +521,14 @@ class ListenView(QWidget):
         else:
             return f" - 媒体类型：{', '.join(type_names)}"
     
-    def _format_filter_options_display(self, keywords, exclude_forwards, exclude_replies, exclude_media, exclude_links):
+    def _format_filter_options_display(self, keywords, exclude_forwards, exclude_replies, exclude_text, exclude_links):
         """格式化过滤选项的显示
         
         Args:
             keywords: 关键词列表
             exclude_forwards: 是否排除转发消息
             exclude_replies: 是否排除回复消息
-            exclude_media: 是否排除媒体消息
+            exclude_text: 是否排除纯文本消息
             exclude_links: 是否排除包含链接的消息
             
         Returns:
@@ -547,8 +547,8 @@ class ListenView(QWidget):
             exclude_options.append("转发")
         if exclude_replies:
             exclude_options.append("回复")
-        if exclude_media:
-            exclude_options.append("媒体")
+        if exclude_text:
+            exclude_options.append("纯文本")
         if exclude_links:
             exclude_options.append("链接")
         
@@ -678,7 +678,7 @@ class ListenView(QWidget):
             "keywords": keywords,
             "exclude_forwards": self.exclude_forwards_check.isChecked(),
             "exclude_replies": self.exclude_replies_check.isChecked(),
-            "exclude_media": self.exclude_media_check.isChecked(),
+            "exclude_text": self.exclude_text_check.isChecked(),
             "exclude_links": self.exclude_links_check.isChecked()
         }
         
@@ -692,12 +692,12 @@ class ListenView(QWidget):
             keywords,
             self.exclude_forwards_check.isChecked(),
             self.exclude_replies_check.isChecked(),
-            self.exclude_media_check.isChecked(),
+            self.exclude_text_check.isChecked(),
             self.exclude_links_check.isChecked()
         )
         
         # 添加调试信息
-        logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={self.exclude_forwards_check.isChecked()}, replies={self.exclude_replies_check.isChecked()}, media={self.exclude_media_check.isChecked()}, links={self.exclude_links_check.isChecked()}")
+        logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={self.exclude_forwards_check.isChecked()}, replies={self.exclude_replies_check.isChecked()}, media={self.exclude_text_check.isChecked()}, links={self.exclude_links_check.isChecked()}")
         logger.debug(f"频道对 {source_channel} - 过滤选项显示字符串: '{filter_options_str}'")
         
         display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
@@ -728,7 +728,7 @@ class ListenView(QWidget):
         self.keyword_input.clear()
         self.exclude_forwards_check.setChecked(False)
         self.exclude_replies_check.setChecked(False)
-        self.exclude_media_check.setChecked(False)
+        self.exclude_text_check.setChecked(False)
         self.exclude_links_check.setChecked(False)
     
     def _remove_channel_pairs(self):
@@ -861,7 +861,7 @@ class ListenView(QWidget):
             logger.debug(f"  keywords: {data['keywords']} (类型: {type(data['keywords'])})")
             logger.debug(f"  exclude_forwards: {data['exclude_forwards']} (类型: {type(data['exclude_forwards'])})")
             logger.debug(f"  exclude_replies: {data['exclude_replies']} (类型: {type(data['exclude_replies'])})")
-            logger.debug(f"  exclude_media: {data['exclude_media']} (类型: {type(data['exclude_media'])})")
+            logger.debug(f"  exclude_text: {data['exclude_text']} (类型: {type(data['exclude_text'])})")
             logger.debug(f"  exclude_links: {data['exclude_links']} (类型: {type(data['exclude_links'])})")
             logger.debug(f"  完整配置项: {data}")
             
@@ -908,7 +908,7 @@ class ListenView(QWidget):
             keywords = data.get("keywords", [])
             exclude_forwards = data.get("exclude_forwards", False)
             exclude_replies = data.get("exclude_replies", False)
-            exclude_media = data.get("exclude_media", False)
+            exclude_text = data.get("exclude_text", False)
             exclude_links = data.get("exclude_links", False)
             
             monitor_channel_pairs.append({
@@ -920,7 +920,7 @@ class ListenView(QWidget):
                 "keywords": keywords,
                 "exclude_forwards": exclude_forwards,
                 "exclude_replies": exclude_replies,
-                "exclude_media": exclude_media,
+                "exclude_text": exclude_text,
                 "exclude_links": exclude_links
             })
         
@@ -970,7 +970,7 @@ class ListenView(QWidget):
                 keywords = pair.get('keywords', [])
                 exclude_forwards = pair.get('exclude_forwards', False)
                 exclude_replies = pair.get('exclude_replies', False)
-                exclude_media = pair.get('exclude_media', False)
+                exclude_text = pair.get('exclude_text', False)
                 exclude_links = pair.get('exclude_links', False)
                 
                 # 创建UIMonitorChannelPair对象
@@ -983,7 +983,7 @@ class ListenView(QWidget):
                     keywords=keywords,
                     exclude_forwards=exclude_forwards,
                     exclude_replies=exclude_replies,
-                    exclude_media=exclude_media,
+                    exclude_text=exclude_text,
                     exclude_links=exclude_links
                 ))
             
@@ -1146,7 +1146,8 @@ class ListenView(QWidget):
             keywords = pair.get('keywords', [])
             exclude_forwards = pair.get('exclude_forwards', False)
             exclude_replies = pair.get('exclude_replies', False)
-            exclude_media = pair.get('exclude_media', False)
+            # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
+            exclude_text = pair.get('exclude_text', pair.get('exclude_media', False))
             exclude_links = pair.get('exclude_links', False)
             
             # 添加详细的原始数据调试信息
@@ -1154,7 +1155,7 @@ class ListenView(QWidget):
             logger.debug(f"  keywords: {keywords} (类型: {type(keywords)})")
             logger.debug(f"  exclude_forwards: {exclude_forwards} (类型: {type(exclude_forwards)})")
             logger.debug(f"  exclude_replies: {exclude_replies} (类型: {type(exclude_replies)})")
-            logger.debug(f"  exclude_media: {exclude_media} (类型: {type(exclude_media)})")
+            logger.debug(f"  exclude_text: {exclude_text} (类型: {type(exclude_text)})")
             logger.debug(f"  exclude_links: {exclude_links} (类型: {type(exclude_links)})")
             logger.debug(f"  完整配置项: {pair}")
             
@@ -1208,12 +1209,12 @@ class ListenView(QWidget):
                 keywords,
                 exclude_forwards,
                 exclude_replies,
-                exclude_media,
+                exclude_text,
                 exclude_links
             )
             
             # 添加调试信息
-            logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={exclude_forwards}, replies={exclude_replies}, media={exclude_media}, links={exclude_links}")
+            logger.debug(f"频道对 {source_channel} - 关键词: {keywords}, 排除项: forwards={exclude_forwards}, replies={exclude_replies}, text={exclude_text}, links={exclude_links}")
             logger.debug(f"频道对 {source_channel} - 过滤选项显示字符串: '{filter_options_str}'")
             
             display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
@@ -1233,7 +1234,7 @@ class ListenView(QWidget):
                 "keywords": keywords,
                 "exclude_forwards": exclude_forwards,
                 "exclude_replies": exclude_replies,
-                "exclude_media": exclude_media,
+                "exclude_text": exclude_text,
                 "exclude_links": exclude_links
             }
             item.setData(Qt.UserRole, pair_data)
@@ -2243,9 +2244,11 @@ class ListenView(QWidget):
         exclude_replies_check.setChecked(channel_pair.get('exclude_replies', False))
         exclude_layout.addWidget(exclude_replies_check)
         
-        exclude_media_check = QCheckBox("排除媒体消息")
-        exclude_media_check.setChecked(channel_pair.get('exclude_media', False))
-        exclude_layout.addWidget(exclude_media_check)
+        exclude_text_check = QCheckBox("排除纯文本消息")
+        # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
+        exclude_text_value = channel_pair.get('exclude_text', channel_pair.get('exclude_media', False))
+        exclude_text_check.setChecked(exclude_text_value)
+        exclude_layout.addWidget(exclude_text_check)
         
         exclude_links_check = QCheckBox("排除包含链接的消息")
         exclude_links_check.setChecked(channel_pair.get('exclude_links', False))
@@ -2373,7 +2376,7 @@ class ListenView(QWidget):
                     'keywords': new_keywords,
                     'exclude_forwards': exclude_forwards_check.isChecked(),
                     'exclude_replies': exclude_replies_check.isChecked(),
-                    'exclude_media': exclude_media_check.isChecked(),
+                    'exclude_text': exclude_text_check.isChecked(),
                     'exclude_links': exclude_links_check.isChecked(),
                     'start_id': channel_pair.get('start_id', 0),
                     'end_id': channel_pair.get('end_id', 0)
@@ -2415,7 +2418,7 @@ class ListenView(QWidget):
                 updated_pair.get('keywords', []),
                 updated_pair.get('exclude_forwards', False),
                 updated_pair.get('exclude_replies', False),
-                updated_pair.get('exclude_media', False),
+                updated_pair.get('exclude_text', False),
                 updated_pair.get('exclude_links', False)
             )
             

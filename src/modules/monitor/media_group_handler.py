@@ -291,7 +291,8 @@ class MediaGroupHandler:
         keywords = pair_config.get('keywords', [])
         exclude_forwards = pair_config.get('exclude_forwards', False)
         exclude_replies = pair_config.get('exclude_replies', False)
-        exclude_media = pair_config.get('exclude_media', False)
+        # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
+        exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
         exclude_links = pair_config.get('exclude_links', False)
         
         # 应用过滤逻辑
@@ -307,30 +308,33 @@ class MediaGroupHandler:
             self._emit_message_filtered(message, filter_reason)
             return
         
-        if exclude_media and (message.photo or message.video or message.document or 
-                            message.audio or message.animation or message.sticker or 
-                            message.voice or message.video_note):
-            filter_reason = "媒体消息"
+        # 检查是否为媒体消息
+        is_media_message = bool(message.photo or message.video or message.document or 
+                              message.audio or message.animation or message.sticker or 
+                              message.voice or message.video_note)
+        
+        # 检查是否为纯文本消息（非媒体消息）
+        is_text_message = not is_media_message
+        
+        if exclude_text and is_text_message:
+            filter_reason = "纯文本消息"
             logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
             self._emit_message_filtered(message, filter_reason)
             return
         
-        if exclude_links and message.text and self._contains_links(message.text):
-            filter_reason = "包含链接的消息"
-            logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
-            self._emit_message_filtered(message, filter_reason)
-            return
+        if exclude_links:
+            text_content = message.text or message.caption or ""
+            if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
+                filter_reason = "包含链接"
+                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                self._emit_message_filtered(message, filter_reason)
+                return
         
         # 关键词过滤
-        if keywords and message.text:
-            found_keyword = None
-            for keyword in keywords:
-                if keyword.lower() in message.text.lower():
-                    found_keyword = keyword
-                    break
-            
-            if found_keyword:
-                filter_reason = f"包含关键词({found_keyword})"
+        if keywords:
+            text_content = message.text or message.caption or ""
+            if not any(keyword.lower() in text_content.lower() for keyword in keywords):
+                filter_reason = f"不包含关键词({', '.join(keywords)})"
                 logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
                 self._emit_message_filtered(message, filter_reason)
                 return

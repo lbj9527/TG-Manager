@@ -422,7 +422,8 @@ class UIConfigManager:
                         # 处理排除项设置
                         valid_pair["exclude_forwards"] = bool(pair.get("exclude_forwards", False))
                         valid_pair["exclude_replies"] = bool(pair.get("exclude_replies", False))
-                        valid_pair["exclude_media"] = bool(pair.get("exclude_media", False))
+                        # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
+                        valid_pair["exclude_text"] = bool(pair.get("exclude_text", pair.get("exclude_media", False)))
                         valid_pair["exclude_links"] = bool(pair.get("exclude_links", False))
                         
                         valid_pairs.append(valid_pair)
@@ -600,7 +601,7 @@ class UIConfigManager:
                     pair["keywords"] = [str(kw) for kw in pair["keywords"]]
                 
                 # 确保排除项是布尔值
-                for exclude_field in ["exclude_forwards", "exclude_replies", "exclude_media", "exclude_links"]:
+                for exclude_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links"]:
                     if exclude_field in pair:
                         pair[exclude_field] = bool(pair[exclude_field])
     

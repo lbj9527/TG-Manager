@@ -196,8 +196,11 @@ class Monitor:
             keywords = pair.get('keywords', [])
             exclude_forwards = pair.get('exclude_forwards', False)
             exclude_replies = pair.get('exclude_replies', False)
-            exclude_media = pair.get('exclude_media', False)
+            exclude_text = pair.get('exclude_text', pair.get('exclude_media', False))
             exclude_links = pair.get('exclude_links', False)
+            
+            # 添加调试日志，显示过滤配置
+            logger.debug(f"    过滤配置: forwards={exclude_forwards}, replies={exclude_replies}, text={exclude_text}, links={exclude_links}")
             
             # 存储频道对配置
             channel_pairs[source_id] = {
@@ -209,7 +212,7 @@ class Monitor:
                 'keywords': keywords,
                 'exclude_forwards': exclude_forwards,
                 'exclude_replies': exclude_replies,
-                'exclude_media': exclude_media,
+                'exclude_text': exclude_text,
                 'exclude_links': exclude_links
             }
             
@@ -437,8 +440,11 @@ class Monitor:
             keywords = pair_config.get('keywords', [])
             exclude_forwards = pair_config.get('exclude_forwards', False)
             exclude_replies = pair_config.get('exclude_replies', False)
-            exclude_media = pair_config.get('exclude_media', False)
+            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
             exclude_links = pair_config.get('exclude_links', False)
+            
+            # 添加调试日志，显示当前消息的过滤配置
+            logger.debug(f"消息 [ID: {message.id}] - 过滤配置: forwards={exclude_forwards}, replies={exclude_replies}, text={exclude_text}, links={exclude_links}")
             
             # 应用过滤逻辑
             if exclude_forwards and message.forward_from:
@@ -470,9 +476,16 @@ class Monitor:
                                   message.animation or message.audio or message.voice or 
                                   message.video_note or message.sticker)
             
-            if exclude_media and is_media_message:
-                filter_reason = "媒体消息"
-                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 检查是否为纯文本消息（非媒体消息）
+            is_text_message = not is_media_message
+            
+            # 添加详细的消息类型调试日志
+            logger.debug(f"消息 [ID: {message.id}] - 类型检测: 媒体消息={is_media_message}, 纯文本消息={is_text_message}")
+            logger.debug(f"消息 [ID: {message.id}] - 媒体属性: photo={bool(message.photo)}, video={bool(message.video)}, document={bool(message.document)}, animation={bool(message.animation)}, audio={bool(message.audio)}, voice={bool(message.voice)}, video_note={bool(message.video_note)}, sticker={bool(message.sticker)}")
+            
+            if exclude_text and is_text_message:
+                filter_reason = "纯文本消息"
+                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过 (exclude_text={exclude_text}, is_text_message={is_text_message})")
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
                     try:
@@ -480,6 +493,7 @@ class Monitor:
                     except Exception:
                         source_info_str = str(message.chat.id)
                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                    logger.debug(f"已发射过滤信号: message_id={message.id}, source_info={source_info_str}, filter_reason={filter_reason}")
                 return
             
             # 检查是否包含链接

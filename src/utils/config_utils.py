@@ -201,6 +201,11 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
                         if hasattr(pair, field):
                             pair_dict[field] = getattr(pair, field)
                     
+                    # 处理关键字段 - 新增
+                    for field in ["keywords", "exclude_forwards", "exclude_replies", "exclude_text", "exclude_links"]:
+                        if hasattr(pair, field):
+                            pair_dict[field] = getattr(pair, field)
+                    
                     # 处理text_filter字段
                     if hasattr(pair, 'text_filter'):
                         text_filter = []

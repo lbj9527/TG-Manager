@@ -216,7 +216,7 @@ class UIMonitorChannelPair(BaseModel):
     keywords: List[str] = Field(default_factory=list, description="关键词列表(用于关键词过滤)")
     exclude_forwards: bool = Field(False, description="是否排除转发消息")
     exclude_replies: bool = Field(False, description="是否排除回复消息")
-    exclude_media: bool = Field(False, description="是否排除媒体消息")
+    exclude_text: bool = Field(False, description="是否排除纯文本消息")
     exclude_links: bool = Field(False, description="是否排除包含链接的消息")
 
     @validator('source_channel')
@@ -594,7 +594,7 @@ def create_default_config() -> UIConfig:
                     keywords=["示例关键词1", "示例关键词2"],
                     exclude_forwards=False,
                     exclude_replies=False,
-                    exclude_media=False,
+                    exclude_text=False,
                     exclude_links=False
                 )
             ],
