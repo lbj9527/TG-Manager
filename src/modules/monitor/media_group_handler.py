@@ -39,49 +39,42 @@ class MediaGroupHandler:
         Args:
             client: Pyrogram客户端实例
             channel_resolver: 频道解析器实例
-            message_processor: 消息处理器实例，用于处理单条消息
+            message_processor: 消息处理器实例
         """
         self.client = client
         self.channel_resolver = channel_resolver
         self.message_processor = message_processor
         
-        # 媒体组缓存和管理
-        self.media_group_cache = {}  # {channel_id: {media_group_id: {'messages': [], 'first_message_time': time, 'last_update_time': time, 'pair_config': dict}}}
+        # 媒体组相关缓存
+        self.media_group_cache = {}  # {channel_id: {media_group_id: {'messages': [], 'first_message_time': float, 'last_update_time': float, 'pair_config': dict}}}
         self.processed_media_groups = set()  # 已处理的媒体组ID集合
-        self.media_group_locks = {}  # 媒体组锁，防止并发处理同一媒体组
-        
-        # 媒体组过滤统计 - 新增
-        self.media_group_filter_stats = {}  # {media_group_id: {'total_expected': int, 'filtered_count': int, 'total_received': int}}
-        
-        # API调用管理
-        self.last_media_group_fetch = {}  # 记录上次获取媒体组的时间
         self.fetching_media_groups = set()  # 正在获取的媒体组ID集合
-        self.api_request_queue = asyncio.Queue(maxsize=100)  # API请求队列
-        self.api_worker_running = False
+        self.media_group_filter_stats = {}  # 媒体组过滤统计 {media_group_id: {'total_expected': int, 'filtered_count': int, 'total_received': int, 'original_caption': str}}
+        self.channel_pairs = {}  # 频道对配置
+        self.is_stopping = False  # 停止标志
         
-        # 高流量保护机制
-        self.high_traffic_mode = False
-        self.high_traffic_threshold = 20  # 当待处理媒体组超过此数量时激活高流量模式
-        self.high_traffic_cooldown = 30  # 高流量模式冷却时间（秒）
-        self.last_high_traffic_time = 0
-        self.media_group_fetch_interval = 1.0  # 媒体组API调用最小间隔（秒）
+        # 添加延迟检查任务跟踪，避免重复创建任务
+        self.pending_delay_tasks = {}  # {media_group_id: asyncio.Task}
+        
+        # 媒体组处理相关配置
+        self.media_group_timeout = 30  # 媒体组超时时间（秒）
+        self.media_group_locks = {}  # 媒体组锁字典 {lock_key: asyncio.Lock}
+        
+        # 清理任务相关
+        self.last_processed_groups_cleanup = time.time()  # 上次清理已处理媒体组的时间
+        self.last_media_group_fetch = {}  # 媒体组获取时间记录
         
         # 消息积压处理
-        self.message_backlog = {}  # 消息积压队列
-        self.backlog_process_task = None
+        self.message_backlog = {}  # 消息积压队列，改为字典结构 {channel_id: {media_group_id: (message, pair_config)}}
+        self.is_processing_backlog = False  # 是否正在处理积压
         
-        # 周期性清理任务
-        self.cleanup_task = None
-        
-        # 停止标志和超时设置
-        self.should_stop = False
-        self.media_group_timeout = 8  # 媒体组超时时间（秒）
-        
-        # 异步任务引用
+        # API请求队列
+        self.api_request_queue = asyncio.Queue()
         self.api_worker_task = None
         
-        # 信号事件发射器
-        self.emit = None
+        # 启动后台任务
+        self.cleanup_task = None
+        self.backlog_task = None
         
         logger.debug("MediaGroupHandler 初始化完成")
     
@@ -100,13 +93,13 @@ class MediaGroupHandler:
             self.cleanup_task = asyncio.create_task(self._cleanup_media_groups())
             logger.debug("媒体组清理任务已启动")
             
-        if self.backlog_process_task is None:
-            self.backlog_process_task = asyncio.create_task(self._process_message_backlog())
+        if self.backlog_task is None:
+            self.backlog_task = asyncio.create_task(self._process_message_backlog())
             logger.debug("积压消息处理任务已启动")
     
     async def stop(self):
         """停止媒体组处理器"""
-        self.should_stop = True
+        self.is_stopping = True
         
         # 取消媒体组清理任务
         if self.cleanup_task:
@@ -121,16 +114,16 @@ class MediaGroupHandler:
             self.cleanup_task = None
             
         # 取消已处理媒体组清理任务
-        if self.backlog_process_task:
-            self.backlog_process_task.cancel()
+        if self.backlog_task:
+            self.backlog_task.cancel()
             try:
-                await self.backlog_process_task
+                await self.backlog_task
             except asyncio.CancelledError:
                 pass
             except Exception as e:
                 logger.error(f"取消已处理媒体组清理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
             
-            self.backlog_process_task = None
+            self.backlog_task = None
             
         # 取消API请求处理任务
         if self.api_worker_task:
@@ -145,33 +138,36 @@ class MediaGroupHandler:
             self.api_worker_task = None
             
         # 取消积压消息处理任务
-        if self.backlog_process_task:
-            self.backlog_process_task.cancel()
+        if self.backlog_task:
+            self.backlog_task.cancel()
             try:
-                await self.backlog_process_task
+                await self.backlog_task
             except asyncio.CancelledError:
                 pass
             except Exception as e:
                 logger.error(f"取消积压消息处理任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
                 
-            self.backlog_process_task = None
+            self.backlog_task = None
         
         # 清空媒体组缓存
         self.media_group_cache.clear()
-        self.media_group_locks.clear()
         self.processed_media_groups.clear()
         self.fetching_media_groups.clear()
-        self.last_media_group_fetch.clear()
+        self.media_group_filter_stats.clear()
+        self.channel_pairs.clear()
+        self.pending_delay_tasks.clear()
         self.message_backlog.clear()
+        self.media_group_locks.clear()
+        self.last_media_group_fetch.clear()
         logger.info("已清理所有媒体组缓存")
     
     async def _cleanup_processed_groups(self):
         """定期清理已处理媒体组ID集合，防止集合无限增长"""
         try:
-            while not self.should_stop:
+            while not self.is_stopping:
                 await asyncio.sleep(300)  # 每5分钟清理一次
                 
-                if self.should_stop:
+                if self.is_stopping:
                     break
                 
                 now = time.time()
@@ -205,7 +201,7 @@ class MediaGroupHandler:
     async def _cleanup_media_groups(self):
         """定期检查和处理超时的媒体组（作为备用机制）"""
         try:
-            while not self.should_stop:
+            while not self.is_stopping:
                 # 每秒检查一次
                 await asyncio.sleep(1)
                 
@@ -352,8 +348,14 @@ class MediaGroupHandler:
             self.media_group_filter_stats[media_group_id] = {
                 'total_expected': expected_count or 0,
                 'filtered_count': 0,
-                'total_received': 0
+                'total_received': 0,
+                'original_caption': None  # 保存原始媒体组标题
             }
+            
+        # 保存原始标题（如果当前消息有标题且还没有保存过）
+        if message.caption and not self.media_group_filter_stats[media_group_id]['original_caption']:
+            self.media_group_filter_stats[media_group_id]['original_caption'] = message.caption
+            logger.debug(f"保存媒体组 {media_group_id} 的原始标题: '{message.caption}'")
         
         # 更新统计：总接收数
         self.media_group_filter_stats[media_group_id]['total_received'] += 1
@@ -507,11 +509,23 @@ class MediaGroupHandler:
             # 移除获取标记，如果存在的话
             if media_group_id in self.fetching_media_groups:
                 self.fetching_media_groups.remove(media_group_id)
+                
+            # 清理延迟任务引用，如果存在的话
+            if media_group_id in self.pending_delay_tasks:
+                # 取消正在等待的延迟任务
+                delay_task = self.pending_delay_tasks[media_group_id]
+                if not delay_task.done():
+                    delay_task.cancel()
+                del self.pending_delay_tasks[media_group_id]
         else:
             # 如果当前消息较少，安排一个延迟检查任务
-            if len(messages) <= 3:
-                # 延迟3秒后检查是否需要处理
-                asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 3.0))
+            # 修改：增加延迟检查的触发条件，确保及时处理媒体组
+            if len(messages) <= 5:  # 从3增加到5，确保更多情况下有延迟检查
+                # 避免为同一个媒体组重复创建延迟任务
+                if media_group_id not in self.pending_delay_tasks:
+                    # 延迟5秒后检查是否需要处理，给更多时间收集消息
+                    delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 5.0))
+                    self.pending_delay_tasks[media_group_id] = delay_task
     
     async def _delayed_media_group_check(self, media_group_id: str, channel_id: int, delay: float):
         """延迟检查媒体组是否需要处理
@@ -537,11 +551,20 @@ class MediaGroupHandler:
             messages = group_data['messages']
             pair_config = group_data['pair_config']
             
-            # 如果距离最后更新已经超过3秒，且消息数量大于0，则强制处理
-            if (time.time() - group_data['first_message_time'] > 3.0 and 
-                len(messages) > 0):
-                
-                logger.info(f"延迟检查: 媒体组 {media_group_id} 收集到 {len(messages)} 条消息，强制处理避免丢失")
+            # 修复：使用last_update_time而不是first_message_time来判断是否超时
+            # 这样确保最后一条消息收到后有足够的等待时间
+            time_since_last_update = time.time() - group_data['last_update_time']
+            time_since_first_message = time.time() - group_data['first_message_time']
+            
+            # 如果距离最后更新已经超过3秒，或者距离第一条消息超过10秒，且消息数量大于0，则强制处理
+            should_process = (
+                (time_since_last_update > 3.0 and len(messages) > 0) or
+                (time_since_first_message > 10.0 and len(messages) > 0)
+            )
+            
+            if should_process:
+                logger.info(f"延迟检查: 媒体组 {media_group_id} 收集到 {len(messages)} 条消息，"
+                           f"距离最后更新 {time_since_last_update:.1f}s，距离第一条消息 {time_since_first_message:.1f}s，强制处理避免丢失")
                 
                 # 标记为已处理
                 self.processed_media_groups.add(media_group_id)
@@ -558,10 +581,22 @@ class MediaGroupHandler:
                 # 移除获取标记，如果存在的话
                 if media_group_id in self.fetching_media_groups:
                     self.fetching_media_groups.remove(media_group_id)
+                
+                # 清理延迟任务引用，如果存在的话
+                if media_group_id in self.pending_delay_tasks:
+                    # 取消正在等待的延迟任务
+                    delay_task = self.pending_delay_tasks[media_group_id]
+                    if not delay_task.done():
+                        delay_task.cancel()
+                    del self.pending_delay_tasks[media_group_id]
             
         except Exception as e:
             logger.error(f"延迟检查媒体组 {media_group_id} 时出错: {str(e)}")
-                    
+        finally:
+            # 清理延迟任务引用，无论是否成功处理
+            if media_group_id in self.pending_delay_tasks:
+                del self.pending_delay_tasks[media_group_id]
+    
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
         """
         处理媒体组消息
@@ -647,19 +682,31 @@ class MediaGroupHandler:
                         if text_replacements:
                             from src.modules.monitor.text_filter import TextFilter
                             replaced_caption = TextFilter.apply_text_replacements_static(single_message.caption, text_replacements)
+                            logger.info(f"单条消息 [ID: {single_message.id}] 应用文本替换：'{single_message.caption}' -> '{replaced_caption}'")
                         else:
                             replaced_caption = single_message.caption
+                    # 如果消息没有标题，replaced_caption保持为None
                     else:
-                        replaced_caption = single_message.caption
+                        replaced_caption = None
                 
                     # 使用消息处理器的forward_message方法转发单条消息
-                    await self.message_processor.forward_message(
-                        message=single_message,
-                        target_channels=target_channels,
-                        use_copy=True,
-                        replace_caption=replaced_caption,
-                        remove_caption=remove_captions
-                    )
+                    if replaced_caption is not None:
+                        # 有标题（原始或替换后的），传递replace_caption参数
+                        await self.message_processor.forward_message(
+                            message=single_message,
+                            target_channels=target_channels,
+                            use_copy=True,
+                            replace_caption=replaced_caption,
+                            remove_caption=remove_captions
+                        )
+                    else:
+                        # 没有标题，不传递replace_caption参数
+                        await self.message_processor.forward_message(
+                            message=single_message,
+                            target_channels=target_channels,
+                            use_copy=True,
+                            remove_caption=remove_captions
+                        )
                 
                 # 清理过滤统计
                 if media_group_id in self.media_group_filter_stats:
@@ -1023,7 +1070,8 @@ class MediaGroupHandler:
         
         for i, msg in enumerate(messages):
             # 只给第一个媒体添加标题
-            current_caption = caption if i == 0 and caption else ""
+            # 修复：当caption为None时保持为None，不要设置为空字符串
+            current_caption = caption if i == 0 else None
             
             # 根据消息类型创建对应的InputMedia对象
             if msg.photo:
@@ -1082,7 +1130,7 @@ class MediaGroupHandler:
         # 创建并发任务列表
         tasks = []
         for target, target_id, target_info in target_channels:
-            if self.should_stop:
+            if self.is_stopping:
                 logger.info(f"任务已停止，中断发送过程")
                 break
                 
@@ -1176,12 +1224,12 @@ class MediaGroupHandler:
     async def _api_request_worker(self):
         """API请求队列工作器，负责处理排队的API请求"""
         try:
-            while not self.should_stop:
+            while not self.is_stopping:
                 try:
                     # 从队列获取一个任务
                     request_data = await self.api_request_queue.get()
                     
-                    if self.should_stop:
+                    if self.is_stopping:
                         self.api_request_queue.task_done()  # 确保在退出前完成任务
                         break
                         
@@ -1351,12 +1399,12 @@ class MediaGroupHandler:
     async def _process_message_backlog(self):
         """处理积压消息队列"""
         try:
-            while not self.should_stop:
+            while not self.is_stopping:
                 try:
                     # 每次处理一批积压消息
                     await asyncio.sleep(2)  # 积压消息处理间隔
                     
-                    if self.should_stop:
+                    if self.is_stopping:
                         break
                         
                     active_channels = list(self.message_backlog.keys())
@@ -1615,12 +1663,22 @@ class MediaGroupHandler:
                         if original_text:
                             text_replacements[original_text] = target_text
             
-            # 获取媒体组的第一个非空标题
+            # 获取媒体组的原始标题（从过滤统计中获取，而不是从过滤后的消息中）
             original_caption = None
-            for message in filtered_messages:
-                if message.caption:
-                    original_caption = message.caption
-                    break
+            media_group_id = filtered_messages[0].media_group_id
+            
+            # 尝试从过滤统计中获取原始标题
+            if media_group_id in self.media_group_filter_stats:
+                original_caption = self.media_group_filter_stats[media_group_id].get('original_caption')
+                logger.debug(f"从过滤统计中获取媒体组 {media_group_id} 的原始标题: '{original_caption}'")
+            
+            # 如果过滤统计中没有，再从过滤后的消息中寻找（兜底方案）
+            if not original_caption:
+                for message in filtered_messages:
+                    if message.caption:
+                        original_caption = message.caption
+                        logger.debug(f"从过滤后消息中获取媒体组 {media_group_id} 的标题: '{original_caption}'")
+                        break
             
             # 根据配置决定处理方式
             replaced_caption = None
@@ -1633,15 +1691,26 @@ class MediaGroupHandler:
                 logger.debug(f"重组媒体组将移除说明文字，文本替换功能失效")
             else:
                 # 未设置移除媒体说明：正常应用文本替换
-                if original_caption and text_replacements:
-                    replaced_caption = original_caption
-                    for find_text, replace_text in text_replacements.items():
-                        if find_text in replaced_caption:
-                            replaced_caption = replaced_caption.replace(find_text, replace_text)
-                            
-                    if replaced_caption != original_caption:
-                        caption_modified = True
-                        logger.info(f"重组媒体组已应用文本替换")
+                if original_caption:
+                    if text_replacements:
+                        # 应用文本替换
+                        replaced_caption = original_caption
+                        for find_text, replace_text in text_replacements.items():
+                            if find_text in replaced_caption:
+                                replaced_caption = replaced_caption.replace(find_text, replace_text)
+                                
+                        if replaced_caption != original_caption:
+                            caption_modified = True
+                            logger.info(f"重组媒体组已应用文本替换：'{original_caption}' -> '{replaced_caption}'")
+                        else:
+                            # 没有替换成功，使用原始标题
+                            replaced_caption = original_caption
+                    else:
+                        # 没有文本替换规则，使用原始标题
+                        replaced_caption = original_caption
+                else:
+                    # 没有原始标题，不添加标题
+                    replaced_caption = None
             
             # 准备InputMedia列表用于send_media_group
             media_list = []
@@ -1734,8 +1803,22 @@ class MediaGroupHandler:
                 
                 # 添加延迟避免触发限制
                 await asyncio.sleep(0.5)
+            
+            # 清理媒体组过滤统计，防止内存泄漏
+            if media_group_id in self.media_group_filter_stats:
+                del self.media_group_filter_stats[media_group_id]
+                logger.debug(f"清理媒体组 {media_group_id} 的过滤统计信息")
                 
         except Exception as e:
             logger.error(f"处理过滤后媒体组重组时出错: {str(e)}", error_type="FILTERED_MEDIA_GROUP", recoverable=True)
             import traceback
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
+            
+            # 确保在异常情况下也清理统计信息
+            try:
+                media_group_id = filtered_messages[0].media_group_id if filtered_messages else None
+                if media_group_id and media_group_id in self.media_group_filter_stats:
+                    del self.media_group_filter_stats[media_group_id]
+                    logger.debug(f"异常清理媒体组 {media_group_id} 的过滤统计信息")
+            except Exception:
+                pass  # 忽略清理过程中的异常
