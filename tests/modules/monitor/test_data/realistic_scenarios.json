@@ -1,1 +1,94 @@
- 
+{
+    "news_channel_scenario": {
+      "description": "新闻频道真实场景测试",
+      "source_channel": {
+        "id": -1001111111111,
+        "username": "tech_news_source",
+        "title": "科技新闻频道"
+      },
+      "target_channels": [
+        {
+          "id": -1002222222222,
+          "username": "filtered_tech_news",
+          "title": "精选科技新闻"
+        }
+      ],
+      "config": {
+        "keywords": ["重要", "发布", "更新", "科技", "技术"],
+        "exclude_forwards": true,
+        "exclude_replies": false,
+        "exclude_text": false,
+        "exclude_links": false,
+        "remove_captions": false,
+        "media_types": ["photo", "video", "document"],
+        "text_filter": [
+          {"original_text": "独家", "target_text": "📰 独家"},
+          {"original_text": "重磅", "target_text": "🔥 重磅"}
+        ]
+      },
+      "test_messages": [
+        {
+          "id": 5001,
+          "type": "text",
+          "content": "🔥 重磅：苹果发布新款iPhone，技术大幅升级",
+          "should_forward": true,
+          "expected_content": "🔥 🔥 重磅：苹果发布新款iPhone，技术大幅升级"
+        },
+        {
+          "id": 5002,
+          "type": "photo",
+          "caption": "独家报道：新品发布会现场",
+          "should_forward": true,
+          "expected_caption": "📰 独家报道：新品发布会现场"
+        },
+        {
+          "id": 5003,
+          "type": "text",
+          "content": "今天天气不错",
+          "should_forward": false,
+          "reason": "不包含关键词"
+        }
+      ]
+    },
+    "media_collection_scenario": {
+      "description": "媒体收集频道场景",
+      "source_channel": {
+        "id": -1003333333333,
+        "username": "photo_sharing",
+        "title": "摄影分享"
+      },
+      "target_channels": [
+        {
+          "id": -1004444444444,
+          "username": "curated_photos", 
+          "title": "精选摄影"
+        }
+      ],
+      "config": {
+        "keywords": [],
+        "exclude_forwards": false,
+        "exclude_replies": true,
+        "exclude_text": true,
+        "exclude_links": false,
+        "remove_captions": true,
+        "media_types": ["photo", "video"],
+        "text_filter": []
+      },
+      "test_messages": [
+        {
+          "id": 5011,
+          "type": "photo",
+          "caption": "美丽的日落景象",
+          "should_forward": true,
+          "expected_caption": ""
+        },
+        {
+          "id": 5012,
+          "type": "video",
+          "caption": "延时摄影作品",
+          "should_forward": true,
+          "expected_caption": ""
+        }
+      ]
+    }
+  }
