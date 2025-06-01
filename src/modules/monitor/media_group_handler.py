@@ -630,25 +630,36 @@ class MediaGroupHandler:
                     
                     # 应用文本替换规则（如果有）
                     replaced_caption = None
-                    if single_message.caption and text_filter:
-                        from src.modules.monitor.text_filter import TextFilter
-                        text_filter_instance = TextFilter()
-                        for rule in text_filter:
-                            original_text = rule.get('original_text', '')
-                            target_text = rule.get('target_text', '')
-                            if original_text:
-                                text_filter_instance.add_replacement_rule(original_text, target_text)
+                    if single_message.caption:
+                        # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
+                        text_replacements = pair_config.get('text_replacements', {})
+                        if not text_replacements:
+                            # 如果没有预构建的text_replacements，从text_filter构建
+                            text_filter = pair_config.get('text_filter', [])
+                            text_replacements = {}
+                            for rule in text_filter:
+                                original_text = rule.get('original_text', '')
+                                target_text = rule.get('target_text', '')
+                                if original_text:
+                                    text_replacements[original_text] = target_text
                         
-                        replaced_caption = text_filter_instance.apply_filters(single_message.caption)
+                        # 使用静态方法应用文本替换
+                        if text_replacements:
+                            from src.modules.monitor.text_filter import TextFilter
+                            replaced_caption = TextFilter.apply_text_replacements_static(single_message.caption, text_replacements)
+                        else:
+                            replaced_caption = single_message.caption
+                    else:
+                        replaced_caption = single_message.caption
                 
                     # 使用消息处理器的forward_message方法转发单条消息
                     await self.message_processor.forward_message(
                         message=single_message,
-                    target_channels=target_channels,
+                        target_channels=target_channels,
                         use_copy=True,
                         replace_caption=replaced_caption,
-                    remove_caption=remove_captions
-                )
+                        remove_caption=remove_captions
+                    )
                 
                 # 清理过滤统计
                 if media_group_id in self.media_group_filter_stats:
@@ -677,21 +688,29 @@ class MediaGroupHandler:
             # 检查第一条消息是否有标题需要处理
             first_message = messages[0]
             if first_message.caption:
-                text_filter = pair_config.get('text_filter', [])
-                if text_filter:
-                    # 应用文本替换规则
-                    from src.modules.monitor.text_filter import TextFilter
-                    text_filter_instance = TextFilter()
+                # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
+                text_replacements = pair_config.get('text_replacements', {})
+                if not text_replacements:
+                    # 如果没有预构建的text_replacements，从text_filter构建
+                    text_filter = pair_config.get('text_filter', [])
+                    text_replacements = {}
                     for rule in text_filter:
                         original_text = rule.get('original_text', '')
                         target_text = rule.get('target_text', '')
                         if original_text:
-                            text_filter_instance.add_replacement_rule(original_text, target_text)
-                    
-                    replaced_caption = text_filter_instance.apply_filters(first_message.caption)
+                            text_replacements[original_text] = target_text
+                
+                # 使用静态方法应用文本替换
+                if text_replacements:
+                    from src.modules.monitor.text_filter import TextFilter
+                    replaced_caption = TextFilter.apply_text_replacements_static(first_message.caption, text_replacements)
                     caption_modified = replaced_caption != first_message.caption
                 else:
                     replaced_caption = first_message.caption
+                    caption_modified = False
+            else:
+                replaced_caption = None
+                caption_modified = False
             
             # 获取移除媒体说明的设置
             remove_captions = pair_config.get('remove_captions', False)
@@ -1581,8 +1600,20 @@ class MediaGroupHandler:
             logger.info(f"开始发送过滤后重组的媒体组 [原ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
             
             # 检查文本替换和标题移除配置
-            text_replacements = pair_config.get('text_replacements', {})
             remove_captions = pair_config.get('remove_captions', False)
+            
+            # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
+            text_replacements = pair_config.get('text_replacements', {})
+            if not text_replacements:
+                # 如果没有预构建的text_replacements，从text_filter构建
+                text_filter = pair_config.get('text_filter', [])
+                text_replacements = {}
+                if text_filter:
+                    for rule in text_filter:
+                        original_text = rule.get('original_text', '')
+                        target_text = rule.get('target_text', '')
+                        if original_text:
+                            text_replacements[original_text] = target_text
             
             # 获取媒体组的第一个非空标题
             original_caption = None
