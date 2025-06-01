@@ -1,0 +1,264 @@
+{
+    "photo_with_caption": {
+      "message_id": 2001,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "photo": {
+        "file_id": "BAADBAADPhoto-TestFileID-001",
+        "file_unique_id": "photo_unique_001",
+        "width": 1280,
+        "height": 720,
+        "file_size": 512000
+      },
+      "caption": "这是一张测试图片，包含重要信息",
+      "entities": []
+    },
+    "photo_without_caption": {
+      "message_id": 2002,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "photo": {
+        "file_id": "BAADBAADPhoto-TestFileID-002",
+        "file_unique_id": "photo_unique_002",
+        "width": 1920,
+        "height": 1080,
+        "file_size": 768000
+      },
+      "caption": null,
+      "entities": []
+    },
+    "video_with_caption": {
+      "message_id": 2003,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "video": {
+        "file_id": "BAADBAADVideo-TestFileID-001",
+        "file_unique_id": "video_unique_001",
+        "width": 1920,
+        "height": 1080,
+        "duration": 120,
+        "file_size": 5120000
+      },
+      "caption": "精彩视频内容，不容错过！",
+      "entities": []
+    },
+    "video_long_duration": {
+      "message_id": 2004,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "video": {
+        "file_id": "BAADBAADVideo-TestFileID-002",
+        "file_unique_id": "video_unique_002",
+        "width": 1280,
+        "height": 720,
+        "duration": 3600,
+        "file_size": 102400000
+      },
+      "caption": "长时间视频内容（1小时）",
+      "entities": []
+    },
+    "document_pdf": {
+      "message_id": 2005,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "document": {
+        "file_id": "BAADBAADDocument-TestFileID-001",
+        "file_unique_id": "document_unique_001",
+        "file_name": "重要文档.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 1024000
+      },
+      "caption": "重要文档，请查阅",
+      "entities": []
+    },
+    "document_zip": {
+      "message_id": 2006,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "document": {
+        "file_id": "BAADBAADDocument-TestFileID-002",
+        "file_unique_id": "document_unique_002",
+        "file_name": "软件包.zip",
+        "mime_type": "application/zip",
+        "file_size": 10240000
+      },
+      "caption": "软件安装包下载",
+      "entities": []
+    },
+    "audio_music": {
+      "message_id": 2007,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "audio": {
+        "file_id": "BAADBAADAudio-TestFileID-001",
+        "file_unique_id": "audio_unique_001",
+        "duration": 180,
+        "title": "测试音乐",
+        "performer": "测试艺术家",
+        "file_size": 3072000
+      },
+      "caption": "优美的音乐分享",
+      "entities": []
+    },
+    "voice_message": {
+      "message_id": 2008,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "voice": {
+        "file_id": "BAADBAADVoice-TestFileID-001",
+        "file_unique_id": "voice_unique_001",
+        "duration": 30,
+        "file_size": 256000
+      },
+      "caption": null,
+      "entities": []
+    },
+    "sticker_message": {
+      "message_id": 2009,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "sticker": {
+        "file_id": "BAADBAADSticker-TestFileID-001",
+        "file_unique_id": "sticker_unique_001",
+        "width": 512,
+        "height": 512,
+        "file_size": 128000,
+        "set_name": "test_sticker_set"
+      },
+      "caption": null,
+      "entities": []
+    },
+    "animation_gif": {
+      "message_id": 2010,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "animation": {
+        "file_id": "BAADBAADAnimation-TestFileID-001",
+        "file_unique_id": "animation_unique_001",
+        "width": 480,
+        "height": 480,
+        "duration": 5,
+        "file_size": 512000
+      },
+      "caption": "有趣的动图",
+      "entities": []
+    },
+    "video_note": {
+      "message_id": 2011,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "video_note": {
+        "file_id": "BAADBAADVideoNote-TestFileID-001",
+        "file_unique_id": "video_note_unique_001",
+        "length": 240,
+        "duration": 10,
+        "file_size": 1024000
+      },
+      "caption": null,
+      "entities": []
+    },
+    "photo_with_links": {
+      "message_id": 2012,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "photo": {
+        "file_id": "BAADBAADPhoto-TestFileID-003",
+        "file_unique_id": "photo_unique_003",
+        "width": 1280,
+        "height": 720,
+        "file_size": 512000
+      },
+      "caption": "查看详情 https://example.com/details",
+      "entities": [
+        {
+          "type": "url",
+          "offset": 5,
+          "length": 28
+        }
+      ]
+    },
+    "video_with_hashtags": {
+      "message_id": 2013,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "video": {
+        "file_id": "BAADBAADVideo-TestFileID-003",
+        "file_unique_id": "video_unique_003",
+        "width": 1280,
+        "height": 720,
+        "duration": 60,
+        "file_size": 2048000
+      },
+      "caption": "精彩视频 #教程 #技术 #分享",
+      "entities": [
+        {
+          "type": "hashtag",
+          "offset": 5,
+          "length": 3
+        },
+        {
+          "type": "hashtag",
+          "offset": 9,
+          "length": 3
+        },
+        {
+          "type": "hashtag",
+          "offset": 13,
+          "length": 3
+        }
+      ]
+    },
+    "forwarded_photo": {
+      "message_id": 2014,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "photo": {
+        "file_id": "BAADBAADPhoto-TestFileID-004",
+        "file_unique_id": "photo_unique_004",
+        "width": 1280,
+        "height": 720,
+        "file_size": 512000
+      },
+      "caption": "转发的图片内容",
+      "forward_from": {
+        "id": -1001111111111,
+        "title": "原始频道",
+        "username": "original_channel"
+      },
+      "entities": []
+    },
+    "reply_video": {
+      "message_id": 2015,
+      "chat_id": -1001234567890,
+      "chat_title": "测试源频道",
+      "chat_username": "test_source",
+      "video": {
+        "file_id": "BAADBAADVideo-TestFileID-004",
+        "file_unique_id": "video_unique_004",
+        "width": 1280,
+        "height": 720,
+        "duration": 90,
+        "file_size": 3072000
+      },
+      "caption": "回复视频内容",
+      "reply_to_message": {
+        "message_id": 2001,
+        "text": "原始消息"
+      },
+      "entities": []
+    }
+  }

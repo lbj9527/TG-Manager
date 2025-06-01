@@ -1,0 +1,261 @@
+{
+    "baseline_metrics": {
+      "description": "基线性能指标",
+      "single_message_processing": {
+        "max_time_ms": 100,
+        "avg_time_ms": 50,
+        "memory_usage_mb": 5,
+        "cpu_usage_percent": 10
+      },
+      "media_group_processing": {
+        "max_time_ms": 500,
+        "avg_time_ms": 250,
+        "memory_usage_mb": 15,
+        "cpu_usage_percent": 20
+      },
+      "concurrent_processing": {
+        "max_concurrent_operations": 10,
+        "throughput_msg_per_sec": 10,
+        "memory_growth_limit_mb": 100,
+        "queue_size_limit": 1000
+      }
+    },
+    "load_testing_scenarios": {
+      "description": "负载测试场景",
+      "light_load": {
+        "messages_per_minute": 10,
+        "concurrent_operations": 3,
+        "expected_response_time_ms": 80,
+        "memory_usage_limit_mb": 20,
+        "success_rate_threshold": 0.99
+      },
+      "medium_load": {
+        "messages_per_minute": 50,
+        "concurrent_operations": 8,
+        "expected_response_time_ms": 150,
+        "memory_usage_limit_mb": 50,
+        "success_rate_threshold": 0.95
+      },
+      "heavy_load": {
+        "messages_per_minute": 200,
+        "concurrent_operations": 20,
+        "expected_response_time_ms": 300,
+        "memory_usage_limit_mb": 150,
+        "success_rate_threshold": 0.90
+      },
+      "stress_test": {
+        "messages_per_minute": 500,
+        "concurrent_operations": 50,
+        "expected_response_time_ms": 1000,
+        "memory_usage_limit_mb": 300,
+        "success_rate_threshold": 0.80
+      }
+    },
+    "message_type_benchmarks": {
+      "description": "不同消息类型的性能基准",
+      "text_message": {
+        "processing_time_ms": 30,
+        "memory_footprint_kb": 1,
+        "api_calls": 1
+      },
+      "photo_message": {
+        "processing_time_ms": 80,
+        "memory_footprint_kb": 50,
+        "api_calls": 1
+      },
+      "video_message": {
+        "processing_time_ms": 120,
+        "memory_footprint_kb": 200,
+        "api_calls": 1
+      },
+      "document_message": {
+        "processing_time_ms": 100,
+        "memory_footprint_kb": 100,
+        "api_calls": 1
+      },
+      "media_group_3_items": {
+        "processing_time_ms": 200,
+        "memory_footprint_kb": 150,
+        "api_calls": 1
+      },
+      "media_group_10_items": {
+        "processing_time_ms": 400,
+        "memory_footprint_kb": 500,
+        "api_calls": 1
+      },
+      "voice_message": {
+        "processing_time_ms": 90,
+        "memory_footprint_kb": 80,
+        "api_calls": 1
+      },
+      "sticker_message": {
+        "processing_time_ms": 70,
+        "memory_footprint_kb": 30,
+        "api_calls": 1
+      }
+    },
+    "filtering_performance": {
+      "description": "过滤功能性能基准",
+      "keyword_filtering": {
+        "processing_time_per_rule_ms": 1,
+        "memory_overhead_per_rule_kb": 0.1,
+        "max_keywords": 1000
+      },
+      "text_replacement": {
+        "processing_time_per_rule_ms": 2,
+        "memory_overhead_per_rule_kb": 0.2,
+        "max_replacement_rules": 500
+      },
+      "media_type_filtering": {
+        "processing_time_ms": 5,
+        "memory_overhead_kb": 1,
+        "supported_types": 8
+      },
+      "link_detection": {
+        "processing_time_per_entity_ms": 0.5,
+        "memory_overhead_per_entity_kb": 0.05,
+        "max_entities": 100
+      }
+    },
+    "cache_performance": {
+      "description": "缓存系统性能指标",
+      "media_group_cache": {
+        "hit_rate_threshold": 0.8,
+        "miss_penalty_ms": 100,
+        "cache_size_limit_mb": 50,
+        "ttl_seconds": 300
+      },
+      "channel_resolution_cache": {
+        "hit_rate_threshold": 0.9,
+        "miss_penalty_ms": 200,
+        "cache_size_limit_mb": 10,
+        "ttl_seconds": 3600
+      },
+      "processed_messages_cache": {
+        "cleanup_interval_seconds": 3600,
+        "max_entries": 10000,
+        "memory_limit_mb": 20
+      }
+    },
+    "api_rate_limiting": {
+      "description": "API调用频率限制指标",
+      "telegram_api_limits": {
+        "messages_per_second": 30,
+        "messages_per_minute": 20,
+        "burst_limit": 50,
+        "cooldown_period_ms": 1000
+      },
+      "retry_strategy": {
+        "initial_delay_ms": 1000,
+        "max_delay_ms": 60000,
+        "backoff_multiplier": 2,
+        "max_retries": 5
+      },
+      "flood_wait_handling": {
+        "max_wait_time_seconds": 300,
+        "adaptive_delay": true,
+        "queue_during_wait": true
+      }
+    },
+    "memory_benchmarks": {
+      "description": "内存使用基准",
+      "startup_memory_mb": 30,
+      "idle_memory_mb": 40,
+      "processing_memory_growth": {
+        "per_message_kb": 2,
+        "per_media_group_kb": 10,
+        "per_filter_rule_kb": 0.5
+      },
+      "memory_leak_detection": {
+        "max_growth_per_hour_mb": 10,
+        "monitoring_duration_minutes": 60,
+        "gc_frequency_minutes": 5
+      },
+      "cleanup_thresholds": {
+        "trigger_memory_mb": 200,
+        "target_memory_mb": 100,
+        "cleanup_frequency_minutes": 30
+      }
+    },
+    "network_performance": {
+      "description": "网络性能指标",
+      "connection_metrics": {
+        "connection_timeout_seconds": 30,
+        "read_timeout_seconds": 60,
+        "max_connections": 100,
+        "keepalive_seconds": 300
+      },
+      "bandwidth_usage": {
+        "avg_request_size_kb": 2,
+        "avg_response_size_kb": 5,
+        "peak_bandwidth_mbps": 10,
+        "sustained_bandwidth_mbps": 5
+      },
+      "error_handling": {
+        "network_error_rate_threshold": 0.05,
+        "timeout_rate_threshold": 0.02,
+        "retry_success_rate_threshold": 0.8
+      }
+    },
+    "scalability_metrics": {
+      "description": "可扩展性指标",
+      "channel_limits": {
+        "max_monitored_channels": 100,
+        "max_target_channels_per_source": 20,
+        "max_total_target_channels": 500
+      },
+      "rule_limits": {
+        "max_keywords_per_channel": 1000,
+        "max_text_replacement_rules": 500,
+        "max_filter_combinations": 10
+      },
+      "performance_degradation": {
+        "acceptable_slowdown_factor": 2,
+        "performance_monitoring_interval_minutes": 5,
+        "alert_threshold_multiplier": 1.5
+      }
+    },
+    "reliability_metrics": {
+      "description": "可靠性指标",
+      "uptime_requirements": {
+        "target_uptime_percent": 99.5,
+        "max_downtime_minutes_per_day": 7.2,
+        "recovery_time_seconds": 60
+      },
+      "error_rates": {
+        "total_error_rate_threshold": 0.01,
+        "critical_error_rate_threshold": 0.001,
+        "temporary_error_recovery_rate": 0.95
+      },
+      "data_integrity": {
+        "message_loss_rate_threshold": 0.0001,
+        "duplicate_detection_accuracy": 0.999,
+        "order_preservation_accuracy": 0.99
+      }
+    },
+    "test_execution_benchmarks": {
+      "description": "测试执行性能基准",
+      "unit_tests": {
+        "max_execution_time_seconds": 30,
+        "target_execution_time_seconds": 10,
+        "max_memory_usage_mb": 100
+      },
+      "integration_tests": {
+        "max_execution_time_seconds": 120,
+        "target_execution_time_seconds": 60,
+        "max_memory_usage_mb": 200
+      },
+      "performance_tests": {
+        "max_execution_time_seconds": 300,
+        "target_execution_time_seconds": 180,
+        "max_memory_usage_mb": 500
+      },
+      "full_test_suite": {
+        "max_execution_time_seconds": 600,
+        "target_execution_time_seconds": 300,
+        "max_memory_usage_mb": 800,
+        "parallel_execution": true,
+        "max_parallel_jobs": 4
+      }
+    }
+  }
