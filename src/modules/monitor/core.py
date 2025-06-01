@@ -118,6 +118,11 @@ class Monitor:
         # 重置停止标志，确保监听器可以正常启动
         self.should_stop = False
         
+        # 重置媒体组处理器的停止标志，确保媒体组转发可以正常进行
+        if hasattr(self, 'media_group_handler') and self.media_group_handler:
+            self.media_group_handler.is_stopping = False
+            logger.debug("已重置媒体组处理器的停止标志")
+        
         # 重新从配置文件读取最新配置
         logger.info("重新从配置文件读取最新监听配置")
         ui_config = self.ui_config_manager.reload_config()
@@ -323,6 +328,15 @@ class Monitor:
         
         # 清理消息处理器
         await self._cleanup_old_handlers()
+        
+        # 给正在进行的媒体组转发任务一些时间完成
+        # 检查是否有正在进行的媒体组转发
+        if hasattr(self, 'media_group_handler') and self.media_group_handler:
+            # 等待一小段时间让正在进行的转发任务完成
+            if (hasattr(self.media_group_handler, 'media_group_cache') and 
+                self.media_group_handler.media_group_cache):
+                logger.debug("检测到正在处理的媒体组，等待2秒让转发完成")
+                await asyncio.sleep(2)
         
         # 停止媒体组处理器
         await self.media_group_handler.stop()
