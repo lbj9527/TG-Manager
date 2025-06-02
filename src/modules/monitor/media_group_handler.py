@@ -72,6 +72,14 @@ class MediaGroupHandler:
         self.api_request_queue = asyncio.Queue()
         self.api_worker_task = None
         
+        # API频率控制
+        self.global_last_api_call = 0
+        self.global_api_interval = 0.1  # 全局API调用间隔
+        self.api_semaphore = asyncio.Semaphore(3)  # 最多3个并发API请求
+        
+        # 事件发射器
+        self.emit = getattr(message_processor, 'emit', None)
+        
         # 启动后台任务
         self.cleanup_task = None
         self.backlog_task = None
@@ -484,7 +492,9 @@ class MediaGroupHandler:
         process_reason = ""
         
         # 1. 如果我们接收到了整个媒体组（根据media_group_count），处理它
-        if hasattr(message, 'media_group_count') and len(messages) >= message.media_group_count:
+        if (hasattr(message, 'media_group_count') and 
+            message.media_group_count is not None and 
+            len(messages) >= message.media_group_count):
             should_process = True
             process_reason = f"已完整接收 ({len(messages)}/{message.media_group_count})"
         # 2. 如果从第一条消息开始已经超过5秒，强制处理避免永远等待

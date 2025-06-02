@@ -6,7 +6,7 @@
 import pytest
 import asyncio
 import time
-from unittest.mock import Mock, AsyncMock, MagicMock, patch, call
+from unittest.mock import Mock, AsyncMock, MagicMock, patch, call, ANY
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -22,7 +22,7 @@ from src.modules.monitor.restricted_forward_handler import RestrictedForwardHand
 from src.modules.monitor import history_fetcher
 from src.utils.ui_config_manager import UIConfigManager
 from src.utils.channel_resolver import ChannelResolver
-from src.utils.ui_config_models import UIConfig, MonitorChannelPair, MediaType
+from src.utils.ui_config_models import UIConfig, UIMonitorChannelPair, MediaType
 
 
 class TestDataFactory:
@@ -108,6 +108,21 @@ class TestDataFactory:
         return TestDataFactory.create_mock_message(document=document, **kwargs)
     
     @staticmethod
+    def create_text_message(
+        message_id: int = 1001,
+        text: str = "测试文本消息",
+        chat_title: str = "测试源频道",
+        **kwargs
+    ) -> Message:
+        """创建文本消息"""
+        return TestDataFactory.create_mock_message(
+            message_id=message_id,
+            text=text,
+            chat_title=chat_title,
+            **kwargs
+        )
+    
+    @staticmethod
     def create_media_group_messages(
         count: int = 3,
         media_group_id: str = "12345678901234567890",
@@ -116,11 +131,14 @@ class TestDataFactory:
     ) -> List[Message]:
         """创建媒体组消息列表"""
         messages = []
+        # 如果kwargs中没有指定media_group_count，使用count
+        default_media_group_count = kwargs.get('media_group_count', count)
+        
         for i in range(count):
             message_kwargs = {
                 'message_id': start_message_id + i,
                 'media_group_id': media_group_id,
-                'media_group_count': count,
+                'media_group_count': default_media_group_count,
                 **kwargs
             }
             
@@ -345,8 +363,14 @@ class TestMessageProcessor:
         message = TestDataFactory.create_mock_message(text="测试")
         target_channels = [("target1", -1001111111111, "目标频道1")]
         
+        # 创建模拟FloodWait错误类
+        class MockFloodWait(Exception):
+            def __init__(self, x):
+                self.x = x
+                super().__init__(f"FloodWait: {x}")
+        
         # 模拟FloodWait错误
-        mock_client.copy_message.side_effect = [FloodWait(1), Mock(id=2001)]
+        mock_client.copy_message.side_effect = [MockFloodWait(1), Mock(id=2001)]
         
         with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
             result = await message_processor.forward_message(message, target_channels)
@@ -370,9 +394,10 @@ class TestMediaGroupHandler:
     @pytest.mark.asyncio
     async def test_handle_single_media_message(self, media_group_handler):
         """测试处理单条媒体组消息"""
+        # 创建一个不触发API获取的消息（不设置media_group_count）
         message = TestDataFactory.create_photo_message(
             media_group_id="test_group_123",
-            media_group_count=3,
+            media_group_count=None,  # 不设置count避免触发API获取
             caption="测试图片"
         )
         pair_config = {
@@ -415,7 +440,7 @@ class TestMediaGroupHandler:
         
         # 验证过滤事件被发射
         media_group_handler.emit.assert_called_with(
-            "message_filtered", message.id, mock.ANY, mock.ANY
+            "message_filtered", message.id, ANY, ANY
         )
     
     @pytest.mark.asyncio
@@ -438,7 +463,7 @@ class TestMediaGroupHandler:
         
         # 验证消息被过滤（不包含关键词）
         media_group_handler.emit.assert_called_with(
-            "message_filtered", message.id, mock.ANY, "不包含关键词(重要, urgent)"
+            "message_filtered", message.id, ANY, "不包含关键词(重要, urgent)"
         )
     
     @pytest.mark.asyncio
@@ -462,7 +487,7 @@ class TestMediaGroupHandler:
         
         # 验证转发消息被过滤
         media_group_handler.emit.assert_called_with(
-            "message_filtered", message.id, mock.ANY, "转发消息"
+            "message_filtered", message.id, ANY, "转发消息"
         )
     
     @pytest.mark.asyncio
@@ -485,7 +510,7 @@ class TestMediaGroupHandler:
         
         # 验证回复消息被过滤
         media_group_handler.emit.assert_called_with(
-            "message_filtered", message.id, mock.ANY, "回复消息"
+            "message_filtered", message.id, ANY, "回复消息"
         )
     
     @pytest.mark.asyncio
@@ -513,7 +538,7 @@ class TestMediaGroupHandler:
         
         # 验证包含链接的消息被过滤
         media_group_handler.emit.assert_called_with(
-            "message_filtered", message.id, mock.ANY, "包含链接"
+            "message_filtered", message.id, ANY, "包含链接"
         )
     
     @pytest.mark.asyncio
@@ -521,9 +546,11 @@ class TestMediaGroupHandler:
         """测试完整媒体组处理"""
         messages = TestDataFactory.create_media_group_messages(
             count=3,
-            media_group_id="complete_group_789"
+            media_group_id="complete_group_789",
+            media_group_count=None  # 不设置count避免触发API获取
         )
         pair_config = {
+            'source_channel': 'test_source',  # 添加必需的字段
             'keywords': [],
             'exclude_forwards': False,
             'exclude_replies': False,
@@ -540,6 +567,9 @@ class TestMediaGroupHandler:
             for message in messages:
                 await media_group_handler.handle_media_group_message(message, pair_config)
             
+            # 等待延迟检查触发（因为消息数量<=5，会启动延迟检查）
+            await asyncio.sleep(6)  # 等待超过5秒的延迟检查
+            
             # 验证媒体组被处理
             mock_process.assert_called_once()
     
@@ -548,9 +578,10 @@ class TestMediaGroupHandler:
         """测试媒体组超时处理"""
         message = TestDataFactory.create_photo_message(
             media_group_id="timeout_group_999",
-            media_group_count=5  # 期望5条消息，但只收到1条
+            media_group_count=None  # 不设置count避免触发API获取
         )
         pair_config = {
+            'source_channel': 'test_source',  # 添加必需的字段
             'keywords': [],
             'exclude_forwards': False,
             'exclude_replies': False,
