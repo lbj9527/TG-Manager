@@ -171,11 +171,14 @@ class ComprehensiveE2ETestRunner:
             start_time = time.time()
             
             try:
+                # 从消息数据中获取实际的消息ID，而不是使用键名
+                actual_message_id = msg_data.get('message_id', 1001)
+                
                 # 创建测试消息
                 message = TestDataFactory.create_text_message(
-                    message_id=int(msg_id),
+                    message_id=actual_message_id,
                     text=msg_data.get('text', ''),
-                    chat_title=msg_data.get('chat', {}).get('title', '测试频道')
+                    chat_title=msg_data.get('chat_title', '测试频道')
                 )
                 
                 # 模拟转发处理
@@ -185,7 +188,7 @@ class ComprehensiveE2ETestRunner:
                 result = TestResult(
                     test_name=f"文本消息_{msg_id}",
                     success=success,
-                    details=f"消息ID: {msg_id}, 内容: {msg_data.get('text', '')[:50]}...",
+                    details=f"消息ID: {actual_message_id}, 内容: {msg_data.get('text', '')[:50]}...",
                     execution_time=time.time() - start_time,
                     api_calls=api_calls
                 )
