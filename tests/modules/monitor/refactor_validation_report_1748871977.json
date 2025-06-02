@@ -1,0 +1,26 @@
+{
+  "summary": {
+    "total_tests": 25,
+    "consistent_behavior": 25,
+    "behavior_consistency_rate": 100.0,
+    "tests_with_issues": 0,
+    "performance_improvements": 2,
+    "performance_regressions": 0
+  },
+  "performance_analysis": {
+    "improvements": [
+      [
+        "文本消息_text_with_keywords",
+        0.0
+      ],
+      [
+        "文本消息_text_with_mentions",
+        0.0
+      ]
+    ],
+    "regressions": []
+  },
+  "issues_summary": {},
+  "recommendation": "✅ 重构成功！行为一致性达到95%以上，可以安全部署。",
+  "timestamp": "2025-06-02 21:46:17"
+}

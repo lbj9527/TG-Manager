@@ -1,0 +1,411 @@
+{
+  "timestamp": "2025-06-02 21:45:14",
+  "test_results": [
+    {
+      "test_name": "文本消息_simple_text",
+      "success": true,
+      "details": "消息ID: 1001, 内容: 这是一条简单的文本消息...",
+      "execution_time": 0.0009927749633789062,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "文本消息_text_with_keywords",
+      "success": true,
+      "details": "消息ID: 1002, 内容: 这是包含重要关键词的测试消息...",
+      "execution_time": 0.001001119613647461,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "文本消息_urgent_announcement",
+      "success": true,
+      "details": "消息ID: 1003, 内容: 🚨 紧急通知：系统将于今晚维护，请提前保存工作...",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "文本消息_text_with_links",
+      "success": true,
+      "details": "消息ID: 1004, 内容: 查看这个重要链接 https://example.com/important...",
+      "execution_time": 0.0009989738464355469,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "文本消息_text_with_mentions",
+      "success": true,
+      "details": "消息ID: 1005, 内容: 请 @admin 和 @moderator 查看这条消息...",
+      "execution_time": 0.0009999275207519531,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_simple_text",
+      "success": true,
+      "details": "文本: 这是一条简单的文本消息..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_keywords",
+      "success": true,
+      "details": "文本: 这是包含重要关键词的测试消息..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_urgent_announcement",
+      "success": true,
+      "details": "文本: 🚨 紧急通知：系统将于今晚维护，请提前保存工作..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_links",
+      "success": true,
+      "details": "文本: 查看这个重要链接 https://example.com/important..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_mentions",
+      "success": true,
+      "details": "文本: 请 @admin 和 @moderator 查看这条消息..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_hashtags",
+      "success": true,
+      "details": "文本: 新功能发布 #重要更新 #功能发布 #测试..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_multiline_text",
+      "success": true,
+      "details": "文本: 多行消息示例：\n第一行：基本信息\n第二行：详细说明\n第三行：联系方式..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_emoji",
+      "success": true,
+      "details": "文本: 🎉 庆祝活动开始！🚀 快来参加 💯 精彩不容错过 ⭐..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_with_special_chars",
+      "success": true,
+      "details": "文本: 特殊字符测试: !@#$%^&*()_+-=[]{}|;':\",./<>?`~..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_long_text",
+      "success": true,
+      "details": "文本: 这是一条很长的文本消息，用于测试系统处理长文本的能力。内容包含了大量的文字信息，模拟真实环境中可能遇..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_text_need_replacement",
+      "success": true,
+      "details": "文本: 这是包含旧版本文字的消息，需要替换为新版本..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_beta_version_text",
+      "success": true,
+      "details": "文本: beta版本功能已发布，请测试用户体验..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_forwarded_text",
+      "success": true,
+      "details": "文本: 这是一条转发的消息..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_reply_text",
+      "success": true,
+      "details": "文本: 这是一条回复消息..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "关键词过滤_empty_text",
+      "success": true,
+      "details": "文本: ..., 应转发: True",
+      "execution_time": 0.0,
+      "api_calls": 2,
+      "error": ""
+    },
+    {
+      "test_name": "媒体组综合测试",
+      "success": true,
+      "details": "所有媒体组场景测试通过",
+      "execution_time": 2.589595079421997,
+      "api_calls": 10,
+      "error": ""
+    },
+    {
+      "test_name": "空消息处理",
+      "success": true,
+      "details": "预期: True, 实际: True",
+      "execution_time": 0.0010001659393310547,
+      "api_calls": 0,
+      "error": ""
+    },
+    {
+      "test_name": "超长文本处理",
+      "success": true,
+      "details": "预期: True, 实际: True",
+      "execution_time": 0.00099945068359375,
+      "api_calls": 0,
+      "error": ""
+    },
+    {
+      "test_name": "无效配置处理",
+      "success": true,
+      "details": "预期: False, 实际: False",
+      "execution_time": 0.0,
+      "api_calls": 0,
+      "error": ""
+    },
+    {
+      "test_name": "网络错误模拟",
+      "success": true,
+      "details": "预期: False, 实际: False",
+      "execution_time": 0.0,
+      "api_calls": 0,
+      "error": ""
+    }
+  ],
+  "performance_benchmarks": [
+    {
+      "test_name": "文本消息_simple_text",
+      "execution_time": 0.0009927749633789062,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "文本消息_text_with_keywords",
+      "execution_time": 0.001001119613647461,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "文本消息_urgent_announcement",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "文本消息_text_with_links",
+      "execution_time": 0.0009989738464355469,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "文本消息_text_with_mentions",
+      "execution_time": 0.0009999275207519531,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_simple_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_keywords",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_urgent_announcement",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_links",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_mentions",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_hashtags",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_multiline_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_emoji",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_with_special_chars",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_long_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_text_need_replacement",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_beta_version_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_forwarded_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_reply_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "关键词过滤_empty_text",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 2,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "媒体组综合测试",
+      "execution_time": 2.589595079421997,
+      "memory_usage": 0.0,
+      "api_calls": 10,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "空消息处理",
+      "execution_time": 0.0010001659393310547,
+      "memory_usage": 0.0,
+      "api_calls": 0,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "超长文本处理",
+      "execution_time": 0.00099945068359375,
+      "memory_usage": 0.0,
+      "api_calls": 0,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "无效配置处理",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 0,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    },
+    {
+      "test_name": "网络错误模拟",
+      "execution_time": 0.0,
+      "memory_usage": 0.0,
+      "api_calls": 0,
+      "messages_processed": 1,
+      "timestamp": "2025-06-02 21:45:14"
+    }
+  ],
+  "total_tests": 25,
+  "success_count": 25,
+  "total_execution_time": 2.5955874919891357,
+  "total_api_calls": 50
+}
