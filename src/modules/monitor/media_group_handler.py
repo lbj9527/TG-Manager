@@ -111,6 +111,21 @@ class MediaGroupHandler:
         """停止媒体组处理器"""
         self.is_stopping = True
         
+        # 取消所有延迟检查任务
+        if self.pending_delay_tasks:
+            logger.info(f"正在取消 {len(self.pending_delay_tasks)} 个延迟检查任务")
+            cancelled_count = 0
+            for media_group_id, delay_task in list(self.pending_delay_tasks.items()):
+                try:
+                    if not delay_task.done():
+                        delay_task.cancel()
+                        cancelled_count += 1
+                        logger.debug(f"已取消媒体组 {media_group_id} 的延迟检查任务")
+                except Exception as e:
+                    logger.error(f"取消媒体组 {media_group_id} 延迟任务时异常: {str(e)}")
+            
+            logger.info(f"已取消 {cancelled_count} 个延迟检查任务")
+        
         # 取消媒体组清理任务
         if self.cleanup_task:
             self.cleanup_task.cancel()
@@ -169,7 +184,7 @@ class MediaGroupHandler:
         self.message_backlog.clear()
         self.media_group_locks.clear()
         self.last_media_group_fetch.clear()
-        logger.info("已清理所有媒体组缓存")
+        logger.info("已清理所有媒体组缓存和任务")
     
     async def _cleanup_processed_groups(self):
         """定期清理已处理媒体组ID集合，防止集合无限增长"""
@@ -512,8 +527,15 @@ class MediaGroupHandler:
             logger.info(f"媒体组 {media_group_id} {process_reason}，开始处理")
             # 标记为已处理
             self.processed_media_groups.add(media_group_id)
-            # 处理完整的媒体组
-            await self._process_media_group(messages, pair_config)
+            
+            # 先清理延迟任务引用，避免在处理过程中延迟任务访问已清理的数据
+            if media_group_id in self.pending_delay_tasks:
+                # 取消正在等待的延迟任务
+                delay_task = self.pending_delay_tasks[media_group_id]
+                if not delay_task.done():
+                    delay_task.cancel()
+                    logger.debug(f"已取消媒体组 {media_group_id} 的延迟检查任务")
+                del self.pending_delay_tasks[media_group_id]
             
             # 从缓存中删除此媒体组
             del self.media_group_cache[channel_id][media_group_id]
@@ -525,14 +547,9 @@ class MediaGroupHandler:
             # 移除获取标记，如果存在的话
             if media_group_id in self.fetching_media_groups:
                 self.fetching_media_groups.remove(media_group_id)
-                
-            # 清理延迟任务引用，如果存在的话
-            if media_group_id in self.pending_delay_tasks:
-                # 取消正在等待的延迟任务
-                delay_task = self.pending_delay_tasks[media_group_id]
-                if not delay_task.done():
-                    delay_task.cancel()
-                del self.pending_delay_tasks[media_group_id]
+            
+            # 处理完整的媒体组
+            await self._process_media_group(messages, pair_config)
         else:
             # 如果当前消息较少，安排一个延迟检查任务
             # 修改：增加延迟检查的触发条件，确保及时处理媒体组
@@ -542,6 +559,7 @@ class MediaGroupHandler:
                     # 延迟5秒后检查是否需要处理，给更多时间收集消息
                     delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 5.0))
                     self.pending_delay_tasks[media_group_id] = delay_task
+                    logger.debug(f"为媒体组 {media_group_id} 创建延迟检查任务")
     
     async def _delayed_media_group_check(self, media_group_id: str, channel_id: int, delay: float):
         """延迟检查媒体组是否需要处理
@@ -556,11 +574,13 @@ class MediaGroupHandler:
             
             # 检查媒体组是否已被处理
             if media_group_id in self.processed_media_groups:
+                logger.debug(f"延迟检查: 媒体组 {media_group_id} 已被处理，跳过")
                 return
             
             # 检查媒体组是否还在缓存中
             if (channel_id not in self.media_group_cache or 
                 media_group_id not in self.media_group_cache[channel_id]):
+                logger.debug(f"延迟检查: 媒体组 {media_group_id} 不在缓存中，可能已被处理")
                 return
             
             group_data = self.media_group_cache[channel_id][media_group_id]
@@ -584,8 +604,11 @@ class MediaGroupHandler:
                 
                 # 标记为已处理
                 self.processed_media_groups.add(media_group_id)
-                # 处理媒体组
-                await self._process_media_group(messages, pair_config)
+                
+                # 先清理延迟任务引用和缓存，再处理媒体组
+                # 这样可以避免在处理过程中其他延迟任务访问已清理的数据
+                if media_group_id in self.pending_delay_tasks:
+                    del self.pending_delay_tasks[media_group_id]
                 
                 # 从缓存中删除此媒体组
                 del self.media_group_cache[channel_id][media_group_id]
@@ -598,20 +621,21 @@ class MediaGroupHandler:
                 if media_group_id in self.fetching_media_groups:
                     self.fetching_media_groups.remove(media_group_id)
                 
-                # 清理延迟任务引用，如果存在的话
-                if media_group_id in self.pending_delay_tasks:
-                    # 取消正在等待的延迟任务
-                    delay_task = self.pending_delay_tasks[media_group_id]
-                    if not delay_task.done():
-                        delay_task.cancel()
-                    del self.pending_delay_tasks[media_group_id]
+                # 最后处理媒体组
+                await self._process_media_group(messages, pair_config)
+            else:
+                logger.debug(f"延迟检查: 媒体组 {media_group_id} 还需要等待更多消息或时间")
             
         except Exception as e:
-            logger.error(f"延迟检查媒体组 {media_group_id} 时出错: {str(e)}")
+            # 改进错误日志，提供更详细的信息
+            logger.error(f"延迟检查媒体组 {media_group_id} (频道: {channel_id}) 时出错: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"延迟检查错误详情: {traceback.format_exc()}")
         finally:
             # 清理延迟任务引用，无论是否成功处理
             if media_group_id in self.pending_delay_tasks:
                 del self.pending_delay_tasks[media_group_id]
+                logger.debug(f"已清理媒体组 {media_group_id} 的延迟任务引用")
     
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
         """
