@@ -879,7 +879,8 @@ class MediaGroupHandler:
                             await self.client.copy_media_group(
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
-                                message_id=first_message_id
+                                message_id=first_message_id,
+                                disable_notification=True
                             )
                             logger.info(f"已将媒体组复制到 {target_info}")
                             
@@ -974,7 +975,8 @@ class MediaGroupHandler:
                 await self.client.copy_media_group(
                     chat_id=target_id,
                     from_chat_id=source_chat_id,
-                    message_id=first_message_id
+                    message_id=first_message_id,
+                    disable_notification=True
                 )
                 logger.info(f"已使用copy_media_group成功转发媒体组到 {target_info}")
                 
@@ -1001,7 +1003,8 @@ class MediaGroupHandler:
                     await self.client.forward_messages(
                         chat_id=target_id,
                         from_chat_id=source_chat_id,
-                        message_ids=message_ids
+                        message_ids=message_ids,
+                        disable_notification=True
                     )
                     logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
                     
@@ -1030,7 +1033,8 @@ class MediaGroupHandler:
                     await self.client.forward_messages(
                         chat_id=target_id,
                         from_chat_id=source_chat_id,
-                        message_ids=message_ids
+                        message_ids=message_ids,
+                        disable_notification=True
                     )
                     logger.info(f"已使用forward_messages成功转发媒体组到 {target_info}")
                     
@@ -1153,7 +1157,8 @@ class MediaGroupHandler:
                 # 尝试正常发送
                 await self.client.send_media_group(
                     chat_id=target_id,
-                    media=media_group
+                    media=media_group,
+                    disable_notification=True
                 )
                 
                 logger.info(f"已将修改后的媒体组 {media_group_id} 发送到 {target_info}")
@@ -1242,7 +1247,8 @@ class MediaGroupHandler:
                                 await self.client.forward_messages(
                                     chat_id=target_id,
                                     from_chat_id=source_target_id,
-                                    message_ids=[msg.id for msg in media_group_messages]
+                                    message_ids=[msg.id for msg in media_group_messages],
+                                    disable_notification=True
                                 )
                                 logger.info(f"成功从第一个频道复制媒体组到 {target_info}")
                                 
@@ -1804,7 +1810,8 @@ class MediaGroupHandler:
                     # 使用send_media_group发送重组的媒体组
                     sent_messages = await self.client.send_media_group(
                         chat_id=target_id,
-                        media=media_list
+                        media=media_list,
+                        disable_notification=True
                     )
                     
                     logger.info(f"已成功发送重组媒体组到 {target_info}，包含 {len(sent_messages)} 条消息")

@@ -158,7 +158,8 @@ class RestrictedForwardHandler:
                                 sent_message = await self.client.copy_message(
                                     chat_id=target_id,
                                     from_chat_id=source_id,
-                                    message_id=message.id
+                                    message_id=message.id,
+                                    disable_notification=True
                                 )
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已将贴纸消息从源频道复制到 {target_info}")
@@ -167,7 +168,8 @@ class RestrictedForwardHandler:
                                 _logger.warning(f"复制贴纸失败，尝试直接发送: {copy_e}")
                                 sent_message = await self.client.send_sticker(
                                     chat_id=target_id,
-                                    sticker=message.sticker.file_id
+                                    sticker=message.sticker.file_id,
+                                    disable_notification=True
                                 )
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已直接发送贴纸到 {target_info}")
@@ -207,7 +209,8 @@ class RestrictedForwardHandler:
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message.id,
-                                    caption=final_caption
+                                    caption=final_caption,
+                                    disable_notification=True
                                 )
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已将语音消息从源频道复制到 {target_info}")
@@ -220,6 +223,7 @@ class RestrictedForwardHandler:
                                 }
                                 if final_caption:
                                     kwargs['caption'] = final_caption
+                                kwargs['disable_notification'] = True
                                 sent_message = await self.client.send_voice(**kwargs)
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已直接发送语音到 {target_info}")
@@ -245,7 +249,8 @@ class RestrictedForwardHandler:
                                 sent_message = await self.client.copy_message(
                                     chat_id=target_id,
                                     from_chat_id=source_id,
-                                    message_id=message.id
+                                    message_id=message.id,
+                                    disable_notification=True
                                 )
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已将视频笔记消息从源频道复制到 {target_info}")
@@ -254,7 +259,8 @@ class RestrictedForwardHandler:
                                 _logger.warning(f"复制视频笔记失败，尝试直接发送: {copy_e}")
                                 sent_message = await self.client.send_video_note(
                                     chat_id=target_id,
-                                    video_note=message.video_note.file_id
+                                    video_note=message.video_note.file_id,
+                                    disable_notification=True
                                 )
                                 sent_messages.append(sent_message)
                                 _logger.info(f"已直接发送视频笔记到 {target_info}")
@@ -365,7 +371,8 @@ class RestrictedForwardHandler:
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
                                 message_id=first_sent_message.id,
-                                caption=caption_to_use
+                                caption=caption_to_use,
+                                disable_notification=True
                             )
                             _logger.info(f"已将消息从第一个目标频道复制到 {target_info}")
                             await asyncio.sleep(0.5)  # 添加延迟避免触发限制
@@ -406,7 +413,8 @@ class RestrictedForwardHandler:
                             chat_id=target_id,
                             from_chat_id=source_id,
                             message_id=message.id,
-                            caption=final_text
+                            caption=final_text,
+                            disable_notification=True
                         )
                         sent_messages.append(sent_message)
                         _logger.info(f"已将非媒体消息从源频道复制到 {target_info}")
@@ -568,7 +576,8 @@ class RestrictedForwardHandler:
                             await self.client.copy_media_group(
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
-                                message_id=first_sent_message.id
+                                message_id=first_sent_message.id,
+                                disable_notification=True
                             )
                             _logger.info(f"已将媒体组从第一个目标频道复制到 {target_info}")
                         else:
@@ -577,7 +586,8 @@ class RestrictedForwardHandler:
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
                                 message_id=first_sent_message.id,
-                                caption=final_caption
+                                caption=final_caption,
+                                disable_notification=True
                             )
                             _logger.info(f"已将单条媒体消息从第一个目标频道复制到 {target_info}")
                         

@@ -127,7 +127,8 @@ class MessageProcessor:
                             
                             await self.client.send_message(
                                 chat_id=target_id,
-                                text=text_to_send
+                                text=text_to_send,
+                                disable_notification=True
                             )
                             success_count += 1
                             logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -149,7 +150,8 @@ class MessageProcessor:
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
                                 message_id=source_message_id,
-                                caption=caption
+                                caption=caption,
+                                disable_notification=True
                             )
                             success_count += 1
                             logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -162,7 +164,8 @@ class MessageProcessor:
                             await self.client.forward_messages(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
-                                message_ids=source_message_id
+                                message_ids=source_message_id,
+                                disable_notification=True
                             )
                             success_count += 1
                             logger.info(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
@@ -183,7 +186,8 @@ class MessageProcessor:
                                 
                                 await self.client.send_message(
                                     chat_id=target_id,
-                                    text=text_to_send
+                                    text=text_to_send,
+                                    disable_notification=True
                                 )
                                 success_count += 1
                                 logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -205,7 +209,8 @@ class MessageProcessor:
                                     chat_id=target_id,
                                     from_chat_id=source_chat_id,
                                     message_id=source_message_id,
-                                    caption=caption
+                                    caption=caption,
+                                    disable_notification=True
                                 )
                                 success_count += 1
                                 logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -254,7 +259,8 @@ class MessageProcessor:
                                 
                                 await self.client.send_message(
                                     chat_id=target_id,
-                                    text=text_to_send
+                                    text=text_to_send,
+                                    disable_notification=True
                                 )
                                 success_count += 1
                                 logger.info(f"重试成功：已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -274,7 +280,8 @@ class MessageProcessor:
                                     chat_id=target_id,
                                     from_chat_id=source_chat_id,
                                     message_id=source_message_id,
-                                    caption=caption
+                                    caption=caption,
+                                    disable_notification=True
                                 )
                                 success_count += 1
                                 logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
@@ -447,6 +454,7 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_photo(**kwargs)
                     elif original_message.video:
                         # 视频消息
@@ -457,6 +465,7 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_video(**kwargs)
                     elif original_message.document:
                         # 文档消息
@@ -466,6 +475,7 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_document(**kwargs)
                     elif original_message.animation:
                         # 动画/GIF消息
@@ -475,6 +485,7 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_animation(**kwargs)
                     elif original_message.audio:
                         # 音频消息
@@ -484,12 +495,14 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_audio(**kwargs)
                     elif original_message.sticker:
                         # 贴纸消息
                         sent_message = await self.client.send_sticker(
                             chat_id=target_id,
-                            sticker=original_message.sticker.file_id
+                            sticker=original_message.sticker.file_id,
+                            disable_notification=True
                         )
                     elif original_message.voice:
                         # 语音消息
@@ -499,18 +512,21 @@ class MessageProcessor:
                         }
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
+                        kwargs['disable_notification'] = True
                         sent_message = await self.client.send_voice(**kwargs)
                     elif original_message.video_note:
                         # 视频笔记消息
                         sent_message = await self.client.send_video_note(
                             chat_id=target_id,
-                            video_note=original_message.video_note.file_id
+                            video_note=original_message.video_note.file_id,
+                            disable_notification=True
                         )
                     else:
                         # 纯文本消息
                         sent_message = await self.client.send_message(
                             chat_id=target_id,
-                            text=caption_to_use
+                            text=caption_to_use,
+                            disable_notification=True
                         )
                     
                     if sent_message:

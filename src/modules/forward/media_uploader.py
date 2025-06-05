@@ -102,7 +102,8 @@ class MediaUploader:
                         sent_message = await self.client.send_photo(
                             chat_id=target_id,
                             photo=media_item.media,
-                            caption=media_item.caption
+                            caption=media_item.caption,
+                            disable_notification=True
                         )
                     elif isinstance(media_item, InputMediaVideo):
                         # 使用缩略图
@@ -124,7 +125,8 @@ class MediaUploader:
                             thumb=thumb,
                             width=self._get_video_width(media_item.media),
                             height=self._get_video_height(media_item.media),
-                            duration=self._get_video_duration(media_item.media)
+                            duration=self._get_video_duration(media_item.media),
+                            disable_notification=True
                         )
                     elif isinstance(media_item, InputMediaDocument):
                         debug_message = f"尝试发送文档到 {target_info}"
@@ -133,7 +135,8 @@ class MediaUploader:
                         sent_message = await self.client.send_document(
                             chat_id=target_id,
                             document=media_item.media,
-                            caption=media_item.caption
+                            caption=media_item.caption,
+                            disable_notification=True
                         )
                     elif isinstance(media_item, InputMediaAudio):
                         debug_message = f"尝试发送音频到 {target_info}"
@@ -142,7 +145,8 @@ class MediaUploader:
                         sent_message = await self.client.send_audio(
                             chat_id=target_id,
                             audio=media_item.media,
-                            caption=media_item.caption
+                            caption=media_item.caption,
+                            disable_notification=True
                         )
                     else:
                         warning_message = f"未知媒体类型: {type(media_item)}"
@@ -162,7 +166,8 @@ class MediaUploader:
                     
                     sent_messages = await self.client.send_media_group(
                         chat_id=target_id,
-                        media=media_group
+                        media=media_group,
+                        disable_notification=True
                     )
                 
                 # 记录转发历史
