@@ -459,6 +459,27 @@ class RestrictedForwardHandler:
             _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
             return [], False
         
+        # 验证消息的有效性并检查是否包含媒体内容
+        valid_media_messages = []
+        for msg in messages:
+            if not msg or not hasattr(msg, 'id') or not hasattr(msg, 'chat'):
+                _logger.warning(f"发现无效的消息对象，跳过: {msg}")
+                continue
+            
+            # 检查消息是否包含媒体内容
+            has_media = bool(msg.photo or msg.video or msg.document or msg.audio or msg.animation)
+            if has_media:
+                valid_media_messages.append(msg)
+            else:
+                _logger.warning(f"消息 [ID: {msg.id}] 不包含媒体内容，跳过下载处理")
+        
+        if not valid_media_messages:
+            _logger.warning("没有包含媒体内容的有效消息，无法处理禁止转发的媒体组")
+            return [], False
+        
+        messages = valid_media_messages
+        _logger.info(f"处理禁止转发的媒体组，包含 {len(messages)} 条有效媒体消息")
+        
         # 临时目录变量，用于清理
         group_temp_dir = None
         

@@ -1,5 +1,39 @@
 # TG-Manager 更新日志
 
+## [2.0.2] - 2025-01-05
+### 🐛 UI界面显示修复
+- **修复禁止转发媒体组转发成功日志缺失问题**：
+  - 问题场景：监听模块中源频道为禁止转发频道，当收到媒体组消息且允许转发所有媒体类型，需要文本替换时，转发成功后UI界面不显示成功转发的日志
+  - 根本原因：在禁止转发媒体组处理成功后，相关方法没有发送转发成功事件到UI界面
+  - 修复方案：
+    - 在 `MediaGroupHandler._handle_restricted_targets` 方法中添加第一个频道下载上传成功后的事件发射
+    - 在 `MediaGroupHandler._copy_from_first_target` 方法中添加复制转发成功/失败事件的发射
+    - 为所有成功的转发操作添加适当的 `self.emit("forward", ...)` 调用
+    - 支持显示第一个频道下载上传成功和其他频道复制转发成功的日志
+  - 影响范围：监听模块的禁止转发媒体组处理功能的UI反馈
+  - 修复文件：
+    - `src/modules/monitor/media_group_handler.py`：在禁止转发处理方法中添加事件发射
+  - 技术细节：
+    - 使用 `self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=True)` 发射成功事件
+    - 使用 `self.emit("forward", media_group_display_id, source_info_str, target_info, False)` 发射失败事件
+    - 为 `_copy_from_first_target` 方法添加了 `messages` 参数，以便正确获取源频道信息
+
+## [2.0.1] - 2025-01-05
+### 🐛 关键问题修复
+- **修复禁止转发频道媒体组过滤处理错误**：
+  - 问题场景：监听模块中源频道为禁止转发频道，且设置只转发特定媒体类型（如只转发照片），当收到媒体组消息时，过滤掉不允许的媒体类型后，重组剩余媒体消息发送失败
+  - 根本原因：`_send_filtered_media_group` 方法使用 `send_media_group` 发送重组媒体组时，遇到 `ChatForwardsRestricted` 异常没有备用处理方案
+  - 修复方案：
+    - 在 `MediaGroupHandler._send_filtered_media_group` 方法中添加 `ChatForwardsRestricted` 异常处理
+    - 当正常发送失败时，自动调用 `RestrictedForwardHandler.process_restricted_media_group` 使用下载上传方式
+    - 添加输入验证逻辑，确保过滤后的消息列表有效且包含媒体内容
+    - 在 `RestrictedForwardHandler.process_restricted_media_group` 中增加媒体内容验证，跳过非媒体消息
+    - 改进错误处理和日志记录，提供详细的故障排查信息
+  - 影响范围：监听模块的媒体组过滤和禁止转发处理功能
+  - 修复文件：
+    - `src/modules/monitor/media_group_handler.py`：添加异常处理和输入验证
+    - `src/modules/monitor/restricted_forward_handler.py`：添加媒体内容验证
+
 ## [2.0.0] - 2025-01-05
 ### 🔔 功能增强 - 静默发送
 - **监听模块全面支持静默发送**：

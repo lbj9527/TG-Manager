@@ -1203,20 +1203,45 @@ class MediaGroupHandler:
         
         if not success:
             logger.error(f"第一个禁止转发频道 {first_target_info} 处理失败，其他频道也将失败")
+            
+            # 发射转发失败事件
+            if self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
+                except Exception:
+                    source_info_str = str(messages[0].chat.id)
+                
+                message_ids = [msg.id for msg in messages]
+                media_group_display_id = self._generate_media_group_display_id(message_ids)
+                self.emit("forward", media_group_display_id, source_info_str, first_target_info, False)
             return
+        
+        logger.info(f"成功使用下载上传方式处理禁止转发的媒体组 {media_group_id} 到 {first_target_info}")
+        
+        # 发射第一个频道的转发成功事件
+        if self.emit:
+            try:
+                source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
+            except Exception:
+                source_info_str = str(messages[0].chat.id)
+            
+            message_ids = [msg.id for msg in messages]
+            media_group_display_id = self._generate_media_group_display_id(message_ids)
+            self.emit("forward", media_group_display_id, source_info_str, first_target_info, True, modified=True)
             
         # 其他频道：从第一个频道复制转发
         if len(restricted_targets) > 1:
             logger.info(f"第一个频道成功，开始从 {first_target_info} 复制转发到其他 {len(restricted_targets)-1} 个禁止转发频道")
-            await self._copy_from_first_target(first_target_id, restricted_targets[1:], media_group_id)
+            await self._copy_from_first_target(first_target_id, restricted_targets[1:], media_group_id, messages)
 
-    async def _copy_from_first_target(self, source_target_id: int, remaining_targets: List[Tuple[str, int, str]], media_group_id: str):
+    async def _copy_from_first_target(self, source_target_id: int, remaining_targets: List[Tuple[str, int, str]], media_group_id: str, messages: List[Message]):
         """从第一个成功上传的目标频道复制转发到其他频道
         
         Args:
             source_target_id: 第一个成功的目标频道ID
             remaining_targets: 剩余的目标频道列表
             media_group_id: 媒体组ID
+            messages: 原始消息列表
         """
         try:
             # 获取第一个频道的最新媒体组消息
@@ -1252,8 +1277,30 @@ class MediaGroupHandler:
                                 )
                                 logger.info(f"成功从第一个频道复制媒体组到 {target_info}")
                                 
+                                # 发射转发成功事件
+                                if self.emit:
+                                    try:
+                                        source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
+                                    except Exception:
+                                        source_info_str = str(messages[0].chat.id)
+                                    
+                                    message_ids = [msg.id for msg in messages]
+                                    media_group_display_id = self._generate_media_group_display_id(message_ids)
+                                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, modified=True)
+                                
                             except Exception as e:
                                 logger.error(f"复制媒体组到 {target_info} 失败: {str(e)}")
+                                
+                                # 发射转发失败事件
+                                if self.emit:
+                                    try:
+                                        source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
+                                    except Exception:
+                                        source_info_str = str(messages[0].chat.id)
+                                    
+                                    message_ids = [msg.id for msg in messages]
+                                    media_group_display_id = self._generate_media_group_display_id(message_ids)
+                                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
                         
                         return  # 成功处理后退出
                     
@@ -1261,6 +1308,19 @@ class MediaGroupHandler:
             
         except Exception as e:
             logger.error(f"从第一个频道复制转发时出错: {str(e)}")
+            
+            # 为所有剩余目标发射转发失败事件
+            if self.emit:
+                try:
+                    source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
+                except Exception:
+                    source_info_str = str(messages[0].chat.id)
+                
+                message_ids = [msg.id for msg in messages]
+                media_group_display_id = self._generate_media_group_display_id(message_ids)
+                
+                for target, target_id, target_info in remaining_targets:
+                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
     
     async def _api_request_worker(self):
         """API请求队列工作器，负责处理排队的API请求"""
@@ -1672,13 +1732,33 @@ class MediaGroupHandler:
             pair_config: 频道对配置
             target_channels: 目标频道列表
         """
-        if not filtered_messages or not target_channels:
-            return
-            
         try:
-            # 获取源信息
-            source_chat = filtered_messages[0].chat
-            source_chat_id = source_chat.id
+            # 输入验证
+            if not filtered_messages:
+                logger.warning("过滤后的消息列表为空，无法发送重组媒体组")
+                return
+                
+            if not target_channels:
+                logger.warning("目标频道列表为空，无法发送重组媒体组") 
+                return
+            
+            # 再次验证消息的有效性
+            valid_messages = []
+            for msg in filtered_messages:
+                if msg and hasattr(msg, 'id') and hasattr(msg, 'chat'):
+                    valid_messages.append(msg)
+                else:
+                    logger.warning(f"发现无效的消息对象，跳过: {msg}")
+            
+            if not valid_messages:
+                logger.warning("没有有效的消息对象，无法发送重组媒体组")
+                return
+                
+            filtered_messages = valid_messages
+            logger.info(f"开始发送过滤后重组的媒体组，包含 {len(filtered_messages)} 条有效消息")
+            
+            # 获取源频道信息
+            source_chat_id = filtered_messages[0].chat.id
             media_group_id = filtered_messages[0].media_group_id
             
             try:
@@ -1830,6 +1910,63 @@ class MediaGroupHandler:
                         # 发射转发成功事件
                         self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, True, modified=caption_modified)
                     
+                except ChatForwardsRestricted:
+                    logger.warning(f"目标频道 {target_info} 禁止转发，使用下载上传方式处理重组媒体组")
+                    
+                    try:
+                        # 使用RestrictedForwardHandler处理禁止转发的媒体组
+                        if not hasattr(self, 'restricted_handler'):
+                            from src.modules.monitor.restricted_forward_handler import RestrictedForwardHandler
+                            self.restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                        
+                        # 调用处理禁止转发媒体组的方法
+                        sent_messages_restricted, actually_modified = await self.restricted_handler.process_restricted_media_group(
+                            messages=filtered_messages,
+                            source_channel=str(source_chat_id),
+                            source_id=source_chat_id,
+                            target_channels=[(target, target_id, target_info)],
+                            caption=replaced_caption,
+                            remove_caption=remove_captions
+                        )
+                        
+                        if sent_messages_restricted:
+                            logger.info(f"已使用下载上传方式成功将重组媒体组发送到 {target_info}")
+                            
+                            # 发射转发成功事件
+                            if self.emit:
+                                try:
+                                    source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
+                                except Exception:
+                                    source_info_str = str(source_chat_id)
+                                
+                                media_group_display_id = self._generate_media_group_display_id(message_ids_for_display)
+                                self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, True, modified=actually_modified)
+                        else:
+                            logger.error(f"使用下载上传方式处理重组媒体组到 {target_info} 失败")
+                            
+                            # 发射转发失败事件
+                            if self.emit:
+                                try:
+                                    source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
+                                except Exception:
+                                    source_info_str = str(source_chat_id)
+                                
+                                media_group_display_id = self._generate_media_group_display_id(message_ids_for_display)
+                                self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, False)
+                    
+                    except Exception as restricted_e:
+                        logger.error(f"使用下载上传方式处理重组媒体组到 {target_info} 时发生错误: {str(restricted_e)}")
+                        
+                        # 发射转发失败事件
+                        if self.emit:
+                            try:
+                                source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
+                            except Exception:
+                                source_info_str = str(source_chat_id)
+                            
+                            media_group_display_id = self._generate_media_group_display_id(message_ids_for_display)
+                            self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, False)
+                
                 except Exception as e:
                     logger.error(f"发送重组媒体组到 {target_info} 失败: {str(e)}", error_type="SEND_FILTERED_MEDIA_GROUP", recoverable=True)
                     
