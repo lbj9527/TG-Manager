@@ -1,5 +1,29 @@
 # TG-Manager 更新日志
 
+## [2.0.3] - 2025-01-05
+### 🚀 性能优化
+- **修复禁止转发频道重组媒体组重复下载上传问题**：
+  - 问题场景：监听模块中源频道为禁止转发频道，过滤视频媒体类型，当收到媒体组消息后，过滤视频，重组照片为新的媒体组消息时，对每个目标频道都重复下载上传
+  - 根本原因：`_send_filtered_media_group` 方法在处理禁止转发目标频道时，使用逐个处理的策略，对每个 `ChatForwardsRestricted` 异常的目标频道都单独调用 `RestrictedForwardHandler.process_restricted_media_group`
+  - 修复方案：
+    - 重构 `_send_filtered_media_group` 方法，采用分离策略先识别所有禁止转发的目标频道
+    - 新增 `_handle_filtered_restricted_targets` 方法，实现优化的处理策略：
+      - 第一个禁止转发目标频道：使用 `RestrictedForwardHandler` 进行下载上传
+      - 其他禁止转发目标频道：从第一个频道复制转发
+    - 新增 `_copy_filtered_from_first_target` 方法，负责从第一个成功上传的目标频道复制转发到其他频道
+    - 移除逐个处理禁止转发频道的冗余代码，统一处理所有禁止转发目标频道
+  - 性能提升：
+    - 大幅减少网络流量：从 N 次下载上传减少到 1 次下载上传 + (N-1) 次复制转发
+    - 显著降低处理时间：特别是在有多个目标频道且媒体文件较大的情况下
+    - 减少源频道的API请求负担，降低触发限流的风险
+  - 影响范围：监听模块的媒体组过滤和禁止转发处理功能
+  - 修复文件：
+    - `src/modules/monitor/media_group_handler.py`：重构 `_send_filtered_media_group` 方法，新增优化的处理策略
+  - 技术细节：
+    - 使用 `normal_targets` 和 `restricted_targets` 列表分离正常和禁止转发的目标频道
+    - 采用与 `_handle_restricted_targets` 方法相同的优化策略
+    - 保持事件发射逻辑完整，确保UI显示正确的转发状态
+
 ## [2.0.2] - 2025-01-05
 ### 🐛 UI界面显示修复
 - **修复禁止转发媒体组转发成功日志缺失问题**：
