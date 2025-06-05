@@ -82,6 +82,9 @@ class MediaGroupHandler:
         # 事件发射器
         self.emit = getattr(message_processor, 'emit', None)
         
+        # 频道信息缓存引用（由Monitor模块设置）
+        self.channel_info_cache = None
+        
         # 启动后台任务
         self.cleanup_task = None
         self.backlog_task = None
@@ -96,6 +99,31 @@ class MediaGroupHandler:
             channel_pairs: 频道对应关系配置字典
         """
         self.channel_pairs = channel_pairs
+    
+    def set_channel_info_cache(self, cache_dict: dict):
+        """
+        设置频道信息缓存的引用
+        
+        Args:
+            cache_dict: 频道信息缓存字典
+        """
+        self.channel_info_cache = cache_dict
+    
+    def get_cached_channel_info(self, channel_id: int) -> str:
+        """
+        获取缓存的频道信息，避免重复API调用
+        
+        Args:
+            channel_id: 频道ID
+            
+        Returns:
+            str: 频道信息字符串
+        """
+        if self.channel_info_cache and channel_id in self.channel_info_cache:
+            return self.channel_info_cache[channel_id][0]
+        else:
+            # 如果没有缓存，返回简单格式
+            return f"频道 (ID: {channel_id})"
     
     def start_cleanup_task(self):
         """启动媒体组清理任务"""
@@ -409,19 +437,26 @@ class MediaGroupHandler:
         
         # 检查媒体组是否已被处理
         if media_group_id in self.processed_media_groups:
-            logger.debug(f"媒体组 {media_group_id} 已被处理，跳过消息 [ID: {message.id}]")
-            return
-            
+            # 检查是否是最近处理的媒体组（允许5秒内的延迟消息）
+            # 这里我们暂时放宽限制，允许延迟消息继续添加
+            logger.debug(f"媒体组 {media_group_id} 已被处理，但允许延迟消息 [ID: {message.id}] 添加")
+            # 不立即返回，继续处理延迟消息
+        
         # 检查是否已有相同媒体组在获取中
         if media_group_id in self.fetching_media_groups:
             # 如果已经在获取中，添加到缓存
             await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
             return
             
-        # 检查缓存中是否已有此媒体组的消息
+        # 检查缓存中是否已有此媒体组的消息，或者创建新的媒体组缓存
         if (channel_id in self.media_group_cache and 
             media_group_id in self.media_group_cache[channel_id]):
             # 添加到现有缓存
+            await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+            return
+        elif media_group_id in self.processed_media_groups:
+            # 如果媒体组已被处理但缓存已清理，为延迟消息创建临时缓存
+            logger.info(f"为已处理媒体组 {media_group_id} 的延迟消息创建临时缓存")
             await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
             return
                 
@@ -508,20 +543,18 @@ class MediaGroupHandler:
         should_process = False
         process_reason = ""
         
-        # 1. 如果我们接收到了整个媒体组（根据media_group_count），处理它
-        if (hasattr(message, 'media_group_count') and 
-            message.media_group_count is not None and 
-            len(messages) >= message.media_group_count):
+        # 如果缓存的消息数量达到10条或更多，立即处理（避免缓存过大）
+        if len(messages) >= 10:
             should_process = True
-            process_reason = f"已完整接收 ({len(messages)}/{message.media_group_count})"
-        # 2. 如果从第一条消息开始已经超过5秒，强制处理避免永远等待
-        elif time.time() - group_data['first_message_time'] > 5:
+            process_reason = f"已收集到 {len(messages)} 条消息，达到处理阈值"
+        # 如果距离第一条消息超过15秒，强制处理
+        elif time.time() - group_data['first_message_time'] > 15.0:
+            should_process = True  
+            process_reason = f"距离第一条消息已超过15秒，强制处理避免超时"
+        # 如果有media_group_count信息且消息数量已达到，立即处理
+        elif hasattr(message, 'media_group_count') and message.media_group_count and len(messages) >= message.media_group_count:
             should_process = True
-            process_reason = f"等待超时 ({len(messages)} 条消息，等待 {time.time() - group_data['first_message_time']:.1f}s)"
-        # 3. 如果消息数量达到阈值（10条），强制处理避免内存占用
-        elif len(messages) >= 10:
-            should_process = True
-            process_reason = f"消息数量达到阈值 ({len(messages)} 条消息)"
+            process_reason = f"媒体组消息已收集完整({len(messages)}/{message.media_group_count})"
         
         if should_process:
             logger.info(f"媒体组 {media_group_id} {process_reason}，开始处理")
@@ -552,12 +585,12 @@ class MediaGroupHandler:
             await self._process_media_group(messages, pair_config)
         else:
             # 如果当前消息较少，安排一个延迟检查任务
-            # 修改：增加延迟检查的触发条件，确保及时处理媒体组
-            if len(messages) <= 5:  # 从3增加到5，确保更多情况下有延迟检查
+            # 修改：增加延迟检查的触发条件和延迟时间，确保有足够时间收集消息
+            if len(messages) <= 8:  # 从5增加到8，确保更多情况下有延迟检查
                 # 避免为同一个媒体组重复创建延迟任务
                 if media_group_id not in self.pending_delay_tasks:
-                    # 延迟5秒后检查是否需要处理，给更多时间收集消息
-                    delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 5.0))
+                    # 延迟8秒后检查是否需要处理，给更多时间收集消息
+                    delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 8.0))
                     self.pending_delay_tasks[media_group_id] = delay_task
                     logger.debug(f"为媒体组 {media_group_id} 创建延迟检查任务")
     
@@ -592,10 +625,12 @@ class MediaGroupHandler:
             time_since_last_update = time.time() - group_data['last_update_time']
             time_since_first_message = time.time() - group_data['first_message_time']
             
-            # 如果距离最后更新已经超过3秒，或者距离第一条消息超过10秒，且消息数量大于0，则强制处理
+            # 修改延迟检查的处理条件：
+            # 1. 如果距离最后更新已经超过5秒（增加到5秒），且消息数量大于0，则处理
+            # 2. 如果距离第一条消息超过20秒（增加到20秒），且消息数量大于0，则强制处理
             should_process = (
-                (time_since_last_update > 3.0 and len(messages) > 0) or
-                (time_since_first_message > 10.0 and len(messages) > 0)
+                (time_since_last_update > 5.0 and len(messages) > 0) or
+                (time_since_first_message > 20.0 and len(messages) > 0)
             )
             
             if should_process:
@@ -1713,15 +1748,8 @@ class MediaGroupHandler:
             filter_reason: 过滤原因
         """
         if hasattr(self, 'emit') and self.emit:
-            try:
-                # 使用异步方法获取源信息，但这里是同步调用，所以用简化版本
-                source_info_str = f"频道 (ID: {message.chat.id})"
-                if hasattr(message.chat, 'title') and message.chat.title:
-                    source_info_str = f"{message.chat.title} (ID: {message.chat.id})"
-                elif hasattr(message.chat, 'username') and message.chat.username:
-                    source_info_str = f"@{message.chat.username} (ID: {message.chat.id})"
-            except Exception:
-                source_info_str = str(message.chat.id)
+            # 使用缓存的频道信息，避免重复API调用
+            source_info_str = self.get_cached_channel_info(message.chat.id)
             self.emit("message_filtered", message.id, source_info_str, filter_reason)
 
     async def _send_filtered_media_group(self, filtered_messages: List[Message], pair_config: dict, target_channels: List[Tuple[str, int, str]]):

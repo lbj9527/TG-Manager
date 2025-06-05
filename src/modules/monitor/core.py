@@ -139,6 +139,9 @@ class Monitor:
         # 解析所有源频道及其目标频道
         channel_pairs = {}
         
+        # 添加频道信息缓存字典，避免重复获取
+        self.channel_info_cache = {}  # {channel_id: (info_str, title)}
+        
         logger.debug(f"从配置文件读取到 {len(self.monitor_config.get('monitor_channel_pairs', []))} 个频道对:")
         for pair in self.monitor_config.get('monitor_channel_pairs', []):
             source_channel = pair.get('source_channel', '')
@@ -151,6 +154,10 @@ class Monitor:
             # 解析源频道ID
             try:
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
+                # 预先获取并缓存源频道信息
+                source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
+                self.channel_info_cache[source_id] = (source_info_str, source_info_tuple[0])
+                logger.debug(f"已缓存源频道信息: {source_info_str}")
             except Exception as e:
                 logger.warning(f"无法解析源频道 {source_channel}，错误: {e}")
                 continue
@@ -160,8 +167,11 @@ class Monitor:
             for target_channel in target_channels:
                 try:
                     target_id = await self.channel_resolver.get_channel_id(target_channel)
-                    target_info = await self.channel_resolver.format_channel_info(target_id)
-                    resolved_targets.append((target_channel, target_id, target_info[0]))
+                    target_info_str, target_info_tuple = await self.channel_resolver.format_channel_info(target_id)
+                    # 缓存目标频道信息
+                    self.channel_info_cache[target_id] = (target_info_str, target_info_tuple[0])
+                    resolved_targets.append((target_channel, target_id, target_info_str))
+                    logger.debug(f"已缓存目标频道信息: {target_info_str}")
                 except Exception as e:
                     logger.warning(f"无法解析目标频道 {target_channel}，错误: {e}")
             
@@ -238,6 +248,10 @@ class Monitor:
             # 将需要的配置传递给消息处理器
             self.message_processor.set_monitor_config(self.monitor_config)
             
+            # 设置频道信息缓存引用，减少API调用
+            self.message_processor.set_channel_info_cache(self.channel_info_cache)
+            self.media_group_handler.set_channel_info_cache(self.channel_info_cache)
+            
             # 创建并注册消息处理函数
             from pyrogram.handlers import MessageHandler
             
@@ -255,7 +269,20 @@ class Monitor:
                         return
                         
                     pair_config = channel_pairs[source_id]
-                    source_info_str, (source_title, source_username) = await self.channel_resolver.format_channel_info(source_id)
+                    
+                    # 使用缓存的频道信息，避免重复API调用
+                    if source_id in self.channel_info_cache:
+                        source_info_str = self.channel_info_cache[source_id][0]
+                        source_title = self.channel_info_cache[source_id][1]
+                    else:
+                        # 如果缓存中没有，则获取并缓存（兜底方案）
+                        try:
+                            source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
+                            self.channel_info_cache[source_id] = (source_info_str, source_info_tuple[0])
+                            source_title = source_info_tuple[0]
+                        except Exception:
+                            source_info_str = f"频道 (ID: {source_id})"
+                            source_title = f"频道{source_id}"
                     
                     # 日志记录消息接收
                     logger.info(f"收到来自 {source_info_str} 的新消息 [ID: {message.id}]")
@@ -369,6 +396,12 @@ class Monitor:
         self.processed_messages.clear()
         logger.info(f"已清理 {previous_count} 条已处理消息记录")
         
+        # 清理频道信息缓存
+        if hasattr(self, 'channel_info_cache'):
+            cache_count = len(self.channel_info_cache)
+            self.channel_info_cache.clear()
+            logger.debug(f"已清理 {cache_count} 条频道信息缓存")
+        
         logger.info("所有监听任务已停止")
     
     async def _cleanup_old_handlers(self):
@@ -452,10 +485,7 @@ class Monitor:
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                    except Exception:
-                        source_info_str = str(message.chat.id)
+                    source_info_str = self.get_cached_channel_info(message.chat.id)
                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                 return
             
@@ -464,10 +494,7 @@ class Monitor:
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                    except Exception:
-                        source_info_str = str(message.chat.id)
+                    source_info_str = self.get_cached_channel_info(message.chat.id)
                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                 return
             
@@ -488,10 +515,7 @@ class Monitor:
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过 (exclude_text={exclude_text}, is_text_message={is_text_message})")
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                    except Exception:
-                        source_info_str = str(message.chat.id)
+                    source_info_str = self.get_cached_channel_info(message.chat.id)
                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                     logger.debug(f"已发射过滤信号: message_id={message.id}, source_info={source_info_str}, filter_reason={filter_reason}")
                 return
@@ -504,10 +528,7 @@ class Monitor:
                     logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
                     # 发送过滤消息事件到UI
                     if hasattr(self, 'emit') and self.emit:
-                        try:
-                            source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                        except Exception:
-                            source_info_str = str(message.chat.id)
+                        source_info_str = self.get_cached_channel_info(message.chat.id)
                         self.emit("message_filtered", message.id, source_info_str, filter_reason)
                     return
             
@@ -519,10 +540,7 @@ class Monitor:
                     logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
                     # 发送过滤消息事件到UI
                     if hasattr(self, 'emit') and self.emit:
-                        try:
-                            source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                        except Exception:
-                            source_info_str = str(message.chat.id)
+                        source_info_str = self.get_cached_channel_info(message.chat.id)
                         self.emit("message_filtered", message.id, source_info_str, filter_reason)
                     return
             
@@ -542,10 +560,7 @@ class Monitor:
                 logger.info(f"消息 [ID: {message.id}] 的{filter_reason}，跳过处理")
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-                    except Exception:
-                        source_info_str = str(message.chat.id)
+                    source_info_str = self.get_cached_channel_info(message.chat.id)
                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                 return
             
@@ -731,4 +746,20 @@ class Monitor:
             if re.search(pattern, text, re.IGNORECASE):
                 return True
         
-        return False 
+        return False
+
+    def get_cached_channel_info(self, channel_id: int) -> str:
+        """
+        获取缓存的频道信息，避免重复API调用
+        
+        Args:
+            channel_id: 频道ID
+            
+        Returns:
+            str: 频道信息字符串
+        """
+        if hasattr(self, 'channel_info_cache') and channel_id in self.channel_info_cache:
+            return self.channel_info_cache[channel_id][0]
+        else:
+            # 如果没有缓存，返回简单格式
+            return f"频道 (ID: {channel_id})" 

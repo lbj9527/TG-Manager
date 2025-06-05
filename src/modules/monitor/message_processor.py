@@ -40,6 +40,9 @@ class MessageProcessor:
         # 事件发射器引用 - 将在Monitor中设置
         self.emit = None
         
+        # 频道信息缓存引用（由Monitor模块设置）
+        self.channel_info_cache = None
+        
     def set_monitor_config(self, monitor_config: Dict[str, Any]):
         """
         设置监控配置
@@ -51,6 +54,31 @@ class MessageProcessor:
         
         # 初始化禁止转发处理器
         self.restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+    
+    def set_channel_info_cache(self, cache_dict: dict):
+        """
+        设置频道信息缓存的引用
+        
+        Args:
+            cache_dict: 频道信息缓存字典
+        """
+        self.channel_info_cache = cache_dict
+    
+    def get_cached_channel_info(self, channel_id: int) -> str:
+        """
+        获取缓存的频道信息，避免重复API调用
+        
+        Args:
+            channel_id: 频道ID
+            
+        Returns:
+            str: 频道信息字符串
+        """
+        if self.channel_info_cache and channel_id in self.channel_info_cache:
+            return self.channel_info_cache[channel_id][0]
+        else:
+            # 如果没有缓存，返回简单格式
+            return f"频道 (ID: {channel_id})"
     
     async def forward_message(self, message: Message, target_channels: List[Tuple[str, int, str]], 
                               use_copy: bool = True, replace_caption: str = None, remove_caption: bool = False) -> bool:
@@ -85,12 +113,7 @@ class MessageProcessor:
                 source_channel = str(source_chat_id)
             
             # 尝试获取更友好的源频道显示名称
-            source_display_name = source_channel
-            try:
-                source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
-                source_display_name = source_info_str
-            except Exception as e:
-                logger.debug(f"无法格式化源频道信息: {e}")
+            source_display_name = self.get_cached_channel_info(source_chat_id)
             
             logger.info(f"开始转发消息 [ID: {source_message_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
             

@@ -252,6 +252,12 @@ class ChannelResolver:
             Union[str, Tuple[str, int]]: 
                 格式化的频道信息字符串，或者(频道标题, 频道ID)元组
         """
+        # 首先尝试从缓存中获取频道信息
+        str_channel_id = str(channel_id)
+        cached_chat = None
+        if str_channel_id in self._channel_cache:
+            _, cached_chat = self._channel_cache[str_channel_id]
+        
         try:
             chat = await self.get_channel_entity(channel_id)
             # 获取频道标题
@@ -267,6 +273,19 @@ class ChannelResolver:
             # 同时返回(标题, ID)元组，方便其他模块使用
             return formatted_info, (title, chat.id)
         except Exception as e:
+            # 如果有缓存的频道信息，优先使用缓存
+            if cached_chat:
+                logger.debug(f"由于获取频道信息失败({str(e)[:50]}...)，使用缓存的频道信息: {channel_id}")
+                # 使用缓存的频道信息
+                title = "未知频道"
+                if hasattr(cached_chat, 'title') and cached_chat.title:
+                    title = cached_chat.title
+                elif hasattr(cached_chat, 'username') and cached_chat.username:
+                    title = f"@{cached_chat.username}"
+                
+                formatted_info = f"{title} (ID: {cached_chat.id})"
+                return formatted_info, (title, cached_chat.id)
+            
             logger.debug(f"无法获取频道 {channel_id} 的详细信息: {e}")
             # 如果无法获取频道信息，尝试提供更智能的显示名称
             fallback_title = self._generate_fallback_channel_title(channel_id)
