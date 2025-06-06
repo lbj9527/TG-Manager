@@ -190,7 +190,6 @@ class ChannelResolver:
         # 尝试从缓存中获取
         str_channel_id = str(channel_id)
         if str_channel_id in self._forward_status_cache:
-            logger.info(f"1")
             status, cache_time = self._forward_status_cache[str_channel_id]
             # 检查缓存是否过期
             if datetime.now() - cache_time < timedelta(minutes=self._cache_expiry_minutes):

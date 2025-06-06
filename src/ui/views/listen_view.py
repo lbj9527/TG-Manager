@@ -18,6 +18,9 @@ from datetime import datetime
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import UIMonitorConfig, UIMonitorChannelPair, MediaType
 
+# 添加性能监控视图导入
+from src.ui.views.performance_monitor_view import PerformanceMonitorView
+
 logger = get_logger()
 
 
@@ -380,10 +383,14 @@ class ListenView(QWidget):
         # 将消息标签页容器添加到监听日志标签页
         log_layout.addWidget(self.message_tabs, 1)
         
-        # 将三个标签页添加到配置标签页部件
+        # 创建性能监控标签页
+        self.performance_tab = PerformanceMonitorView(self)
+        
+        # 将四个标签页添加到配置标签页部件
         self.config_tabs.addTab(self.config_tab, "频道配置")
         self.config_tabs.addTab(self.general_config_tab, "通用配置")
         self.config_tabs.addTab(self.log_tab, "监听日志")
+        self.config_tabs.addTab(self.performance_tab, "性能监控")
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -1290,6 +1297,11 @@ class ListenView(QWidget):
             
         self.monitor = monitor
         logger.debug("监听视图已接收监听器实例")
+        
+        # 设置性能监控器
+        if hasattr(monitor, 'performance_monitor') and monitor.performance_monitor:
+            self.performance_tab.set_performance_monitor(monitor.performance_monitor)
+            logger.debug("性能监控器已连接到UI")
         
         # 连接信号
         self._connect_monitor_signals()

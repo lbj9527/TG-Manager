@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import time
 from typing import List, Tuple, Callable, Dict, Any
 
 from pyrogram import Client
@@ -43,6 +44,9 @@ class MessageProcessor:
         # 频道信息缓存引用（由Monitor模块设置）
         self.channel_info_cache = None
         
+        # 性能监控器引用（由Monitor模块设置）
+        self.performance_monitor = None
+        
     def set_monitor_config(self, monitor_config: Dict[str, Any]):
         """
         设置监控配置
@@ -74,71 +78,131 @@ class MessageProcessor:
         Returns:
             str: 频道信息字符串
         """
-        if self.channel_info_cache and channel_id in self.channel_info_cache:
-            return self.channel_info_cache[channel_id][0]
-        else:
-            # 如果没有缓存，返回简单格式
-            return f"频道 (ID: {channel_id})"
+        if self.channel_info_cache:
+            cached_info = self.channel_info_cache.get_channel_info(channel_id)
+            if cached_info:
+                return cached_info[0]  # 返回display_name
+        
+        # 如果没有缓存，返回简单格式
+        return f"频道 (ID: {channel_id})"
+    
+    def set_performance_monitor(self, performance_monitor):
+        """
+        设置性能监控器
+        
+        Args:
+            performance_monitor: 性能监控器实例
+        """
+        self.performance_monitor = performance_monitor
     
     async def forward_message(self, message: Message, target_channels: List[Tuple[str, int, str]], 
                               use_copy: bool = True, replace_caption: str = None, remove_caption: bool = False) -> bool:
         """
-        转发消息到所有目标频道
+        转发消息到多个目标频道
         
         Args:
             message: 要转发的消息
-            target_channels: 目标频道列表 (channel_id_or_username, resolved_id, display_name)
-            use_copy: 是否使用复制方式转发
-            replace_caption: 用于替换的标题
+            target_channels: 目标频道列表 [(频道标识, 频道ID, 频道信息)]
+            use_copy: 是否使用copy_message（适用于需要修改内容的情况）
+            replace_caption: 替换的标题文本
             remove_caption: 是否移除标题
             
-        Returns: 
-            bool: 是否成功转发
+        Returns:
+            bool: 是否至少有一个频道转发成功
         """
-        if not target_channels:
-            logger.warning(f"没有有效的目标频道，跳过转发消息 [ID: {message.id}]")
-            return False
-            
-        try:
-            source_chat = message.chat
-            source_chat_id = source_chat.id
-            source_message_id = message.id
-            
-            # 尝试获取频道信息
-            try:
-                source_title = source_chat.title
-                source_channel = f"@{source_chat.username}" if source_chat.username else str(source_chat_id)
-            except:
-                source_title = str(source_chat_id)
-                source_channel = str(source_chat_id)
-            
-            # 尝试获取更友好的源频道显示名称
-            source_display_name = self.get_cached_channel_info(source_chat_id)
-            
-            logger.info(f"开始转发消息 [ID: {source_message_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
-            
-            # 检查源频道是否允许转发
-            source_can_forward = await self.channel_resolver.check_forward_permission(source_chat_id)
-            
-            # 判断是否真正修改了文本/标题
-            original_text = message.text or message.caption or ""
-            text_modified = False
-            
-            # 检查是否有文本替换
-            if replace_caption is not None and replace_caption != original_text:
-                text_modified = True
-            
-            # 检查是否移除了标题
-            if remove_caption and original_text:
-                text_modified = True
-            
-            # 转发到所有目标频道
-            success_count = 0
-            failed_count = 0
-            
-            if source_can_forward or not message.media:
-                # 源频道允许转发或消息是非媒体消息，使用copy_message
-                for target, target_id, target_info in target_channels:
+        # 记录转发开始时间
+        start_time = time.time()
+        
+        source_channel = message.chat.username or message.chat.id
+        source_chat_id = message.chat.id
+        source_message_id = message.id
+        source_title = self.get_cached_channel_info(source_chat_id)
+        source_display_name = source_title
+        
+        success_count = 0
+        failed_count = 0
+        text_modified = replace_caption is not None
+        
+        # 获取可以转发的目标频道（批量检查权限，减少API调用）
+        valid_targets = []
+        restricted_targets = []
+        
+        logger.info(f"开始转发消息 [ID: {source_message_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
+        
+        # 一次性检查源频道转发权限
+        source_can_forward = await self.channel_resolver.check_forward_permission(source_chat_id)
+        
+        if source_can_forward:
+            # 源频道允许转发，直接转发到目标频道
+            for target, target_id, target_info in target_channels:
+                try:
+                    # 记录单次转发开始时间
+                    single_start_time = time.time()
+                    
+                    # 检查是否为纯文本消息且需要文本替换
+                    is_text_message = not message.media and message.text
+                    needs_text_replacement = replace_caption is not None and replace_caption != message.text
+                    
+                    if is_text_message and needs_text_replacement:
+                        # 对于纯文本消息且需要文本替换，直接使用send_message（最快）
+                        text_to_send = replace_caption if not remove_caption else ""
+                        
+                        await self.client.send_message(
+                            chat_id=target_id,
+                            text=text_to_send,
+                            disable_notification=True
+                        )
+                        success_count += 1
+                        logger.info(f"已使用文本发送方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                        
+                        # 发射转发成功事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                    elif use_copy:
+                        # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
+                        caption = None
+                        if message.text or message.caption:
+                            caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                        
+                        # 如果需要移除caption，对于copy_message必须传递空字符串
+                        if remove_caption:
+                            caption = ""
+                            
+                        await self.client.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=source_chat_id,
+                            message_id=source_message_id,
+                            caption=caption,
+                            disable_notification=True
+                        )
+                        success_count += 1
+                        logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                        
+                        # 发射转发成功事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                    else:
+                        # 使用forward_messages保留原始信息
+                        await self.client.forward_messages(
+                            chat_id=target_id,
+                            from_chat_id=source_chat_id,
+                            message_ids=source_message_id,
+                            disable_notification=True
+                        )
+                        success_count += 1
+                        logger.info(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                        
+                        # 发射转发成功事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_display_name, target_info, True, modified=False)
+                    
+                    # 记录单次转发耗时
+                    single_duration = time.time() - single_start_time
+                    if self.performance_monitor:
+                        self.performance_monitor.record_forwarding_time(single_duration)
+                    
+                except ChatForwardsRestricted:
+                    logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
                     try:
                         # 检查是否为纯文本消息且需要文本替换
                         is_text_message = not message.media and message.text
@@ -159,16 +223,16 @@ class MessageProcessor:
                             # 发射转发成功事件
                             if self.emit:
                                 self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                        elif use_copy:
-                            # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
+                        else:
+                            # 使用copy_message复制消息
                             caption = None
                             if message.text or message.caption:
                                 caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                            
-                            # 如果需要移除caption，对于copy_message必须传递空字符串
-                            if remove_caption:
-                                caption = ""
                                 
+                                # 如果需要移除caption，对于copy_message必须传递空字符串
+                                if remove_caption:
+                                    caption = ""
+                                    
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
@@ -182,8 +246,101 @@ class MessageProcessor:
                             # 发射转发成功事件
                             if self.emit:
                                 self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                    except Exception as copy_e:
+                        failed_count += 1
+                        logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
+                        
+                        # 发射转发失败事件
+                        if self.emit:
+                            self.emit("forward", source_message_id, source_display_name, target_info, False)
+                        
+                        # 尝试重新发送修改后的消息
+                        try:
+                            # 获取原始消息的文本或标题
+                            text = message.text or message.caption or ""
+                            if replace_caption is not None:
+                                text = replace_caption
+                            if remove_caption:
+                                text = None
+                            await self.send_modified_message(message, text, [(target, target_id, target_info)])
+                            success_count += 1
+                            logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件（重试成功）
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                        except Exception as modified_e:
+                            logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
+                    
+                except FloodWait as e:
+                    logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
+                    await asyncio.sleep(e.x)
+                    # 重试转发
+                    try:
+                        # 检查是否为纯文本消息且需要文本替换
+                        is_text_message = not message.media and message.text
+                        needs_text_replacement = replace_caption is not None and replace_caption != message.text
+                        
+                        if is_text_message and needs_text_replacement:
+                            # 对于纯文本消息且需要文本替换，直接使用send_message
+                            text_to_send = replace_caption if not remove_caption else ""
+                            
+                            await self.client.send_message(
+                                chat_id=target_id,
+                                text=text_to_send,
+                                disable_notification=True
+                            )
+                            success_count += 1
+                            logger.info(f"重试成功：已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                         else:
-                            # 使用forward_messages保留原始信息
+                            # 使用copy_message复制消息
+                            caption = None
+                            if message.text or message.caption:
+                                caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                                if remove_caption:
+                                    caption = ""
+                                    
+                            await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_chat_id,
+                                message_id=source_message_id,
+                                caption=caption,
+                                disable_notification=True
+                            )
+                            success_count += 1
+                            logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
+                            
+                            # 发射转发成功事件
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                    except Exception as retry_e:
+                        failed_count += 1
+                        logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
+                        
+                except ChannelPrivate:
+                    failed_count += 1
+                    logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
+                    
+                    # 发射转发失败事件
+                    if self.emit:
+                        self.emit("forward", source_message_id, source_display_name, target_info, False)
+                    
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
+                    
+                    # 发射转发失败事件
+                    if self.emit:
+                        self.emit("forward", source_message_id, source_display_name, target_info, False)
+                    
+                    # 如果是copy_message失败，尝试使用其他方法
+                    if "Can't copy this message" in str(e) or "copy" in str(e).lower():
+                        try:
+                            logger.info(f"copy_message失败，尝试使用forward_messages方式: {target_info}")
                             await self.client.forward_messages(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
@@ -191,227 +348,98 @@ class MessageProcessor:
                                 disable_notification=True
                             )
                             success_count += 1
-                            logger.info(f"已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                            failed_count -= 1  # 撤销失败计数
+                            logger.info(f"降级成功：已将消息 {source_message_id} 从 {source_title} 转发到 {target_info}")
+                            
+                            # 发射转发成功事件（重试成功）
+                            if self.emit:
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=False)
+                        except Exception as fallback_e:
+                            logger.error(f"降级转发也失败: {str(fallback_e)}", error_type="FORWARD_FALLBACK", recoverable=True)
+                
+                # 转发间隔：减少到0.2秒，提高转发速度
+                if len(target_channels) > 1:  # 只有多个目标时才需要间隔
+                    await asyncio.sleep(0.2)
+        else:
+            # 源频道禁止转发，使用下载-上传方式或copy方式处理
+            logger.info(f"源频道禁止转发，将使用适当的处理方式")
+            
+            try:
+                # 使用禁止转发处理器处理消息(无论是否为媒体消息)
+                sent_messages, actually_modified = await self.restricted_handler.process_restricted_message(
+                    message=message,
+                    source_channel=source_channel,
+                    source_id=source_chat_id,
+                    target_channels=target_channels,
+                    caption=replace_caption,
+                    remove_caption=remove_caption
+                )
+                
+                if sent_messages:
+                    success_count = len(target_channels)
+                    if message.media:
+                        logger.info(f"已使用下载-上传方式成功将媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
+                    else:
+                        logger.info(f"已使用copy方式成功将非媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
+                    
+                    # 发射所有目标频道的转发成功事件
+                    if self.emit:
+                        for target, target_id, target_info in target_channels:
+                            self.emit("forward", source_message_id, source_display_name, target_info, True, modified=actually_modified)
+                else:
+                    # 消息处理失败，尝试使用send_modified_message
+                    logger.warning(f"处理失败，尝试使用修改后的消息发送")
+                    for target, target_id, target_info in target_channels:
+                        try:
+                            # 获取原始消息的文本或标题
+                            text = message.text or message.caption or ""
+                            if replace_caption is not None:
+                                text = replace_caption
+                            if remove_caption:
+                                text = None
+                            await self.send_modified_message(message, text, [(target, target_id, target_info)])
+                            success_count += 1
+                            logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
                             
                             # 发射转发成功事件
                             if self.emit:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=False)
-                    except ChatForwardsRestricted:
-                        logger.warning(f"目标频道 {target_info} 禁止转发消息，尝试使用复制方式发送")
-                        try:
-                            # 检查是否为纯文本消息且需要文本替换
-                            is_text_message = not message.media and message.text
-                            needs_text_replacement = replace_caption is not None and replace_caption != message.text
-                            
-                            if is_text_message and needs_text_replacement:
-                                # 对于纯文本消息且需要文本替换，直接使用send_message
-                                text_to_send = replace_caption if not remove_caption else ""
-                                
-                                await self.client.send_message(
-                                    chat_id=target_id,
-                                    text=text_to_send,
-                                    disable_notification=True
-                                )
-                                success_count += 1
-                                logger.info(f"已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                            else:
-                                # 使用copy_message复制消息
-                                caption = None
-                                if message.text or message.caption:
-                                    caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                                    
-                                    # 如果需要移除caption，对于copy_message必须传递空字符串
-                                    if remove_caption:
-                                        caption = ""
-                                        
-                                await self.client.copy_message(
-                                    chat_id=target_id,
-                                    from_chat_id=source_chat_id,
-                                    message_id=source_message_id,
-                                    caption=caption,
-                                    disable_notification=True
-                                )
-                                success_count += 1
-                                logger.info(f"已使用复制方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                        except Exception as copy_e:
+                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
+                        except Exception as modified_e:
                             failed_count += 1
-                            logger.error(f"复制消息失败: {str(copy_e)}", error_type="COPY_MESSAGE", recoverable=True)
+                            logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
                             
                             # 发射转发失败事件
                             if self.emit:
                                 self.emit("forward", source_message_id, source_display_name, target_info, False)
-                            
-                            # 尝试重新发送修改后的消息
-                            try:
-                                # 获取原始消息的文本或标题
-                                text = message.text or message.caption or ""
-                                if replace_caption is not None:
-                                    text = replace_caption
-                                if remove_caption:
-                                    text = None
-                                await self.send_modified_message(message, text, [(target, target_id, target_info)])
-                                success_count += 1
-                                logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件（重试成功）
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                            except Exception as modified_e:
-                                logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
-                        
-                    except FloodWait as e:
-                        logger.warning(f"触发FloodWait，等待 {e.x} 秒后继续")
-                        await asyncio.sleep(e.x)
-                        # 重试转发
-                        try:
-                            # 检查是否为纯文本消息且需要文本替换
-                            is_text_message = not message.media and message.text
-                            needs_text_replacement = replace_caption is not None and replace_caption != message.text
-                            
-                            if is_text_message and needs_text_replacement:
-                                # 对于纯文本消息且需要文本替换，直接使用send_message
-                                text_to_send = replace_caption if not remove_caption else ""
-                                
-                                await self.client.send_message(
-                                    chat_id=target_id,
-                                    text=text_to_send,
-                                    disable_notification=True
-                                )
-                                success_count += 1
-                                logger.info(f"重试成功：已使用文本替换方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                            else:
-                                # 使用copy_message复制消息
-                                caption = None
-                                if message.text or message.caption:
-                                    caption = replace_caption if replace_caption is not None else (message.caption or message.text)
-                                    if remove_caption:
-                                        caption = ""
-                                        
-                                await self.client.copy_message(
-                                    chat_id=target_id,
-                                    from_chat_id=source_chat_id,
-                                    message_id=source_message_id,
-                                    caption=caption,
-                                    disable_notification=True
-                                )
-                                success_count += 1
-                                logger.info(f"重试成功：已将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                        except Exception as retry_e:
-                            failed_count += 1
-                            logger.error(f"重试转发失败: {str(retry_e)}", error_type="FORWARD_RETRY", recoverable=True)
-                            
-                    except ChannelPrivate:
-                        failed_count += 1
-                        logger.error(f"无法访问目标频道 {target_info}，可能是私有频道或未加入", error_type="CHANNEL_PRIVATE", recoverable=True)
-                        
-                        # 发射转发失败事件
-                        if self.emit:
-                            self.emit("forward", source_message_id, source_display_name, target_info, False)
-                        
-                    except Exception as e:
-                        failed_count += 1
-                        logger.error(f"转发消息 {source_message_id} 到 {target_info} 失败: {str(e)}", error_type="FORWARD", recoverable=True)
-                        
-                        # 发射转发失败事件
-                        if self.emit:
-                            self.emit("forward", source_message_id, source_display_name, target_info, False)
-                    
-                    # 转发间隔
-                    await asyncio.sleep(0.5)
-            else:
-                # 源频道禁止转发，使用下载-上传方式或copy方式处理
-                logger.info(f"源频道禁止转发，将使用适当的处理方式")
+            except Exception as e:
+                failed_count = len(target_channels)
+                logger.error(f"处理禁止转发的消息失败: {str(e)}", error_type="RESTRICTED_MESSAGE", recoverable=True)
+                import traceback
+                logger.error(f"错误详情: {traceback.format_exc()}", error_type="DETAILED_ERROR", recoverable=True)
                 
-                try:
-                    # 使用禁止转发处理器处理消息(无论是否为媒体消息)
-                    sent_messages, actually_modified = await self.restricted_handler.process_restricted_message(
-                        message=message,
-                        source_channel=source_channel,
-                        source_id=source_chat_id,
-                        target_channels=target_channels,
-                        caption=replace_caption,
-                        remove_caption=remove_caption
-                    )
-                    
-                    if sent_messages:
-                        success_count = len(target_channels)
-                        if message.media:
-                            logger.info(f"已使用下载-上传方式成功将媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
-                        else:
-                            logger.info(f"已使用copy方式成功将非媒体消息 {source_message_id} 从 {source_title} 发送到所有目标频道")
-                        
-                        # 发射所有目标频道的转发成功事件
-                        if self.emit:
-                            for target, target_id, target_info in target_channels:
-                                self.emit("forward", source_message_id, source_display_name, target_info, True, modified=actually_modified)
-                    else:
-                        # 消息处理失败，尝试使用send_modified_message
-                        logger.warning(f"处理失败，尝试使用修改后的消息发送")
-                        for target, target_id, target_info in target_channels:
-                            try:
-                                # 获取原始消息的文本或标题
-                                text = message.text or message.caption or ""
-                                if replace_caption is not None:
-                                    text = replace_caption
-                                if remove_caption:
-                                    text = None
-                                await self.send_modified_message(message, text, [(target, target_id, target_info)])
-                                success_count += 1
-                                logger.info(f"已使用修改方式将消息 {source_message_id} 从 {source_title} 发送到 {target_info}")
-                                
-                                # 发射转发成功事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
-                            except Exception as modified_e:
-                                failed_count += 1
-                                logger.error(f"发送修改后的消息失败: {str(modified_e)}", error_type="SEND_MODIFIED", recoverable=True)
-                                
-                                # 发射转发失败事件
-                                if self.emit:
-                                    self.emit("forward", source_message_id, source_display_name, target_info, False)
-                except Exception as e:
-                    failed_count = len(target_channels)
-                    logger.error(f"处理禁止转发的消息失败: {str(e)}", error_type="RESTRICTED_MESSAGE", recoverable=True)
-                    import traceback
-                    logger.error(f"错误详情: {traceback.format_exc()}", error_type="DETAILED_ERROR", recoverable=True)
-                    
-                    # 发射所有目标频道的转发失败事件
-                    if self.emit:
-                        for target, target_id, target_info in target_channels:
-                            self.emit("forward", source_message_id, source_display_name, target_info, False)
-            
-            # 统计结果
-            logger.info(f"消息 [ID: {source_message_id}] 转发完成: 成功 {success_count}, 失败 {failed_count}")    
-                
-        except Exception as e:
-            logger.error(f"处理消息转发时发生异常: {str(e)}", error_type="FORWARD_PROCESS", recoverable=True)
-            
-            # 检测网络相关错误
-            error_name = type(e).__name__.lower()
-            if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
-                # 网络相关错误，通知应用程序检查连接状态
-                if self.network_error_handler:
-                    await self.network_error_handler(e)
-                
-            return False
+                # 发射所有目标频道的转发失败事件
+                if self.emit:
+                    for target, target_id, target_info in target_channels:
+                        self.emit("forward", source_message_id, source_display_name, target_info, False)
         
-        return success_count > 0
+        # 统计结果
+        logger.info(f"消息 [ID: {source_message_id}] 转发完成: 成功 {success_count}, 失败 {failed_count}")    
+            
+        # 记录转发结束时间
+        end_time = time.time()
+        forward_duration = end_time - start_time
+        logger.info(f"消息 [ID: {source_message_id}] 转发完成，耗时 {forward_duration:.2f} 秒")
+        
+        overall_success = success_count > 0
+        
+        # 记录性能监控数据
+        if self.performance_monitor:
+            for _ in range(success_count):
+                self.performance_monitor.record_message_forwarded(forward_duration / len(target_channels), True)
+            for _ in range(failed_count):
+                self.performance_monitor.record_message_forwarded(forward_duration / len(target_channels), False)
+                
+        return overall_success
     
     async def send_modified_message(self, original_message: Message, new_text: str, target_channels: List[Tuple[str, int, str]], remove_caption: bool = False) -> bool:
         """

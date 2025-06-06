@@ -3,6 +3,8 @@
 """
 
 import asyncio
+import time
+import psutil  # 用于内存监控
 from typing import Optional, Set, Callable, Any
 
 from pyrogram import Client, filters
@@ -16,6 +18,11 @@ from src.utils.logger import get_logger
 from src.modules.monitor.media_group_handler import MediaGroupHandler
 from src.modules.monitor.message_processor import MessageProcessor
 from src.modules.monitor.text_filter import TextFilter
+
+# 导入性能优化模块
+from src.modules.monitor.performance_monitor import PerformanceMonitor
+from src.modules.monitor.enhanced_cache import ChannelInfoCache
+from src.modules.monitor.circular_buffer import MessageIdBuffer
 
 # 仅用于内部调试，不再用于UI输出
 logger = get_logger()
@@ -57,11 +64,20 @@ class Monitor:
         self.should_stop = False
         self.monitor_tasks = []
         
-        # 已处理的消息ID集合，用于防止重复处理同一条消息
-        self.processed_messages: Set[int] = set()
+        # 初始化性能监控器
+        self.performance_monitor = PerformanceMonitor()
+        
+        # 初始化增强缓存（替换原来的简单字典缓存）
+        self.channel_info_cache = ChannelInfoCache(max_size=500, default_ttl=1800)  # 30分钟TTL
+        
+        # 初始化消息ID缓冲区（替换原来的简单集合）
+        self.processed_messages = MessageIdBuffer(max_size=50000)  # MessageIdBuffer不需要TTL参数
         
         # 定期清理已处理消息ID的任务
         self.cleanup_task = None
+        
+        # 定期更新内存使用量的任务
+        self.memory_monitor_task = None
         
         # 存储所有监听的频道ID
         self.monitored_channels: Set[int] = set()
@@ -139,9 +155,6 @@ class Monitor:
         # 解析所有源频道及其目标频道
         channel_pairs = {}
         
-        # 添加频道信息缓存字典，避免重复获取
-        self.channel_info_cache = {}  # {channel_id: (info_str, title)}
-        
         logger.debug(f"从配置文件读取到 {len(self.monitor_config.get('monitor_channel_pairs', []))} 个频道对:")
         for pair in self.monitor_config.get('monitor_channel_pairs', []):
             source_channel = pair.get('source_channel', '')
@@ -155,11 +168,24 @@ class Monitor:
             try:
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
                 # 预先获取并缓存源频道信息
-                source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
-                self.channel_info_cache[source_id] = (source_info_str, source_info_tuple[0])
-                logger.debug(f"已缓存源频道信息: {source_info_str}")
+                cached_info = self.channel_info_cache.get_channel_info(source_id)
+                if cached_info:
+                    source_info_str = cached_info[0]
+                    source_title = cached_info[1]
+                    self.performance_monitor.record_cache_hit()
+                else:
+                    # 如果缓存中没有，则获取并缓存（兜底方案）
+                    try:
+                        source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
+                        self.channel_info_cache.set_channel_info(source_id, source_info_str, source_info_tuple[0])
+                        self.performance_monitor.record_cache_miss()
+                        source_title = source_info_tuple[0]
+                    except Exception:
+                        source_info_str = f"频道 (ID: {source_id})"
+                        source_title = f"频道{source_id}"
             except Exception as e:
                 logger.warning(f"无法解析源频道 {source_channel}，错误: {e}")
+                self.performance_monitor.record_error('api')
                 continue
             
             # 解析目标频道ID
@@ -169,11 +195,13 @@ class Monitor:
                     target_id = await self.channel_resolver.get_channel_id(target_channel)
                     target_info_str, target_info_tuple = await self.channel_resolver.format_channel_info(target_id)
                     # 缓存目标频道信息
-                    self.channel_info_cache[target_id] = (target_info_str, target_info_tuple[0])
+                    self.channel_info_cache.set_channel_info(target_id, target_info_str, target_info_tuple[0])
+                    self.performance_monitor.record_cache_miss()  # 首次加载记录为miss
                     resolved_targets.append((target_channel, target_id, target_info_str))
                     logger.debug(f"已缓存目标频道信息: {target_info_str}")
                 except Exception as e:
                     logger.warning(f"无法解析目标频道 {target_channel}，错误: {e}")
+                    self.performance_monitor.record_error('api')
             
             if not resolved_targets:
                 logger.warning(f"源频道 {source_channel} 没有有效的目标频道，跳过")
@@ -252,12 +280,23 @@ class Monitor:
             self.message_processor.set_channel_info_cache(self.channel_info_cache)
             self.media_group_handler.set_channel_info_cache(self.channel_info_cache)
             
+            # 设置性能监控器引用
+            self.message_processor.set_performance_monitor(self.performance_monitor)
+            self.media_group_handler.set_performance_monitor(self.performance_monitor)
+            
+            # 重新确保emit信号连接（防止在EventEmitterMonitor包装后丢失连接）
+            self.media_group_handler.emit = self._emit_signal
+            self.message_processor.emit = self._emit_signal
+            
             # 创建并注册消息处理函数
             from pyrogram.handlers import MessageHandler
             
             async def handle_new_message(client: Client, message: Message):
                 if not self.is_processing:
                     return
+                
+                # 记录消息处理开始时间
+                start_time = time.time()
                 
                 try:
                     # 获取来源频道信息
@@ -271,14 +310,17 @@ class Monitor:
                     pair_config = channel_pairs[source_id]
                     
                     # 使用缓存的频道信息，避免重复API调用
-                    if source_id in self.channel_info_cache:
-                        source_info_str = self.channel_info_cache[source_id][0]
-                        source_title = self.channel_info_cache[source_id][1]
+                    cached_info = self.channel_info_cache.get_channel_info(source_id)
+                    if cached_info:
+                        source_info_str = cached_info[0]
+                        source_title = cached_info[1]
+                        self.performance_monitor.record_cache_hit()
                     else:
                         # 如果缓存中没有，则获取并缓存（兜底方案）
                         try:
                             source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
-                            self.channel_info_cache[source_id] = (source_info_str, source_info_tuple[0])
+                            self.channel_info_cache.set_channel_info(source_id, source_info_str, source_info_tuple[0])
+                            self.performance_monitor.record_cache_miss()
                             source_title = source_info_tuple[0]
                         except Exception:
                             source_info_str = f"频道 (ID: {source_id})"
@@ -296,27 +338,44 @@ class Monitor:
                         return
                     
                     # 如果消息ID已经处理过，跳过
-                    if message.id in self.processed_messages:
+                    if self.processed_messages.is_message_processed(message.id):
                         logger.debug(f"消息 [ID: {message.id}] 已处理过，跳过")
                         return
                         
                     # 将消息ID添加到已处理集合
-                    self.processed_messages.add(message.id)
+                    self.processed_messages.mark_message_processed(message.id)
                     
                     # 检查是否为媒体组消息
                     if message.media_group_id:
                         # 处理媒体组消息
                         await self.media_group_handler.handle_media_group_message(message, pair_config)
+                        
+                        # 记录处理时间
+                        processing_time = time.time() - start_time
+                        self.performance_monitor.record_message_processed(processing_time)
                         return
                     
                     # 处理单条消息
                     await self._process_single_message(message, pair_config)
+                    
+                    # 记录处理时间
+                    processing_time = time.time() - start_time
+                    self.performance_monitor.record_message_processed(processing_time)
                     
                     # 发射消息处理完成事件
                     if hasattr(self, 'emit') and self.emit:
                         self.emit("message_processed", message.id)
                     
                 except Exception as e:
+                    # 记录错误
+                    error_name = type(e).__name__.lower()
+                    if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
+                        self.performance_monitor.record_error('network')
+                    elif 'api' in error_name or 'telegram' in error_name:
+                        self.performance_monitor.record_error('api')
+                    else:
+                        self.performance_monitor.record_error('other')
+                    
                     logger.error(f"处理消息 [ID: {message.id}] 时发生错误: {str(e)}", error_type="MESSAGE_PROCESS", recoverable=True)
             
             # 创建处理器并注册
@@ -331,6 +390,9 @@ class Monitor:
             
             # 启动清理任务
             self.cleanup_task = asyncio.create_task(self._cleanup_processed_messages())
+            
+            # 启动内存监控任务
+            self.memory_monitor_task = asyncio.create_task(self._monitor_memory_usage())
             
             # 启动媒体组清理任务
             self.media_group_handler.start_cleanup_task()
@@ -391,14 +453,26 @@ class Monitor:
             
             self.cleanup_task = None
         
+        # 取消内存监控任务
+        if self.memory_monitor_task:
+            self.memory_monitor_task.cancel()
+            try:
+                await self.memory_monitor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"取消内存监控任务时异常: {str(e)}", error_type="TASK_CANCEL", recoverable=True)
+            
+            self.memory_monitor_task = None
+        
         # 清空已处理消息集合
-        previous_count = len(self.processed_messages)
+        previous_count = self.processed_messages.size()
         self.processed_messages.clear()
         logger.info(f"已清理 {previous_count} 条已处理消息记录")
         
         # 清理频道信息缓存
         if hasattr(self, 'channel_info_cache'):
-            cache_count = len(self.channel_info_cache)
+            cache_count = self.channel_info_cache.size()
             self.channel_info_cache.clear()
             logger.debug(f"已清理 {cache_count} 条频道信息缓存")
         
@@ -440,20 +514,25 @@ class Monitor:
     
     async def _cleanup_processed_messages(self):
         """
-        定期清理已处理消息ID集合，防止集合无限增长
+        定期清理已处理消息ID集合和缓存，防止内存无限增长
         """
         try:
             while not self.should_stop:
-                await asyncio.sleep(3600)  # 每小时清理一次
+                await asyncio.sleep(1800)  # 每30分钟清理一次
                 
                 if self.should_stop:
                     break
+                
+                # 清理过期的消息ID
+                expired_messages = self.processed_messages.cleanup_expired()
+                if expired_messages > 0:
+                    logger.info(f"已清理 {expired_messages} 条过期的消息记录")
+                
+                # 清理过期的缓存项
+                expired_cache = self.channel_info_cache.cleanup_expired()
+                if expired_cache > 0:
+                    logger.debug(f"已清理 {expired_cache} 条过期的缓存项")
                     
-                # 由于消息ID集合是简单的int，没有时间信息，这里简单地清空集合
-                previous_count = len(self.processed_messages)
-                if previous_count > 10000:  # 如果超过10000条消息，则清空
-                    self.processed_messages.clear()
-                    logger.info(f"已清理 {previous_count} 条已处理消息记录")
         except asyncio.CancelledError:
             # 任务被取消，正常退出
             pass
@@ -483,6 +562,7 @@ class Monitor:
             if exclude_forwards and message.forward_from:
                 filter_reason = "转发消息"
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                self.performance_monitor.record_message_filtered(filter_reason)
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
                     source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -492,6 +572,7 @@ class Monitor:
             if exclude_replies and message.reply_to_message:
                 filter_reason = "回复消息"
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                self.performance_monitor.record_message_filtered(filter_reason)
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
                     source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -513,6 +594,7 @@ class Monitor:
             if exclude_text and is_text_message:
                 filter_reason = "纯文本消息"
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过 (exclude_text={exclude_text}, is_text_message={is_text_message})")
+                self.performance_monitor.record_message_filtered(filter_reason)
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
                     source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -526,6 +608,7 @@ class Monitor:
                 if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
                     filter_reason = "包含链接"
                     logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                    self.performance_monitor.record_message_filtered(filter_reason)
                     # 发送过滤消息事件到UI
                     if hasattr(self, 'emit') and self.emit:
                         source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -538,6 +621,7 @@ class Monitor:
                 if not any(keyword.lower() in text_content.lower() for keyword in keywords):
                     filter_reason = f"不包含关键词({', '.join(keywords)})"
                     logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                    self.performance_monitor.record_message_filtered(filter_reason)
                     # 发送过滤消息事件到UI
                     if hasattr(self, 'emit') and self.emit:
                         source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -558,6 +642,7 @@ class Monitor:
                 media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
                 filter_reason = f"媒体类型({media_type_name})不在允许列表中"
                 logger.info(f"消息 [ID: {message.id}] 的{filter_reason}，跳过处理")
+                self.performance_monitor.record_message_filtered(filter_reason)
                 # 发送过滤消息事件到UI
                 if hasattr(self, 'emit') and self.emit:
                     source_info_str = self.get_cached_channel_info(message.chat.id)
@@ -758,8 +843,54 @@ class Monitor:
         Returns:
             str: 频道信息字符串
         """
-        if hasattr(self, 'channel_info_cache') and channel_id in self.channel_info_cache:
-            return self.channel_info_cache[channel_id][0]
+        if hasattr(self, 'channel_info_cache') and self.channel_info_cache:
+            cached_info = self.channel_info_cache.get_channel_info(channel_id)
+            if cached_info:
+                self.performance_monitor.record_cache_hit()
+                return cached_info[0]
+            else:
+                self.performance_monitor.record_cache_miss()
+                return f"频道 (ID: {channel_id})"
         else:
             # 如果没有缓存，返回简单格式
-            return f"频道 (ID: {channel_id})" 
+            return f"频道 (ID: {channel_id})"
+
+    async def _monitor_memory_usage(self):
+        """
+        定期监控内存使用量
+        """
+        try:
+            while not self.should_stop:
+                await asyncio.sleep(60)  # 每分钟检查一次
+                
+                if self.should_stop:
+                    break
+                
+                try:
+                    # 获取当前进程的内存使用量
+                    process = psutil.Process()
+                    memory_info = process.memory_info()
+                    memory_mb = memory_info.rss / 1024 / 1024  # 转换为MB
+                    
+                    # 更新性能监控器中的内存使用量
+                    self.performance_monitor.update_memory_usage(memory_mb)
+                    
+                    # 如果内存使用过高，触发主动清理
+                    if memory_mb > 500:  # 超过500MB时进行主动清理
+                        logger.warning(f"内存使用量较高: {memory_mb:.2f}MB，执行主动清理")
+                        
+                        # 清理过期项
+                        expired_messages = self.processed_messages.cleanup_expired()
+                        expired_cache = self.channel_info_cache.cleanup_expired()
+                        
+                        if expired_messages > 0 or expired_cache > 0:
+                            logger.info(f"主动清理完成：消息记录 {expired_messages} 条，缓存项 {expired_cache} 条")
+                    
+                except Exception as mem_e:
+                    logger.debug(f"获取内存信息失败: {mem_e}")
+                    
+        except asyncio.CancelledError:
+            # 任务被取消，正常退出
+            pass
+        except Exception as e:
+            logger.error(f"内存监控异常: {str(e)}", error_type="MEMORY_MONITOR", recoverable=True) 
