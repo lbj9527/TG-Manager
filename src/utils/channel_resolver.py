@@ -351,7 +351,10 @@ class ChannelResolver:
             
         # 获取最新消息ID（如果需要）
         latest_message_id = None
-        if end_id == 0 or (end_id > 0 and start_id < end_id):
+        need_latest_id = end_id == 0  # 当end_id为0时需要获取最新消息ID
+        
+        if need_latest_id:
+            # 当end_id为0时，需要获取最新消息ID
             try:
                 # 尝试获取最新消息
                 messages = []
@@ -360,7 +363,7 @@ class ChannelResolver:
                     
                 if messages:
                     latest_message_id = messages[0].id
-                    # logger.info(f"获取到最新消息ID: {latest_message_id}")
+                    logger.info(f"end_id为0，获取到最新消息ID: {latest_message_id}")
                 else:
                     logger.warning(f"频道 {chat_id} 中没有找到消息")
                     return None, None
@@ -386,16 +389,23 @@ class ChannelResolver:
                 # 如果start_id > end_id，这是无效的范围
                 logger.error(f"消息ID范围无效: start_id={start_id} > end_id={end_id}")
                 return None, None
-            elif start_id < end_id:
-                # 正常情况，使用指定的end_id
-                # 但如果end_id不存在（超过最新消息ID），则使用最新消息ID
-                if latest_message_id and end_id > latest_message_id:
-                    actual_end_id = latest_message_id
-                    logger.warning(f"请求的end_id={end_id}超过最新消息ID={latest_message_id}，使用最新消息ID")
-                else:
-                    actual_end_id = end_id
-            else:  # start_id == end_id
+            else:
+                # 使用指定的end_id
                 actual_end_id = end_id
+                # 注意：这里我们不再验证end_id是否超过最新消息ID，因为：
+                # 1. 获取最新消息ID需要额外的API调用
+                # 2. Telegram会自动处理超出范围的消息ID
+                # 3. 用户可能确实想要设置一个未来的end_id作为上限
+                logger.debug(f"使用指定的end_id: {end_id}")
+        
+        # 验证最终范围
+        if actual_start_id is None or actual_end_id is None:
+            logger.error(f"无法确定有效的消息ID范围")
+            return None, None
+            
+        if actual_start_id > actual_end_id:
+            logger.error(f"最终消息ID范围无效: actual_start_id={actual_start_id} > actual_end_id={actual_end_id}")
+            return None, None
         
         # logger.info(f"最终消息范围: actual_start_id={actual_start_id}, actual_end_id={actual_end_id}")
         return actual_start_id, actual_end_id 
