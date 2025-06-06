@@ -293,12 +293,16 @@ class RestrictedForwardHandler:
                     # 只有原本有标题时，移除才算修改
                     if original_caption:
                         actually_modified = True
+                    else:
+                        actually_modified = False
                     _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
                 elif caption is not None:
                     final_caption = caption
                     # 只有替换后的标题与原始标题不同时才算修改
                     if original_caption != caption:
                         actually_modified = True
+                    else:
+                        actually_modified = False
                     _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
                 else:
                     final_caption = message.caption or message.text
@@ -394,12 +398,16 @@ class RestrictedForwardHandler:
                     # 只有原本有标题时，移除才算修改
                     if original_caption:
                         actually_modified = True
+                    else:
+                        actually_modified = False
                     _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
                 elif caption is not None:
                     final_text = caption
                     # 只有替换后的标题与原始标题不同时才算修改
                     if original_caption != caption:
                         actually_modified = True
+                    else:
+                        actually_modified = False
                     _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
                 else:
                     final_text = message.text or message.caption
@@ -409,18 +417,29 @@ class RestrictedForwardHandler:
                 # 复制到所有目标频道
                 for target, target_id, target_info in target_channels:
                     try:
-                        sent_message = await self.client.copy_message(
-                            chat_id=target_id,
-                            from_chat_id=source_id,
-                            message_id=message.id,
-                            caption=final_text,
-                            disable_notification=True
-                        )
+                        # 对于纯文本消息，如果有文本替换，使用send_message；否则使用copy_message
+                        if final_text != (message.text or message.caption):
+                            # 有文本替换，使用send_message确保文本正确替换
+                            sent_message = await self.client.send_message(
+                                chat_id=target_id,
+                                text=final_text,
+                                disable_notification=True
+                            )
+                            _logger.info(f"已使用send_message将替换后的文本消息发送到 {target_info}")
+                        else:
+                            # 无文本替换，使用copy_message
+                            sent_message = await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_id=message.id,
+                                disable_notification=True
+                            )
+                            _logger.info(f"已使用copy_message将非媒体消息复制到 {target_info}")
+                        
                         sent_messages.append(sent_message)
-                        _logger.info(f"已将非媒体消息从源频道复制到 {target_info}")
                         await asyncio.sleep(0.5)  # 添加延迟避免触发限制
                     except Exception as e:
-                        _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
+                        _logger.error(f"发送到目标频道 {target_info} 失败: {e}")
                 
                 return sent_messages, actually_modified
         
@@ -522,12 +541,16 @@ class RestrictedForwardHandler:
                 # 只有原本有标题时，移除才算修改
                 if original_caption:
                     actually_modified = True
+                else:
+                    actually_modified = False
                 _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
             elif caption is not None:
                 final_caption = caption
                 # 只有替换后的标题与原始标题不同时才算修改
                 if original_caption != caption:
                     actually_modified = True
+                else:
+                    actually_modified = False
                 _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
             else:
                 # 使用原始标题，不算修改
