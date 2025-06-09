@@ -4,6 +4,7 @@
 
 import os
 import asyncio
+import time
 from typing import Optional, Dict, Any, Union
 from PySide6.QtCore import QObject, Signal
 
@@ -30,6 +31,7 @@ class ClientManager(QObject):
     
     # 添加信号
     connection_status_changed = Signal(bool, object)  # 连接状态，用户信息
+    time_sync_error = Signal(str)  # 时间同步错误信号，参数为错误消息
     
     def __init__(self, ui_config_manager: UIConfigManager, session_name: str = "tg_manager"):
         """
@@ -108,6 +110,46 @@ class ClientManager(QObject):
         # 记录到日志
         logger.debug(f"错误已记录到历史: {error}")
     
+    def _is_time_sync_error(self, error):
+        """
+        检查是否是时间同步相关错误
+        
+        Args:
+            error: 异常对象
+            
+        Returns:
+            bool: 是否是时间同步错误
+        """
+        error_str = str(error)
+        error_type = type(error).__name__
+        
+        # 检查各种时间同步错误的特征
+        time_sync_keywords = [
+            "BadMsgNotification",
+            "msg_id is too high",
+            "msg_id is too low",
+            "time has to be synchronized", 
+            "time synchronization",
+            "clock",
+            "invalid message identifier",
+            "message identifier",
+            "msg_id",
+            "client time has to be synchronized"
+        ]
+        
+        # 检查错误字符串中是否包含时间同步关键词
+        for keyword in time_sync_keywords:
+            if keyword.lower() in error_str.lower():
+                logger.debug(f"检测到时间同步错误关键词: '{keyword}' 在错误信息中: '{error_str}'")
+                return True
+        
+        # 检查错误类型名称
+        if "BadMsgNotification" in error_type:
+            logger.debug(f"检测到BadMsgNotification错误类型: {error_type}")
+            return True
+            
+        return False
+    
     async def create_client(self):
         """
         创建Pyrogram客户端实例
@@ -181,7 +223,52 @@ class ClientManager(QObject):
         try:
             # 启动客户端
             logger.info("正在启动客户端...")
-            await self.client.start()
+            
+            # 创建一个启动超时任务
+            start_time = time.time()
+            timeout_seconds = 15  # 启动超时时间
+            
+            # 添加异常处理装饰器来捕获时间同步错误
+            try:
+                # 使用asyncio.wait_for为启动过程添加超时
+                await asyncio.wait_for(self.client.start(), timeout=timeout_seconds)
+            except asyncio.TimeoutError:
+                # 启动超时，检查是否可能是时间同步问题
+                logger.error(f"客户端启动超时 ({timeout_seconds}秒)")
+                
+                # 如果超时，很可能是时间同步问题（特别是看到重复的BadMsgNotification错误）
+                error_msg = f"客户端启动超时，这通常是由于系统时间与服务器时间不同步导致的。\n\n" \
+                           f"请按照以下步骤解决：\n\n" \
+                           f"1. 点击确定关闭程序\n" \
+                           f"2. 右键点击系统时间 → 调整日期/时间\n" \
+                           f"3. 点击 '立即同步' 或开启 '自动设置时间'\n" \
+                           f"4. 重新启动程序\n\n" \
+                           f"如果问题持续存在，请检查网络连接和防火墙设置。"
+                
+                logger.info("发送启动超时（可能的时间同步）错误信号...")
+                self.time_sync_error.emit(error_msg)
+                return
+            except Exception as start_error:
+                logger.error(f"客户端启动过程中发生错误: {type(start_error).__name__}: {str(start_error)}")
+                # 立即检查是否是时间同步错误
+                if self._is_time_sync_error(start_error):
+                    logger.warning("在client.start()中检测到时间同步错误，准备发送错误信号")
+                    error_msg = f"启动客户端时检测到时间同步问题: {str(start_error)}\n\n" \
+                               f"这通常是由于系统时间与服务器时间不同步导致的。\n" \
+                               f"请按照以下步骤解决：\n\n" \
+                               f"1. 点击确定关闭程序\n" \
+                               f"2. 右键点击系统时间 → 调整日期/时间\n" \
+                               f"3. 点击 '立即同步' 或开启 '自动设置时间'\n" \
+                               f"4. 重新启动程序\n\n" \
+                               f"如果问题持续存在，请检查网络连接和防火墙设置。"
+                     
+                    # 发出时间同步错误信号
+                    logger.info("发送时间同步错误信号...")
+                    self.time_sync_error.emit(error_msg)
+                    return
+                else:
+                    # 重新抛出非时间同步错误
+                    raise start_error
             
             # 获取用户信息
             self.me = await self.client.get_me()
@@ -207,6 +294,23 @@ class ClientManager(QObject):
             return await self.start_client()
             
         except Exception as e:
+            # 检查是否是时间同步错误
+            if self._is_time_sync_error(e):
+                error_msg = f"启动客户端时检测到时间同步问题: {str(e)}\n\n" \
+                           f"这通常是由于系统时间与服务器时间不同步导致的。\n" \
+                           f"请按照以下步骤解决：\n\n" \
+                           f"1. 点击确定关闭程序\n" \
+                           f"2. 右键点击系统时间 → 调整日期/时间\n" \
+                           f"3. 点击 '立即同步' 或开启 '自动设置时间'\n" \
+                           f"4. 重新启动程序\n\n" \
+                           f"如果问题持续存在，请检查网络连接和防火墙设置。"
+                logger.error(f"启动时时间同步错误: {str(e)}")
+                # 发出时间同步错误信号
+                self.time_sync_error.emit(error_msg)
+                return
+            
+            # 记录其他错误
+            self._record_error(e)
             logger.error(f"启动客户端时出错: {str(e)}")
             raise
     
@@ -358,6 +462,21 @@ class ClientManager(QObject):
             client = await self.start_client()
             return client
         except Exception as e:
+            # 检查是否是时间同步错误
+            if self._is_time_sync_error(e):
+                error_msg = f"重启客户端时检测到时间同步问题: {str(e)}\n\n" \
+                           f"这通常是由于系统时间与服务器时间不同步导致的。\n" \
+                           f"请按照以下步骤解决：\n\n" \
+                           f"1. 点击确定关闭程序\n" \
+                           f"2. 右键点击系统时间 → 调整日期/时间\n" \
+                           f"3. 点击 '立即同步' 或开启 '自动设置时间'\n" \
+                           f"4. 重新启动程序\n\n" \
+                           f"如果问题持续存在，请检查网络连接和防火墙设置。"
+                logger.error(f"重启时时间同步错误: {str(e)}")
+                # 发出时间同步错误信号
+                self.time_sync_error.emit(error_msg)
+                return
+            
             # 检查是否是数据库锁定错误
             if "database is locked" in str(e).lower():
                 logger.error(f"重启客户端失败，数据库被锁定: {e}")

@@ -357,4 +357,42 @@ class ClientHandler:
         except Exception as e:
             logger.error(f"首次登录后初始化核心组件时出错: {e}")
             import traceback
-            logger.error(traceback.format_exc()) 
+            logger.error(traceback.format_exc())
+
+    def on_time_sync_error(self, error_message):
+        """处理时间同步错误
+        
+        Args:
+            error_message: 错误消息
+        """
+        logger.error(f"收到时间同步错误信号: {error_message}")
+        
+        # 在主线程中显示错误对话框
+        def show_time_sync_dialog():
+            from PySide6.QtWidgets import QMessageBox
+            from PySide6.QtCore import Qt
+            
+            # 创建错误对话框
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle("系统时间同步错误")
+            msg_box.setText("检测到系统时间与服务器时间不同步")
+            msg_box.setDetailedText(error_message)
+            msg_box.setStandardButtons(QMessageBox.Ok)
+            
+            # 设置对话框为模态
+            msg_box.setModal(True)
+            
+            # 显示对话框并等待用户点击
+            result = msg_box.exec()
+            
+            # 用户点击确定后关闭程序
+            if result == QMessageBox.Ok:
+                logger.info("用户确认时间同步错误对话框，程序即将关闭")
+                # 关闭应用程序
+                if self.app and hasattr(self.app, 'app'):
+                    self.app.app.quit()
+        
+        # 使用QTimer在主线程中延迟执行
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(100, show_time_sync_dialog) 

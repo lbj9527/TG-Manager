@@ -58,6 +58,15 @@ class AsyncServicesInitializer:
                             self.app._on_client_connection_status_changed)
                         logger.debug("已连接客户端状态变化信号到应用程序回调")
             
+            # 连接时间同步错误信号
+            if hasattr(self.app.client_manager, 'time_sync_error'):
+                if hasattr(self.app, 'client_handler'):
+                    self.app.client_manager.time_sync_error.connect(
+                        self.app.client_handler.on_time_sync_error)
+                    logger.debug("已连接时间同步错误信号到客户端处理器")
+                else:
+                    logger.warning("客户端处理器不存在，无法连接时间同步错误信号")
+            
             # 检查会话文件是否存在，判断是否为首次登录
             session_name = self.app.client_manager.session_name
             
