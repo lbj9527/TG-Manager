@@ -133,13 +133,18 @@ class EventEmitterMonitor(BaseEventEmitter):
                     source_display_name = args[1]
                     target_display_name = args[2]
                     success = args[3]
-                    modified = kwargs.get("modified", False)
+                    # 修复：正确获取modified参数，优先从位置参数获取，其次从关键字参数
+                    if len(args) >= 5:
+                        modified = args[4]  # 从位置参数获取
+                    else:
+                        modified = kwargs.get("modified", False)  # 从关键字参数获取
                     
                     # 确保source_message_id是字符串类型，以支持媒体组显示ID
                     if isinstance(source_message_id, int):
                         source_message_id = str(source_message_id)
                     
                     self.forward_updated.emit(source_message_id, source_display_name, target_display_name, success, modified)
+                    logger.debug(f"发射forward_updated信号: msg_id={source_message_id}, source={source_display_name}, target={target_display_name}, success={success}, modified={modified}")
                 else:
                     logger.warning(f"EventEmitterMonitor收到forward事件但参数不足: args={args}, kwargs={kwargs}")
                     

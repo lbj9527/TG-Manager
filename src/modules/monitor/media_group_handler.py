@@ -1337,14 +1337,14 @@ class MediaGroupHandler:
 
         # 处理禁止转发的频道
         if restricted_targets:
-            await self._handle_restricted_targets(messages, media_group_id, source_title, restricted_targets)
+            await self._handle_restricted_targets(messages, media_group_id, source_title, restricted_targets, caption, caption_modified)
 
         success_count = len(normal_targets) + (len(restricted_targets) if restricted_targets else 0)
         total_count = len(target_channels)
         
         logger.info(f"修改后的媒体组 {media_group_id} 发送完成: 成功 {success_count}, 失败 {total_count - success_count}")
     
-    async def _handle_restricted_targets(self, messages: List[Message], media_group_id: str, source_title: str, restricted_targets: List[Tuple[str, int, str]]):
+    async def _handle_restricted_targets(self, messages: List[Message], media_group_id: str, source_title: str, restricted_targets: List[Tuple[str, int, str]], replaced_caption: str = None, caption_modified: bool = False):
         """处理禁止转发的目标频道
         
         Args:
@@ -1352,6 +1352,8 @@ class MediaGroupHandler:
             media_group_id: 媒体组ID
             source_title: 源频道标题
             restricted_targets: 禁止转发的目标频道列表
+            replaced_caption: 替换的标题文本
+            caption_modified: 是否修改了标题
         """
         if not restricted_targets:
             return
@@ -1362,8 +1364,8 @@ class MediaGroupHandler:
         
         logger.info(f"对第一个禁止转发频道 {first_target_info} 使用下载上传方式处理媒体组 {media_group_id}")
         
-        # 使用RestrictedForwardHandler处理第一个频道
-        success = await self._handle_restricted_media_group(first_target_id, first_target_info, media_group_id, source_title, messages)
+        # 使用RestrictedForwardHandler处理第一个频道，传递文本替换参数，并获取实际修改状态
+        success, actually_modified = await self._handle_restricted_media_group(first_target_id, first_target_info, media_group_id, source_title, messages, replaced_caption, caption_modified)
         
         if not success:
             logger.error(f"第一个禁止转发频道 {first_target_info} 处理失败，其他频道也将失败")
@@ -1382,7 +1384,7 @@ class MediaGroupHandler:
         
         logger.info(f"成功使用下载上传方式处理禁止转发的媒体组 {media_group_id} 到 {first_target_info}")
         
-        # 发射第一个频道的转发成功事件
+        # 发射第一个频道的转发成功事件，使用实际修改状态
         if self.emit:
             try:
                 source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
@@ -1391,14 +1393,14 @@ class MediaGroupHandler:
             
             message_ids = [msg.id for msg in messages]
             media_group_display_id = self._generate_media_group_display_id(message_ids)
-            self.emit("forward", media_group_display_id, source_info_str, first_target_info, True, True)
+            self.emit("forward", media_group_display_id, source_info_str, first_target_info, True, actually_modified)
             
         # 其他频道：从第一个频道复制转发
         if len(restricted_targets) > 1:
             logger.info(f"第一个频道成功，开始从 {first_target_info} 复制转发到其他 {len(restricted_targets)-1} 个禁止转发频道")
-            await self._copy_from_first_target(first_target_id, restricted_targets[1:], media_group_id, messages)
-
-    async def _copy_from_first_target(self, source_target_id: int, remaining_targets: List[Tuple[str, int, str]], media_group_id: str, messages: List[Message]):
+            await self._copy_from_first_target(first_target_id, restricted_targets[1:], media_group_id, messages, actually_modified)
+    
+    async def _copy_from_first_target(self, source_target_id: int, remaining_targets: List[Tuple[str, int, str]], media_group_id: str, messages: List[Message], actually_modified: bool):
         """从第一个成功上传的目标频道复制转发到其他频道
         
         Args:
@@ -1406,6 +1408,7 @@ class MediaGroupHandler:
             remaining_targets: 剩余的目标频道列表
             media_group_id: 媒体组ID
             messages: 原始消息列表
+            actually_modified: 是否实际修改了标题
         """
         try:
             # 获取第一个频道的最新媒体组消息
@@ -1441,7 +1444,7 @@ class MediaGroupHandler:
                                 )
                                 logger.info(f"成功从第一个频道复制媒体组到 {target_info}")
                                 
-                                # 发射转发成功事件
+                                # 发射转发成功事件 - 因为是复制转发，保持修改状态
                                 if self.emit:
                                     try:
                                         source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
@@ -1450,7 +1453,8 @@ class MediaGroupHandler:
                                     
                                     message_ids = [msg.id for msg in messages]
                                     media_group_display_id = self._generate_media_group_display_id(message_ids)
-                                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, True)
+                                    # 从第一个频道复制意味着保持修改状态
+                                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, actually_modified)
                                 
                             except Exception as e:
                                 logger.error(f"复制媒体组到 {target_info} 失败: {str(e)}")
@@ -2360,7 +2364,7 @@ class MediaGroupHandler:
     
     async def _handle_restricted_media_group(self, target_id: int, target_info: str, 
                                            media_group_id: str, source_title: str, 
-                                           original_messages: List) -> bool:
+                                           original_messages: List, replaced_caption: str = None, caption_modified: bool = False) -> Tuple[bool, bool]:
         """处理禁止转发的媒体组，使用RestrictedForwardHandler
         
         Args:
@@ -2369,14 +2373,16 @@ class MediaGroupHandler:
             media_group_id: 媒体组ID
             source_title: 源频道标题
             original_messages: 原始消息列表
+            replaced_caption: 替换的标题文本
+            caption_modified: 是否修改了标题
             
         Returns:
-            bool: 是否成功处理
+            Tuple[bool, bool]: (是否成功处理, 是否实际修改了标题)
         """
         try:
             if not original_messages:
                 logger.error(f"无法找到媒体组 {media_group_id} 的原始消息，无法处理禁止转发")
-                return False
+                return False, False
                 
             # 获取源频道信息
             source_chat_id = original_messages[0].chat.id
@@ -2392,25 +2398,28 @@ class MediaGroupHandler:
             # 准备目标频道列表，格式为 [(channel_id_or_username, resolved_id, display_name)]
             target_channels = [(str(target_id), target_id, target_info)]
             
-            # 使用RestrictedForwardHandler处理媒体组
+            # 确定是否移除标题
+            remove_caption = replaced_caption is None and caption_modified
+            
+            # 使用RestrictedForwardHandler处理媒体组，传递正确的文本替换参数
             sent_messages, actually_modified = await self._restricted_handler.process_restricted_media_group(
                 messages=original_messages,
                 source_channel=source_channel,
                 source_id=source_chat_id,
                 target_channels=target_channels,
-                caption=None,  # 保持原始标题
-                remove_caption=False  # 不移除标题
+                caption=replaced_caption,  # 传递替换的标题
+                remove_caption=remove_caption  # 传递是否移除标题
             )
             
             if sent_messages:
-                logger.info(f"成功使用RestrictedForwardHandler处理禁止转发的媒体组 {media_group_id} 到 {target_info}")
-                return True
+                logger.info(f"成功使用RestrictedForwardHandler处理禁止转发的媒体组 {media_group_id} 到 {target_info}，实际修改状态: {actually_modified}")
+                return True, actually_modified
             else:
                 logger.error(f"RestrictedForwardHandler处理媒体组 {media_group_id} 失败，未返回发送的消息")
-                return False
+                return False, False
                 
         except Exception as e:
             logger.error(f"使用RestrictedForwardHandler处理禁止转发媒体组时发生错误: {str(e)}")
             import traceback
             logger.error(f"错误详情: {traceback.format_exc()}")
-            return False
+            return False, False

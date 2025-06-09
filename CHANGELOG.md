@@ -1,5 +1,101 @@
 # Changelog
 
+## [2.1.7] - 2025-01-05
+
+### 重要修复 (Important Fix)
+- **事件发射器forward事件参数处理修复**：解决禁止转发频道媒体组转发成功后监听日志界面仍然不显示"标题已修改"的问题
+
+### 修复 (Fixed)
+- **EventEmitterMonitor中forward事件参数解析错误**：
+  - 问题场景：媒体组处理器发射forward事件时传递5个位置参数，但EventEmitterMonitor只接收前4个位置参数，第5个modified参数错误地从kwargs中获取
+  - 根本原因：在`EventEmitterMonitor._emit_qt_signal`方法中，forward事件的modified参数使用`kwargs.get("modified", False)`获取，但实际调用中modified是作为第5个位置参数传递的
+  - 具体错误：
+    - 媒体组处理器调用：`self.emit("forward", msg_id, source, target, success, actually_modified)`
+    - EventEmitterMonitor解析：`modified = kwargs.get("modified", False)` （错误地忽略了第5个位置参数）
+    - 结果：无论RestrictedForwardHandler返回的actually_modified值是什么，UI都显示modified=False
+  - 修复方案：
+    - 修改EventEmitterMonitor中forward事件的参数解析逻辑
+    - 优先从第5个位置参数（`args[4]`）获取modified值
+    - 如果位置参数不足，再从关键字参数中获取作为备用方案
+    - 增加详细的调试日志，显示实际接收到的所有参数值
+  - 修复后行为：禁止转发频道媒体组转发时，当文本替换生效时，UI界面正确显示"标题已修改"
+
+### 兼容性 (Compatibility)
+- **向后兼容**：修复同时支持位置参数和关键字参数两种调用方式，不影响现有代码
+- **调试增强**：增加forward事件的详细调试日志，便于后续问题排查
+
+## [2.1.6] - 2025-01-05
+
+### 重要修复 (Important Fix)
+- **禁止转发频道媒体组UI显示修复**：解决禁止转发频道媒体组转发成功后监听日志界面没有显示"标题已修改"的问题
+
+### 修复 (Fixed)
+- **媒体组"标题已修改"UI显示缺失**：
+  - 问题场景：监听模块处理禁止转发频道时，通过下载上传方式转发媒体组，即使文本替换生效，转发成功后UI界面也不显示"标题已修改"
+  - 根本原因：在调用链中未正确传递RestrictedForwardHandler返回的实际修改状态
+    - `_handle_restricted_targets` 方法中，使用了传入的 `caption_modified` 参数而不是RestrictedForwardHandler返回的 `actually_modified` 值
+    - `_copy_from_first_target` 方法中硬编码传递 `True` 而不是实际的修改状态
+  - 修复方案：
+    - 修改 `_handle_restricted_media_group` 方法返回值类型从 `bool` 改为 `Tuple[bool, bool]`，同时返回成功状态和实际修改状态
+    - 修改 `_handle_restricted_targets` 方法正确接收和传递RestrictedForwardHandler返回的 `actually_modified` 值
+    - 修改 `_copy_from_first_target` 方法签名增加 `actually_modified` 参数，并在事件发射中使用该值
+    - 确保UI事件发射中传递正确的修改状态，反映实际的文本替换结果
+
+### 验证 (Verification)
+- **媒体说明移除功能检查**：
+  - 确认RestrictedForwardHandler中对单条消息和媒体组消息的媒体说明移除功能实现正确
+  - 单条消息处理：`process_restricted_message` 方法中正确处理 `remove_caption` 参数，使用空字符串移除标题，并正确计算修改状态
+  - 媒体组处理：`process_restricted_media_group` 方法中正确处理 `remove_caption` 参数，确保媒体组标题正确移除或替换
+  - 修改状态计算：只有当原本存在标题且被移除，或者替换后标题与原始标题不同时，才标记为已修改
+
+## [2.1.5] - 2025-01-05
+
+### 重要修复 (Important Fix)
+- **禁止转发频道媒体组下载上传文本替换功能修复**：解决监听模块处理禁止转发频道时，下载上传媒体组未应用文本替换功能的问题
+
+### 修复 (Fixed)
+- **媒体组下载上传文本替换功能缺失**：
+  - 问题场景：监听模块中源频道为禁止转发频道时，通过下载后上传媒体组的方式转发消息，但没有应用配置的文本替换功能
+  - 根本原因：在调用链中传递文本替换参数时存在缺失
+    - `_send_modified_media_group` → `_handle_restricted_targets` 调用时未传递文本替换参数
+    - `_handle_restricted_targets` → `_handle_restricted_media_group` 调用时未传递文本替换参数
+    - `_handle_restricted_media_group` 调用 `RestrictedForwardHandler` 时硬编码了 `caption=None` 和 `remove_caption=False`
+  - 修复方案：
+    - 修改 `_send_modified_media_group` 方法，在调用 `_handle_restricted_targets` 时传递 `caption` 和 `caption_modified`
+    - 修改 `_handle_restricted_targets` 方法签名，增加 `replaced_caption` 和 `caption_modified` 参数，并在调用 `_handle_restricted_media_group` 时传递
+    - 修改 `_handle_restricted_media_group` 方法签名，增加 `replaced_caption` 和 `caption_modified` 参数，并正确传递给 `RestrictedForwardHandler.process_restricted_media_group`
+    - 修复 `_copy_from_first_target` 方法中的事件发射，确保从第一个频道复制转发时也显示"标题已修改"
+
+### 修复内容 (Fix Details)
+- **修改文件**：`src/modules/monitor/media_group_handler.py`
+- **修改方法**：
+  - `_send_modified_media_group`：调用 `_handle_restricted_targets` 时传递 `caption` 和 `caption_modified`
+  - `_handle_restricted_targets`：增加文本替换参数并传递给 `_handle_restricted_media_group`
+  - `_handle_restricted_media_group`：增加文本替换参数并正确传递给 `RestrictedForwardHandler`
+  - `_copy_from_first_target`：修复转发成功事件发射，确保正确显示"标题已修改"
+
+### 行为修正 (Behavior Correction)
+- **修复前（错误行为）**：
+  - 禁止转发频道的媒体组下载上传时，即使配置了文本替换规则，也不会应用替换
+  - 监听日志界面不显示"标题已修改"状态
+  - 原始文本内容被直接上传，没有经过文本过滤处理
+- **修复后（正确行为）**：
+  - 禁止转发频道的媒体组下载上传时，正确应用配置的文本替换规则
+  - 监听日志界面正确显示"标题已修改"状态
+  - 文本内容经过完整的过滤和替换处理后上传
+
+### 影响范围 (Impact Scope)
+- 影响所有监听模块中处理禁止转发频道的媒体组转发场景
+- 确保文本替换功能在所有转发路径中都能正常工作
+- 不影响正常转发功能和其他模块的操作
+- 提升禁止转发频道处理的功能完整性和用户体验
+
+### 技术实现 (Technical Implementation)
+- **参数传递链修复**：完善从 `_send_modified_media_group` 到 `RestrictedForwardHandler` 的完整参数传递链
+- **状态正确判断**：在 `_handle_restricted_media_group` 中正确判断是否需要移除标题
+- **事件发射完善**：确保所有转发成功事件都正确传递 `caption_modified` 状态
+- **保持一致性**：禁止转发频道的处理路径与正常转发路径在文本替换功能上保持完全一致
+
 ## [2.1.4] - 2025-01-05
 
 ### 重要修复 (Important Fix)
