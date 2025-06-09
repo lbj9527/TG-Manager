@@ -121,7 +121,18 @@ class MessageProcessor:
         
         success_count = 0
         failed_count = 0
-        text_modified = replace_caption is not None
+        
+        # 获取原始文本内容用于比较
+        original_text = message.text or message.caption or ""
+        
+        # 确定是否实际修改了文本内容
+        text_modified = False
+        if remove_caption and original_text:
+            # 如果移除了原本存在的标题，算作修改
+            text_modified = True
+        elif replace_caption is not None and replace_caption != original_text:
+            # 如果替换后的标题与原始标题不同，算作修改
+            text_modified = True
         
         # 获取可以转发的目标频道（批量检查权限，减少API调用）
         valid_targets = []

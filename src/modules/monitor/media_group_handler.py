@@ -20,7 +20,6 @@ from src.utils.channel_resolver import ChannelResolver
 from src.utils.logger import get_logger
 from src.modules.monitor.text_filter import TextFilter
 from src.modules.monitor.restricted_forward_handler import RestrictedForwardHandler
-from src.modules.forward.parallel_processor import ParallelProcessor
 
 # 导入消息处理器，但避免循环导入
 from typing import TYPE_CHECKING
@@ -52,6 +51,7 @@ class MediaGroupHandler:
         self.processed_media_groups = set()  # 已处理的媒体组ID集合
         self.fetching_media_groups = set()  # 正在获取的媒体组ID集合
         self.media_group_filter_stats = {}  # 媒体组过滤统计 {media_group_id: {'total_expected': int, 'filtered_count': int, 'total_received': int, 'original_caption': str}}
+        self.media_group_keyword_filter = {}  # 媒体组关键词过滤状态 {media_group_id: {'keywords_passed': bool, 'checked': bool}}
         self.channel_pairs = {}  # 频道对配置
         self.is_stopping = False  # 停止标志
         
@@ -168,6 +168,14 @@ class MediaGroupHandler:
             
             logger.info(f"已取消 {cancelled_count} 个延迟检查任务")
         
+        # 清理RestrictedForwardHandler的临时目录
+        if hasattr(self, '_restricted_handler') and self._restricted_handler:
+            try:
+                self._restricted_handler.cleanup_temp_dirs()
+                logger.debug("已清理RestrictedForwardHandler的临时目录")
+            except Exception as e:
+                logger.error(f"清理RestrictedForwardHandler临时目录失败: {e}")
+        
         # 取消媒体组清理任务
         if self.cleanup_task:
             self.cleanup_task.cancel()
@@ -221,6 +229,7 @@ class MediaGroupHandler:
         self.processed_media_groups.clear()
         self.fetching_media_groups.clear()
         self.media_group_filter_stats.clear()
+        self.media_group_keyword_filter.clear()
         self.channel_pairs.clear()
         self.pending_delay_tasks.clear()
         self.message_backlog.clear()
@@ -366,12 +375,16 @@ class MediaGroupHandler:
         if exclude_forwards and message.forward_from:
             filter_reason = "转发消息"
             logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 添加小延迟确保UI事件处理顺序正确
+            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
             self._emit_message_filtered(message, filter_reason)
             return
         
         if exclude_replies and message.reply_to_message:
             filter_reason = "回复消息"
             logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 添加小延迟确保UI事件处理顺序正确
+            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
             self._emit_message_filtered(message, filter_reason)
             return
         
@@ -386,6 +399,8 @@ class MediaGroupHandler:
         if exclude_text and is_text_message:
             filter_reason = "纯文本消息"
             logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+            # 添加小延迟确保UI事件处理顺序正确
+            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
             self._emit_message_filtered(message, filter_reason)
             return
         
@@ -394,16 +409,55 @@ class MediaGroupHandler:
             if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
                 filter_reason = "包含链接"
                 logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                # 添加小延迟确保UI事件处理顺序正确
+                await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
                 self._emit_message_filtered(message, filter_reason)
                 return
         
-        # 关键词过滤
+        # 关键词过滤 - 媒体组级别检查
         if keywords:
-            text_content = message.text or message.caption or ""
-            if not any(keyword.lower() in text_content.lower() for keyword in keywords):
-                filter_reason = f"不包含关键词({', '.join(keywords)})"
-                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
-                self._emit_message_filtered(message, filter_reason)
+            # 检查该媒体组是否已经进行过关键词检查
+            if message.media_group_id not in self.media_group_keyword_filter:
+                # 首次检查该媒体组，需要获取媒体组的说明文字
+                media_group_caption = None
+                
+                # 尝试从当前消息获取说明
+                if message.caption:
+                    media_group_caption = message.caption
+                    logger.debug(f"从消息 [ID: {message.id}] 获取媒体组 {message.media_group_id} 的说明: '{media_group_caption}'")
+                
+                # 检查媒体组说明是否包含关键词
+                keywords_passed = False
+                if media_group_caption:
+                    keywords_passed = any(keyword.lower() in media_group_caption.lower() for keyword in keywords)
+                    if keywords_passed:
+                        logger.info(f"媒体组 {message.media_group_id} 的说明包含关键词({', '.join(keywords)})，允许转发")
+                    else:
+                        logger.info(f"媒体组 {message.media_group_id} 的说明不包含关键词({', '.join(keywords)})，过滤整个媒体组")
+                else:
+                    logger.info(f"媒体组 {message.media_group_id} 没有说明文字，算作不含关键词，过滤整个媒体组")
+                
+                # 记录该媒体组的关键词检查结果
+                self.media_group_keyword_filter[message.media_group_id] = {
+                    'keywords_passed': keywords_passed,
+                    'checked': True,
+                    'ui_notified': False  # 添加UI通知标记
+                }
+                
+                # 如果首次检查发现不通过关键词过滤，发送UI通知
+                if not keywords_passed:
+                    # 添加小延迟确保UI事件处理顺序正确
+                    await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
+                    filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})，过滤规则跳过"
+                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
+                    self._emit_message_filtered(message, filter_reason)
+                    # 标记已通知UI
+                    self.media_group_keyword_filter[message.media_group_id]['ui_notified'] = True
+                    return
+            
+            # 根据已记录的检查结果决定是否过滤（后续消息直接使用缓存结果）
+            if not self.media_group_keyword_filter[message.media_group_id]['keywords_passed']:
+                # 直接返回，不再发送UI通知
                 return
         
         # 媒体类型过滤 - 这里是关键的修改
@@ -443,6 +497,8 @@ class MediaGroupHandler:
             # 更新统计：过滤数
             self.media_group_filter_stats[media_group_id]['filtered_count'] += 1
             
+            # 添加小延迟确保UI事件处理顺序正确
+            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
             self._emit_message_filtered(message, filter_reason)
             return  # 直接返回，不添加到缓存
         
@@ -552,6 +608,9 @@ class MediaGroupHandler:
         messages.sort(key=lambda m: m.id)
         
         logger.debug(f"添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 现有 {len(messages)} 条消息")
+        
+        # 注意：不在此处发射new_message事件，因为该事件已经在Monitor.handle_new_message中发射了
+        # 这样确保不会重复发射事件，保持UI显示的一致性
         
         # 检查是否应该处理媒体组
         should_process = False
@@ -738,6 +797,9 @@ class MediaGroupHandler:
                 # 清理过滤统计
                 if media_group_id in self.media_group_filter_stats:
                     del self.media_group_filter_stats[media_group_id]
+                # 清理媒体组关键词过滤状态
+                if media_group_id in self.media_group_keyword_filter:
+                    del self.media_group_keyword_filter[media_group_id]
                 return
             elif has_filtered_messages and in_cache_count == 1:
                 # 只剩一条消息，作为单条消息发送
@@ -800,6 +862,9 @@ class MediaGroupHandler:
                 # 清理过滤统计
                 if media_group_id in self.media_group_filter_stats:
                     del self.media_group_filter_stats[media_group_id]
+                # 清理媒体组关键词过滤状态
+                if media_group_id in self.media_group_keyword_filter:
+                    del self.media_group_keyword_filter[media_group_id]
                 return
             elif has_filtered_messages and in_cache_count == 0:
                 # 所有消息都被过滤
@@ -808,6 +873,9 @@ class MediaGroupHandler:
                 # 清理过滤统计
                 if media_group_id in self.media_group_filter_stats:
                     del self.media_group_filter_stats[media_group_id]
+                # 清理媒体组关键词过滤状态
+                if media_group_id in self.media_group_keyword_filter:
+                    del self.media_group_keyword_filter[media_group_id]
                 return
             
             # 如果没有被过滤，使用原有逻辑
@@ -816,6 +884,9 @@ class MediaGroupHandler:
             # 清理过滤统计
             if media_group_id in self.media_group_filter_stats:
                 del self.media_group_filter_stats[media_group_id]
+            # 清理媒体组关键词过滤状态
+            if media_group_id in self.media_group_keyword_filter:
+                del self.media_group_keyword_filter[media_group_id]
             
             # 获取文本替换处理后的标题
             replaced_caption = None
@@ -1291,7 +1362,7 @@ class MediaGroupHandler:
         
         logger.info(f"对第一个禁止转发频道 {first_target_info} 使用下载上传方式处理媒体组 {media_group_id}")
         
-        # 使用ParallelProcessor处理第一个频道
+        # 使用RestrictedForwardHandler处理第一个频道
         success = await self._handle_restricted_media_group(first_target_id, first_target_info, media_group_id, source_title, messages)
         
         if not success:
@@ -1478,6 +1549,70 @@ class MediaGroupHandler:
                             if complete_media_group:
                                 logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
                                 
+                                # 首先应用关键词过滤 - API路径
+                                keywords = pair_config.get('keywords', [])
+                                if keywords:
+                                    # 检查该媒体组是否已经进行过关键词检查
+                                    if media_group_id not in self.media_group_keyword_filter:
+                                        # 首次检查该媒体组，需要获取媒体组的说明文字
+                                        media_group_caption = None
+                                        
+                                        # 从API获取的消息中寻找说明
+                                        for msg in complete_media_group:
+                                            if msg.caption:
+                                                media_group_caption = msg.caption
+                                                logger.debug(f"从API获取的媒体组 {media_group_id} 中找到说明: '{media_group_caption}'")
+                                                break
+                                        
+                                        # 检查媒体组说明是否包含关键词
+                                        keywords_passed = False
+                                        if media_group_caption:
+                                            keywords_passed = any(keyword.lower() in media_group_caption.lower() for keyword in keywords)
+                                            if keywords_passed:
+                                                logger.info(f"API获取的媒体组 {media_group_id} 的说明包含关键词({', '.join(keywords)})，允许转发")
+                                            else:
+                                                logger.info(f"API获取的媒体组 {media_group_id} 的说明不包含关键词({', '.join(keywords)})，过滤整个媒体组")
+                                        else:
+                                            logger.info(f"API获取的媒体组 {media_group_id} 没有说明文字，算作不含关键词，过滤整个媒体组")
+                                        
+                                        # 记录该媒体组的关键词检查结果
+                                        self.media_group_keyword_filter[media_group_id] = {
+                                            'keywords_passed': keywords_passed,
+                                            'checked': True,
+                                            'ui_notified': False  # 添加UI通知标记
+                                        }
+                                        
+                                        # 如果首次检查发现不通过关键词过滤，发送UI通知
+                                        if not keywords_passed:
+                                            # 添加小延迟确保UI事件处理顺序正确
+                                            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
+                                            filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})，过滤规则跳过"
+                                            logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
+                                            self._emit_message_filtered(message, filter_reason)
+                                            # 标记已通知UI
+                                            self.media_group_keyword_filter[message.media_group_id]['ui_notified'] = True
+                                            return
+                                    
+                                    # 根据关键词检查结果决定是否处理
+                                    if not self.media_group_keyword_filter[media_group_id]['keywords_passed']:
+                                        logger.info(f"API获取的媒体组 {media_group_id} 被关键词过滤，跳过转发")
+                                        # 标记为已处理（即使没有转发）
+                                        self.processed_media_groups.add(media_group_id)
+                                        
+                                        # 清理过滤统计
+                                        if media_group_id in self.media_group_filter_stats:
+                                            del self.media_group_filter_stats[media_group_id]
+                                        # 清理媒体组关键词过滤状态
+                                        if media_group_id in self.media_group_keyword_filter:
+                                            del self.media_group_keyword_filter[media_group_id]
+                                        
+                                        # 清理缓存
+                                        if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
+                                            del self.media_group_cache[channel_id][media_group_id]
+                                            if not self.media_group_cache[channel_id]:
+                                                del self.media_group_cache[channel_id]
+                                        continue
+                                
                                 # 在处理前先应用媒体类型过滤
                                 allowed_media_types = pair_config.get('media_types', [])
                                 if allowed_media_types:
@@ -1529,12 +1664,9 @@ class MediaGroupHandler:
                                         # 清理过滤统计
                                         if media_group_id in self.media_group_filter_stats:
                                             del self.media_group_filter_stats[media_group_id]
-                                        
-                                        # 如果缓存中有该媒体组，清理它
-                                        if channel_id in self.media_group_cache and media_group_id in self.media_group_cache[channel_id]:
-                                            del self.media_group_cache[channel_id][media_group_id]
-                                            if not self.media_group_cache[channel_id]:
-                                                del self.media_group_cache[channel_id]
+                                        # 清理媒体组关键词过滤状态
+                                        if media_group_id in self.media_group_keyword_filter:
+                                            del self.media_group_keyword_filter[media_group_id]
                                         continue
                                     
                                     logger.info(f"API获取的媒体组 {media_group_id} 原始消息数：{len(complete_media_group)}，过滤后消息数：{len(filtered_complete_messages)}，被过滤：{filtered_out_count}")
@@ -2030,6 +2162,10 @@ class MediaGroupHandler:
             if media_group_id in self.media_group_filter_stats:
                 del self.media_group_filter_stats[media_group_id]
                 logger.debug(f"清理媒体组 {media_group_id} 的过滤统计信息")
+            # 清理媒体组关键词过滤状态
+            if media_group_id in self.media_group_keyword_filter:
+                del self.media_group_keyword_filter[media_group_id]
+                logger.debug(f"清理媒体组 {media_group_id} 的关键词过滤状态")
                 
         except Exception as e:
             logger.error(f"处理过滤后媒体组重组时出错: {str(e)}", error_type="FILTERED_MEDIA_GROUP", recoverable=True)
@@ -2042,11 +2178,14 @@ class MediaGroupHandler:
                 if media_group_id and media_group_id in self.media_group_filter_stats:
                     del self.media_group_filter_stats[media_group_id]
                     logger.debug(f"异常清理媒体组 {media_group_id} 的过滤统计信息")
+                if media_group_id and media_group_id in self.media_group_keyword_filter:
+                    del self.media_group_keyword_filter[media_group_id]
+                    logger.debug(f"异常清理媒体组 {media_group_id} 的关键词过滤状态")
             except Exception:
                 pass  # 忽略清理过程中的异常
 
     async def _handle_filtered_restricted_targets(self, filtered_messages: List[Message], media_group_id: str, source_chat_id: int, restricted_targets: List[Tuple[str, int, str]], replaced_caption: str, remove_captions: bool, message_ids_for_display: List[int], caption_modified: bool):
-        """处理禁止转发的目标频道，使用优化的下载上传策略
+        """处理禁止转发的目标频道，使用RestrictedForwardHandler
         
         Args:
             filtered_messages: 过滤后的消息列表
@@ -2061,20 +2200,20 @@ class MediaGroupHandler:
         if not restricted_targets:
             return
             
-        # 第一个目标频道：使用下载上传方式
+        # 第一个目标频道：使用RestrictedForwardHandler
         first_target = restricted_targets[0]
         _, first_target_id, first_target_info = first_target
         
-        logger.info(f"对第一个禁止转发频道 {first_target_info} 使用下载上传方式处理重组媒体组 {media_group_id}")
+        logger.info(f"对第一个禁止转发频道 {first_target_info} 使用RestrictedForwardHandler处理重组媒体组 {media_group_id}")
         
         try:
-            # 使用RestrictedForwardHandler处理第一个频道
-            if not hasattr(self, 'restricted_handler'):
-                from src.modules.monitor.restricted_forward_handler import RestrictedForwardHandler
-                self.restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+            # 创建RestrictedForwardHandler实例，与_handle_restricted_media_group保持一致
+            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
+                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                logger.debug("创建了新的RestrictedForwardHandler实例")
             
             # 调用处理禁止转发媒体组的方法
-            sent_messages_restricted, actually_modified = await self.restricted_handler.process_restricted_media_group(
+            sent_messages_restricted, actually_modified = await self._restricted_handler.process_restricted_media_group(
                 messages=filtered_messages,
                 source_channel=str(source_chat_id),
                 source_id=source_chat_id,
@@ -2099,7 +2238,7 @@ class MediaGroupHandler:
                         self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, False)
                 return
             
-            logger.info(f"成功使用下载上传方式将重组媒体组发送到第一个禁止转发频道 {first_target_info}")
+            logger.info(f"成功使用RestrictedForwardHandler将重组媒体组发送到第一个禁止转发频道 {first_target_info}")
             
             # 发射第一个频道的转发成功事件
             if self.emit:
@@ -2117,7 +2256,7 @@ class MediaGroupHandler:
                 await self._copy_filtered_from_first_target(first_target_id, restricted_targets[1:], media_group_id, source_chat_id, message_ids_for_display)
             
         except Exception as e:
-            logger.error(f"处理禁止转发的重组媒体组时发生错误: {str(e)}")
+            logger.error(f"使用RestrictedForwardHandler处理禁止转发的重组媒体组时发生错误: {str(e)}")
             import traceback
             logger.error(f"错误详情: {traceback.format_exc()}")
             
@@ -2132,7 +2271,7 @@ class MediaGroupHandler:
                 
                 for target, target_id, target_info in restricted_targets:
                     self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, False)
-
+    
     async def _copy_filtered_from_first_target(self, source_target_id: int, remaining_targets: List[Tuple[str, int, str]], media_group_id: str, source_chat_id: int, message_ids_for_display: List[int]):
         """从第一个成功上传的目标频道复制转发重组媒体组到其他频道
         
@@ -2222,7 +2361,7 @@ class MediaGroupHandler:
     async def _handle_restricted_media_group(self, target_id: int, target_info: str, 
                                            media_group_id: str, source_title: str, 
                                            original_messages: List) -> bool:
-        """处理禁止转发的媒体组，使用下载上传方式
+        """处理禁止转发的媒体组，使用RestrictedForwardHandler
         
         Args:
             target_id: 目标频道ID
@@ -2243,51 +2382,35 @@ class MediaGroupHandler:
             source_chat_id = original_messages[0].chat.id
             source_channel = str(source_chat_id)
             
-            # 创建临时目录
-            temp_dir = Path("tmp") / "restricted_forward" / f"{media_group_id}_{int(time.time())}"
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"使用RestrictedForwardHandler处理禁止转发的媒体组 {media_group_id}，包含 {len(original_messages)} 条消息")
             
-            try:
-                # 使用ParallelProcessor处理媒体组
-                processor = ParallelProcessor(
-                    client=self.client,
-                    history_manager=None,  # 监听模块通常不需要历史管理
-                    general_config={}
-                )
-                
-                # 准备媒体组信息（转换为ParallelProcessor期望的格式）
-                message_ids = [msg.id for msg in original_messages]
-                media_groups_info = [(media_group_id, message_ids)]
-                
-                # 准备目标频道信息（转换为ParallelProcessor期望的格式）
-                target_channels = [(str(target_id), target_id, target_info)]
-                
-                logger.info(f"使用ParallelProcessor处理禁止转发的媒体组 {media_group_id}，包含 {len(message_ids)} 条消息")
-                
-                # 执行并行下载上传
-                await processor.process_parallel_download_upload(
-                    source_channel=source_channel,
-                    source_id=source_chat_id,
-                    media_groups_info=media_groups_info,
-                    temp_dir=temp_dir,
-                    target_channels=target_channels
-                )
-                
-                logger.info(f"成功使用下载上传方式处理禁止转发的媒体组 {media_group_id} 到 {target_info}")
+            # 创建RestrictedForwardHandler实例
+            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
+                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                logger.debug("创建了新的RestrictedForwardHandler实例")
+            
+            # 准备目标频道列表，格式为 [(channel_id_or_username, resolved_id, display_name)]
+            target_channels = [(str(target_id), target_id, target_info)]
+            
+            # 使用RestrictedForwardHandler处理媒体组
+            sent_messages, actually_modified = await self._restricted_handler.process_restricted_media_group(
+                messages=original_messages,
+                source_channel=source_channel,
+                source_id=source_chat_id,
+                target_channels=target_channels,
+                caption=None,  # 保持原始标题
+                remove_caption=False  # 不移除标题
+            )
+            
+            if sent_messages:
+                logger.info(f"成功使用RestrictedForwardHandler处理禁止转发的媒体组 {media_group_id} 到 {target_info}")
                 return True
+            else:
+                logger.error(f"RestrictedForwardHandler处理媒体组 {media_group_id} 失败，未返回发送的消息")
+                return False
                 
-            finally:
-                # 清理临时目录
-                try:
-                    import shutil
-                    if temp_dir.exists():
-                        shutil.rmtree(temp_dir)
-                        logger.debug(f"清理临时目录: {temp_dir}")
-                except Exception as cleanup_e:
-                    logger.warning(f"清理临时目录失败: {cleanup_e}")
-            
         except Exception as e:
-            logger.error(f"处理禁止转发媒体组时发生错误: {str(e)}")
+            logger.error(f"使用RestrictedForwardHandler处理禁止转发媒体组时发生错误: {str(e)}")
             import traceback
             logger.error(f"错误详情: {traceback.format_exc()}")
             return False
