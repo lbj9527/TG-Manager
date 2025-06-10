@@ -652,6 +652,259 @@ class RestrictedForwardHandler:
             if group_temp_dir:
                 self.media_uploader.cleanup_media_group_dir(group_temp_dir) 
     
+    async def process_restricted_media_group_to_multiple_targets(self,
+                                                              messages: List[Message],
+                                                              source_channel: str,
+                                                              source_id: int,
+                                                              target_channels: List[Tuple[str, int, str]],
+                                                              caption: str = None,
+                                                              remove_caption: bool = False,
+                                                              event_emitter=None,
+                                                              message_type: str = "媒体组") -> bool:
+        """
+        统一处理禁止转发的媒体组到多个目标频道（优化版本：1次下载上传 + (N-1)次直接复制）
+        
+        Args:
+            messages: 媒体组消息列表
+            source_channel: 源频道标识符
+            source_id: 源频道ID
+            target_channels: 禁止转发的目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
+            caption: 要替换的标题（可选）
+            remove_caption: 是否移除标题
+            event_emitter: 事件发射器（可选）
+            message_type: 消息类型标识（"媒体组" 或 "重组媒体组"）
+            
+        Returns:
+            bool: 是否所有目标频道都处理成功
+        """
+        if not target_channels or not messages:
+            _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
+            return False
+            
+        try:
+            # 第一步：下载上传到第一个目标频道
+            first_target = target_channels[0]
+            _, first_target_id, first_target_info = first_target
+            
+            _logger.info(f"对第一个禁止转发频道 {first_target_info} 使用下载上传方式处理{message_type}")
+            
+            # 使用现有的process_restricted_media_group方法处理第一个频道
+            sent_messages, actually_modified = await self.process_restricted_media_group(
+                messages=messages,
+                source_channel=source_channel,
+                source_id=source_id,
+                target_channels=[first_target],
+                caption=caption,
+                remove_caption=remove_caption
+            )
+            
+            if not sent_messages:
+                _logger.error(f"第一个禁止转发频道 {first_target_info} 处理失败，其他频道也将失败")
+                
+                # 发射所有频道的转发失败事件
+                if event_emitter:
+                    self._emit_all_targets_failure(event_emitter, source_id, target_channels, 
+                                                 messages, message_type)
+                return False
+            
+            _logger.info(f"成功使用下载上传方式将{message_type}发送到第一个禁止转发频道 {first_target_info}")
+            
+            # 发射第一个频道的转发成功事件
+            if event_emitter:
+                self._emit_target_success(event_emitter, source_id, first_target_info, 
+                                        messages, actually_modified, message_type)
+            
+            # 第二步：直接从第一个频道复制转发到其他频道（优化版本 - 无历史查询）
+            if len(target_channels) > 1:
+                remaining_targets = target_channels[1:]
+                _logger.info(f"第一个频道成功，开始从 {first_target_info} 直接复制转发{message_type}到其他 {len(remaining_targets)} 个禁止转发频道")
+                
+                success = await self._copy_from_first_to_remaining_targets(
+                    first_target_id, remaining_targets, sent_messages, 
+                    source_id, messages, actually_modified, message_type, event_emitter
+                )
+                
+                return success
+            else:
+                # 只有一个目标频道，直接返回成功
+                return True
+                
+        except Exception as e:
+            _logger.error(f"统一处理禁止转发{message_type}时发生错误: {str(e)}")
+            import traceback
+            _logger.error(f"错误详情: {traceback.format_exc()}")
+            
+            # 发射所有频道的转发失败事件
+            if event_emitter:
+                self._emit_all_targets_failure(event_emitter, source_id, target_channels, 
+                                             messages, message_type)
+            return False
+    
+    async def _copy_from_first_to_remaining_targets(self, 
+                                                  first_target_id: int, 
+                                                  remaining_targets: List[Tuple[str, int, str]], 
+                                                  sent_messages: List, 
+                                                  source_id: int,
+                                                  original_messages: List[Message], 
+                                                  actually_modified: bool, 
+                                                  message_type: str,
+                                                  event_emitter=None) -> bool:
+        """
+        从第一个成功的目标频道直接复制转发到其他频道（无历史查询优化版本）
+        
+        Args:
+            first_target_id: 第一个成功的目标频道ID
+            remaining_targets: 剩余的目标频道列表
+            sent_messages: 第一个频道成功发送的消息列表
+            source_id: 源频道ID
+            original_messages: 原始消息列表
+            actually_modified: 是否实际修改了标题
+            message_type: 消息类型标识
+            event_emitter: 事件发射器（可选）
+            
+        Returns:
+            bool: 是否所有剩余频道都处理成功
+        """
+        try:
+            if not sent_messages:
+                _logger.error("第一个频道没有返回发送的消息，无法进行复制转发")
+                return False
+            
+            # 提取发送成功的消息ID，按顺序排列
+            sent_message_ids = []
+            if isinstance(sent_messages, list):
+                sent_message_ids = [msg.id for msg in sent_messages if hasattr(msg, 'id')]
+            else:
+                _logger.warning("发送的消息不是列表格式，尝试提取单个消息ID")
+                if hasattr(sent_messages, 'id'):
+                    sent_message_ids = [sent_messages.id]
+            
+            if not sent_message_ids:
+                _logger.error("无法从发送的消息中提取有效的消息ID")
+                return False
+            
+            _logger.info(f"从第一个频道获取到{message_type}的 {len(sent_message_ids)} 个消息ID，开始直接复制转发")
+            
+            all_success = True
+            
+            # 复制到其他频道
+            for target, target_id, target_info in remaining_targets:
+                try:
+                    # 直接使用已知的消息ID进行转发，无需历史查询
+                    await self.client.forward_messages(
+                        chat_id=target_id,
+                        from_chat_id=first_target_id,
+                        message_ids=sent_message_ids,
+                        disable_notification=True
+                    )
+                    _logger.info(f"成功直接复制{message_type}到 {target_info}")
+                    
+                    # 发射转发成功事件
+                    if event_emitter:
+                        self._emit_target_success(event_emitter, source_id, target_info, 
+                                                original_messages, actually_modified, message_type)
+                    
+                except Exception as e:
+                    _logger.error(f"直接复制{message_type}到 {target_info} 失败: {str(e)}")
+                    all_success = False
+                    
+                    # 发射转发失败事件
+                    if event_emitter:
+                        self._emit_target_failure(event_emitter, source_id, target_info, 
+                                                original_messages, message_type)
+                
+                # 添加短暂延迟避免触发速率限制
+                await asyncio.sleep(0.3)
+            
+            return all_success
+            
+        except Exception as e:
+            _logger.error(f"优化版{message_type}复制转发时出错: {str(e)}")
+            
+            # 为所有剩余目标发射转发失败事件
+            if event_emitter:
+                for target, target_id, target_info in remaining_targets:
+                    self._emit_target_failure(event_emitter, source_id, target_info, 
+                                            original_messages, message_type)
+            return False
+    
+    def _emit_target_success(self, event_emitter, source_id: int, target_info: str, 
+                           messages: List[Message], actually_modified: bool, message_type: str):
+        """发射单个目标频道的转发成功事件"""
+        try:
+            # 使用缓存获取源频道信息
+            if hasattr(self.channel_resolver, 'get_cached_channel_info'):
+                source_info_str = self.channel_resolver.get_cached_channel_info(source_id)
+            else:
+                source_info_str = str(source_id)
+            
+            # 生成显示ID
+            message_ids = [msg.id for msg in messages]
+            display_id = self._generate_display_id(message_ids, message_type)
+            
+            # 发射事件
+            event_emitter("forward", display_id, source_info_str, target_info, True, actually_modified)
+            
+        except Exception as e:
+            _logger.error(f"发射转发成功事件失败: {e}")
+    
+    def _emit_target_failure(self, event_emitter, source_id: int, target_info: str, 
+                           messages: List[Message], message_type: str):
+        """发射单个目标频道的转发失败事件"""
+        try:
+            # 使用缓存获取源频道信息
+            if hasattr(self.channel_resolver, 'get_cached_channel_info'):
+                source_info_str = self.channel_resolver.get_cached_channel_info(source_id)
+            else:
+                source_info_str = str(source_id)
+            
+            # 生成显示ID
+            message_ids = [msg.id for msg in messages]
+            display_id = self._generate_display_id(message_ids, message_type)
+            
+            # 发射事件
+            event_emitter("forward", display_id, source_info_str, target_info, False)
+            
+        except Exception as e:
+            _logger.error(f"发射转发失败事件失败: {e}")
+    
+    def _emit_all_targets_failure(self, event_emitter, source_id: int, 
+                                target_channels: List[Tuple[str, int, str]], 
+                                messages: List[Message], message_type: str):
+        """发射所有目标频道的转发失败事件"""
+        for target, target_id, target_info in target_channels:
+            self._emit_target_failure(event_emitter, source_id, target_info, messages, message_type)
+    
+    def _generate_display_id(self, message_ids: List[int], message_type: str) -> str:
+        """生成安全的显示ID，用于UI显示"""
+        try:
+            if not message_ids:
+                import time
+                timestamp = int(time.time())
+                return f"{message_type}[0个文件]-{timestamp}"
+            
+            message_count = len(message_ids)
+            min_message_id = min(message_ids)
+            
+            if min_message_id <= 0:
+                import time
+                timestamp = int(time.time())
+                return f"{message_type}[{message_count}个文件]-{timestamp}"
+            
+            display_id = f"{message_type}[{message_count}个文件]-{min_message_id}"
+            
+            # 重组媒体组需要特殊前缀
+            if message_type == "重组媒体组":
+                return f"重组媒体组[{message_count}个文件]-{min_message_id}"
+            else:
+                return display_id
+                
+        except Exception as e:
+            _logger.error(f"生成显示ID时出错: {e}")
+            import time
+            timestamp = int(time.time())
+            return f"{message_type}[未知]-{timestamp}"
+    
     def cleanup_temp_dirs(self):
         """
         清理临时目录中残留的空文件夹
