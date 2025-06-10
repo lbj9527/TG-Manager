@@ -406,7 +406,7 @@ class Monitor:
                                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                                 return
                         
-                        # 媒体类型过滤检查
+                        # 【关键修复】检查媒体类型过滤
                         allowed_media_types = pair_config.get('media_types', [])
                         if allowed_media_types:
                             message_media_type = self._get_message_media_type(message)
@@ -415,6 +415,10 @@ class Monitor:
                                 if message.media_group_id and message.caption:
                                     self.media_group_handler._save_media_group_original_caption(message.media_group_id, message.caption)
                                     logger.debug(f"【关键】在core.py中保存被过滤消息的媒体组说明: 消息ID={message.id}, 媒体组ID={message.media_group_id}, 说明='{message.caption}'")
+                                
+                                # 【新增】记录被过滤的消息ID到媒体组统计中，确保不会被错误处理
+                                if message.media_group_id:
+                                    self.media_group_handler._record_filtered_message(message.media_group_id, message.id, "媒体类型过滤")
                                 
                                 media_type_names = {
                                     "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
@@ -426,6 +430,9 @@ class Monitor:
                                 # 发送过滤消息事件到UI
                                 if hasattr(self, 'emit') and self.emit:
                                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                                
+                                # 【严格防护】确保被过滤的消息绝不进入媒体组处理流程
+                                logger.debug(f"【严格防护】消息 {message.id} 已被媒体类型过滤，将不会进入任何处理流程")
                                 return
                         
                         # 无论消息是否会被过滤，都先发射new_message事件

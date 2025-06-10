@@ -375,6 +375,9 @@ class MediaGroupHandler:
             message: 媒体组中的一条消息
             pair_config: 频道对配置
         """
+        # 【调试】记录接收到的配置
+        logger.debug(f"【调试】handle_media_group_message接收到的pair_config: {pair_config}")
+        
         # 【最高优先级】首先应用通用消息过滤（转发、回复、纯文本、链接）
         try:
             source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
@@ -836,7 +839,46 @@ class MediaGroupHandler:
             source_title = messages[0].chat.title or "未知频道"
             media_group_id = messages[0].media_group_id
             
-            # 添加调试日志，记录接收到的pair_config
+            # 【修复1】增强媒体类型过滤配置获取和调试
+            logger.debug(f"【调试】原始pair_config结构: {pair_config}")
+            logger.debug(f"【调试】源频道ID: {source_id}, 媒体组ID: {media_group_id}")
+            
+            # 尝试多种方式获取媒体类型配置
+            allowed_media_types = None
+            
+            # 方式1：直接从pair_config获取
+            if 'media_types' in pair_config:
+                allowed_media_types = pair_config.get('media_types', [])
+                logger.debug(f"【调试】从pair_config直接获取到media_types: {allowed_media_types}")
+            
+            # 方式2：从nested结构获取（如果配置是嵌套的）
+            elif 'filter_config' in pair_config and 'media_types' in pair_config['filter_config']:
+                allowed_media_types = pair_config['filter_config']['media_types']
+                logger.debug(f"【调试】从filter_config获取到media_types: {allowed_media_types}")
+            
+            # 方式3：兜底 - 从channel_pairs获取
+            else:
+                logger.debug(f"【调试】pair_config中没有media_types，尝试从channel_pairs获取")
+                logger.debug(f"【调试】当前channel_pairs keys: {list(self.channel_pairs.keys())}")
+                for channel_id, stored_config in self.channel_pairs.items():
+                    if channel_id == source_id:
+                        allowed_media_types = stored_config.get('media_types', [])
+                        logger.debug(f"【调试】从channel_pairs获取到media_types: {allowed_media_types}")
+                        break
+                
+                if allowed_media_types is None:
+                    logger.debug(f"【调试】在channel_pairs中也未找到源频道{source_id}的配置")
+            
+            # 确保是列表格式并验证配置
+            if allowed_media_types is None:
+                allowed_media_types = []
+                logger.debug(f"【调试】media_types配置为None，设置为空列表")
+            
+            # 验证配置有效性
+            allowed_media_types = self._validate_media_types_config(allowed_media_types)
+            logger.info(f"【关键】媒体组处理使用的媒体类型过滤配置: {allowed_media_types}")
+            
+            # 添加调试日志，记录core.py中构建的text_replacements字典，而不是text_filter列表
             logger.debug(f"MediaGroupHandler接收到的pair_config:")
             logger.debug(f"  source_id: {source_id}")
             logger.debug(f"  remove_captions: {pair_config.get('remove_captions', False)}")
@@ -846,18 +888,37 @@ class MediaGroupHandler:
             
             # 【关键修复】从media_group_filter_stats恢复原始媒体组说明
             original_caption = None
+            filtered_message_ids = set()  # 【新增】获取被过滤的消息ID列表
             logger.debug(f"【关键】检查media_group_filter_stats中是否有媒体组 {media_group_id}")
             logger.debug(f"【关键】当前media_group_filter_stats keys: {list(self.media_group_filter_stats.keys())}")
             
             if media_group_id in self.media_group_filter_stats:
-                original_caption = self.media_group_filter_stats[media_group_id].get('original_caption')
+                filter_stats = self.media_group_filter_stats[media_group_id]
+                original_caption = filter_stats.get('original_caption')
+                # 【修复】安全获取filtered_message_ids字段
+                filtered_message_ids = filter_stats.get('filtered_message_ids', set())  # 【新增】获取被过滤的消息ID
                 logger.debug(f"【关键】从media_group_filter_stats恢复原始说明: '{original_caption}'")
-                logger.debug(f"【关键】完整的filter_stats数据: {self.media_group_filter_stats[media_group_id]}")
-                # 清理统计信息
+                logger.debug(f"【关键】获取到被过滤的消息ID列表: {filtered_message_ids}")
+                logger.debug(f"【关键】完整的filter_stats数据: {filter_stats}")
+                # 清理已使用的统计数据
                 del self.media_group_filter_stats[media_group_id]
                 logger.debug(f"【关键】已清理media_group_filter_stats中的数据")
             else:
                 logger.debug(f"【关键】media_group_filter_stats中没有找到媒体组 {media_group_id} 的数据")
+            
+            # 【严格防护】排除被早期过滤的消息
+            if filtered_message_ids:
+                original_message_count = len(messages)
+                messages = [msg for msg in messages if msg.id not in filtered_message_ids]
+                filtered_count = original_message_count - len(messages)
+                logger.info(f"【严格防护】从媒体组 {media_group_id} 中排除了 {filtered_count} 条早期过滤的消息")
+                logger.debug(f"【严格防护】被排除的消息ID: {filtered_message_ids}")
+                logger.debug(f"【严格防护】剩余消息数量: {len(messages)}")
+                
+                # 如果所有消息都被过滤了，直接返回
+                if not messages:
+                    logger.info(f"【严格防护】媒体组 {media_group_id} 的所有消息都已被过滤，跳过处理")
+                    return False
             
             # 如果从过滤后的消息中也找不到说明，检查是否还有其他来源
             if not original_caption:
@@ -873,7 +934,6 @@ class MediaGroupHandler:
             remove_captions = pair_config.get('remove_captions', False)
             # 直接使用core.py中构建的text_replacements字典，而不是text_filter列表
             text_replacements = pair_config.get('text_replacements', {})
-            allowed_media_types = pair_config.get('media_types', [])
             
             # 解析目标频道
             target_channels = []
@@ -944,9 +1004,11 @@ class MediaGroupHandler:
             
             success_count = 0
             
-            # 【新增】处理非禁止转发频道（使用直接转发）
+            # 【修复2】处理非禁止转发频道（使用直接转发）- 确保正确传递allowed_media_types
             if direct_forward_channels:
                 logger.info(f"尝试使用直接转发方式处理 {len(direct_forward_channels)} 个频道")
+                logger.debug(f"【关键】传递给_process_direct_forward_media_group的allowed_media_types: {allowed_media_types}")
+                
                 direct_success, fallback_channels = await self._process_direct_forward_media_group(
                     messages=messages,
                     source_id=source_id,
@@ -955,7 +1017,7 @@ class MediaGroupHandler:
                     remove_captions=remove_captions,
                     text_replacements=text_replacements,
                     media_group_id=media_group_id,
-                    allowed_media_types=allowed_media_types
+                    allowed_media_types=allowed_media_types  # 确保传递验证后的配置
                 )
                 if direct_success:
                     success_count += len(direct_forward_channels) - len(fallback_channels)
@@ -1032,24 +1094,50 @@ class MediaGroupHandler:
             Tuple[bool, List]: (是否有频道处理成功, 需要回退到下载上传的频道列表)
         """
         try:
+            # 【严格防护】在处理前检查，确保没有被早期过滤的消息
+            if hasattr(self, 'media_group_filter_stats') and media_group_id in self.media_group_filter_stats:
+                early_filtered_ids = self.media_group_filter_stats[media_group_id].get('filtered_message_ids', set())
+                if early_filtered_ids:
+                    # 再次过滤被早期过滤的消息
+                    pre_filter_count = len(messages)
+                    messages = [msg for msg in messages if msg.id not in early_filtered_ids]
+                    early_filtered_count = pre_filter_count - len(messages)
+                    
+                    if early_filtered_count > 0:
+                        logger.warning(f"【二次防护】在直接转发处理中发现并排除了 {early_filtered_count} 条早期被过滤的消息")
+                        logger.debug(f"【二次防护】被排除的消息ID: {early_filtered_ids}")
+                        
+                        # 如果所有消息都被早期过滤了，直接返回
+                        if not messages:
+                            logger.warning(f"【二次防护】媒体组 {media_group_id} 的所有消息都被早期过滤，停止处理")
+                            return False, []
+            
             success_count = 0
             fallback_channels = []  # 需要回退到下载上传方式的频道
             
-            # 【新增】获取媒体类型过滤配置
-            # 从pair_config中获取媒体类型过滤（通过Monitor模块传递）
-            if allowed_media_types is None:
-                # 尝试从当前处理的频道配置中获取媒体类型过滤设置
-                for channel_id, pair_config in self.channel_pairs.items():
-                    if channel_id == source_id:
-                        allowed_media_types = pair_config.get('media_types', [])
-                        break
+            # 【修复1】增强媒体类型配置获取和调试
+            logger.debug(f"【调试】接收到的allowed_media_types参数: {allowed_media_types}")
+            logger.debug(f"【调试】当前source_id: {source_id}")
+            logger.debug(f"【调试】当前channel_pairs keys: {list(self.channel_pairs.keys())}")
             
-            # 【新增】媒体类型过滤逻辑
+            # 确保allowed_media_types不为None
+            if allowed_media_types is None:
+                allowed_media_types = []
+                logger.debug(f"【调试】allowed_media_types为None，设置为空列表")
+            
+            # 【修复2】增强媒体类型过滤逻辑
             filtered_messages = messages
-            if allowed_media_types:
-                logger.debug(f"对媒体组 {media_group_id} 应用媒体类型过滤，允许类型: {allowed_media_types}")
+            original_message_count = len(messages)
+            
+            logger.debug(f"【调试】开始媒体类型过滤检查:")
+            logger.debug(f"  - 原始消息数量: {original_message_count}")
+            logger.debug(f"  - 允许的媒体类型: {allowed_media_types}")
+            logger.debug(f"  - 是否需要过滤: {bool(allowed_media_types)}")
+            
+            if allowed_media_types:  # 只有当列表不为空时才进行过滤
+                logger.info(f"对媒体组 {media_group_id} 应用媒体类型过滤，允许类型: {allowed_media_types}")
                 
-                # 先保存原始媒体说明（从所有消息中找到第一个有说明的）
+                # 先保存原始媒体说明
                 if not original_caption:
                     for msg in messages:
                         if msg.caption and msg.caption.strip():
@@ -1057,40 +1145,60 @@ class MediaGroupHandler:
                             logger.debug(f"从消息 [ID: {msg.id}] 获取原始媒体说明: '{original_caption}'")
                             break
                 
-                # 过滤媒体类型
+                # 执行媒体类型过滤
                 filtered_messages = []
                 filtered_out_count = 0
                 
                 for msg in messages:
                     msg_media_type = self._get_message_media_type(msg)
-                    if msg_media_type and self._is_media_type_allowed(msg_media_type, allowed_media_types):
-                        filtered_messages.append(msg)
-                    else:
-                        filtered_out_count += 1
-                        # 记录被过滤的消息
-                        if msg_media_type:
+                    logger.debug(f"  消息 [ID: {msg.id}] 媒体类型: {msg_media_type}")
+                    
+                    # 【修复3】修复媒体类型检查逻辑
+                    if msg_media_type:
+                        # 处理enum类型和字符串类型
+                        if hasattr(msg_media_type, 'value'):
+                            media_type_str = msg_media_type.value
+                        else:
+                            media_type_str = str(msg_media_type)
+                        
+                        # 检查是否在允许列表中（allowed_media_types已经是字符串列表）
+                        is_allowed = media_type_str in allowed_media_types
+                        
+                        logger.debug(f"    媒体类型 {media_type_str} 是否允许: {is_allowed}")
+                        
+                        if is_allowed:
+                            filtered_messages.append(msg)
+                        else:
+                            filtered_out_count += 1
+                            # 发送过滤事件
                             media_type_names = {
                                 "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
                                 "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
                             }
-                            media_type_name = media_type_names.get(msg_media_type.value, msg_media_type.value)
+                            media_type_name = media_type_names.get(media_type_str, media_type_str)
                             filter_reason = f"媒体类型({media_type_name})不在允许列表中"
                             logger.info(f"媒体组消息 [ID: {msg.id}] 的{filter_reason}，从转发中移除")
                             
                             # 发送过滤消息事件到UI
                             if self.emit:
                                 try:
-                                    source_info_str, _ = await self.channel_resolver.format_channel_info(source_id)
-                                except Exception:
-                                    source_info_str = str(source_id)
-                                self.emit("message_filtered", msg.id, source_info_str, filter_reason)
+                                    source_info_str = self.get_cached_channel_info(source_id)
+                                    self.emit("message_filtered", msg.id, source_info_str, filter_reason)
+                                except Exception as e:
+                                    logger.error(f"发送过滤事件失败: {e}")
+                    else:
+                        # 无媒体类型的消息（如纯文本）
+                        logger.debug(f"    消息 [ID: {msg.id}] 无媒体类型，跳过过滤")
+                        filtered_messages.append(msg)  # 纯文本消息通常允许通过
                 
-                # 如果所有消息都被过滤，直接返回
+                # 检查过滤结果
                 if not filtered_messages:
                     logger.info(f"媒体组 {media_group_id} 中的所有消息都被媒体类型过滤，跳过转发")
-                    return False, target_channels  # 所有频道都需要回退
+                    return False, target_channels
                 
-                logger.info(f"媒体组 {media_group_id} 原始消息数：{len(messages)}，过滤后消息数：{len(filtered_messages)}，被过滤：{filtered_out_count}")
+                logger.info(f"媒体组 {media_group_id} 媒体类型过滤结果: 原始{original_message_count}条 → 保留{len(filtered_messages)}条 → 过滤{filtered_out_count}条")
+            else:
+                logger.info(f"媒体组 {media_group_id} 未配置媒体类型过滤，保留所有 {original_message_count} 条消息")
             
             # 确定最终的说明文字和处理方式
             final_caption = None
@@ -1646,7 +1754,7 @@ class MediaGroupHandler:
         
         Args:
             message_media_type: 消息的媒体类型
-            allowed_media_types: 允许的媒体类型列表
+            allowed_media_types: 允许的媒体类型列表（字符串列表）
             
         Returns:
             bool: 是否允许该媒体类型
@@ -1655,23 +1763,18 @@ class MediaGroupHandler:
             # 如果没有配置允许的媒体类型，默认允许所有类型
             return True
         
-        # 检查媒体类型是否在允许列表中
-        for allowed_type in allowed_media_types:
-            # 处理字符串和枚举类型的兼容性
-            if hasattr(allowed_type, 'value'):
-                allowed_value = allowed_type.value
-            else:
-                allowed_value = allowed_type
-                
-            if hasattr(message_media_type, 'value'):
-                message_value = message_media_type.value
-            else:
-                message_value = message_media_type
-                
-            if allowed_value == message_value:
-                return True
+        if not message_media_type:
+            # 如果消息没有媒体类型（如纯文本），通常允许通过
+            return True
         
-        return False
+        # 获取消息的媒体类型字符串
+        if hasattr(message_media_type, 'value'):
+            message_type_str = message_media_type.value
+        else:
+            message_type_str = str(message_media_type)
+        
+        # 检查是否在允许列表中（allowed_media_types现在应该是字符串列表）
+        return message_type_str in allowed_media_types
     
     def _contains_links(self, text: str) -> bool:
         """
@@ -1753,13 +1856,14 @@ class MediaGroupHandler:
             media_group_id: 媒体组ID
             caption: 原始说明文本
         """
-        # 确保media_group_filter_stats中有这个媒体组的记录
+        # 【修复】确保media_group_filter_stats中有这个媒体组的记录，包含所有必需字段
         if media_group_id not in self.media_group_filter_stats:
             self.media_group_filter_stats[media_group_id] = {
                 'total_expected': 0,
                 'filtered_count': 0,
                 'total_received': 0,
-                'original_caption': None
+                'original_caption': None,
+                'filtered_message_ids': set()  # 【修复】添加缺失的字段
             }
         
         # 只在还没有保存过原始说明时才保存（避免覆盖）
@@ -1883,3 +1987,72 @@ class MediaGroupHandler:
                     logger.debug(f"异常清理媒体组 {media_group_id} 的关键词过滤状态")
             except Exception:
                 pass  # 忽略清理过程中的异常
+
+    def _validate_media_types_config(self, allowed_media_types):
+        """
+        验证媒体类型配置的有效性
+        
+        Args:
+            allowed_media_types: 媒体类型配置列表
+            
+        Returns:
+            list: 验证后的有效媒体类型列表
+        """
+        if not allowed_media_types:
+            return []
+        
+        valid_types = []
+        valid_type_names = ['photo', 'video', 'document', 'audio', 'animation', 'sticker', 'voice', 'video_note']
+        
+        for media_type in allowed_media_types:
+            type_value = None
+            
+            # 处理不同类型的配置值
+            if hasattr(media_type, 'value'):
+                # 处理枚举类型
+                type_value = media_type.value
+            elif isinstance(media_type, str):
+                # 处理字符串类型
+                type_value = media_type
+            else:
+                # 处理其他类型，尝试转换为字符串
+                type_value = str(media_type)
+            
+            # 验证是否为有效的媒体类型
+            if type_value in valid_type_names:
+                if type_value not in valid_types:  # 避免重复
+                    valid_types.append(type_value)
+            else:
+                logger.warning(f"无效的媒体类型配置: {media_type} (值: {type_value}), 已忽略")
+        
+        logger.debug(f"验证后的媒体类型配置: {valid_types}")
+        return valid_types
+
+    def _record_filtered_message(self, media_group_id: str, message_id: int, filter_reason: str):
+        """
+        记录被过滤的消息ID到媒体组统计中
+        
+        Args:
+            media_group_id: 媒体组ID
+            message_id: 被过滤的消息ID
+            filter_reason: 过滤原因
+        """
+        # 【修复】确保media_group_filter_stats中有这个媒体组的记录，包含所有必需字段
+        if media_group_id not in self.media_group_filter_stats:
+            self.media_group_filter_stats[media_group_id] = {
+                'total_expected': 0,
+                'filtered_count': 0, 
+                'total_received': 0,
+                'original_caption': None,
+                'filtered_message_ids': set()  # 【修复】确保包含这个字段
+            }
+        
+        # 【修复】确保filtered_message_ids字段存在
+        if 'filtered_message_ids' not in self.media_group_filter_stats[media_group_id]:
+            self.media_group_filter_stats[media_group_id]['filtered_message_ids'] = set()
+        
+        self.media_group_filter_stats[media_group_id]['filtered_message_ids'].add(message_id)
+        self.media_group_filter_stats[media_group_id]['filtered_count'] += 1
+        
+        logger.info(f"【记录过滤】媒体组 {media_group_id} 的消息 {message_id} 被过滤，原因: {filter_reason}")
+        logger.debug(f"【记录过滤】媒体组 {media_group_id} 当前过滤统计: {self.media_group_filter_stats[media_group_id]}")
