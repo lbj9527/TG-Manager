@@ -155,6 +155,104 @@ class RestrictedForwardHandler:
         
         return result_text
 
+    def _apply_universal_message_filters(self, messages: List[Message], pair_config: dict) -> Tuple[List[Message], List[Message]]:
+        """
+        应用通用消息过滤规则（最高优先级判断）
+        
+        Args:
+            messages: 消息列表
+            pair_config: 频道对配置
+            
+        Returns:
+            Tuple[List[Message], List[Message]]: (通过过滤的消息列表, 被过滤的消息列表)
+        """
+        if not messages:
+            return [], []
+            
+        try:
+            # 获取该频道对的过滤选项
+            exclude_forwards = pair_config.get('exclude_forwards', False)
+            exclude_replies = pair_config.get('exclude_replies', False)
+            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
+            exclude_links = pair_config.get('exclude_links', False)
+            
+            passed_messages = []
+            filtered_messages = []
+            
+            for message in messages:
+                should_filter = False
+                filter_reason = ""
+                
+                # 【最高优先级1】排除转发消息
+                if exclude_forwards and message.forward_from:
+                    should_filter = True
+                    filter_reason = "转发消息"
+                
+                # 【最高优先级2】排除回复消息
+                elif exclude_replies and message.reply_to_message:
+                    should_filter = True
+                    filter_reason = "回复消息"
+                
+                # 【最高优先级3】排除纯文本消息
+                elif exclude_text:
+                    # 检查是否为纯文本消息（没有任何媒体内容）
+                    is_media_message = bool(message.photo or message.video or message.document or 
+                                          message.audio or message.animation or message.sticker or 
+                                          message.voice or message.video_note)
+                    if not is_media_message and (message.text or message.caption):
+                        should_filter = True
+                        filter_reason = "纯文本消息"
+                
+                # 【最高优先级4】排除包含链接的消息
+                elif exclude_links:
+                    # 检查消息文本或说明中是否包含链接
+                    text_to_check = message.text or message.caption or ""
+                    if self._contains_links(text_to_check):
+                        should_filter = True
+                        filter_reason = "包含链接的消息"
+                
+                if should_filter:
+                    _logger.info(f"RestrictedForwardHandler: 消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
+                    filtered_messages.append(message)
+                else:
+                    passed_messages.append(message)
+            
+            return passed_messages, filtered_messages
+            
+        except Exception as e:
+            _logger.error(f"应用通用消息过滤时发生错误: {str(e)}")
+            # 发生错误时返回原始消息列表，让后续处理决定
+            return messages, []
+
+    def _contains_links(self, text: str) -> bool:
+        """
+        检查文本中是否包含链接
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 是否包含链接
+        """
+        import re
+        
+        if not text:
+            return False
+        
+        # 简单的URL正则匹配
+        url_patterns = [
+            r'https?://[^\s]+',  # http或https链接
+            r'www\.[^\s]+',      # www链接
+            r't\.me/[^\s]+',     # Telegram链接
+            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
+        ]
+        
+        for pattern in url_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        return False
+
     async def process_restricted_message(self, 
                                        message: Message, 
                                        source_channel: str, 

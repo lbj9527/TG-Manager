@@ -98,6 +98,13 @@ class Monitor:
         # 连接emit信号
         self.media_group_handler.emit = self._emit_signal
         self.message_processor.emit = self._emit_signal
+        
+        # 设置MediaGroupHandler的monitor引用，用于统一过滤
+        self.media_group_handler.set_monitor(self)
+        
+        # 设置频道信息缓存和性能监控器引用
+        self.media_group_handler.set_channel_info_cache(self.channel_info_cache)
+        self.media_group_handler.set_performance_monitor(self.performance_monitor)
     
     def _emit_signal(self, signal_type: str, *args, **kwargs):
         """
@@ -436,7 +443,7 @@ class Monitor:
 
                     # 对于单条消息，在_process_single_message中进行完整过滤检查后再发射事件
                     # 先检查是否会被过滤
-                    will_be_filtered, filter_reason = await self._check_single_message_filters(message, pair_config, source_info_str)
+                    will_be_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
                     if will_be_filtered:
                         # 消息将被过滤，不发射new_message事件
                         logger.info(f"单条消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
@@ -632,13 +639,30 @@ class Monitor:
     
     async def _process_single_message(self, message: Message, pair_config: dict):
         """
-        处理单条消息（过滤检查已经在调用前完成）
+        处理单条消息
         
         Args:
             message: 消息对象
             pair_config: 频道对配置
         """
         try:
+            # 【最高优先级】首先应用通用消息过滤（转发、回复、纯文本、链接）
+            try:
+                source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+            except Exception:
+                source_info_str = str(message.chat.id)
+            
+            is_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
+            if is_filtered:
+                logger.debug(f"单条消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
+                return
+            
+            # 应用其他过滤条件（关键词、媒体类型等）
+            is_filtered, filter_reason = await self._check_single_message_filters(message, pair_config, source_info_str)
+            if is_filtered:
+                logger.debug(f"单条消息 [ID: {message.id}] 被其他过滤规则过滤: {filter_reason}")
+                return
+            
             # 获取目标频道列表
             target_channels = pair_config.get('target_channels', [])
             
@@ -890,9 +914,82 @@ class Monitor:
         except Exception as e:
             logger.error(f"内存监控异常: {str(e)}", error_type="MEMORY_MONITOR", recoverable=True) 
 
+    async def _apply_universal_message_filters(self, message: Message, pair_config: dict, source_info_str: str) -> tuple[bool, str]:
+        """
+        应用通用消息过滤规则（最高优先级判断）
+        
+        Args:
+            message: 消息对象
+            pair_config: 频道对配置
+            source_info_str: 源频道信息字符串
+            
+        Returns:
+            tuple[bool, str]: (是否被过滤, 过滤原因)
+        """
+        try:
+            # 获取该频道对的过滤选项
+            exclude_forwards = pair_config.get('exclude_forwards', False)
+            exclude_replies = pair_config.get('exclude_replies', False)
+            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
+            exclude_links = pair_config.get('exclude_links', False)
+            
+            # 【最高优先级1】排除转发消息
+            if exclude_forwards and message.forward_from:
+                filter_reason = "转发消息"
+                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                # 发送过滤消息事件到UI
+                if hasattr(self, 'emit') and self.emit:
+                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                return True, filter_reason
+
+            # 【最高优先级2】排除回复消息
+            if exclude_replies and message.reply_to_message:
+                filter_reason = "回复消息"
+                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                # 发送过滤消息事件到UI
+                if hasattr(self, 'emit') and self.emit:
+                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                return True, filter_reason
+
+            # 【最高优先级3】排除纯文本消息
+            if exclude_text:
+                # 检查是否为纯文本消息（没有任何媒体内容）
+                is_media_message = bool(message.photo or message.video or message.document or 
+                                      message.audio or message.animation or message.sticker or 
+                                      message.voice or message.video_note)
+                if not is_media_message and (message.text or message.caption):
+                    filter_reason = "纯文本消息"
+                    logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                    # 发送过滤消息事件到UI
+                    if hasattr(self, 'emit') and self.emit:
+                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                    return True, filter_reason
+
+            # 【最高优先级4】排除包含链接的消息
+            if exclude_links:
+                # 检查消息文本或说明中是否包含链接
+                text_to_check = message.text or message.caption or ""
+                if self._contains_links(text_to_check):
+                    filter_reason = "包含链接的消息"
+                    logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                    # 发送过滤消息事件到UI
+                    if hasattr(self, 'emit') and self.emit:
+                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                    return True, filter_reason
+
+            # 所有过滤检查都通过
+            return False, ""
+            
+        except Exception as e:
+            logger.error(f"应用通用消息过滤时发生错误: {str(e)}")
+            # 发生错误时认为消息不被过滤，让后续处理决定
+            return False, ""
+
     async def _check_single_message_filters(self, message: Message, pair_config: dict, source_info_str: str) -> tuple[bool, str]:
         """
-        检查单条消息是否会被过滤
+        检查单条消息的其他过滤条件（关键词、媒体类型等）
+        
+        注意：四个排除条件（转发、回复、纯文本、链接）已在_apply_universal_message_filters中处理
         
         Args:
             message: 消息对象
@@ -905,77 +1002,33 @@ class Monitor:
         try:
             # 获取该频道对的过滤选项
             keywords = pair_config.get('keywords', [])
-            exclude_forwards = pair_config.get('exclude_forwards', False)
-            exclude_replies = pair_config.get('exclude_replies', False)
-            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
-            exclude_links = pair_config.get('exclude_links', False)
             
-            # 应用过滤逻辑
-            if exclude_forwards and message.forward_from:
-                filter_reason = "转发消息"
-                # 发送过滤消息事件到UI
-                if hasattr(self, 'emit') and self.emit:
-                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                return True, filter_reason
-
-            if exclude_replies and message.reply_to_message:
-                filter_reason = "回复消息"
-                # 发送过滤消息事件到UI
-                if hasattr(self, 'emit') and self.emit:
-                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                return True, filter_reason
-
-            # 检查是否为媒体消息
-            is_media_message = bool(message.photo or message.video or message.document or 
-                                  message.audio or message.animation or message.sticker or 
-                                  message.voice or message.video_note)
-
-            # 检查是否为纯文本消息（非媒体消息）
-            is_text_message = not is_media_message
-
-            if exclude_text and is_text_message:
-                filter_reason = "纯文本消息"
-                # 发送过滤消息事件到UI
-                if hasattr(self, 'emit') and self.emit:
-                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                return True, filter_reason
-
-            if exclude_links:
-                text_content = message.text or message.caption or ""
-                if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
-                    filter_reason = "包含链接"
-                    # 发送过滤消息事件到UI
-                    if hasattr(self, 'emit') and self.emit:
-                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                    return True, filter_reason
-
             # 关键词过滤
             if keywords:
-                text_content = message.text or message.caption or ""
-                if not any(keyword.lower() in text_content.lower() for keyword in keywords):
+                text_to_check = (message.text or message.caption or "").lower()
+                keywords_passed = any(keyword.lower() in text_to_check for keyword in keywords)
+                if not keywords_passed:
                     filter_reason = f"不包含关键词({', '.join(keywords)})"
                     # 发送过滤消息事件到UI
                     if hasattr(self, 'emit') and self.emit:
                         self.emit("message_filtered", message.id, source_info_str, filter_reason)
                     return True, filter_reason
 
-            # 获取该频道对允许的媒体类型
+            # 媒体类型过滤
             allowed_media_types = pair_config.get('media_types', [])
-
-            # 检查消息的媒体类型是否被允许
-            message_media_type = self._get_message_media_type(message)
-
-            if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
-                media_type_names = {
-                    "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
-                    "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
-                }
-                media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
-                filter_reason = f"媒体类型({media_type_name})不在允许列表中"
-                # 发送过滤消息事件到UI
-                if hasattr(self, 'emit') and self.emit:
-                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                return True, filter_reason
+            if allowed_media_types:
+                message_media_type = self._get_message_media_type(message)
+                if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
+                    media_type_names = {
+                        "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
+                        "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
+                    }
+                    media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
+                    filter_reason = f"媒体类型({media_type_name})不在允许列表中"
+                    # 发送过滤消息事件到UI
+                    if hasattr(self, 'emit') and self.emit:
+                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                    return True, filter_reason
 
             # 所有过滤检查都通过
             return False, ""

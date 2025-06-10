@@ -88,11 +88,23 @@ class MediaGroupHandler:
         # 性能监控器引用（由Monitor模块设置）
         self.performance_monitor = None
         
+        # Monitor引用（用于统一过滤）
+        self.monitor = None
+        
         # 启动后台任务
         self.cleanup_task = None
         self.backlog_task = None
         
         logger.debug("MediaGroupHandler 初始化完成")
+    
+    def set_monitor(self, monitor):
+        """
+        设置Monitor实例的引用
+        
+        Args:
+            monitor: Monitor实例
+        """
+        self.monitor = monitor
     
     def set_channel_pairs(self, channel_pairs: Dict[int, Dict[str, Any]]):
         """
@@ -363,56 +375,65 @@ class MediaGroupHandler:
             message: 媒体组中的一条消息
             pair_config: 频道对配置
         """
-        # 获取该频道对的过滤选项
-        keywords = pair_config.get('keywords', [])
-        exclude_forwards = pair_config.get('exclude_forwards', False)
-        exclude_replies = pair_config.get('exclude_replies', False)
-        # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
-        exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
-        exclude_links = pair_config.get('exclude_links', False)
+        # 【最高优先级】首先应用通用消息过滤（转发、回复、纯文本、链接）
+        try:
+            source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
+        except Exception:
+            source_info_str = str(message.chat.id)
         
-        # 应用过滤逻辑
-        if exclude_forwards and message.forward_from:
-            filter_reason = "转发消息"
-            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-            # 添加小延迟确保UI事件处理顺序正确
-            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
-            self._emit_message_filtered(message, filter_reason)
-            return
-        
-        if exclude_replies and message.reply_to_message:
-            filter_reason = "回复消息"
-            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-            # 添加小延迟确保UI事件处理顺序正确
-            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
-            self._emit_message_filtered(message, filter_reason)
-            return
-        
-        # 检查是否为媒体消息
-        is_media_message = bool(message.photo or message.video or message.document or 
-                              message.audio or message.animation or message.sticker or 
-                              message.voice or message.video_note)
-        
-        # 检查是否为纯文本消息（非媒体消息）
-        is_text_message = not is_media_message
-        
-        if exclude_text and is_text_message:
-            filter_reason = "纯文本消息"
-            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-            # 添加小延迟确保UI事件处理顺序正确
-            await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
-            self._emit_message_filtered(message, filter_reason)
-            return
-        
-        if exclude_links:
-            text_content = message.text or message.caption or ""
-            if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
-                filter_reason = "包含链接"
-                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
-                # 添加小延迟确保UI事件处理顺序正确
-                await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
+        # 使用Monitor的通用过滤方法（需要通过引用访问）
+        if hasattr(self, 'monitor') and self.monitor:
+            is_filtered, filter_reason = await self.monitor._apply_universal_message_filters(message, pair_config, source_info_str)
+            if is_filtered:
+                logger.debug(f"媒体组消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
+                return
+        else:
+            # 如果没有monitor引用，手动实现通用过滤逻辑
+            exclude_forwards = pair_config.get('exclude_forwards', False)
+            exclude_replies = pair_config.get('exclude_replies', False)
+            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
+            exclude_links = pair_config.get('exclude_links', False)
+            
+            # 排除转发消息
+            if exclude_forwards and message.forward_from:
+                filter_reason = "转发消息"
+                logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
                 self._emit_message_filtered(message, filter_reason)
                 return
+            
+            # 排除回复消息
+            if exclude_replies and message.reply_to_message:
+                filter_reason = "回复消息"
+                logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
+                self._emit_message_filtered(message, filter_reason)
+                return
+            
+            # 排除纯文本消息
+            if exclude_text:
+                is_media_message = bool(message.photo or message.video or message.document or 
+                                      message.audio or message.animation or message.sticker or 
+                                      message.voice or message.video_note)
+                if not is_media_message and (message.text or message.caption):
+                    filter_reason = "纯文本消息"
+                    logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                    await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
+                    self._emit_message_filtered(message, filter_reason)
+                    return
+            
+            # 排除包含链接的消息
+            if exclude_links:
+                text_to_check = message.text or message.caption or ""
+                if self._contains_links(text_to_check):
+                    filter_reason = "包含链接的消息"
+                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                    await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
+                    self._emit_message_filtered(message, filter_reason)
+                    return
+        
+        # 获取该频道对的其他过滤选项
+        keywords = pair_config.get('keywords', [])
         
         # 关键词过滤 - 媒体组级别检查
         if keywords:

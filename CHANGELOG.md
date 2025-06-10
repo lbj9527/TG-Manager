@@ -4,6 +4,49 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.4.8] - 2025-06-10
+
+### 🚨 重要架构修复 (Critical Architecture Fix)
+- **统一消息过滤系统**：修复四个排除选项（转发、回复、纯文本、链接）没有作为最高优先级判断的问题
+  - **问题描述**：当前代码中的四个排除选项只在部分情况下应用，且不是最高优先级判断
+  - **影响范围**：单条消息、媒体组消息、禁止转发频道、非禁止转发频道等所有消息处理路径
+  - **根本原因**：过滤逻辑分散在多个模块中，没有统一的最高优先级过滤机制
+  
+### 🔧 技术实现 (Technical Implementation)
+- **新增统一过滤方法**：
+  - `Monitor._apply_universal_message_filters()`: 统一的通用消息过滤方法
+  - `RestrictedForwardHandler._apply_universal_message_filters()`: 禁止转发场景的通用过滤
+  - `MediaGroupHandler._contains_links()`: 链接检测方法
+  
+- **过滤优先级重构**：
+  1. **最高优先级1**：排除转发消息 (`exclude_forwards`)
+  2. **最高优先级2**：排除回复消息 (`exclude_replies`) 
+  3. **最高优先级3**：排除纯文本消息 (`exclude_text`)
+  4. **最高优先级4**：排除包含链接的消息 (`exclude_links`)
+  5. **次级优先级**：关键词过滤、媒体类型过滤等其他条件
+
+- **应用点统一**：
+  - `Monitor._process_single_message()`: 单条消息处理前优先应用
+  - `MediaGroupHandler.handle_media_group_message()`: 媒体组消息处理前优先应用
+  - `Monitor.handle_new_message()`: 消息进入系统时的预过滤检查
+
+### 🎯 修复效果 (Fix Results)
+- **完整覆盖**：四个排除选项现在在所有消息处理路径中都作为最高优先级判断
+- **统一行为**：无论是单条消息还是媒体组，无论目标频道是否禁止转发，过滤行为完全一致
+- **性能优化**：过滤在处理早期进行，避免不必要的后续处理开销
+- **代码简化**：移除重复的过滤逻辑，提高代码可维护性
+
+### 📋 兼容性 (Compatibility)
+- **向后兼容**：完全兼容现有配置文件和UI设置
+- **功能增强**：之前部分失效的过滤现在完全生效
+- **无破坏性**：不影响现有的转发逻辑和其他功能
+
+### 🔗 关联修复 (Related Fixes)
+- **MediaGroupHandler引用**：添加Monitor引用以使用统一过滤方法
+- **初始化优化**：在Monitor初始化时设置MediaGroupHandler的必要引用
+- **过滤逻辑清理**：移除`_check_single_message_filters`中的重复过滤代码
+- **方法重构**：优化过滤方法的参数和返回值设计
+
 ## [2.4.7] - 2025-06-10
 
 ### 🚨 重要修复 (Critical Fix)
