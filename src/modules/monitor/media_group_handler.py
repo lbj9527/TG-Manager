@@ -480,10 +480,15 @@ class MediaGroupHandler:
         # 保存原始标题（如果当前消息有标题且还没有保存过）
         if message.caption and not self.media_group_filter_stats[media_group_id]['original_caption']:
             self.media_group_filter_stats[media_group_id]['original_caption'] = message.caption
-            logger.debug(f"保存媒体组 {media_group_id} 的原始标题: '{message.caption}'")
+            logger.debug(f"【关键】保存媒体组 {media_group_id} 的原始标题: '{message.caption}'")
+            logger.debug(f"【关键】当前消息ID: {message.id}, 媒体类型: {self._get_message_media_type(message)}")
         
         # 更新统计：总接收数
         self.media_group_filter_stats[media_group_id]['total_received'] += 1
+        
+        # 添加详细的过滤前调试信息
+        message_media_type = self._get_message_media_type(message)
+        logger.debug(f"【关键】检查消息 {message.id} 媒体类型过滤: type='{message_media_type}', allowed={allowed_media_types}")
         
         if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
             media_type_names = {
@@ -492,6 +497,11 @@ class MediaGroupHandler:
             }
             media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
             filter_reason = f"媒体类型({media_type_name})不在允许列表中"
+            
+            # 添加关键调试信息
+            logger.debug(f"【关键】消息 {message.id} 被过滤: {filter_reason}")
+            logger.debug(f"【关键】过滤时media_group_filter_stats状态: {self.media_group_filter_stats.get(media_group_id, 'NOT_FOUND')}")
+            
             logger.info(f"媒体组消息 [ID: {message.id}] 的{filter_reason}，跳过处理")
             
             # 更新统计：过滤数
@@ -793,676 +803,213 @@ class MediaGroupHandler:
                 logger.debug(f"已清理媒体组 {media_group_id} 的延迟任务引用")
     
     async def _process_media_group(self, messages: List[Message], pair_config: dict):
-        """
-        处理媒体组消息
+        """处理媒体组
         
         Args:
-            messages: 媒体组消息列表
+            messages: 媒体组消息列表（可能是过滤后的）
             pair_config: 频道对配置
         """
-        if not messages:
-            return
-            
         try:
             # 获取源频道信息
             source_id = messages[0].chat.id
-            source_channel = pair_config['source_channel']
-            source_title = pair_config.get('source_title', str(source_id))
-            
-            # 获取目标频道列表
-            target_channels = pair_config.get('target_channels', [])
-            if not target_channels:
-                logger.warning(f"没有有效的目标频道，跳过媒体组处理")
-                return
-                
-            # 获取媒体组ID
+            source_title = messages[0].chat.title or "未知频道"
             media_group_id = messages[0].media_group_id
             
-            # 获取媒体组过滤统计
-            filter_stats = self.media_group_filter_stats.get(media_group_id, {
-                'total_expected': 0,
-                'filtered_count': 0,
-                'total_received': 0
-            })
+            # 添加调试日志，记录接收到的pair_config
+            logger.debug(f"MediaGroupHandler接收到的pair_config:")
+            logger.debug(f"  source_id: {source_id}")
+            logger.debug(f"  remove_captions: {pair_config.get('remove_captions', False)}")
+            logger.debug(f"  text_replacements: {pair_config.get('text_replacements', {})}")
+            logger.debug(f"  media_types: {pair_config.get('media_types', [])}")
+            logger.debug(f"  target_channels: {pair_config.get('target_channels', [])}")
             
-            # 计算实际情况
-            total_received = filter_stats['total_received']
-            filtered_count = filter_stats['filtered_count']
-            in_cache_count = len(messages)  # 当前缓存中的消息数（都是通过过滤的）
-            
-            logger.info(f"媒体组 {media_group_id} 统计: 总接收={total_received}, 已过滤={filtered_count}, 缓存中={in_cache_count}")
-            
-            # 检查是否有消息被过滤
-            has_filtered_messages = filtered_count > 0
-            
-            # 检查是否需要重组媒体组
-            if has_filtered_messages and in_cache_count > 1:
-                # 有消息被过滤且剩余消息>1，需要重组媒体组发送
-                logger.info(f"媒体组 {media_group_id} 有 {filtered_count} 条消息被过滤，剩余 {in_cache_count} 条消息，将重组发送")
-                await self._send_filtered_media_group(messages, pair_config, target_channels)
-                
-                # 清理过滤统计
-                if media_group_id in self.media_group_filter_stats:
-                    del self.media_group_filter_stats[media_group_id]
-                # 清理媒体组关键词过滤状态
-                if media_group_id in self.media_group_keyword_filter:
-                    del self.media_group_keyword_filter[media_group_id]
-                return
-            elif has_filtered_messages and in_cache_count == 1:
-                # 只剩一条消息，作为单条消息发送
-                logger.info(f"媒体组 {media_group_id} 有 {filtered_count} 条消息被过滤，只剩 1 条消息，将作为单条消息发送")
-                single_message = messages[0]
-                # 这里需要调用单条消息的转发逻辑
-                # 由于这是媒体组处理器，我们暂时跳过单条消息处理
-                # 可以通过消息处理器来处理单条消息
-                if hasattr(self, 'message_processor') and self.message_processor:
-                    # 获取目标频道列表
-                    target_channels = pair_config.get('target_channels', [])
-                    text_filter = pair_config.get('text_filter', [])
-                    remove_captions = pair_config.get('remove_captions', False)
-                    
-                    # 应用文本替换规则（如果有）
-                    replaced_caption = None
-                    if single_message.caption:
-                        # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
-                        text_replacements = pair_config.get('text_replacements', {})
-                        if not text_replacements:
-                            # 如果没有预构建的text_replacements，从text_filter构建
-                            text_filter = pair_config.get('text_filter', [])
-                            text_replacements = {}
-                            for rule in text_filter:
-                                original_text = rule.get('original_text', '')
-                                target_text = rule.get('target_text', '')
-                                if original_text:
-                                    text_replacements[original_text] = target_text
-                        
-                        # 使用静态方法应用文本替换
-                        if text_replacements:
-                            from src.modules.monitor.text_filter import TextFilter
-                            replaced_caption = TextFilter.apply_text_replacements_static(single_message.caption, text_replacements)
-                            logger.info(f"单条消息 [ID: {single_message.id}] 应用文本替换：'{single_message.caption}' -> '{replaced_caption}'")
-                        else:
-                            replaced_caption = single_message.caption
-                    # 如果消息没有标题，replaced_caption保持为None
-                    else:
-                        replaced_caption = None
-                
-                    # 使用消息处理器的forward_message方法转发单条消息
-                    if replaced_caption is not None:
-                        # 有标题（原始或替换后的），传递replace_caption参数
-                        await self.message_processor.forward_message(
-                            message=single_message,
-                            target_channels=target_channels,
-                            use_copy=True,
-                            replace_caption=replaced_caption,
-                            remove_caption=remove_captions
-                        )
-                    else:
-                        # 没有标题，不传递replace_caption参数
-                        await self.message_processor.forward_message(
-                            message=single_message,
-                            target_channels=target_channels,
-                            use_copy=True,
-                            remove_caption=remove_captions
-                        )
-                
-                # 清理过滤统计
-                if media_group_id in self.media_group_filter_stats:
-                    del self.media_group_filter_stats[media_group_id]
-                # 清理媒体组关键词过滤状态
-                if media_group_id in self.media_group_keyword_filter:
-                    del self.media_group_keyword_filter[media_group_id]
-                return
-            elif has_filtered_messages and in_cache_count == 0:
-                # 所有消息都被过滤
-                logger.info(f"媒体组 {media_group_id} 中的所有消息都被过滤，跳过转发")
-                    
-                # 清理过滤统计
-                if media_group_id in self.media_group_filter_stats:
-                    del self.media_group_filter_stats[media_group_id]
-                # 清理媒体组关键词过滤状态
-                if media_group_id in self.media_group_keyword_filter:
-                    del self.media_group_keyword_filter[media_group_id]
-                return
-            
-            # 如果没有被过滤，使用原有逻辑
-            logger.info(f"媒体组 {media_group_id} 未被过滤，使用原有转发逻辑")
-                        
-            # 清理过滤统计
-            if media_group_id in self.media_group_filter_stats:
-                del self.media_group_filter_stats[media_group_id]
-            # 清理媒体组关键词过滤状态
-            if media_group_id in self.media_group_keyword_filter:
-                del self.media_group_keyword_filter[media_group_id]
-            
-            # 获取文本替换处理后的标题
-            replaced_caption = None
-            caption_modified = False
-            
-            # 获取原始标题：优先从过滤统计中获取，确保使用完整的原始标题
+            # 【关键修复】从media_group_filter_stats恢复原始媒体组说明
             original_caption = None
+            logger.debug(f"【关键】检查media_group_filter_stats中是否有媒体组 {media_group_id}")
+            logger.debug(f"【关键】当前media_group_filter_stats keys: {list(self.media_group_filter_stats.keys())}")
+            
             if media_group_id in self.media_group_filter_stats:
                 original_caption = self.media_group_filter_stats[media_group_id].get('original_caption')
-                logger.debug(f"从过滤统计中获取媒体组 {media_group_id} 的原始标题: '{original_caption}'")
-            
-            # 如果过滤统计中没有，再从第一条消息中获取（兜底方案）
-            if not original_caption:
-                first_message = messages[0]
-                if first_message.caption:
-                    original_caption = first_message.caption
-                    logger.debug(f"从第一条消息获取媒体组 {media_group_id} 的标题: '{original_caption}'")
-            
-            # 应用文本替换（如果有原始标题）
-            if original_caption:
-                # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
-                text_replacements = pair_config.get('text_replacements', {})
-                if not text_replacements:
-                    # 如果没有预构建的text_replacements，从text_filter构建
-                    text_filter = pair_config.get('text_filter', [])
-                    text_replacements = {}
-                    for rule in text_filter:
-                        original_text = rule.get('original_text', '')
-                        target_text = rule.get('target_text', '')
-                        if original_text:
-                            text_replacements[original_text] = target_text
-                
-                # 使用静态方法应用文本替换
-                if text_replacements:
-                    from src.modules.monitor.text_filter import TextFilter
-                    replaced_caption = TextFilter.apply_text_replacements_static(original_caption, text_replacements)
-                    caption_modified = replaced_caption != original_caption
-                    if caption_modified:
-                        logger.info(f"媒体组 {media_group_id} 应用文本替换：'{original_caption}' -> '{replaced_caption}'")
-                    else:
-                        replaced_caption = original_caption
-                else:
-                    replaced_caption = original_caption
-                    caption_modified = False
+                logger.debug(f"【关键】从media_group_filter_stats恢复原始说明: '{original_caption}'")
+                logger.debug(f"【关键】完整的filter_stats数据: {self.media_group_filter_stats[media_group_id]}")
+                # 清理统计信息
+                del self.media_group_filter_stats[media_group_id]
+                logger.debug(f"【关键】已清理media_group_filter_stats中的数据")
             else:
-                replaced_caption = None
-                caption_modified = False
+                logger.debug(f"【关键】media_group_filter_stats中没有找到媒体组 {media_group_id} 的数据")
             
-            # 获取移除媒体说明的设置
+            # 如果从过滤后的消息中也找不到说明，检查是否还有其他来源
+            if not original_caption:
+                for msg in messages:
+                    if msg.caption and msg.caption.strip():
+                        original_caption = msg.caption.strip()
+                        logger.debug(f"【关键】从过滤后的消息中找到说明: '{original_caption}'")
+                        break
+                if not original_caption:
+                    logger.debug(f"【关键】过滤后的消息中也没有找到说明")
+            
+            # 获取配置参数
             remove_captions = pair_config.get('remove_captions', False)
+            # 直接使用core.py中构建的text_replacements字典，而不是text_filter列表
+            text_replacements = pair_config.get('text_replacements', {})
+            allowed_media_types = pair_config.get('media_types', [])
             
-            # 使用原有的转发逻辑，messages参数中的消息都已经通过过滤
-            await self._forward_media_group(
-                messages, 
-                target_channels, 
-                replaced_caption, 
-                remove_captions, 
-                caption_modified
-            )
-                
-        except Exception as e:
-            logger.error(f"处理媒体组时发生错误: {str(e)}", error_type="PROCESS_MEDIA_GROUP", recoverable=True)
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"错误详情: {error_details}")
-    
-    async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]], 
-                                 replaced_caption: str = None, remove_captions: bool = False, caption_modified: bool = False):
-        """
-        转发媒体组到目标频道
+            # 解析目标频道
+            target_channels = []
+            for target_channel_config in pair_config.get('target_channels', []):
+                try:
+                    # 检查target_channel_config的类型
+                    if isinstance(target_channel_config, tuple) and len(target_channel_config) >= 3:
+                        # 如果已经是包含频道信息的元组，直接使用
+                        target_channels.append(target_channel_config)
+                        logger.debug(f"使用已解析的目标频道: {target_channel_config[2]}")
+                    elif isinstance(target_channel_config, (str, int)):
+                        # 如果是字符串或整数，需要解析
+                        # 先调用resolve_channel获得标准化的频道ID
+                        resolved_channel_id, _ = await self.channel_resolver.resolve_channel(str(target_channel_config))
+                        # 然后获得数字ID
+                        numeric_id = await self.channel_resolver.get_channel_id(resolved_channel_id)
+                        # 最后获得频道信息
+                        channel_info_str, _ = await self.channel_resolver.format_channel_info(numeric_id)
+                        if numeric_id:
+                            target_channels.append((str(target_channel_config), numeric_id, channel_info_str))
+                            logger.debug(f"解析目标频道: {target_channel_config} -> {channel_info_str}")
+                    else:
+                        logger.warning(f"无法识别的目标频道配置类型: {type(target_channel_config)}, 值: {target_channel_config}")
+                        continue
+                except Exception as e:
+                    logger.error(f"解析目标频道失败 {target_channel_config}: {str(e)}")
+                    continue
+            
+            if not target_channels:
+                logger.warning(f"没有有效的目标频道，跳过媒体组处理")
+                return False
         
-        Args:
-            messages: 媒体组消息列表
-            target_channels: 目标频道列表
-            replaced_caption: 替换后的标题文本
-            remove_captions: 是否移除标题
-            caption_modified: 是否修改了标题
-        """
-        if not messages or not target_channels:
-            return
-        
-        # 记录转发开始时间
-        forward_start_time = time.time()
-            
-        try:
-            source_chat = messages[0].chat
-            source_chat_id = source_chat.id
-            media_group_id = messages[0].media_group_id
-            
-            # 尝试获取频道信息
-            try:
-                source_title = source_chat.title
-            except:
-                source_title = str(source_chat_id)
-                
-            # 排序消息，确保顺序一致
-            sorted_messages = sorted(messages, key=lambda m: m.id)
-            first_message_id = sorted_messages[0].id
-            message_ids = [msg.id for msg in sorted_messages]
-            
             logger.info(f"开始转发媒体组 [ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
             
-            # 标题处理
-            if remove_captions:
-                # 移除媒体说明
-                logger.debug(f"将移除媒体组的说明文字")
-                await self._send_modified_media_group(sorted_messages, None, target_channels, caption_modified)
-            elif replaced_caption is not None or caption_modified:
-                # 如果有替换后的标题或标题被修改过，需要使用修改后的发送方式
-                logger.debug(f"将使用替换后的标题: '{replaced_caption}'")
-                await self._send_modified_media_group(sorted_messages, replaced_caption, target_channels, caption_modified)
-            else:
-                # 使用原始标题，统一处理所有目标频道（包括禁止转发的情况）
-                # 将所有目标频道都视为可能禁止转发，使用统一的处理策略
-                source_chat_id = sorted_messages[0].chat.id
-                source_channel = str(source_chat_id)
+            # 统一使用RestrictedForwardHandler处理，支持媒体类型过滤和文本替换
+            source_channel = str(source_id)
                 
-                # 创建RestrictedForwardHandler实例
-                if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
-                    self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
-                    logger.debug("创建了新的RestrictedForwardHandler实例")
+            # 创建RestrictedForwardHandler实例
+            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
+                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                logger.debug("创建了新的RestrictedForwardHandler实例")
                 
-                logger.info(f"使用RestrictedForwardHandler统一处理所有目标频道的媒体组 {media_group_id}")
+            logger.info(f"使用增强的RestrictedForwardHandler处理媒体组 {media_group_id}")
                 
-                # 尝试使用统一的处理策略：优先尝试直接转发，失败则自动使用下载上传
-                success = await self._unified_media_group_forward(
-                    sorted_messages, target_channels, media_group_id, 
-                    source_channel, source_chat_id, caption_modified
-                )
-                
-                if not success:
-                    logger.warning(f"统一处理媒体组转发失败: {media_group_id}")
+            # 【关键修复】如果有原始说明，传递给RestrictedForwardHandler
+            # 这样确保即使被过滤的消息包含说明，也能被正确处理
+            caption_to_pass = original_caption if original_caption else None
+            logger.debug(f"【关键】传递给RestrictedForwardHandler的说明: '{caption_to_pass}'")
+            logger.debug(f"【关键】同时传递的参数: remove_caption={remove_captions}, text_replacements={text_replacements}")
             
-            # 记录转发性能数据
-            if self.performance_monitor:
-                forward_time = time.time() - forward_start_time
-                self.performance_monitor.record_message_forwarded(forward_time, success=True)
-                        
-        except Exception as e:
-            # 记录转发失败的性能数据
-            if self.performance_monitor:
-                forward_time = time.time() - forward_start_time
-                self.performance_monitor.record_message_forwarded(forward_time, success=False)
-                
-                # 记录错误类型
-                error_name = type(e).__name__.lower()
-                if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
-                    self.performance_monitor.record_error('network')
-                elif 'api' in error_name or 'telegram' in error_name:
-                    self.performance_monitor.record_error('api')
-                else:
-                    self.performance_monitor.record_error('other')
-            
-            logger.error(f"转发媒体组失败: {str(e)}", error_type="FORWARD_MEDIA_GROUP", recoverable=True)
-            import traceback
-            error_details = traceback.format_exc()
-            logger.error(f"错误详情: {error_details}")
-            
-            # 发射转发失败事件 - 只发射一次整体事件
-            if self.emit:
-                # 尝试获取源频道信息
-                try:
-                    source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
-                except Exception:
-                    source_info_str = str(source_chat_id)
-                
-                # 生成媒体组显示ID
-                media_group_display_id = self._generate_media_group_display_id(message_ids)
-                
-                # 为每个目标频道发射一次媒体组整体的转发失败事件
-                for target, target_id, target_info in target_channels:
-                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
-            
-            return False
-
-    async def _unified_media_group_forward(self, sorted_messages: List[Message], target_channels: List[Tuple[str, int, str]], 
-                                         media_group_id: str, source_channel: str, source_chat_id: int, caption_modified: bool) -> bool:
-        """
-        统一的媒体组转发处理：先尝试直接转发，失败的频道自动使用下载上传方式
-        
-        Args:
-            sorted_messages: 排序后的消息列表
-            target_channels: 目标频道列表
-            media_group_id: 媒体组ID
-            source_channel: 源频道标识符
-            source_chat_id: 源频道ID
-            caption_modified: 是否修改了标题
-            
-        Returns:
-            bool: 是否成功处理所有目标频道
-        """
-        if not target_channels:
-            return False
-            
-        first_message_id = sorted_messages[0].id
-        message_ids = [msg.id for msg in sorted_messages]
-        
-        successful_targets = []
-        restricted_targets = []
-        
-        # 第一轮：尝试直接转发到所有频道，识别禁止转发的频道
-        for target, target_id, target_info in target_channels:
-            try:
-                # 尝试使用copy_media_group直接转发
-                await self.client.copy_media_group(
-                    chat_id=target_id,
-                    from_chat_id=source_chat_id,
-                    message_id=first_message_id,
-                    disable_notification=True
-                )
-                
-                logger.info(f"直接转发媒体组到 {target_info} 成功")
-                successful_targets.append((target, target_id, target_info))
-                
-                # 发射转发成功事件
-                if self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
-                    except Exception:
-                        source_info_str = str(source_chat_id)
-                    
-                    media_group_display_id = self._generate_media_group_display_id(message_ids)
-                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, caption_modified)
-                
-            except ChatForwardsRestricted:
-                logger.info(f"目标频道 {target_info} 禁止转发，将使用下载上传方式处理")
-                restricted_targets.append((target, target_id, target_info))
-            except Exception as e:
-                logger.warning(f"直接转发到 {target_info} 失败: {str(e)}，将使用下载上传方式处理")
-                restricted_targets.append((target, target_id, target_info))
-            
-            # 添加延迟避免触发限制
-            await asyncio.sleep(0.3)
-        
-        # 第二轮：对禁止转发的频道使用下载上传方式
-        if restricted_targets:
-            logger.info(f"使用下载上传方式处理 {len(restricted_targets)} 个禁止转发频道")
-            
-            # 调用RestrictedForwardHandler的统一处理方法
-            restricted_success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
-                messages=sorted_messages,
+            # 使用增强的RestrictedForwardHandler统一处理方法
+            success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
+                messages=messages,
                 source_channel=source_channel,
-                source_id=source_chat_id,
-                target_channels=restricted_targets,
-                caption=None,  # 使用原始标题
-                remove_caption=False,
+                source_id=source_id,
+                target_channels=target_channels,
+                caption=caption_to_pass,  # 传递原始说明，让RestrictedForwardHandler处理文本替换
+                remove_caption=remove_captions,
+                allowed_media_types=allowed_media_types,  # 传递媒体类型过滤配置
+                text_replacements=text_replacements,      # 传递文本替换配置
                 event_emitter=self.emit,
                 message_type="媒体组"
             )
             
-            if not restricted_success:
-                logger.warning(f"部分禁止转发频道处理失败")
-        
-        # 如果至少有一个频道成功，就算成功
-        total_success = len(successful_targets) + (len(restricted_targets) if restricted_targets else 0)
-        logger.info(f"媒体组 {media_group_id} 转发完成: 直接转发成功 {len(successful_targets)}, 下载上传处理 {len(restricted_targets)}")
-        
-        return total_success > 0
-    
-    async def _send_modified_media_group(self, messages: List[Message], caption: str, target_channels: List[Tuple[str, int, str]], caption_modified: bool):
-        """发送修改后的媒体组到多个目标频道
-        
-        Args:
-            messages: 媒体组消息列表
-            caption: 修改后的标题
-            target_channels: 目标频道列表 [(channel_name, channel_id, channel_info), ...]
-            caption_modified: 是否修改了标题
+            if success:
+                logger.info(f"成功处理媒体组 {media_group_id}")
+            else:
+                logger.warning(f"媒体组 {media_group_id} 处理失败")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"处理媒体组时异常: {str(e)}", error_type="MEDIA_GROUP_PROCESS", recoverable=True)
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+            return False
+
+    async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]], 
+                                   replaced_caption: str = None, remove_captions: bool = False, caption_modified: bool = False,
+                                   allowed_media_types: List[str] = None, text_replacements: Dict[str, str] = None):
         """
-        if not messages:
-            logger.warning("没有消息可发送")
-            return
-
-        media_group_id = messages[0].media_group_id
-        source_title = messages[0].chat.title or "未知频道"
-        
-        # 构建媒体组
-        media_group = []
-        for message in messages:
-            media_item = None
-            caption_text = caption if message == messages[0] else ""
-            
-            if message.photo:
-                media_item = InputMediaPhoto(
-                    media=message.photo.file_id,
-                    caption=caption_text
-                )
-            elif message.video:
-                media_item = InputMediaVideo(
-                    media=message.video.file_id,
-                    caption=caption_text
-                )
-            elif message.document:
-                media_item = InputMediaDocument(
-                    media=message.document.file_id,
-                    caption=caption_text
-                )
-            elif message.audio:
-                media_item = InputMediaAudio(
-                    media=message.audio.file_id,
-                    caption=caption_text
-                )
-            elif message.animation:
-                media_item = InputMediaAnimation(
-                    media=message.animation.file_id,
-                    caption=caption_text
-                )
-            
-            if media_item:
-                media_group.append(media_item)
-
-        if not media_group:
-            logger.warning(f"媒体组 {media_group_id} 没有有效的媒体项目可发送")
-            return
-
-        logger.info(f"媒体组 {media_group_id} 准备了 {len(media_group)} 个媒体项目进行发送")
-
-        # 优先选择非禁止转发的目标频道进行发送
-        first_successful_target = None
-        normal_targets = []
-        restricted_targets = []
-        
-        # 尝试发送到第一个目标频道
-        for target, target_id, target_info in target_channels:
-            if self.is_stopping:
-                logger.info(f"任务已停止，中断发送过程")
-                break
-                
-            try:
-                # 尝试正常发送
-                await self.client.send_media_group(
-                    chat_id=target_id,
-                    media=media_group,
-                    disable_notification=True
-                )
-                
-                logger.info(f"已将修改后的媒体组 {media_group_id} 发送到非禁止转发频道 {target_info}")
-                normal_targets.append((target, target_id, target_info))
-                
-                # 发射转发成功事件
-                if self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
-                    except Exception:
-                        source_info_str = str(messages[0].chat.id)
-                    
-                    message_ids = [msg.id for msg in messages]
-                    media_group_display_id = self._generate_media_group_display_id(message_ids)
-                    self.emit("forward", media_group_display_id, source_info_str, target_info, True, caption_modified)
-                
-                # 如果这是第一个成功的目标频道，用它作为复制源
-                if first_successful_target is None:
-                    first_successful_target = (target, target_id, target_info)
-                    
-                    # 复制到其余目标频道
-                    remaining_targets = target_channels[target_channels.index((target, target_id, target_info)) + 1:]
-                    
-                    for remaining_target, remaining_target_id, remaining_target_info in remaining_targets:
-                        try:
-                            # 尝试正常发送到剩余目标频道
-                            await self.client.send_media_group(
-                                chat_id=remaining_target_id,
-                                media=media_group,
-                                disable_notification=True
-                            )
-                            logger.info(f"已将修改后的媒体组发送到其他非禁止转发频道 {remaining_target_info}")
-                            normal_targets.append((remaining_target, remaining_target_id, remaining_target_info))
-                            
-                            # 发射转发成功事件
-                            if self.emit:
-                                try:
-                                    source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
-                                except Exception:
-                                    source_info_str = str(messages[0].chat.id)
-                                
-                                message_ids = [msg.id for msg in messages]
-                                media_group_display_id = self._generate_media_group_display_id(message_ids)
-                                self.emit("forward", media_group_display_id, source_info_str, remaining_target_info, True, caption_modified)
-                                
-                        except ChatForwardsRestricted:
-                            logger.warning(f"目标频道 {remaining_target_info} 禁止转发，将使用下载上传方式处理")
-                            restricted_targets.append((remaining_target, remaining_target_id, remaining_target_info))
-                        except Exception as e:
-                            logger.error(f"发送修改后的媒体组到 {remaining_target_info} 失败: {str(e)}")
-                            
-                            # 发射转发失败事件
-                            if self.emit:
-                                try:
-                                    source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
-                                except Exception:
-                                    source_info_str = str(messages[0].chat.id)
-                                
-                                message_ids = [msg.id for msg in messages]
-                                media_group_display_id = self._generate_media_group_display_id(message_ids)
-                                self.emit("forward", media_group_display_id, source_info_str, remaining_target_info, False)
-                        
-                        # 添加延迟避免触发限制
-                        await asyncio.sleep(0.5)
-                    
-                    # 处理禁止转发的频道
-                    if restricted_targets:
-                        logger.info(f"处理 {len(restricted_targets)} 个禁止转发的目标频道")
-                        await self._handle_restricted_targets(messages, media_group_id, source_title, restricted_targets, caption, caption_modified)
-                    
-                    # 成功处理完所有目标频道
-                    success_count = len(normal_targets) + len(restricted_targets)
-                    total_count = len(target_channels)
-                    logger.info(f"修改后的媒体组 {media_group_id} 发送完成: 成功 {success_count}, 失败 {total_count - success_count}")
-                    return
-                
-            except ChatForwardsRestricted:
-                logger.warning(f"目标频道 {target_info} 禁止转发，将使用下载上传方式处理")
-                restricted_targets.append((target, target_id, target_info))
-                
-            except Exception as e:
-                logger.error(f"发送修改后的媒体组 {media_group_id} 到 {target_info} 失败: {str(e)}")
-                
-                # 发射转发失败事件
-                if self.emit:
-                    try:
-                        source_info_str, _ = await self.channel_resolver.format_channel_info(messages[0].chat.id)
-                    except Exception:
-                        source_info_str = str(messages[0].chat.id)
-                    
-                    message_ids = [msg.id for msg in messages]
-                    media_group_display_id = self._generate_media_group_display_id(message_ids)
-                    self.emit("forward", media_group_display_id, source_info_str, target_info, False)
-            
-            # 添加延迟避免触发限制
-            await asyncio.sleep(0.5)
-
-        # 如果没有成功的非禁止转发频道，但有禁止转发频道，处理它们
-        if not normal_targets and restricted_targets:
-            logger.info(f"所有目标频道都禁止转发，使用下载上传方式处理 {len(restricted_targets)} 个目标频道")
-            await self._handle_restricted_targets(messages, media_group_id, source_title, restricted_targets, caption, caption_modified)
-        elif not normal_targets and not restricted_targets:
-            logger.warning(f"所有目标频道发送都失败")
-
-        success_count = len(normal_targets) + (len(restricted_targets) if restricted_targets else 0)
-        total_count = len(target_channels)
-        
-        logger.info(f"修改后的媒体组 {media_group_id} 发送完成: 成功 {success_count}, 失败 {total_count - success_count}")
-    
-    async def _handle_restricted_targets(self, messages: List[Message], media_group_id: str, source_title: str, restricted_targets: List[Tuple[str, int, str]], replaced_caption: str = None, caption_modified: bool = False):
-        """处理禁止转发的目标频道
+        转发媒体组到目标频道
         
         Args:
-            messages: 原始消息列表
-            media_group_id: 媒体组ID
-            source_title: 源频道标题
-            restricted_targets: 禁止转发的目标频道列表
-            replaced_caption: 替换的标题文本
-            caption_modified: 是否修改了标题
-        """
-        if not restricted_targets:
-            return
-            
-        # 获取源频道信息
-        source_chat_id = messages[0].chat.id
-        source_channel = str(source_chat_id)
-        
-        # 创建RestrictedForwardHandler实例
-        if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
-            self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
-            logger.debug("创建了新的RestrictedForwardHandler实例")
-        
-        # 确定是否移除标题
-        remove_captions = replaced_caption is None and caption_modified
-        
-        logger.info(f"使用RestrictedForwardHandler统一处理 {len(restricted_targets)} 个禁止转发频道的媒体组 {media_group_id}")
-        
-        # 调用RestrictedForwardHandler的统一处理方法
-        success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
-            messages=messages,
-            source_channel=source_channel,
-            source_id=source_chat_id,
-            target_channels=restricted_targets,
-            caption=replaced_caption,
-            remove_caption=remove_captions,
-            event_emitter=self.emit,
-            message_type="媒体组"
-        )
-        
-        if success:
-            logger.info(f"成功处理所有禁止转发频道的媒体组 {media_group_id}")
-        else:
-            logger.warning(f"部分或全部禁止转发频道处理失败，媒体组 {media_group_id}")
-    
-    async def _handle_filtered_restricted_targets(self, filtered_messages: List[Message], media_group_id: str, source_chat_id: int, restricted_targets: List[Tuple[str, int, str]], replaced_caption: str, remove_captions: bool, message_ids_for_display: List[int], caption_modified: bool):
-        """处理禁止转发的目标频道，使用RestrictedForwardHandler
-        
-        Args:
-            filtered_messages: 过滤后的消息列表
-            media_group_id: 媒体组ID
-            source_chat_id: 源频道ID
-            restricted_targets: 禁止转发的目标频道列表
-            replaced_caption: 替换后的标题文本
+            messages: 媒体组消息列表  
+            target_channels: 目标频道列表
+            replaced_caption: 替换后的标题
             remove_captions: 是否移除标题
-            message_ids_for_display: 用于生成媒体组显示ID的消息ID列表
             caption_modified: 是否修改了标题
+            allowed_media_types: 允许的媒体类型列表（可选）
+            text_replacements: 文本替换规则字典（可选）
         """
-        if not restricted_targets:
-            return
+        if not messages or not target_channels:
+            logger.warning("没有有效的消息或目标频道，跳过媒体组转发")
+            return False
             
-        # 获取源频道信息
-        source_channel = str(source_chat_id)
+        try:
+            # 记录转发开始时间
+            forward_start_time = time.time()
+            
+            # 按消息ID排序以保持顺序
+            sorted_messages = sorted(messages, key=lambda x: x.id)
+            media_group_id = sorted_messages[0].media_group_id
+            
+            # 获取源频道信息
+            source_id = sorted_messages[0].chat.id
+            try:
+                source_title = sorted_messages[0].chat.title or "未知频道"
+            except:
+                source_title = str(source_id)
+            
+            if not target_channels:
+                logger.warning(f"没有有效的目标频道，跳过媒体组处理")
+                return False
+
+            logger.info(f"开始转发媒体组 [ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
+            
+            # 统一使用RestrictedForwardHandler处理所有目标频道
+            # 这样可以自动处理禁止转发和非禁止转发的频道
+            source_channel = str(source_id)
         
-        # 创建RestrictedForwardHandler实例
-        if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
-            self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
-            logger.debug("创建了新的RestrictedForwardHandler实例")
+            # 创建RestrictedForwardHandler实例
+            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
+                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                logger.debug("创建了新的RestrictedForwardHandler实例")
         
-        logger.info(f"使用RestrictedForwardHandler统一处理 {len(restricted_targets)} 个禁止转发频道的重组媒体组 {media_group_id}")
+            logger.info(f"使用RestrictedForwardHandler统一处理媒体组 {media_group_id} 到所有目标频道")
         
-        # 调用RestrictedForwardHandler的统一处理方法
-        success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
-            messages=filtered_messages,
-            source_channel=source_channel,
-            source_id=source_chat_id,
-            target_channels=restricted_targets,
-            caption=replaced_caption,
-            remove_caption=remove_captions,
-            event_emitter=self.emit,
-            message_type="重组媒体组"
-        )
+            # 调用增强的RestrictedForwardHandler方法
+            success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
+                messages=sorted_messages,
+                source_channel=source_channel,
+                source_id=source_id,
+                target_channels=target_channels,
+                caption=replaced_caption,
+                remove_caption=remove_captions,
+                allowed_media_types=allowed_media_types,  # 传递媒体类型过滤配置
+                text_replacements=text_replacements,      # 传递文本替换配置
+                event_emitter=self.emit,
+                message_type="媒体组"
+            )
         
-        if success:
-            logger.info(f"成功处理所有禁止转发频道的重组媒体组 {media_group_id}")
-        else:
-            logger.warning(f"部分或全部禁止转发频道处理失败，重组媒体组 {media_group_id}")
+            if not success:
+                logger.warning(f"RestrictedForwardHandler处理媒体组转发失败: {media_group_id}")
+            
+            # 记录转发性能数据
+            if self.performance_monitor:
+                forward_time = time.time() - forward_start_time
+                self.performance_monitor.record_message_forwarded(forward_time, success=success)
+                        
+            return success
+            
+        except Exception as e:
+            logger.error(f"转发媒体组失败: {str(e)}", error_type="MEDIA_GROUP_FORWARD", recoverable=True)
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+            return False
     
     async def _api_request_worker(self):
         """API请求队列工作器，负责处理排队的API请求"""
@@ -1906,8 +1453,29 @@ class MediaGroupHandler:
             timestamp = int(time.time())
             fallback_id = f"媒体组[未知]-{timestamp}"
             logger.warning(f"使用备用媒体组显示ID: {fallback_id}")
-            return fallback_id 
+            return fallback_id
 
+    def _save_media_group_original_caption(self, media_group_id: str, caption: str):
+        """保存媒体组的原始说明
+        
+        Args:
+            media_group_id: 媒体组ID
+            caption: 原始说明文本
+        """
+        # 确保media_group_filter_stats中有这个媒体组的记录
+        if media_group_id not in self.media_group_filter_stats:
+            self.media_group_filter_stats[media_group_id] = {
+                'total_expected': 0,
+                'filtered_count': 0,
+                'total_received': 0,
+                'original_caption': None
+            }
+        
+        # 只在还没有保存过原始说明时才保存（避免覆盖）
+        if not self.media_group_filter_stats[media_group_id]['original_caption']:
+            self.media_group_filter_stats[media_group_id]['original_caption'] = caption
+            logger.debug(f"【关键】_save_media_group_original_caption: 为媒体组 {media_group_id} 保存原始说明: '{caption}'")
+    
     def _emit_message_filtered(self, message: Message, filter_reason: str):
         """发送消息过滤事件到UI
         
@@ -1958,183 +1526,46 @@ class MediaGroupHandler:
             media_group_id = filtered_messages[0].media_group_id
             
             try:
-                source_title = source_chat.title
+                source_title = filtered_messages[0].chat.title
             except:
                 source_title = str(source_chat_id)
             
             logger.info(f"开始发送过滤后重组的媒体组 [原ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
             
-            # 检查文本替换和标题移除配置
+            # 获取配置参数
             remove_captions = pair_config.get('remove_captions', False)
-            
-            # 优先使用已经构建好的text_replacements，如果没有则从text_filter构建
+            # 直接使用core.py中构建的text_replacements字典，而不是text_filter列表
             text_replacements = pair_config.get('text_replacements', {})
-            if not text_replacements:
-                # 如果没有预构建的text_replacements，从text_filter构建
-                text_filter = pair_config.get('text_filter', [])
-                text_replacements = {}
-                if text_filter:
-                    for rule in text_filter:
-                        original_text = rule.get('original_text', '')
-                        target_text = rule.get('target_text', '')
-                        if original_text:
-                            text_replacements[original_text] = target_text
+            allowed_media_types = pair_config.get('media_types', [])
             
-            # 获取媒体组的原始标题（从过滤统计中获取，而不是从过滤后的消息中）
-            original_caption = None
-            media_group_id = filtered_messages[0].media_group_id
+            # 统一使用RestrictedForwardHandler处理重组媒体组
+            source_channel = str(source_chat_id)
             
-            # 尝试从过滤统计中获取原始标题
-            if media_group_id in self.media_group_filter_stats:
-                original_caption = self.media_group_filter_stats[media_group_id].get('original_caption')
-                logger.debug(f"从过滤统计中获取媒体组 {media_group_id} 的原始标题: '{original_caption}'")
+            # 创建RestrictedForwardHandler实例
+            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
+                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+                logger.debug("创建了新的RestrictedForwardHandler实例")
             
-            # 如果过滤统计中没有，再从过滤后的消息中寻找（兜底方案）
-            if not original_caption:
-                for message in filtered_messages:
-                    if message.caption:
-                        original_caption = message.caption
-                        logger.debug(f"从过滤后消息中获取媒体组 {media_group_id} 的标题: '{original_caption}'")
-                        break
+            logger.info(f"使用RestrictedForwardHandler统一处理重组媒体组 {media_group_id}")
             
-            # 根据配置决定处理方式
-            replaced_caption = None
-            caption_modified = False
+            # 注意：不在这里处理文本替换，让RestrictedForwardHandler统一处理
+            # 使用RestrictedForwardHandler的统一处理方法
+            success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
+                messages=filtered_messages,
+                source_channel=source_channel,
+                source_id=source_chat_id,
+                target_channels=target_channels,
+                caption=None,  # 不传递预处理的标题，让RestrictedForwardHandler自己处理
+                remove_caption=remove_captions,
+                text_replacements=text_replacements,  # 传递文本替换配置
+                event_emitter=self.emit,
+                message_type="重组媒体组"
+            )
             
-            if remove_captions:
-                # 设置了移除媒体说明：删除说明，文本替换失效
-                if original_caption:  # 只有原本有标题时，移除才算修改
-                    caption_modified = True
-                logger.debug(f"重组媒体组将移除说明文字，文本替换功能失效")
+            if success:
+                logger.info(f"成功发送过滤后重组的媒体组 {media_group_id}")
             else:
-                # 未设置移除媒体说明：正常应用文本替换
-                if original_caption:
-                    if text_replacements:
-                        # 应用文本替换
-                        replaced_caption = original_caption
-                        for find_text, replace_text in text_replacements.items():
-                            if find_text in replaced_caption:
-                                replaced_caption = replaced_caption.replace(find_text, replace_text)
-                                
-                        if replaced_caption != original_caption:
-                            caption_modified = True
-                            logger.info(f"重组媒体组已应用文本替换：'{original_caption}' -> '{replaced_caption}'")
-                        else:
-                            # 没有替换成功，使用原始标题
-                            replaced_caption = original_caption
-                    else:
-                        # 没有文本替换规则，使用原始标题
-                        replaced_caption = original_caption
-                else:
-                    # 没有原始标题，不添加标题
-                    replaced_caption = None
-            
-            # 准备InputMedia列表用于send_media_group
-            media_list = []
-            message_ids_for_display = []
-            
-            for i, message in enumerate(filtered_messages):
-                message_ids_for_display.append(message.id)
-                
-                # 确定当前消息的标题
-                current_caption = None
-                if i == 0:  # 只在第一条消息上添加标题
-                    if remove_captions:
-                        current_caption = None  # 移除标题
-                    elif replaced_caption:
-                        current_caption = replaced_caption  # 使用替换后的标题
-                    elif message.caption:
-                        current_caption = message.caption  # 使用原始标题
-                
-                # 根据消息类型创建InputMedia
-                if message.photo:
-                    media_list.append(InputMediaPhoto(
-                        media=message.photo.file_id,
-                        caption=current_caption
-                    ))
-                elif message.video:
-                    media_list.append(InputMediaVideo(
-                        media=message.video.file_id,
-                        caption=current_caption
-                    ))
-                elif message.document:
-                    media_list.append(InputMediaDocument(
-                        media=message.document.file_id,
-                        caption=current_caption
-                    ))
-                elif message.audio:
-                    media_list.append(InputMediaAudio(
-                        media=message.audio.file_id,
-                        caption=current_caption
-                    ))
-                elif message.animation:
-                    media_list.append(InputMediaAnimation(
-                        media=message.animation.file_id,
-                        caption=current_caption
-                    ))
-                else:
-                    logger.warning(f"不支持的媒体类型，跳过消息 [ID: {message.id}]")
-                    continue
-            
-            if not media_list:
-                logger.warning("没有可发送的媒体，跳过重组媒体组发送")
-                return
-            
-            # 分离正常目标频道和禁止转发目标频道
-            normal_targets = []
-            restricted_targets = []
-            
-            # 逐个尝试发送到目标频道，识别禁止转发的频道
-            for target, target_id, target_info in target_channels:
-                try:
-                    # 使用send_media_group发送重组的媒体组
-                    sent_messages = await self.client.send_media_group(
-                        chat_id=target_id,
-                        media=media_list,
-                        disable_notification=True
-                    )
-                    
-                    logger.info(f"已成功发送重组媒体组到 {target_info}，包含 {len(sent_messages)} 条消息")
-                    normal_targets.append((target, target_id, target_info))
-                    
-                    # 发射转发成功事件
-                    if self.emit:
-                        # 尝试获取源频道信息
-                        try:
-                            source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
-                        except Exception:
-                            source_info_str = str(source_chat_id)
-                        
-                        # 生成媒体组显示ID
-                        media_group_display_id = self._generate_media_group_display_id(message_ids_for_display)
-                        
-                        # 发射转发成功事件
-                        self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, True, caption_modified)
-                    
-                except ChatForwardsRestricted:
-                    logger.warning(f"目标频道 {target_info} 禁止转发，将使用下载上传方式处理")
-                    restricted_targets.append((target, target_id, target_info))
-                
-                except Exception as e:
-                    logger.error(f"发送重组媒体组到 {target_info} 失败: {str(e)}", error_type="SEND_FILTERED_MEDIA_GROUP", recoverable=True)
-                    
-                    # 发射转发失败事件
-                    if self.emit:
-                        try:
-                            source_info_str, _ = await self.channel_resolver.format_channel_info(source_chat_id)
-                        except Exception:
-                            source_info_str = str(source_chat_id)
-                        
-                        media_group_display_id = self._generate_media_group_display_id(message_ids_for_display)
-                        self.emit("forward", f"重组{media_group_display_id}", source_info_str, target_info, False)
-                
-                # 添加延迟避免触发限制
-                await asyncio.sleep(0.5)
-            
-            # 统一处理所有禁止转发的目标频道
-            if restricted_targets:
-                logger.info(f"发现 {len(restricted_targets)} 个禁止转发的目标频道，使用优化的下载上传策略")
-                await self._handle_filtered_restricted_targets(filtered_messages, media_group_id, source_chat_id, restricted_targets, replaced_caption, remove_captions, message_ids_for_display, caption_modified)
+                logger.warning(f"发送过滤后重组的媒体组失败: {media_group_id}")
             
             # 清理媒体组过滤统计，防止内存泄漏
             if media_group_id in self.media_group_filter_stats:

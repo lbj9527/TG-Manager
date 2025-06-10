@@ -211,7 +211,7 @@ def mock_channel_resolver():
     """模拟频道解析器"""
     resolver = Mock(spec=ChannelResolver)
     resolver.get_channel_id = AsyncMock(return_value=-1001234567890)
-    resolver.resolve_channel = AsyncMock(return_value=-1001234567890)
+    resolver.resolve_channel = AsyncMock(return_value=("-1001234567890", None))  # 返回(频道ID, 消息ID)元组
     resolver.format_channel_info = AsyncMock(return_value=("测试频道 (ID: -1001234567890)", ("测试频道", "test_channel")))
     resolver.check_forward_permission = AsyncMock(return_value=True)
     return resolver

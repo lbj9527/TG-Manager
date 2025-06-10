@@ -31,7 +31,7 @@ async def get_channel_history(client: Client, channel_resolver: ChannelResolver,
     logger.info(f"正在获取频道 {channel} 的历史消息")
     
     try:
-        channel_id = await channel_resolver.resolve_channel(channel)
+        channel_id, _ = await channel_resolver.resolve_channel(channel)
         if not channel_id:
             logger.error(f"无法解析频道: {channel}", error_type="CHANNEL_RESOLVE", recoverable=False)
             return []

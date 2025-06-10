@@ -23,95 +23,149 @@ _logger = get_logger()
 
 class RestrictedForwardHandler:
     """
-    处理禁止转发内容的处理器，使用下载后重新上传的方式
+    处理禁止转发内容的处理器
+    支持媒体类型过滤、文本替换、关键词过滤等功能
     """
     
     def __init__(self, client: Client, channel_resolver: ChannelResolver):
-        """
-        初始化处理器
-        
-        Args:
-            client: Pyrogram客户端实例
-            channel_resolver: 频道解析器实例
-        """
         self.client = client
         self.channel_resolver = channel_resolver
         
-        # 创建临时目录
-        self.tmp_path = Path('tmp/monitor')
-        self.tmp_path.mkdir(exist_ok=True, parents=True)
-        
-        # 初始化下载器和上传器
+        # 创建下载器和上传器
         self.message_downloader = MessageDownloader(client)
-        self.media_uploader = MediaUploader(client, None, {'max_retries': 3})
+        self.media_uploader = MediaUploader(client)
         
-        # 创建视频处理器，用于处理视频缩略图和元数据
-        self.video_processor = VideoProcessor()
-        
-        # 创建临时会话目录
+        # 创建主临时目录
         self.temp_dir = self._create_temp_dir()
         
-        # 视频元数据缓存
+        # 缓存视频尺寸和时长信息
         self._video_dimensions = {}
         self._video_durations = {}
+        
+        # 视频处理器（用于生成缩略图和提取元数据）
+        self.video_processor = VideoProcessor()
+        
+        _logger.info(f"RestrictedForwardHandler初始化完成，临时目录: {self.temp_dir}")
     
     def _create_temp_dir(self) -> Path:
-        """
-        创建临时目录
-        
-        Returns:
-            Path: 临时目录路径
-        """
-        return ensure_temp_dir(self.tmp_path, 'monitor')
+        """创建临时目录"""
+        temp_dir = Path.cwd() / "temp" / "restricted_forward"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return temp_dir
     
     def _process_video_metadata(self, video_path: str) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[int]]:
         """
-        处理视频元数据，提取缩略图、尺寸和时长
+        处理视频元数据并生成缩略图
         
         Args:
             video_path: 视频文件路径
             
         Returns:
-            Tuple[Optional[str], Optional[int], Optional[int], Optional[int]]: 
-                (缩略图路径, 宽度, 高度, 时长)，如果提取失败则相应值为None
+            Tuple[缩略图路径, 宽度, 高度, 时长]
         """
         try:
-            # 使用视频处理器提取缩略图和元数据
-            result = self.video_processor.extract_thumbnail(str(video_path))
+            # 使用视频处理器生成缩略图和获取元数据
+            thumb_path = self.video_processor.generate_thumbnail(video_path)
+            width, height, duration = self.video_processor.get_video_info(video_path)
             
-            if not result:
-                _logger.warning(f"无法为视频生成缩略图和元数据: {video_path}")
-                return None, None, None, None
+            return thumb_path, width, height, duration
             
-            # 分析返回结果，提取缩略图路径和视频元数据
-            if isinstance(result, tuple):
-                if len(result) >= 4:
-                    thumb_path, width, height, duration = result
-                    # 确保时长是整数类型
-                    if duration is not None:
-                        duration = int(duration)
-                    return thumb_path, width, height, duration
-                elif len(result) >= 3:
-                    thumb_path, width, height = result
-                    return thumb_path, width, height, None
-                else:
-                    thumb_path = result[0]
-                    return thumb_path, None, None, None
-            else:
-                return result, None, None, None
         except Exception as e:
             _logger.error(f"处理视频元数据失败: {e}")
             return None, None, None, None
     
+    def _apply_media_type_filter(self, messages: List[Message], allowed_media_types: List[str]) -> List[Message]:
+        """
+        应用媒体类型过滤
+        
+        Args:
+            messages: 消息列表
+            allowed_media_types: 允许的媒体类型列表
+            
+        Returns:
+            List[Message]: 过滤后的消息列表
+        """
+        if not allowed_media_types:
+            return messages
+        
+        filtered_messages = []
+        for message in messages:
+            message_media_type = self._get_message_media_type(message)
+            
+            if message_media_type and self._is_media_type_allowed(message_media_type, allowed_media_types):
+                filtered_messages.append(message)
+            else:
+                if message_media_type:
+                    media_type_names = {
+                        "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
+                        "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
+                    }
+                    media_type_name = media_type_names.get(message_media_type, message_media_type)
+                    _logger.info(f"消息 [ID: {message.id}] 媒体类型({media_type_name})不在允许列表中，过滤")
+                else:
+                    _logger.info(f"消息 [ID: {message.id}] 无媒体类型，过滤")
+        
+        return filtered_messages
+    
+    def _get_message_media_type(self, message: Message) -> Optional[str]:
+        """获取消息的媒体类型"""
+        if message.photo:
+            return "photo"
+        elif message.video:
+            return "video"
+        elif message.document:
+            return "document"
+        elif message.audio:
+            return "audio"
+        elif message.animation:
+            return "animation"
+        elif message.sticker:
+            return "sticker"
+        elif message.voice:
+            return "voice"
+        elif message.video_note:
+            return "video_note"
+        return None
+    
+    def _is_media_type_allowed(self, message_media_type: str, allowed_media_types: List[str]) -> bool:
+        """检查消息的媒体类型是否在允许列表中"""
+        if not allowed_media_types:
+            return True
+        return message_media_type in allowed_media_types
+    
+    def _apply_text_replacements(self, text: str, text_replacements: Dict[str, str]) -> str:
+        """
+        应用文本替换
+        
+        Args:
+            text: 原始文本
+            text_replacements: 文本替换规则字典
+            
+        Returns:
+            str: 替换后的文本
+        """
+        if not text or not text_replacements:
+            return text
+        
+        result_text = text
+        for find_text, replace_text in text_replacements.items():
+            if find_text in result_text:
+                result_text = result_text.replace(find_text, replace_text)
+                _logger.debug(f"应用文本替换: '{find_text}' -> '{replace_text}'")
+        
+        return result_text
+
     async def process_restricted_message(self, 
                                        message: Message, 
                                        source_channel: str, 
                                        source_id: int,
                                        target_channels: List[Tuple[str, int, str]],
                                        caption: str = None,
-                                       remove_caption: bool = False) -> Tuple[List[Message], bool]:
+                                       remove_caption: bool = False,
+                                       allowed_media_types: List[str] = None,
+                                       text_replacements: Dict[str, str] = None) -> Tuple[List[Message], bool]:
         """
-        处理禁止转发的单条消息
+        处理单条禁止转发的消息
         
         Args:
             message: 要处理的消息
@@ -120,157 +174,89 @@ class RestrictedForwardHandler:
             target_channels: 目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
             caption: 要替换的标题（可选）
             remove_caption: 是否移除标题
+            allowed_media_types: 允许的媒体类型列表（可选）
+            text_replacements: 文本替换规则字典（可选）
             
         Returns:
-            Tuple[List[Message], bool]: (发送结果列表, 是否实际修改了标题)
+            Tuple[List[Message], bool]: (发送的消息列表, 是否实际修改了标题)
         """
-        if not target_channels or not message:
-            _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的消息")
+        if not target_channels:
+            _logger.warning("没有有效的目标频道，跳过处理禁止转发的消息")
             return [], False
         
-        # 获取原始标题
-        original_caption = message.caption or message.text
-        
-        # 确定实际修改状态
-        actually_modified = False
+        # 应用媒体类型过滤
+        if allowed_media_types:
+            filtered_messages = self._apply_media_type_filter([message], allowed_media_types)
+            if not filtered_messages:
+                _logger.info(f"消息 [ID: {message.id}] 被媒体类型过滤，跳过处理")
+                return [], False
+            message = filtered_messages[0]
         
         # 临时目录变量，用于清理
         message_temp_dir = None
         
         try:
+            # 分离第一个目标频道和其余目标频道
+            first_target, *other_targets = target_channels
+            
+            # 特殊处理贴纸消息 - 贴纸是一种特殊的媒体消息，但不需要下载
+            if message.sticker:
+                _logger.info(f"处理禁止转发的贴纸消息 [ID: {message.id}]，使用copy_message方式")
+                
+                # 处理所有目标频道
+                sent_messages = []
+                
+                # 复制到所有目标频道
+                for target, target_id, target_info in target_channels:
+                    try:
+                        # 首先尝试copy_message
+                        try:
+                            sent_message = await self.client.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_id=message.id,
+                                disable_notification=True
+                            )
+                            sent_messages.append(sent_message)
+                            _logger.info(f"已将贴纸消息从源频道复制到 {target_info}")
+                        
+                        except Exception as copy_error:
+                            _logger.warning(f"直接复制贴纸消息到 {target_info} 失败: {copy_error}，跳过")
+                            continue
+                        
+                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                    except Exception as e:
+                        _logger.error(f"处理贴纸消息到 {target_info} 失败: {e}")
+                
+                return sent_messages, False
+            
             # 检查是否是媒体消息
             if message.media:
-                # 分离第一个目标频道和其余目标频道
-                first_target, *other_targets = target_channels
+                # 获取原始标题
+                original_caption = message.caption or ""
                 
-                # 特殊处理贴纸消息 - 贴纸是一种特殊的媒体消息，但不需要下载
-                if message.sticker:
-                    _logger.info(f"处理禁止转发的贴纸消息 [ID: {message.id}]，使用copy_message方式")
-                    
-                    # 处理所有目标频道
-                    sent_messages = []
-                    
-                    # 复制到所有目标频道
-                    for target, target_id, target_info in target_channels:
-                        try:
-                            # 首先尝试copy_message
-                            try:
-                                sent_message = await self.client.copy_message(
-                                    chat_id=target_id,
-                                    from_chat_id=source_id,
-                                    message_id=message.id,
-                                    disable_notification=True
-                                )
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已将贴纸消息从源频道复制到 {target_info}")
-                            except Exception as copy_e:
-                                # 如果复制失败，直接发送贴纸
-                                _logger.warning(f"复制贴纸失败，尝试直接发送: {copy_e}")
-                                sent_message = await self.client.send_sticker(
-                                    chat_id=target_id,
-                                    sticker=message.sticker.file_id,
-                                    disable_notification=True
-                                )
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已直接发送贴纸到 {target_info}")
-                            
-                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
-                        except Exception as e:
-                            _logger.error(f"发送贴纸到目标频道 {target_info} 失败: {e}")
-                    
-                    # 贴纸消息通常没有标题，不算修改
-                    return sent_messages, False
+                # 确定最终标题
+                final_caption = None
+                actually_modified = False
                 
-                # 特殊处理语音消息 - 语音消息不需要下载上传，直接使用file_id
-                if message.voice:
-                    _logger.info(f"处理禁止转发的语音消息 [ID: {message.id}]，使用send_voice方式")
-                    
-                    # 处理所有目标频道
-                    sent_messages = []
-                    
-                    # 决定使用的标题
+                if remove_caption:
+                    # 移除标题
                     final_caption = None
-                    if remove_caption:
-                        final_caption = ""  # 移除标题
-                        actually_modified = bool(original_caption)
-                    elif caption is not None:
+                    actually_modified = bool(original_caption)  # 只有原本有标题时，移除才算修改
+                else:
+                    if caption is not None:
+                        # 使用指定的标题
                         final_caption = caption
-                        actually_modified = (original_caption != caption)
+                        actually_modified = (caption != original_caption)
                     else:
-                        final_caption = original_caption
-                        actually_modified = False
-                    
-                    # 发送到所有目标频道
-                    for target, target_id, target_info in target_channels:
-                        try:
-                            # 首先尝试copy_message
-                            try:
-                                sent_message = await self.client.copy_message(
-                                    chat_id=target_id,
-                                    from_chat_id=source_id,
-                                    message_id=message.id,
-                                    caption=final_caption,
-                                    disable_notification=True
-                                )
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已将语音消息从源频道复制到 {target_info}")
-                            except Exception as copy_e:
-                                # 如果复制失败，直接发送语音
-                                _logger.warning(f"复制语音失败，尝试直接发送: {copy_e}")
-                                kwargs = {
-                                    'chat_id': target_id,
-                                    'voice': message.voice.file_id
-                                }
-                                if final_caption:
-                                    kwargs['caption'] = final_caption
-                                kwargs['disable_notification'] = True
-                                sent_message = await self.client.send_voice(**kwargs)
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已直接发送语音到 {target_info}")
-                            
-                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
-                        except Exception as e:
-                            _logger.error(f"发送语音到目标频道 {target_info} 失败: {e}")
-                    
-                    return sent_messages, actually_modified
-                
-                # 特殊处理视频笔记消息 - 视频笔记不需要下载上传，直接使用file_id
-                if message.video_note:
-                    _logger.info(f"处理禁止转发的视频笔记消息 [ID: {message.id}]，使用send_video_note方式")
-                    
-                    # 处理所有目标频道
-                    sent_messages = []
-                    
-                    # 发送到所有目标频道（视频笔记没有标题）
-                    for target, target_id, target_info in target_channels:
-                        try:
-                            # 首先尝试copy_message
-                            try:
-                                sent_message = await self.client.copy_message(
-                                    chat_id=target_id,
-                                    from_chat_id=source_id,
-                                    message_id=message.id,
-                                    disable_notification=True
-                                )
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已将视频笔记消息从源频道复制到 {target_info}")
-                            except Exception as copy_e:
-                                # 如果复制失败，直接发送视频笔记
-                                _logger.warning(f"复制视频笔记失败，尝试直接发送: {copy_e}")
-                                sent_message = await self.client.send_video_note(
-                                    chat_id=target_id,
-                                    video_note=message.video_note.file_id,
-                                    disable_notification=True
-                                )
-                                sent_messages.append(sent_message)
-                                _logger.info(f"已直接发送视频笔记到 {target_info}")
-                            
-                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
-                        except Exception as e:
-                            _logger.error(f"发送视频笔记到目标频道 {target_info} 失败: {e}")
-                    
-                    # 视频笔记消息没有标题，不算修改
-                    return sent_messages, False
+                        # 应用文本替换到原始标题
+                        if text_replacements and original_caption:
+                            replaced_caption = self._apply_text_replacements(original_caption, text_replacements)
+                            final_caption = replaced_caption
+                            actually_modified = (replaced_caption != original_caption)
+                        else:
+                            # 使用原始标题
+                            final_caption = original_caption if original_caption else None
                 
                 # 为消息创建单独的临时目录
                 safe_source_name = get_safe_path_name(source_channel)
@@ -278,7 +264,7 @@ class RestrictedForwardHandler:
                 message_temp_dir = self.temp_dir / f"{safe_source_name}_to_{safe_target_name}_{message.id}"
                 message_temp_dir.mkdir(exist_ok=True, parents=True)
                 
-                _logger.info(f"处理禁止转发的媒体消息 [ID: {message.id}]")
+                _logger.info(f"处理禁止转发的媒体消息 [ID: {message.id}]，标题修改: {actually_modified}")
                 
                 # 下载媒体文件
                 downloaded_files = await self.message_downloader.download_messages([message], message_temp_dir, source_id)
@@ -287,30 +273,9 @@ class RestrictedForwardHandler:
                     _logger.warning(f"消息 [ID: {message.id}] 没有媒体文件可下载，跳过")
                     return [], False
                 
-                # 决定是否使用消息原始标题
-                if remove_caption:
-                    final_caption = ""  # 使用空字符串而不是None来移除caption
-                    # 只有原本有标题时，移除才算修改
-                    if original_caption:
-                        actually_modified = True
-                    else:
-                        actually_modified = False
-                    _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
-                elif caption is not None:
-                    final_caption = caption
-                    # 只有替换后的标题与原始标题不同时才算修改
-                    if original_caption != caption:
-                        actually_modified = True
-                    else:
-                        actually_modified = False
-                    _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
-                else:
-                    final_caption = message.caption or message.text
-                    actually_modified = False
-                    _logger.debug(f"使用原始标题，无修改")
-                
-                # 预处理视频元数据
+                # 处理视频缩略图
                 thumbnails = {}
+                
                 if message.video:
                     for file_path, media_type in downloaded_files:
                         if media_type == "video":
@@ -361,88 +326,72 @@ class RestrictedForwardHandler:
                 # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
                 if sent_messages and other_targets:
                     _logger.info(f"从第一个目标频道复制到其他 {len(other_targets)} 个目标频道")
-                    first_sent_message = sent_messages[0] if isinstance(sent_messages, list) else sent_messages
                     
-                    # 处理单条消息
+                    # 获取上传后的消息
+                    if isinstance(sent_messages, list) and sent_messages:
+                        first_sent_message = sent_messages[0]
+                    else:
+                        first_sent_message = sent_messages
+                    
                     for target, target_id, target_info in other_targets:
                         try:
-                            # 确定要使用的caption
-                            caption_to_use = final_caption
-                            if remove_caption:
-                                caption_to_use = ""  # 确保移除caption时使用空字符串
-                                
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=first_target[1],
                                 message_id=first_sent_message.id,
-                                caption=caption_to_use,
                                 disable_notification=True
                             )
-                            _logger.info(f"已将消息从第一个目标频道复制到 {target_info}")
+                            _logger.info(f"已将媒体消息从第一个目标频道复制到 {target_info}")
                             await asyncio.sleep(0.5)  # 添加延迟避免触发限制
                         except Exception as e:
                             _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
                 
                 sent_result = sent_messages if isinstance(sent_messages, list) else [sent_messages]
                 return sent_result, actually_modified
+            
             else:
-                # 非媒体消息(文本/表情/位置等)，无需下载上传，直接使用copy_message
-                _logger.info(f"处理禁止转发的非媒体消息 [ID: {message.id}]，使用copy_message方式")
+                # 处理文本消息（不常见的情况，因为通常只有媒体消息会被禁止转发）
+                _logger.info(f"处理禁止转发的文本消息 [ID: {message.id}]")
                 
-                # 处理所有目标频道
+                # 获取原始文本
+                original_text = message.text or message.caption or ""
+                
+                # 确定最终文本
+                final_text = original_text
+                actually_modified = False
+                
+                if text_replacements and original_text:
+                    replaced_text = self._apply_text_replacements(original_text, text_replacements)
+                    final_text = replaced_text
+                    actually_modified = (replaced_text != original_text)
+                
                 sent_messages = []
-                
-                # 确定标题
-                if remove_caption:
-                    final_text = ""  # 使用空字符串而不是None来移除caption
-                    # 只有原本有标题时，移除才算修改
-                    if original_caption:
-                        actually_modified = True
-                    else:
-                        actually_modified = False
-                    _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
-                elif caption is not None:
-                    final_text = caption
-                    # 只有替换后的标题与原始标题不同时才算修改
-                    if original_caption != caption:
-                        actually_modified = True
-                    else:
-                        actually_modified = False
-                    _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
-                else:
-                    final_text = message.text or message.caption
-                    actually_modified = False
-                    _logger.debug(f"使用原始文本，无修改")
-                
-                # 复制到所有目标频道
                 for target, target_id, target_info in target_channels:
                     try:
-                        # 对于纯文本消息，如果有文本替换，使用send_message；否则使用copy_message
-                        if final_text != (message.text or message.caption):
-                            # 有文本替换，使用send_message确保文本正确替换
+                        if final_text != original_text:
+                            # 如果文本被修改，发送新文本消息
                             sent_message = await self.client.send_message(
                                 chat_id=target_id,
                                 text=final_text,
                                 disable_notification=True
                             )
-                            _logger.info(f"已使用send_message将替换后的文本消息发送到 {target_info}")
                         else:
-                            # 无文本替换，使用copy_message
+                            # 否则直接复制
                             sent_message = await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_id,
                                 message_id=message.id,
                                 disable_notification=True
                             )
-                            _logger.info(f"已使用copy_message将非媒体消息复制到 {target_info}")
                         
                         sent_messages.append(sent_message)
+                        _logger.info(f"已将文本消息发送到 {target_info}")
                         await asyncio.sleep(0.5)  # 添加延迟避免触发限制
                     except Exception as e:
-                        _logger.error(f"发送到目标频道 {target_info} 失败: {e}")
+                        _logger.error(f"发送文本消息到 {target_info} 失败: {e}")
                 
                 return sent_messages, actually_modified
-        
+                
         except Exception as e:
             _logger.error(f"处理禁止转发的消息失败: {e}")
             import traceback
@@ -452,14 +401,16 @@ class RestrictedForwardHandler:
             # 确保清理临时目录
             if message_temp_dir:
                 self.media_uploader.cleanup_media_group_dir(message_temp_dir)
-    
+
     async def process_restricted_media_group(self,
                                           messages: List[Message],
                                           source_channel: str,
                                           source_id: int,
                                           target_channels: List[Tuple[str, int, str]],
                                           caption: str = None,
-                                          remove_caption: bool = False) -> Tuple[List[Message], bool]:
+                                          remove_caption: bool = False,
+                                          allowed_media_types: List[str] = None,
+                                          text_replacements: Dict[str, str] = None) -> Tuple[List[Message], bool]:
         """
         处理禁止转发的媒体组
         
@@ -470,96 +421,115 @@ class RestrictedForwardHandler:
             target_channels: 目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
             caption: 要替换的标题（可选）
             remove_caption: 是否移除标题
+            allowed_media_types: 允许的媒体类型列表（可选）
+            text_replacements: 文本替换规则字典（可选）
             
         Returns:
             Tuple[List[Message], bool]: (第一个目标频道的发送结果, 是否实际修改了标题)
         """
-        if not target_channels or not messages:
-            _logger.warning("没有有效的目标频道或消息为空，跳过处理禁止转发的媒体组")
+        # 记录媒体组处理开始
+        media_group_id = messages[0].media_group_id if messages else "unknown"
+        _logger.info(f"处理禁止转发的媒体组 [ID: {media_group_id}]，包含 {len(messages)} 条消息")
+        
+        # 【重要】先从完整媒体组获取原始说明，再进行媒体类型过滤
+        # 这样可以确保即使被过滤的消息包含说明，也能被正确提取
+        original_caption = None
+        _logger.debug(f"【步骤1】从完整媒体组（{len(messages)}条消息）中提取原始说明:")
+        
+        for i, msg in enumerate(messages):
+            _logger.debug(f"  消息 {i+1} (ID: {msg.id}): caption='{msg.caption}', 媒体类型='{self._get_message_media_type(msg)}'")
+            if msg.caption and msg.caption.strip():
+                original_caption = msg.caption.strip()
+                _logger.debug(f"  -> ✓ 找到原始说明: '{original_caption}'")
+                break
+        
+        _logger.debug(f"【步骤1结果】提取的原始说明: '{original_caption}'")
+        
+        # 【步骤2】应用媒体类型过滤
+        _logger.debug(f"【步骤2】应用媒体类型过滤，允许类型: {allowed_media_types}")
+        filtered_messages = self._apply_media_type_filter(messages, allowed_media_types or [])
+        _logger.info(f"媒体组媒体类型过滤后剩余 {len(filtered_messages)} 条消息")
+        
+        if not filtered_messages:
+            _logger.warning(f"媒体组 [ID: {media_group_id}] 所有消息都被媒体类型过滤掉，跳过处理")
             return [], False
         
-        # 验证消息的有效性并检查是否包含媒体内容
-        valid_media_messages = []
-        for msg in messages:
-            if not msg or not hasattr(msg, 'id') or not hasattr(msg, 'chat'):
-                _logger.warning(f"发现无效的消息对象，跳过: {msg}")
-                continue
-            
-            # 检查消息是否包含媒体内容
-            has_media = bool(msg.photo or msg.video or msg.document or msg.audio or msg.animation)
-            if has_media:
-                valid_media_messages.append(msg)
-            else:
-                _logger.warning(f"消息 [ID: {msg.id}] 不包含媒体内容，跳过下载处理")
-        
-        if not valid_media_messages:
-            _logger.warning("没有包含媒体内容的有效消息，无法处理禁止转发的媒体组")
-            return [], False
-        
-        messages = valid_media_messages
-        _logger.info(f"处理禁止转发的媒体组，包含 {len(messages)} 条有效媒体消息")
+        _logger.info(f"处理禁止转发的媒体组，包含 {len(filtered_messages)} 条有效媒体消息")
         
         # 临时目录变量，用于清理
         group_temp_dir = None
         
         try:
-            # 分离第一个目标频道和其余目标频道
-            first_target, *other_targets = target_channels
+            # 创建临时目录用于下载媒体文件
+            group_temp_dir = self._create_temp_dir() / f"{source_id}_to_{target_channels[0][0]}_{media_group_id}"
+            group_temp_dir.mkdir(parents=True, exist_ok=True)
             
-            # 获取媒体组ID
-            media_group_id = messages[0].media_group_id
-            message_ids = [m.id for m in messages]
-            
-            # 为媒体组创建单独的临时目录
-            safe_source_name = get_safe_path_name(source_channel)
-            safe_target_name = get_safe_path_name(first_target[0])
-            group_temp_dir = self.temp_dir / f"{safe_source_name}_to_{safe_target_name}_{media_group_id}"
-            group_temp_dir.mkdir(exist_ok=True, parents=True)
-            
-            _logger.info(f"处理禁止转发的媒体组 [ID: {media_group_id}]，包含 {len(messages)} 条消息")
-            
-            # 下载媒体文件
-            downloaded_files = await self.message_downloader.download_messages(messages, group_temp_dir, source_id)
+            # 【步骤3】下载媒体文件（使用过滤后的消息）
+            _logger.debug(f"【步骤3】下载过滤后的媒体文件到: {group_temp_dir}")
+            downloaded_files = await self.message_downloader.download_messages(filtered_messages, group_temp_dir, source_id)
             
             if not downloaded_files:
                 _logger.warning(f"媒体组 [ID: {media_group_id}] 没有媒体文件可下载，跳过")
                 return [], False
             
-            # 获取原始标题
-            original_caption = None
-            for msg in messages:
-                if msg.caption:
-                    original_caption = msg.caption
-                    break
-            
-            # 确定实际修改状态
+            # 【步骤4】确定最终说明（处理文本替换）
             actually_modified = False
+            final_caption = None
             
-            # 决定是否使用消息原始标题
-            if remove_caption:
-                final_caption = ""  # 使用空字符串而不是None来移除caption
-                # 只有原本有标题时，移除才算修改
-                if original_caption:
+            _logger.debug(f"【步骤4】处理媒体组说明和文本替换:")
+            _logger.debug(f"  原始说明: '{original_caption}'")
+            _logger.debug(f"  指定说明: '{caption}'")
+            _logger.debug(f"  移除说明: {remove_caption}")
+            _logger.debug(f"  文本替换规则: {text_replacements}")
+            
+            if original_caption:
+                # 媒体组有原始说明的情况
+                if remove_caption:
+                    # 如果配置要求移除说明
+                    final_caption = None
                     actually_modified = True
-                else:
-                    actually_modified = False
-                _logger.debug(f"移除标题模式，实际修改状态: {actually_modified}")
-            elif caption is not None:
-                final_caption = caption
-                # 只有替换后的标题与原始标题不同时才算修改
-                if original_caption != caption:
+                    _logger.debug(f"  -> 移除原始说明，标记为已修改")
+                elif caption is not None:
+                    # 如果指定了替换说明（优先级最高）
+                    final_caption = caption
+                    # 【修复】对指定说明也应用文本替换
+                    if text_replacements:
+                        final_caption = self._apply_text_replacements(final_caption, text_replacements)
+                        _logger.debug(f"  -> 指定说明应用文本替换: '{caption}' -> '{final_caption}'")
                     actually_modified = True
+                    _logger.debug(f"  -> 使用指定说明: '{final_caption}'，标记为已修改")
+                elif text_replacements:
+                    # 如果有文本替换规则，应用到原始说明
+                    final_caption = self._apply_text_replacements(original_caption, text_replacements)
+                    actually_modified = (final_caption != original_caption)
+                    _logger.debug(f"  -> 应用文本替换: '{original_caption}' -> '{final_caption}', 修改={actually_modified}")
                 else:
+                    # 保持原始说明不变
+                    final_caption = original_caption
                     actually_modified = False
-                _logger.debug(f"使用替换后的标题: '{caption}'，实际修改状态: {actually_modified}")
+                    _logger.debug(f"  -> 保持原始说明不变: '{final_caption}'")
             else:
-                # 使用原始标题，不算修改
-                final_caption = original_caption
-                actually_modified = False
-                _logger.debug(f"使用原始标题，无修改")
+                # 媒体组无原始说明的情况
+                if caption is not None:
+                    # 如果指定了说明，使用指定说明
+                    final_caption = caption
+                    # 【修复】对指定说明也应用文本替换
+                    if text_replacements:
+                        final_caption = self._apply_text_replacements(final_caption, text_replacements)
+                        _logger.debug(f"  -> 指定说明应用文本替换: '{caption}' -> '{final_caption}'")
+                    actually_modified = True
+                    _logger.debug(f"  -> 媒体组无原始说明，使用指定说明: '{final_caption}', 标记为已修改")
+                else:
+                    # 没有原始说明也没有指定说明
+                    final_caption = None
+                    actually_modified = False
+                    _logger.debug(f"  -> 媒体组无原始说明，也无指定说明，不使用文本替换功能")
             
-            # 预处理视频元数据
+            _logger.debug(f"【步骤4结果】最终说明: '{final_caption}', 是否修改: {actually_modified}")
+            
+            # 处理视频缩略图
             thumbnails = {}
+            
             for file_path, media_type in downloaded_files:
                 if media_type == "video":
                     # 提取视频元数据并生成缩略图
@@ -587,13 +557,13 @@ class RestrictedForwardHandler:
             media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
             
             # 上传到第一个目标频道
-            _logger.debug(f"开始上传媒体组到目标频道 {first_target[2]}，缩略图数量: {len(thumbnails)}")
+            _logger.debug(f"开始上传媒体组到目标频道 {target_channels[0][2]}，缩略图数量: {len(thumbnails)}")
             sent_messages = await self.media_uploader.upload_media_group_to_channel(
                 media_group,
                 media_group_download,
-                first_target[0],
-                first_target[1],
-                first_target[2],
+                target_channels[0][0],
+                target_channels[0][1],
+                target_channels[0][2],
                 thumbnails
             )
             
@@ -607,19 +577,19 @@ class RestrictedForwardHandler:
                         _logger.warning(f"删除缩略图失败: {e}")
             
             # 如果上传成功并且有其他目标频道，则从第一个目标频道复制到其他目标频道
-            if sent_messages and other_targets and isinstance(sent_messages, list) and len(sent_messages) > 0:
-                _logger.info(f"从第一个目标频道复制媒体组到其他 {len(other_targets)} 个目标频道")
+            if sent_messages and len(target_channels) > 1:
+                _logger.info(f"从第一个目标频道复制媒体组到其他 {len(target_channels) - 1} 个目标频道")
                 
                 # 对于媒体组，需要通过第一条消息找到完整的媒体组
                 first_sent_message = sent_messages[0]
                 
-                for target, target_id, target_info in other_targets:
+                for target, target_id, target_info in target_channels[1:]:
                     try:
                         # 使用media_group_id复制整个媒体组
                         if len(sent_messages) > 1 and hasattr(first_sent_message, 'media_group_id') and first_sent_message.media_group_id:
                             await self.client.copy_media_group(
                                 chat_id=target_id,
-                                from_chat_id=first_target[1],
+                                from_chat_id=target_channels[0][1],
                                 message_id=first_sent_message.id,
                                 disable_notification=True
                             )
@@ -628,7 +598,7 @@ class RestrictedForwardHandler:
                             # 单条消息复制
                             await self.client.copy_message(
                                 chat_id=target_id,
-                                from_chat_id=first_target[1],
+                                from_chat_id=target_channels[0][1],
                                 message_id=first_sent_message.id,
                                 caption=final_caption,
                                 disable_notification=True
@@ -651,7 +621,7 @@ class RestrictedForwardHandler:
             # 确保清理临时目录
             if group_temp_dir:
                 self.media_uploader.cleanup_media_group_dir(group_temp_dir) 
-    
+
     async def process_restricted_media_group_to_multiple_targets(self,
                                                               messages: List[Message],
                                                               source_channel: str,
@@ -659,6 +629,8 @@ class RestrictedForwardHandler:
                                                               target_channels: List[Tuple[str, int, str]],
                                                               caption: str = None,
                                                               remove_caption: bool = False,
+                                                              allowed_media_types: List[str] = None,
+                                                              text_replacements: Dict[str, str] = None,
                                                               event_emitter=None,
                                                               message_type: str = "媒体组") -> bool:
         """
@@ -671,6 +643,8 @@ class RestrictedForwardHandler:
             target_channels: 禁止转发的目标频道列表 [(channel_id_or_username, resolved_id, display_name)]
             caption: 要替换的标题（可选）
             remove_caption: 是否移除标题
+            allowed_media_types: 允许的媒体类型列表（可选）
+            text_replacements: 文本替换规则字典（可选）
             event_emitter: 事件发射器（可选）
             message_type: 消息类型标识（"媒体组" 或 "重组媒体组"）
             
@@ -695,7 +669,9 @@ class RestrictedForwardHandler:
                 source_id=source_id,
                 target_channels=[first_target],
                 caption=caption,
-                remove_caption=remove_caption
+                remove_caption=remove_caption,
+                allowed_media_types=allowed_media_types,
+                text_replacements=text_replacements
             )
             
             if not sent_messages:
@@ -739,7 +715,7 @@ class RestrictedForwardHandler:
                 self._emit_all_targets_failure(event_emitter, source_id, target_channels, 
                                              messages, message_type)
             return False
-    
+
     async def _copy_from_first_to_remaining_targets(self, 
                                                   first_target_id: int, 
                                                   remaining_targets: List[Tuple[str, int, str]], 

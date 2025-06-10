@@ -404,6 +404,11 @@ class Monitor:
                         if allowed_media_types:
                             message_media_type = self._get_message_media_type(message)
                             if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
+                                # 【关键修复】在过滤消息前，先保存媒体组的原始说明
+                                if message.media_group_id and message.caption:
+                                    self.media_group_handler._save_media_group_original_caption(message.media_group_id, message.caption)
+                                    logger.debug(f"【关键】在core.py中保存被过滤消息的媒体组说明: 消息ID={message.id}, 媒体组ID={message.media_group_id}, 说明='{message.caption}'")
+                                
                                 media_type_names = {
                                     "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
                                     "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"

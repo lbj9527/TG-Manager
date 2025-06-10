@@ -160,11 +160,11 @@ class RestrictedChannelForwarder:
         
         try:
             # 解析源频道ID
-            self.source_channel_id = await self.channel_resolver.resolve_channel(SOURCE_CHANNEL)
+            self.source_channel_id, _ = await self.channel_resolver.resolve_channel(SOURCE_CHANNEL)
             logger.info(f"源频道ID: {self.source_channel_id}")
             
             # 解析目标频道ID
-            self.target_channel_id = await self.channel_resolver.resolve_channel(TARGET_CHANNEL)
+            self.target_channel_id, _ = await self.channel_resolver.resolve_channel(TARGET_CHANNEL)
             logger.info(f"目标频道ID: {self.target_channel_id}")
             
         except Exception as e:
