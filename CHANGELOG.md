@@ -816,4 +816,36 @@
 
 ---
 
+## [1.0.11] - 2024-01-XX
+
+### 🔥 重大突破
+- **彻底解决媒体组媒体类型过滤问题**：通过禁用早期过滤机制，实现了真正有效的媒体类型过滤
+  - 移除了Monitor中媒体组消息的早期媒体类型过滤，防止消息过早被过滤
+  - 在MediaGroupHandler中禁用早期媒体类型过滤，让所有消息都进入缓存
+  - 统一在`_process_direct_forward_media_group`中进行最终的媒体类型过滤和重组
+  - 使用`send_media_group`重建过滤后的媒体组，保持完整性
+
+### ✨ 技术改进
+- **双层过滤架构优化**：取消早期过滤，统一在最终处理阶段进行过滤
+- **媒体组完整性保护**：确保所有媒体组消息都能正确进入缓存
+- **配置传递优化**：修复了Monitor到MediaGroupHandler的媒体类型配置传递
+- **调试信息增强**：添加了完整的媒体类型过滤过程调试日志
+
+### 🐛 修复的问题
+- 修复媒体组中非允许类型的媒体消息仍被转发的问题
+- 修复早期过滤导致媒体组不完整的问题
+- 修复配置读取中的类型匹配问题
+- **修复视频元数据处理失败问题**：修复了RestrictedForwardHandler中`_process_video_metadata`方法调用不存在的VideoProcessor方法导致的失败
+  - 替换错误的`generate_thumbnail`方法调用为正确的`extract_thumbnail`方法
+  - 替换错误的`get_video_info`方法调用为正确的`get_video_dimensions`和`get_video_duration`方法
+  - 增强了返回值处理逻辑，兼容VideoProcessor的不同返回格式
+
+### 🔧 代码改进
+- 重构了媒体类型过滤的时机和位置
+- 优化了MediaGroupHandler的过滤逻辑
+- 改进了RestrictedForwardHandler和MediaGroupHandler的一致性
+- **增强了视频处理的健壮性**：改进了VideoProcessor方法调用的错误处理和返回值解析
+
+---
+
 ## [1.0.10] - 2024-01-XX

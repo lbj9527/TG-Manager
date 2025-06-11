@@ -65,8 +65,47 @@ class RestrictedForwardHandler:
         """
         try:
             # 使用视频处理器生成缩略图和获取元数据
-            thumb_path = self.video_processor.generate_thumbnail(video_path)
-            width, height, duration = self.video_processor.get_video_info(video_path)
+            thumbnail_result = self.video_processor.extract_thumbnail(video_path)
+            
+            # 处理返回值可能是元组的情况
+            thumb_path = None
+            width = None
+            height = None
+            duration = None
+            
+            if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 4:
+                # 如果返回的是包含所有信息的元组
+                thumb_path, width, height, duration = thumbnail_result
+                # 确保时长是整数类型
+                if duration is not None:
+                    duration = int(duration)
+            elif isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 3:
+                # 如果返回的是三元组
+                thumb_path, width, height = thumbnail_result
+                # 单独获取时长
+                duration = self.video_processor.get_video_duration(video_path)
+                if duration is not None:
+                    duration = int(duration)
+            elif isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
+                # 如果只返回缩略图路径
+                thumb_path = thumbnail_result[0]
+                # 单独获取尺寸和时长
+                dimensions = self.video_processor.get_video_dimensions(video_path)
+                if dimensions:
+                    width, height = dimensions
+                duration = self.video_processor.get_video_duration(video_path)
+                if duration is not None:
+                    duration = int(duration)
+            else:
+                # 如果返回的是字符串路径
+                thumb_path = thumbnail_result
+                # 单独获取尺寸和时长
+                dimensions = self.video_processor.get_video_dimensions(video_path)
+                if dimensions:
+                    width, height = dimensions
+                duration = self.video_processor.get_video_duration(video_path)
+                if duration is not None:
+                    duration = int(duration)
             
             return thumb_path, width, height, duration
             
