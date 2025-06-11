@@ -364,6 +364,30 @@ class ListenView(QWidget):
         # 创建消息标签页容器
         self.message_tabs = QTabWidget()
         
+        # 启用标签卡关闭按钮功能
+        self.message_tabs.setTabsClosable(True)
+        # 连接标签卡关闭信号
+        self.message_tabs.tabCloseRequested.connect(self._close_channel_tab)
+        
+        # 设置标签卡样式，减小关闭按钮大小
+        self.message_tabs.setStyleSheet("""
+            QTabBar::close-button {
+                width: 12px;
+                height: 12px;
+                padding: 2px;
+                margin: 2px;
+                border-radius: 6px;
+                background-color: transparent;
+            }
+            QTabBar::close-button:hover {
+                background-color: #ff6b6b;
+                color: white;
+            }
+            QTabBar::close-button:pressed {
+                background-color: #e55555;
+            }
+        """)
+        
         # 主消息面板
         self.main_message_view = QTextEdit()
         self.main_message_view.setReadOnly(True)
@@ -374,6 +398,12 @@ class ListenView(QWidget):
         
         # 添加主消息面板
         self.message_tabs.addTab(self.main_message_view, "所有消息")
+        
+        # 为"所有消息"标签卡隐藏关闭按钮
+        # 通过设置标签栏按钮为None来隐藏关闭按钮
+        from PySide6.QtWidgets import QTabBar
+        self.message_tabs.tabBar().setTabButton(0, QTabBar.RightSide, None)
+        self.message_tabs.tabBar().setTabButton(0, QTabBar.LeftSide, None)
         
         # 设置消息面板的尺寸策略
         self.message_tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -783,6 +813,67 @@ class ListenView(QWidget):
         # 清空各频道消息面板
         for view in self.channel_message_views.values():
             view.clear()
+    
+    def _close_channel_tab(self, index):
+        """关闭指定索引的频道标签卡
+        
+        Args:
+            index (int): 要关闭的标签卡索引
+        """
+        try:
+            # 检查索引是否有效
+            if index < 0 or index >= self.message_tabs.count():
+                logger.warning(f"尝试关闭无效的标签卡索引: {index}")
+                return
+            
+            # 获取标签卡文本
+            tab_text = self.message_tabs.tabText(index)
+            
+            # 不允许关闭"所有消息"标签卡（索引0）
+            if index == 0 or tab_text == "所有消息":
+                logger.info("无法关闭'所有消息'标签卡")
+                return
+            
+            # 获取要关闭的标签卡widget
+            widget_to_remove = self.message_tabs.widget(index)
+            
+            # 从channel_message_views字典中移除对应的视图
+            channel_key_to_remove = None
+            for channel_key, view in self.channel_message_views.items():
+                if view == widget_to_remove:
+                    channel_key_to_remove = channel_key
+                    break
+            
+            if channel_key_to_remove is not None:
+                del self.channel_message_views[channel_key_to_remove]
+                logger.info(f"已从频道消息视图字典中移除频道: {channel_key_to_remove}")
+            
+            # 从标签卡中移除
+            self.message_tabs.removeTab(index)
+            
+            # 删除widget（Qt会自动处理内存释放）
+            if widget_to_remove:
+                widget_to_remove.deleteLater()
+            
+            logger.info(f"已关闭频道标签卡: {tab_text} (索引: {index})")
+            
+            # 如果关闭后只剩下"所有消息"标签卡，自动切换到它
+            if self.message_tabs.count() == 1:
+                self.message_tabs.setCurrentIndex(0)
+                logger.info("只剩下'所有消息'标签卡，已自动切换")
+            
+        except Exception as e:
+            logger.error(f"关闭标签卡时发生错误: {e}")
+            self._show_error_dialog("关闭标签卡失败", f"关闭标签卡时发生错误：{str(e)}")
+    
+    def _disable_close_button_for_all_messages_tab(self):
+        """为'所有消息'标签卡禁用关闭按钮
+        
+        注意：这是一个辅助方法，但PySide6的QTabWidget没有直接禁用单个标签卡关闭按钮的API
+        我们通过在_close_channel_tab方法中检查索引来实现相同的效果
+        """
+        # 这个方法保留作为文档说明，实际的禁用逻辑在_close_channel_tab中实现
+        pass
     
     def _start_listen(self):
         """开始监听"""
