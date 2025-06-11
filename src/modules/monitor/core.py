@@ -353,9 +353,6 @@ class Monitor:
 
                     # 检查是否为媒体组消息
                     if message.media_group_id:
-                        # 首先进行媒体组消息的初步过滤检查（不包括关键词过滤，因为关键词过滤是媒体组级别的）
-                        # 注意：关键词过滤会在handle_media_group_message内部进行媒体组级别的检查
-                        
                         # 应用非关键词过滤逻辑（与媒体组处理器中的逻辑保持一致）
                         keywords = pair_config.get('keywords', [])
                         exclude_forwards = pair_config.get('exclude_forwards', False)
@@ -406,34 +403,10 @@ class Monitor:
                                     self.emit("message_filtered", message.id, source_info_str, filter_reason)
                                 return
                         
-                        # 【关键修复】检查媒体类型过滤
-                        allowed_media_types = pair_config.get('media_types', [])
-                        if allowed_media_types:
-                            message_media_type = self._get_message_media_type(message)
-                            if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
-                                # 【关键修复】在过滤消息前，先保存媒体组的原始说明
-                                if message.media_group_id and message.caption:
-                                    self.media_group_handler._save_media_group_original_caption(message.media_group_id, message.caption)
-                                    logger.debug(f"【关键】在core.py中保存被过滤消息的媒体组说明: 消息ID={message.id}, 媒体组ID={message.media_group_id}, 说明='{message.caption}'")
-                                
-                                # 【新增】记录被过滤的消息ID到媒体组统计中，确保不会被错误处理
-                                if message.media_group_id:
-                                    self.media_group_handler._record_filtered_message(message.media_group_id, message.id, "媒体类型过滤")
-                                
-                                media_type_names = {
-                                    "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
-                                    "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
-                                }
-                                media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
-                                filter_reason = f"媒体类型({media_type_name})不在允许列表中"
-                                logger.info(f"媒体组消息 [ID: {message.id}] 的{filter_reason}，根据过滤规则跳过")
-                                # 发送过滤消息事件到UI
-                                if hasattr(self, 'emit') and self.emit:
-                                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                                
-                                # 【严格防护】确保被过滤的消息绝不进入媒体组处理流程
-                                logger.debug(f"【严格防护】消息 {message.id} 已被媒体类型过滤，将不会进入任何处理流程")
-                                return
+                        # 【关键修复】禁用媒体组消息的早期媒体类型过滤
+                        # 媒体类型过滤应该在MediaGroupHandler中统一处理，确保媒体组的完整性
+                        # 这样可以避免媒体组中的某些消息被错误过滤，导致媒体组不完整
+                        logger.debug(f"【关键修复】跳过媒体组消息 [ID: {message.id}] 的早期媒体类型过滤，交由MediaGroupHandler统一处理")
                         
                         # 无论消息是否会被过滤，都先发射new_message事件
                         # 这确保UI显示顺序正确：所有消息都先显示"收到新消息"，然后显示处理结果

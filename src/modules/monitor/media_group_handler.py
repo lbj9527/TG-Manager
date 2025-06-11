@@ -512,9 +512,15 @@ class MediaGroupHandler:
         
         # 添加详细的过滤前调试信息
         message_media_type = self._get_message_media_type(message)
-        logger.debug(f"【关键】检查消息 {message.id} 媒体类型过滤: type='{message_media_type}', allowed={allowed_media_types}")
+        logger.debug(f"【关键】检查消息 {message.id} 媒体类型: type='{message_media_type}', allowed={allowed_media_types}")
         
-        if message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
+        # 【重要修复】移除早期媒体类型过滤，让所有消息都进入缓存，在最终处理时统一过滤
+        # 注释掉原来的媒体类型过滤逻辑，这样所有消息都会进入缓存
+        # 在_process_direct_forward_media_group中会进行统一的媒体类型过滤和重组
+        should_filter_media_type = False  # 暂时关闭早期媒体类型过滤
+        
+        if should_filter_media_type and message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
+            # 【注释】原来的早期过滤逻辑被注释掉，确保所有媒体组消息都能进入缓存
             media_type_names = {
                 "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
                 "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
@@ -582,6 +588,9 @@ class MediaGroupHandler:
                         return
             
             return  # 直接返回，不添加到缓存
+        
+        # 【修复】现在所有通过关键词过滤的消息都会添加到缓存，媒体类型过滤将在最终处理时进行
+        logger.debug(f"【修复】消息 [ID: {message.id}] 通过关键词过滤，将添加到缓存 (媒体类型: {message_media_type})")
         
         # 只有通过了所有过滤的消息才会添加到缓存
         channel_id = message.chat.id
@@ -1242,35 +1251,78 @@ class MediaGroupHandler:
             for target_channel, target_id, target_info in target_channels:
                 try:
                     if use_copy_media_group:
-                        # 【新增】使用copy_media_group处理重组或修改的媒体组
-                        logger.debug(f"使用copy_media_group转发重组/修改的媒体组到 {target_info}，说明: '{final_caption}'")
+                        # 检查是否需要媒体类型过滤
+                        if allowed_media_types and len(filtered_messages) != len(messages):
+                            # 【关键修复】当存在媒体类型过滤时，使用send_media_group重组媒体组
+                            logger.debug(f"存在媒体类型过滤，使用send_media_group重组 {len(filtered_messages)} 条过滤后的消息到 {target_info}")
+                            
+                            # 构建InputMedia对象列表
+                            input_media_list = []
+                            for i, msg in enumerate(filtered_messages):
+                                try:
+                                    # 准备说明文字：只有第一条消息设置说明
+                                    caption = None
+                                    if i == 0:
+                                        if final_caption == "":
+                                            caption = ""  # 移除说明
+                                        elif final_caption:
+                                            caption = final_caption  # 设置替换后的说明
+                                        else:
+                                            caption = original_caption or ""  # 保持原始说明
+                                    
+                                    # 根据消息类型创建InputMedia对象
+                                    input_media = await self._create_input_media_from_message(msg, caption)
+                                    if input_media:
+                                        input_media_list.append(input_media)
+                                    else:
+                                        logger.warning(f"无法为消息 {msg.id} 创建InputMedia对象")
+                                        
+                                except Exception as media_error:
+                                    logger.error(f"创建InputMedia对象失败，消息ID: {msg.id}, 错误: {str(media_error)}")
+                                    continue
+                            
+                            if input_media_list:
+                                # 使用send_media_group发送重组的媒体组
+                                sent_messages = await self.client.send_media_group(
+                                    chat_id=target_id,
+                                    media=input_media_list,
+                                    disable_notification=True
+                                )
+                                logger.info(f"成功使用send_media_group重组 {len(sent_messages)} 条过滤后的消息到 {target_info}")
+                            else:
+                                logger.error(f"没有有效的InputMedia对象，跳过发送到 {target_info}")
+                                continue
                         
-                        if final_caption == "":
-                            # 空字符串表示移除说明
-                            await self.client.copy_media_group(
-                                chat_id=target_id,
-                                from_chat_id=source_id,
-                                message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                captions=[""],  # 空字符串移除说明
-                                disable_notification=True
-                            )
-                        elif final_caption:
-                            # 有具体的替换说明或保持原始说明
-                            await self.client.copy_media_group(
-                                chat_id=target_id,
-                                from_chat_id=source_id,
-                                message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                captions=[final_caption],  # 设置说明
-                                disable_notification=True
-                            )
                         else:
-                            # None或空说明，不设置captions参数（保持原始说明）
-                            await self.client.copy_media_group(
-                                chat_id=target_id,
-                                from_chat_id=source_id,
-                                message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                disable_notification=True
-                            )
+                            # 【保持原有逻辑】没有媒体类型过滤时使用copy_media_group
+                            logger.debug(f"无媒体类型过滤，使用copy_media_group转发完整媒体组到 {target_info}，说明: '{final_caption}'")
+                            
+                            if final_caption == "":
+                                # 空字符串表示移除说明
+                                await self.client.copy_media_group(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message_ids[0],  # 重组媒体组的第一条消息ID
+                                    captions=[""],  # 空字符串移除说明
+                                    disable_notification=True
+                                )
+                            elif final_caption:
+                                # 有具体的替换说明或保持原始说明
+                                await self.client.copy_media_group(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message_ids[0],  # 重组媒体组的第一条消息ID
+                                    captions=[final_caption],  # 设置说明
+                                    disable_notification=True
+                                )
+                            else:
+                                # None或空说明，不设置captions参数（保持原始说明）
+                                await self.client.copy_media_group(
+                                    chat_id=target_id,
+                                    from_chat_id=source_id,
+                                    message_id=message_ids[0],  # 重组媒体组的第一条消息ID
+                                    disable_notification=True
+                                )
                     else:
                         # 方式3: forward_messages (保留原始信息，无过滤无修改)
                         logger.debug(f"使用forward_messages转发原始媒体组到 {target_info}，保留原始说明")
@@ -2029,30 +2081,75 @@ class MediaGroupHandler:
         return valid_types
 
     def _record_filtered_message(self, media_group_id: str, message_id: int, filter_reason: str):
-        """
-        记录被过滤的消息ID到媒体组统计中
-        
-        Args:
-            media_group_id: 媒体组ID
-            message_id: 被过滤的消息ID
-            filter_reason: 过滤原因
-        """
-        # 【修复】确保media_group_filter_stats中有这个媒体组的记录，包含所有必需字段
+        """记录被过滤的消息信息"""
         if media_group_id not in self.media_group_filter_stats:
             self.media_group_filter_stats[media_group_id] = {
-                'total_expected': 0,
-                'filtered_count': 0, 
-                'total_received': 0,
-                'original_caption': None,
-                'filtered_message_ids': set()  # 【修复】确保包含这个字段
+                'filtered_messages': [],
+                'filter_reasons': [],
+                'original_caption': None
             }
+            
+        self.media_group_filter_stats[media_group_id]['filtered_messages'].append(message_id)
+        self.media_group_filter_stats[media_group_id]['filter_reasons'].append(filter_reason)
         
-        # 【修复】确保filtered_message_ids字段存在
-        if 'filtered_message_ids' not in self.media_group_filter_stats[media_group_id]:
-            self.media_group_filter_stats[media_group_id]['filtered_message_ids'] = set()
+        logger.debug(f"记录过滤消息 - 媒体组: {media_group_id}, 消息ID: {message_id}, 原因: {filter_reason}")
+    
+    async def _create_input_media_from_message(self, message: Message, caption: str = None):
+        """
+        从消息对象创建InputMedia对象，用于send_media_group
         
-        self.media_group_filter_stats[media_group_id]['filtered_message_ids'].add(message_id)
-        self.media_group_filter_stats[media_group_id]['filtered_count'] += 1
-        
-        logger.info(f"【记录过滤】媒体组 {media_group_id} 的消息 {message_id} 被过滤，原因: {filter_reason}")
-        logger.debug(f"【记录过滤】媒体组 {media_group_id} 当前过滤统计: {self.media_group_filter_stats[media_group_id]}")
+        Args:
+            message: Pyrogram消息对象
+            caption: 可选的说明文字
+            
+        Returns:
+            InputMedia对象或None（如果消息类型不支持）
+        """
+        try:
+            if message.photo:
+                # 处理照片
+                return InputMediaPhoto(
+                    media=message.photo.file_id,
+                    caption=caption
+                )
+            elif message.video:
+                # 处理视频
+                return InputMediaVideo(
+                    media=message.video.file_id,
+                    caption=caption,
+                    duration=getattr(message.video, 'duration', None),
+                    width=getattr(message.video, 'width', None),
+                    height=getattr(message.video, 'height', None),
+                    supports_streaming=getattr(message.video, 'supports_streaming', None)
+                )
+            elif message.document:
+                # 处理文档
+                return InputMediaDocument(
+                    media=message.document.file_id,
+                    caption=caption
+                )
+            elif message.audio:
+                # 处理音频
+                return InputMediaAudio(
+                    media=message.audio.file_id,
+                    caption=caption,
+                    duration=getattr(message.audio, 'duration', None),
+                    performer=getattr(message.audio, 'performer', None),
+                    title=getattr(message.audio, 'title', None)
+                )
+            elif message.animation:
+                # 处理动画(GIF)
+                return InputMediaAnimation(
+                    media=message.animation.file_id,
+                    caption=caption,
+                    duration=getattr(message.animation, 'duration', None),
+                    width=getattr(message.animation, 'width', None),
+                    height=getattr(message.animation, 'height', None)
+                )
+            else:
+                logger.warning(f"不支持的媒体类型，消息ID: {message.id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"创建InputMedia对象失败，消息ID: {message.id}, 错误: {str(e)}")
+            return None
