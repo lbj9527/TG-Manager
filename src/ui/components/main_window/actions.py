@@ -551,10 +551,16 @@ class ActionsMixin:
         """打开日志查看器"""
         logger.debug("尝试打开日志查看器视图")
         try:
-            # 先检查是否已经打开
+            # 【修复】先检查自动加载的日志查看器是否已经存在
             if "log_viewer" in self.opened_views:
-                logger.debug("日志查看器视图已存在，切换到该视图")
+                logger.debug("发现自动加载的日志查看器视图，切换到该视图")
                 self.central_layout.setCurrentWidget(self.opened_views["log_viewer"])
+                return
+                
+            # 检查通过导航树加载的日志查看器是否已经存在
+            if "function.logs" in self.opened_views:
+                logger.debug("发现通过导航树加载的日志查看器视图，切换到该视图")
+                self.central_layout.setCurrentWidget(self.opened_views["function.logs"])
                 return
                 
             # 通过导航树API找到日志查看器项并触发点击
@@ -790,6 +796,10 @@ class ActionsMixin:
         view_id = view_id_map.get(view_name)
         if view_id and view_id in self.opened_views:
             return self.opened_views[view_id]
+            
+        # 【修复】特殊处理日志查看器，支持自动加载的"log_viewer"键
+        if view_name == 'log' and 'log_viewer' in self.opened_views:
+            return self.opened_views['log_viewer']
             
         # 如果视图尚未打开，返回None
         logger.debug(f"视图 '{view_name}' 尚未打开，无法获取引用")

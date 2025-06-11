@@ -290,6 +290,9 @@ class AsyncServicesInitializer:
         
         # 获取视图引用并设置功能模块
         try:
+            # 【新增】自动加载日志查看器视图
+            self._auto_load_log_viewer()
+            
             # 下载视图
             download_view = self.app.main_window.get_view("download")
             if download_view and hasattr(self.app, 'downloader'):
@@ -320,9 +323,43 @@ class AsyncServicesInitializer:
                 task_view.set_task_manager(self.app.task_manager)
                 logger.info("任务视图已设置任务管理器实例")
             
-            logger.info("视图组件初始化设置完成（视图将在用户点击时加载）")
+            logger.info("视图组件初始化设置完成（视图将在用户点击时加载，日志查看器已自动加载）")
         except Exception as e:
             logger.error(f"初始化视图组件时出错: {e}")
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}")
+
+    def _auto_load_log_viewer(self):
+        """自动加载日志查看器视图
+        
+        此方法会在程序启动时自动创建并加载日志查看器视图，
+        而其他视图保持延迟加载的模式
+        """
+        try:
+            # 检查日志查看器是否已经加载
+            if "log_viewer" in self.app.main_window.opened_views:
+                logger.debug("日志查看器视图已存在，跳过自动加载")
+                return
+            
+            logger.info("正在自动加载日志查看器视图...")
+            
+            # 导入日志查看器视图
+            from src.ui.views.log_viewer_view import LogViewerView
+            
+            # 创建日志查看器视图
+            log_viewer = LogViewerView(self.app.config, self.app.main_window)
+            
+            # 添加到主窗口的中心布局
+            self.app.main_window.central_layout.addWidget(log_viewer)
+            self.app.main_window.opened_views["log_viewer"] = log_viewer
+            
+            # 注意：不要自动切换到日志查看器，保持当前显示的视图
+            # 这样日志查看器会在后台加载，用户可以通过菜单或导航树访问
+            
+            logger.info("日志查看器视图已自动加载完成")
+            
+        except Exception as e:
+            logger.error(f"自动加载日志查看器视图失败: {e}")
             import traceback
             logger.error(f"错误详情:\n{traceback.format_exc()}")
 

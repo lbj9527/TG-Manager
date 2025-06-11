@@ -167,7 +167,7 @@ class LogViewerView(QWidget):
         self.level_combo.addItem("警告", "WARNING")
         self.level_combo.addItem("错误", "ERROR")
         self.level_combo.addItem("严重", "CRITICAL")
-        # 设置默认显示INFO级别（索引2）
+        # 设置默认显示INFO级别（索引2，即"信息"级别）
         self.level_combo.setCurrentIndex(2)
         self.level_combo.currentIndexChanged.connect(self._filter_changed)
         filter_panel.addWidget(self.level_combo)
@@ -248,21 +248,29 @@ class LogViewerView(QWidget):
             
             # 在异步任务中解析日志
             # 使用正则表达式解析日志格式
-            # 支持两种日志格式:
+            # 支持多种日志格式:
             # 1. [YYYY-MM-DD HH:MM:SS] [LEVEL] [SOURCE:LINE] Message
-            # 2. YYYY-MM-DD HH:MM:SS | LEVEL    | SOURCE:FUNCTION:LINE - Message
+            # 2. YYYY-MM-DD HH:MM:SS | LEVEL    | SOURCE:FUNCTION:LINE - Message (当前使用的格式)
+            # 3. 其他可能的格式变体
             
-            # 尝试匹配第一种格式
+            # 尝试匹配第一种格式 (旧格式)
             pattern1 = r'\[(.*?)\]\s*\[(.*?)\]\s*\[(.*?):(.*?)\]\s*(.*?)$'
             matches1 = re.findall(pattern1, log_text, re.MULTILINE)
             
-            # 尝试匹配第二种格式
-            pattern2 = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*?):(.*?):(.*?)\s*-\s*(.*?)$'
+            # 尝试匹配第二种格式 (当前格式) - 修复正则表达式
+            # 格式：2025-06-11 09:43:29.363 | INFO     | __main__:main:106 - 启动 TG-Manager 图形界面
+            pattern2 = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{3})?)\s*\|\s*(\w+)\s*\|\s*([^:]+):([^:]+):(\d+)\s*-\s*(.*)'
             matches2 = re.findall(pattern2, log_text, re.MULTILINE)
+            
+            # 尝试匹配简化格式（如果其他格式都失败）
+            # 格式：YYYY-MM-DD HH:MM:SS.mmm | LEVEL | ... - Message
+            pattern3 = r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{3})?)\s*\|\s*(\w+)\s*\|\s*.*?\s*-\s*(.*)'
+            matches3 = re.findall(pattern3, log_text, re.MULTILINE)
             
             # 根据匹配结果选择解析方式
             if matches1:
-                # 解析第一种格式的日志
+                # 解析第一种格式的日志 (旧格式)
+                # 移除调试日志，避免循环显示
                 for match in matches1:
                     timestamp, level, source, line, message = match
                     entry = {
@@ -274,7 +282,8 @@ class LogViewerView(QWidget):
                     }
                     log_entries.append(entry)
             elif matches2:
-                # 解析第二种格式的日志
+                # 解析第二种格式的日志 (当前格式)
+                # 移除调试日志，避免循环显示
                 for match in matches2:
                     timestamp, level, source, function, line, message = match
                     entry = {
@@ -285,6 +294,59 @@ class LogViewerView(QWidget):
                         'message': message.strip()
                     }
                     log_entries.append(entry)
+            elif matches3:
+                # 解析简化格式的日志 (后备格式)
+                # 移除调试日志，避免循环显示
+                for match in matches3:
+                    timestamp, level, message = match
+                    entry = {
+                        'timestamp': timestamp.strip(),
+                        'level': level.strip(),
+                        'source': 'unknown',
+                        'line': '0',
+                        'message': message.strip()
+                    }
+                    log_entries.append(entry)
+            else:
+                # 如果所有正则表达式都不匹配，尝试按行解析
+                # 只在解析失败时记录一次警告，避免重复日志
+                if not hasattr(self, '_parse_warning_logged'):
+                    logger.warning("日志格式无法识别，尝试按行解析")
+                    self._parse_warning_logged = True
+                    
+                lines = log_text.split('\n')
+                for line_num, line in enumerate(lines):
+                    line = line.strip()
+                    if line:  # 跳过空行
+                        # 简单的时间戳检测 - 支持毫秒格式
+                        if re.match(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{3})?', line):
+                            # 尝试提取基本信息
+                            parts = line.split('|', 2)
+                            if len(parts) >= 3:
+                                timestamp = parts[0].strip()
+                                level = parts[1].strip()
+                                message = parts[2].strip()
+                                # 如果消息以 " - " 开头，去掉这个前缀
+                                if message.startswith(' - '):
+                                    message = message[3:]
+                                entry = {
+                                    'timestamp': timestamp,
+                                    'level': level,
+                                    'source': 'unknown',
+                                    'line': str(line_num + 1),
+                                    'message': message
+                                }
+                                log_entries.append(entry)
+                            else:
+                                # 完全无法解析的行，当作普通消息
+                                entry = {
+                                    'timestamp': 'unknown',
+                                    'level': 'INFO',
+                                    'source': 'unknown',
+                                    'line': str(line_num + 1),
+                                    'message': line
+                                }
+                                log_entries.append(entry)
             
             # 发送解析完成的信号
             self.logs_loaded_signal.emit(log_entries)
@@ -312,12 +374,14 @@ class LogViewerView(QWidget):
         self._apply_filters()
         
         # 更新加载状态消息
-        # 仅在首次加载时显示状态信息
+        # 仅在首次加载时显示状态信息，且只在状态栏显示，不记录到日志
         if not hasattr(self, '_initial_load_done'):
             self._initial_load_done = True
             if log_entries:
+                # 只在状态栏显示，不写入日志文件
                 self.status_update_signal.emit(f"加载了 {len(log_entries)} 条日志记录")
             else:
+                # 只在状态栏显示，不写入日志文件
                 self.status_update_signal.emit("未找到日志记录")
     
     @Slot(str)
@@ -347,6 +411,13 @@ class LogViewerView(QWidget):
         def filter_entries():
             filtered = []
             for entry in self.log_entries:
+                # 过滤掉日志查看器自身的内部日志，避免循环显示
+                if (entry.get('source', '').startswith('src.ui.views.log_viewer_view') and 
+                    any(keyword in entry.get('message', '') for keyword in [
+                        '解析日志', '匹配到', '条记录', '按行解析', '加载了', '日志记录'
+                    ])):
+                    continue
+                
                 # 级别筛选
                 if selected_level != "ALL" and entry['level'] != selected_level:
                     continue
