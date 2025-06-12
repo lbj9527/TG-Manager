@@ -1336,16 +1336,19 @@ class MediaGroupHandler:
                     logger.info(f"成功直接转发媒体组 {media_group_id} 到 {target_info}")
                     success_count += 1
                     
-                    # 发射转发成功事件
+                    # 发射转发成功事件（为整个媒体组发射一次事件，而不是每条消息）
                     if self.emit:
                         try:
                             source_info_str, _ = await self.channel_resolver.format_channel_info(source_id)
                         except Exception:
                             source_info_str = str(source_id)
                         
-                        # 为媒体组中的每条消息发射事件
-                        for msg in filtered_messages:
-                            self.emit("forward", msg.id, source_info_str, target_info, True, modified=actually_modified)
+                        # 生成媒体组的显示ID
+                        message_ids = [msg.id for msg in filtered_messages]
+                        display_id = self._generate_media_group_display_id(message_ids, media_group_id)
+                        
+                        # 为整个媒体组发射一次事件
+                        self.emit("forward", display_id, source_info_str, target_info, True, modified=actually_modified)
                     
                 except Exception as e:
                     # 检查是否是禁止转发错误
@@ -1356,16 +1359,19 @@ class MediaGroupHandler:
                     else:
                         logger.error(f"直接转发媒体组到 {target_info} 失败: {str(e)}")
                         
-                        # 发射转发失败事件
+                        # 发射转发失败事件（为整个媒体组发射一次事件，而不是每条消息）
                         if self.emit:
                             try:
                                 source_info_str, _ = await self.channel_resolver.format_channel_info(source_id)
                             except Exception:
                                 source_info_str = str(source_id)
                             
-                            # 为媒体组中的每条消息发射失败事件
-                            for msg in filtered_messages:
-                                self.emit("forward", msg.id, source_info_str, target_info, False, modified=actually_modified)
+                            # 生成媒体组的显示ID
+                            message_ids = [msg.id for msg in filtered_messages]
+                            display_id = self._generate_media_group_display_id(message_ids, media_group_id)
+                            
+                            # 为整个媒体组发射一次失败事件
+                            self.emit("forward", display_id, source_info_str, target_info, False, modified=actually_modified)
                 
                 # 添加延迟避免触发限制
                 await asyncio.sleep(0.15)
@@ -1857,49 +1863,37 @@ class MediaGroupHandler:
         
         return False 
 
-    def _generate_media_group_display_id(self, message_ids: List[int]) -> str:
+    def _generate_media_group_display_id(self, message_ids: List[int], media_group_id: str) -> str:
         """生成安全的媒体组显示ID，用于UI显示
         
         Args:
             message_ids: 消息ID列表
+            media_group_id: 媒体组ID
             
         Returns:
-            str: 格式化的媒体组显示ID，格式为"媒体组[N个文件]-最小消息ID"
+            str: 安全的显示ID
         """
         try:
             if not message_ids:
-                # 如果消息列表为空，使用时间戳生成备用ID
                 import time
                 timestamp = int(time.time())
-                logger.warning("消息ID列表为空，使用时间戳生成媒体组显示ID")
                 return f"媒体组[0个文件]-{timestamp}"
             
-            # 获取消息数量和最小ID
             message_count = len(message_ids)
             min_message_id = min(message_ids)
             
-            # 确保消息ID是有效的
             if min_message_id <= 0:
-                # 如果最小消息ID无效，使用时间戳
                 import time
                 timestamp = int(time.time())
-                logger.warning(f"检测到无效的消息ID {min_message_id}，使用时间戳生成媒体组显示ID")
                 return f"媒体组[{message_count}个文件]-{timestamp}"
             
-            # 生成标准格式的媒体组显示ID
-            display_id = f"媒体组[{message_count}个文件]-{min_message_id}"
-            logger.debug(f"生成媒体组显示ID: {display_id} (消息IDs: {message_ids})")
-            
-            return display_id
+            return f"媒体组[{message_count}个文件]-{min_message_id}"
             
         except Exception as e:
-            # 出错时使用时间戳作为备用
-            logger.error(f"生成媒体组显示ID时出错: {e}")
+            _logger.error(f"生成媒体组显示ID时出错: {e}")
             import time
             timestamp = int(time.time())
-            fallback_id = f"媒体组[未知]-{timestamp}"
-            logger.warning(f"使用备用媒体组显示ID: {fallback_id}")
-            return fallback_id
+            return f"媒体组[未知]-{timestamp}"
 
     def _save_media_group_original_caption(self, media_group_id: str, caption: str):
         """保存媒体组的原始说明
