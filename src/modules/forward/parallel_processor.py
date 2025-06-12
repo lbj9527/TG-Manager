@@ -355,10 +355,10 @@ class ParallelProcessor:
                         continue
                     
                     # 为视频文件生成缩略图
-                    thumbnails = self.media_uploader.generate_thumbnails(media_group_download)
+                    thumbnails = await self.media_uploader.generate_thumbnails_parallel(media_group_download)
                     
                     # 准备媒体组上传
-                    media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
+                    media_group = await self.media_uploader.prepare_media_group_for_upload_parallel(media_group_download, thumbnails)
                     
                     if not media_group:
                         _logger.warning("没有有效的媒体文件可上传，跳过这个媒体组")
