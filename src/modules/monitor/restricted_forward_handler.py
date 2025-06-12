@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Union, Optional
 from datetime import datetime
+import time
 
 from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
@@ -664,23 +665,27 @@ class RestrictedForwardHandler:
             
             _logger.debug(f"【步骤4结果】最终说明: '{final_caption}', 是否修改: {actually_modified}")
             
-            # 处理视频缩略图
-            thumbnails = {}
+            # 【并行优化】并行处理视频缩略图生成
+            _logger.debug(f"【步骤5】开始并行生成视频缩略图")
+            start_time = time.time()
             
-            for file_path, media_type in downloaded_files:
-                if media_type == "video":
-                    # 提取视频元数据并生成缩略图
-                    thumb_path, width, height, duration = self._process_video_metadata(str(file_path))
-                    if thumb_path:
-                        thumbnails[str(file_path)] = thumb_path
-                        # 缓存视频尺寸和时长信息
-                        if width and height:
-                            self._video_dimensions[str(file_path)] = (width, height)
-                        if duration:
-                            self._video_durations[str(file_path)] = duration
-                        _logger.debug(f"为视频 {file_path.name} 生成缩略图和元数据成功: 尺寸={width}x{height}, 时长={duration}秒")
+            # 创建临时的MediaGroupDownload对象用于缩略图生成
+            temp_media_group_download = MediaGroupDownload(
+                source_channel=source_channel,
+                source_id=source_id,
+                messages=messages,
+                download_dir=group_temp_dir,
+                downloaded_files=downloaded_files,
+                caption=final_caption
+            )
             
-            # 创建MediaGroupDownload对象
+            # 使用并行方法生成缩略图
+            thumbnails = await self.media_uploader.generate_thumbnails_parallel(temp_media_group_download)
+            
+            thumbnail_time = time.time() - start_time
+            _logger.debug(f"【步骤5完成】并行缩略图生成耗时: {thumbnail_time:.2f}秒，成功生成 {len(thumbnails)} 个缩略图")
+            
+            # 【步骤6】创建MediaGroupDownload对象
             media_group_download = MediaGroupDownload(
                 source_channel=source_channel,
                 source_id=source_id,
@@ -690,11 +695,19 @@ class RestrictedForwardHandler:
                 caption=final_caption
             )
             
-            # 准备上传的媒体组
-            media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
+            # 【并行优化】并行准备上传的媒体组
+            _logger.debug(f"【步骤7】开始并行准备InputMedia对象")
+            prepare_start_time = time.time()
             
-            # 上传到第一个目标频道
-            _logger.debug(f"开始上传媒体组到目标频道 {target_channels[0][2]}，缩略图数量: {len(thumbnails)}")
+            media_group = await self.media_uploader.prepare_media_group_for_upload_parallel(media_group_download, thumbnails)
+            
+            prepare_time = time.time() - prepare_start_time
+            _logger.debug(f"【步骤7完成】并行InputMedia准备耗时: {prepare_time:.2f}秒，成功创建 {len(media_group)} 个对象")
+            
+            # 【步骤8】上传到第一个目标频道
+            _logger.debug(f"【步骤8】开始上传媒体组到目标频道 {target_channels[0][2]}，缩略图数量: {len(thumbnails)}")
+            upload_start_time = time.time()
+            
             sent_messages = await self.media_uploader.upload_media_group_to_channel(
                 media_group,
                 media_group_download,
@@ -703,6 +716,13 @@ class RestrictedForwardHandler:
                 target_channels[0][2],
                 thumbnails
             )
+            
+            upload_time = time.time() - upload_start_time
+            _logger.debug(f"【步骤8完成】媒体组上传耗时: {upload_time:.2f}秒")
+            
+            # 记录总体性能统计
+            total_time = time.time() - start_time + thumbnail_time  # 包含缩略图时间
+            _logger.info(f"【性能统计】媒体组处理完成 - 缩略图:{thumbnail_time:.2f}s, 准备:{prepare_time:.2f}s, 上传:{upload_time:.2f}s, 总计:{total_time:.2f}s")
             
             # 清理缩略图
             if thumbnails:

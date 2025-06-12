@@ -6,6 +6,7 @@ import asyncio
 import shutil
 from pathlib import Path
 from typing import List, Tuple, Dict, Union, Optional, Any
+import time
 
 from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
@@ -36,6 +37,7 @@ class MediaUploader:
         self.general_config = general_config or {}
         self.video_processor = VideoProcessor()
         self._video_dimensions = {}
+        self._video_durations = {}
     
     async def upload_media_group_to_channel(self, 
                                           media_group: List[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]], 
@@ -241,11 +243,11 @@ class MediaUploader:
         _logger.error(error_message)
         return False
     
-    def prepare_media_group_for_upload(self, 
-                                       media_group_download: MediaGroupDownload, 
-                                       thumbnails: Dict[str, str] = None) -> List[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]]:
+    async def prepare_media_group_for_upload_parallel(self, 
+                                                     media_group_download: MediaGroupDownload, 
+                                                     thumbnails: Dict[str, str] = None) -> List[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]]:
         """
-        为上传准备媒体组
+        并行方式为上传准备媒体组，优化性能
         
         Args:
             media_group_download: 媒体组下载结果
@@ -254,58 +256,210 @@ class MediaUploader:
         Returns:
             List[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]]: 准备好的媒体组
         """
-        media_group = []
+        import asyncio
+        
         file_caption = media_group_download.caption
         
-        for file_path, media_type in media_group_download.downloaded_files:
+        async def create_input_media(index: int, file_info: Tuple) -> Optional[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]]:
+            """
+            异步创建单个InputMedia对象
+            
+            Args:
+                index: 文件索引
+                file_info: (file_path, media_type) 元组
+                
+            Returns:
+                创建的InputMedia对象或None
+            """
+            file_path, media_type = file_info
             file_path_str = str(file_path)
             
-            # 检查文件是否存在
-            if not Path(file_path_str).exists():
-                _logger.warning(f"文件不存在: {file_path_str}，跳过")
-                continue
-                
-            # 只为第一个文件添加标题
-            if media_group and file_caption:
-                file_caption = None
-            
             try:
+                # 异步检查文件是否存在
+                import aiofiles.os
+                if not await aiofiles.os.path.exists(file_path_str):
+                    _logger.warning(f"文件不存在: {file_path_str}，跳过")
+                    return None
+                    
+                # 只为第一个文件添加标题
+                current_caption = file_caption if index == 0 else None
+                
                 # 根据媒体类型创建不同的InputMedia对象
                 if media_type == "photo":
-                    media_group.append(InputMediaPhoto(file_path_str, caption=file_caption))
+                    return InputMediaPhoto(file_path_str, caption=current_caption)
+                    
                 elif media_type == "video":
+                    # 并行获取视频元数据和缩略图
+                    async def get_video_metadata():
+                        return await asyncio.gather(
+                            self._get_video_width_async(file_path_str),
+                            self._get_video_height_async(file_path_str),
+                            self._get_video_duration_async(file_path_str),
+                            return_exceptions=True
+                        )
+                    
+                    width, height, duration = await get_video_metadata()
+                    
+                    # 处理可能的异常结果
+                    width = width if not isinstance(width, Exception) else None
+                    height = height if not isinstance(height, Exception) else None
+                    duration = duration if not isinstance(duration, Exception) else None
+                    
                     # 获取缩略图路径
                     thumb = None
                     if thumbnails and file_path_str in thumbnails:
                         thumb = thumbnails.get(file_path_str)
-                        if thumb and not Path(thumb).exists():
+                        if thumb and not await aiofiles.os.path.exists(thumb):
                             _logger.warning(f"缩略图文件不存在: {thumb}，不使用缩略图")
                             thumb = None
                             
-                    media_group.append(InputMediaVideo(
+                    return InputMediaVideo(
                         file_path_str, 
-                        caption=file_caption, 
+                        caption=current_caption, 
                         supports_streaming=True,
                         thumb=thumb,
-                        width=self._get_video_width(file_path_str),
-                        height=self._get_video_height(file_path_str),
-                        duration=self._get_video_duration(file_path_str)
-                    ))
+                        width=width,
+                        height=height,
+                        duration=duration
+                    )
+                    
                 elif media_type == "document":
-                    media_group.append(InputMediaDocument(file_path_str, caption=file_caption))
+                    return InputMediaDocument(file_path_str, caption=current_caption)
+                    
                 elif media_type == "audio":
-                    media_group.append(InputMediaAudio(file_path_str, caption=file_caption))
+                    return InputMediaAudio(file_path_str, caption=current_caption)
+                    
                 else:
                     _logger.warning(f"不支持的媒体类型: {media_type}，文件: {file_path_str}")
+                    return None
+                    
             except Exception as e:
-                _logger.error(f"创建媒体对象失败: {e}，文件: {file_path_str}, 类型: {media_type}")
-                continue
+                _logger.error(f"并行创建媒体对象失败: {e}，文件: {file_path_str}, 类型: {media_type}")
+                return None
         
+        # 并行创建所有InputMedia对象
+        tasks = [
+            create_input_media(i, file_info) 
+            for i, file_info in enumerate(media_group_download.downloaded_files)
+        ]
+        
+        _logger.debug(f"开始并行创建 {len(tasks)} 个InputMedia对象")
+        start_time = time.time()
+        
+        # 并行执行所有任务
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        preparation_time = time.time() - start_time
+        _logger.debug(f"并行InputMedia准备完成，耗时: {preparation_time:.2f}秒")
+        
+        # 过滤掉None和异常结果
+        media_group = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                _logger.error(f"创建第{i+1}个InputMedia对象时发生异常: {result}")
+            elif result is not None:
+                media_group.append(result)
+        
+        _logger.info(f"成功并行创建 {len(media_group)}/{len(tasks)} 个InputMedia对象")
         return media_group
-    
-    def generate_thumbnails(self, media_group_download: MediaGroupDownload) -> Dict[str, str]:
+
+    async def _get_video_width_async(self, video_path: str) -> Optional[int]:
         """
-        为视频文件生成缩略图
+        异步获取视频宽度
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频宽度，如果无法获取则返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_dimensions:
+            return self._video_dimensions[video_path][0]
+        
+        # 异步获取视频尺寸
+        try:
+            loop = asyncio.get_event_loop()
+            dimensions = await loop.run_in_executor(
+                None, 
+                self.video_processor.get_video_dimensions,
+                video_path
+            )
+            if dimensions and len(dimensions) >= 2:
+                width, height = dimensions[:2]
+                self._video_dimensions[video_path] = (width, height)
+                return width
+        except Exception as e:
+            _logger.debug(f"异步获取视频宽度失败: {e}")
+        
+        return None
+
+    async def _get_video_height_async(self, video_path: str) -> Optional[int]:
+        """
+        异步获取视频高度
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频高度，如果无法获取则返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_dimensions:
+            return self._video_dimensions[video_path][1]
+        
+        # 异步获取视频尺寸
+        try:
+            loop = asyncio.get_event_loop()
+            dimensions = await loop.run_in_executor(
+                None, 
+                self.video_processor.get_video_dimensions,
+                video_path
+            )
+            if dimensions and len(dimensions) >= 2:
+                width, height = dimensions[:2]
+                self._video_dimensions[video_path] = (width, height)
+                return height
+        except Exception as e:
+            _logger.debug(f"异步获取视频高度失败: {e}")
+        
+        return None
+
+    async def _get_video_duration_async(self, video_path: str) -> Optional[int]:
+        """
+        异步获取视频时长
+        
+        Args:
+            video_path: 视频文件路径
+            
+        Returns:
+            Optional[int]: 视频时长（秒），如果无法获取则返回None
+        """
+        # 首先检查缓存
+        if video_path in self._video_durations:
+            return self._video_durations[video_path]
+        
+        # 异步获取视频时长
+        try:
+            loop = asyncio.get_event_loop()
+            duration = await loop.run_in_executor(
+                None, 
+                self.video_processor.get_video_duration,
+                video_path
+            )
+            if duration is not None:
+                # 确保时长是整数类型
+                duration = int(duration)
+                self._video_durations[video_path] = duration
+                return duration
+        except Exception as e:
+            _logger.debug(f"异步获取视频时长失败: {e}")
+        
+        return None
+
+    async def generate_thumbnails_parallel(self, media_group_download: MediaGroupDownload) -> Dict[str, str]:
+        """
+        并行为视频文件生成缩略图，优化性能
         
         Args:
             media_group_download: 媒体组下载结果
@@ -313,42 +467,114 @@ class MediaUploader:
         Returns:
             Dict[str, str]: 缩略图字典，键为文件路径，值为缩略图路径
         """
-        thumbnails = {}
+        import asyncio
         
-        for file_path, media_type in media_group_download.downloaded_files:
-            if media_type == "video":
-                try:
-                    thumbnail_result = self.video_processor.extract_thumbnail(str(file_path))
-                    thumbnail_path = None
-                    width = None
-                    height = None
-                    duration = None
-                    
-                    # 处理返回值可能是元组的情况
-                    if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
-                        if len(thumbnail_result) >= 4:
-                            thumbnail_path, width, height, duration = thumbnail_result
-                            # 确保时长是整数类型
-                            if duration is not None:
-                                duration = int(duration)
-                        elif len(thumbnail_result) >= 3:
-                            thumbnail_path, width, height = thumbnail_result
-                        else:
-                            thumbnail_path = thumbnail_result[0]
+        # 筛选出视频文件
+        video_files = [
+            (file_path, media_type) 
+            for file_path, media_type in media_group_download.downloaded_files 
+            if media_type == "video"
+        ]
+        
+        if not video_files:
+            _logger.debug("没有视频文件需要生成缩略图")
+            return {}
+        
+        async def generate_single_thumbnail(file_path, media_type):
+            """
+            异步生成单个视频的缩略图
+            
+            Args:
+                file_path: 视频文件路径
+                media_type: 媒体类型
+                
+            Returns:
+                Tuple[str, Optional[str]]: (文件路径, 缩略图路径)
+            """
+            try:
+                loop = asyncio.get_event_loop()
+                
+                # 在线程池中执行缩略图生成
+                thumbnail_result = await loop.run_in_executor(
+                    None,
+                    self.video_processor.extract_thumbnail,
+                    str(file_path)
+                )
+                
+                thumbnail_path = None
+                width = None
+                height = None
+                duration = None
+                
+                # 处理返回值可能是元组的情况
+                if isinstance(thumbnail_result, tuple) and len(thumbnail_result) >= 1:
+                    if len(thumbnail_result) >= 4:
+                        thumbnail_path, width, height, duration = thumbnail_result
+                        # 确保时长是整数类型
+                        if duration is not None:
+                            duration = int(duration)
+                    elif len(thumbnail_result) >= 3:
+                        thumbnail_path, width, height = thumbnail_result
                     else:
-                        thumbnail_path = thumbnail_result
+                        thumbnail_path = thumbnail_result[0]
+                else:
+                    thumbnail_path = thumbnail_result
+                
+                # 保存视频尺寸信息到缓存
+                if width and height:
+                    self._video_dimensions[str(file_path)] = (width, height)
+                if duration:
+                    self._video_durations[str(file_path)] = duration
+                
+                if thumbnail_path:
+                    _logger.debug(f"并行生成视频 {file_path.name} 缩略图成功")
+                    return (str(file_path), thumbnail_path)
+                else:
+                    _logger.warning(f"并行生成视频 {file_path.name} 缩略图失败：返回空路径")
+                    return (str(file_path), None)
                     
-                    if thumbnail_path:
-                        thumbnails[str(file_path)] = thumbnail_path
-                        # 保存视频尺寸信息
-                        if width and height:
-                            self._video_dimensions[str(file_path)] = (width, height)
-                        debug_message = f"为视频 {file_path.name} 生成缩略图成功"
-                        _logger.debug(debug_message)
-                except Exception as e:
-                    warning_message = f"为视频 {file_path.name} 生成缩略图失败: {e}"
-                    _logger.warning(warning_message)
+            except Exception as e:
+                _logger.warning(f"并行生成视频 {file_path.name} 缩略图失败: {e}")
+                return (str(file_path), None)
         
+        _logger.debug(f"开始并行生成 {len(video_files)} 个视频缩略图")
+        start_time = time.time()
+        
+        # 并行生成所有视频的缩略图
+        tasks = [
+            generate_single_thumbnail(file_path, media_type)
+            for file_path, media_type in video_files
+        ]
+        
+        # 使用信号量限制并发数，避免过多的FFmpeg进程
+        semaphore = asyncio.Semaphore(3)  # 最多3个并发缩略图生成
+        
+        async def limited_thumbnail_generation(task):
+            async with semaphore:
+                return await task
+        
+        # 执行所有任务（带并发限制）
+        results = await asyncio.gather(
+            *[limited_thumbnail_generation(task) for task in tasks],
+            return_exceptions=True
+        )
+        
+        generation_time = time.time() - start_time
+        _logger.debug(f"并行缩略图生成完成，耗时: {generation_time:.2f}秒")
+        
+        # 处理结果
+        thumbnails = {}
+        success_count = 0
+        for result in results:
+            if isinstance(result, Exception):
+                _logger.error(f"并行生成缩略图时发生异常: {result}")
+            elif result and len(result) == 2:
+                file_path, thumbnail_path = result
+                if thumbnail_path:
+                    thumbnails[file_path] = thumbnail_path
+                    success_count += 1
+        
+        _logger.info(f"并行缩略图生成完成: {success_count}/{len(video_files)} 个成功")
         return thumbnails
     
     def cleanup_thumbnails(self, thumbnails: Dict[str, str]):
