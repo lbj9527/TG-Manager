@@ -748,12 +748,12 @@ class MediaGroupHandler:
             await self._process_media_group(messages, pair_config)
         else:
             # 如果当前消息较少，安排一个延迟检查任务
-            # 修改：增加延迟检查的触发条件和延迟时间，确保有足够时间收集消息
+            # 优化：减少延迟时间，加快媒体组转发速度
             if len(messages) <= 8:  # 从5增加到8，确保更多情况下有延迟检查
                 # 避免为同一个媒体组重复创建延迟任务
                 if media_group_id not in self.pending_delay_tasks:
-                    # 延迟8秒后检查是否需要处理，给更多时间收集消息
-                    delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 8.0))
+                    # 优化：将延迟从8秒缩短到3秒，加快转发速度
+                    delay_task = asyncio.create_task(self._delayed_media_group_check(media_group_id, channel_id, 3.0))
                     self.pending_delay_tasks[media_group_id] = delay_task
                     logger.debug(f"为媒体组 {media_group_id} 创建延迟检查任务")
     
@@ -788,17 +788,17 @@ class MediaGroupHandler:
             time_since_last_update = time.time() - group_data['last_update_time']
             time_since_first_message = time.time() - group_data['first_message_time']
             
-            # 修改延迟检查的处理条件：
-            # 1. 如果距离最后更新已经超过5秒（增加到5秒），且消息数量大于0，则处理
-            # 2. 如果距离第一条消息超过20秒（增加到20秒），且消息数量大于0，则强制处理
+            # 优化延迟检查的处理条件，加快转发速度：
+            # 1. 如果距离最后更新已经超过2秒（从5秒优化到2秒），且消息数量大于0，则处理
+            # 2. 如果距离第一条消息超过10秒（从20秒优化到10秒），且消息数量大于0，则强制处理
             should_process = (
-                (time_since_last_update > 5.0 and len(messages) > 0) or
-                (time_since_first_message > 20.0 and len(messages) > 0)
+                (time_since_last_update > 2.0 and len(messages) > 0) or
+                (time_since_first_message > 10.0 and len(messages) > 0)
             )
             
             if should_process:
                 logger.info(f"延迟检查: 媒体组 {media_group_id} 收集到 {len(messages)} 条消息，"
-                           f"距离最后更新 {time_since_last_update:.1f}s，距离第一条消息 {time_since_first_message:.1f}s，强制处理避免丢失")
+                           f"距离最后更新 {time_since_last_update:.1f}s，距离第一条消息 {time_since_first_message:.1f}s，开始处理（优化后延迟更短）")
                 
                 # 标记为已处理
                 self.processed_media_groups.add(media_group_id)
@@ -1368,7 +1368,7 @@ class MediaGroupHandler:
                                 self.emit("forward", msg.id, source_info_str, target_info, False, modified=actually_modified)
                 
                 # 添加延迟避免触发限制
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.15)
             
             # 返回是否有成功的频道，以及需要回退的频道列表
             has_success = success_count > 0

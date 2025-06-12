@@ -361,7 +361,7 @@ class RestrictedForwardHandler:
                             _logger.warning(f"直接复制贴纸消息到 {target_info} 失败: {copy_error}，跳过")
                             continue
                         
-                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        await asyncio.sleep(0.2)  # 优化：将延迟从0.5秒缩短到0.2秒，加快转发速度
                     except Exception as e:
                         _logger.error(f"处理贴纸消息到 {target_info} 失败: {e}")
                 
@@ -479,7 +479,7 @@ class RestrictedForwardHandler:
                                 disable_notification=True
                             )
                             _logger.info(f"已将媒体消息从第一个目标频道复制到 {target_info}")
-                            await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                            await asyncio.sleep(0.2)  # 优化：将延迟从0.5秒缩短到0.2秒，加快转发速度
                         except Exception as e:
                             _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
                 
@@ -523,7 +523,7 @@ class RestrictedForwardHandler:
                         
                         sent_messages.append(sent_message)
                         _logger.info(f"已将文本消息发送到 {target_info}")
-                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        await asyncio.sleep(0.2)  # 优化：将延迟从0.5秒缩短到0.2秒，加快转发速度
                     except Exception as e:
                         _logger.error(f"发送文本消息到 {target_info} 失败: {e}")
                 
@@ -742,7 +742,7 @@ class RestrictedForwardHandler:
                             )
                             _logger.info(f"已将单条媒体消息从第一个目标频道复制到 {target_info}")
                         
-                        await asyncio.sleep(0.5)  # 添加延迟避免触发限制
+                        await asyncio.sleep(0.2)  # 优化：将延迟从0.5秒缩短到0.2秒，加快转发速度
                     except Exception as e:
                         _logger.error(f"复制到目标频道 {target_info} 失败: {e}")
             
@@ -927,7 +927,7 @@ class RestrictedForwardHandler:
                                                 original_messages, message_type)
                 
                 # 添加短暂延迟避免触发速率限制
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.15)  # 优化：将延迟从0.3秒缩短到0.15秒，加快转发速度
             
             return all_success
             
