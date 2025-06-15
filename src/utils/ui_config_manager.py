@@ -264,6 +264,40 @@ class UIConfigManager:
                             "send_final_message": pair.get("send_final_message", False)
                         }
                         
+                        # 处理文本替换规则
+                        if "text_filter" in pair:
+                            try:
+                                text_filter = []
+                                for item in pair["text_filter"]:
+                                    if isinstance(item, dict):
+                                        text_filter.append({
+                                            "original_text": item.get("original_text", ""),
+                                            "target_text": item.get("target_text", "")
+                                        })
+                                
+                                # 确保至少有一个空的文本替换规则
+                                if not text_filter:
+                                    text_filter = [{"original_text": "", "target_text": ""}]
+                                
+                                valid_pair["text_filter"] = text_filter
+                            except Exception as e:
+                                logger.warning(f"处理转发频道对文本替换规则时出错: {e}")
+                                valid_pair["text_filter"] = [{"original_text": "", "target_text": ""}]
+                        else:
+                            valid_pair["text_filter"] = [{"original_text": "", "target_text": ""}]
+                        
+                        # 处理关键词设置
+                        keywords = pair.get("keywords", [])
+                        if isinstance(keywords, list):
+                            # 确保每个关键词都是字符串并过滤空值
+                            valid_keywords = []
+                            for keyword in keywords:
+                                if keyword and isinstance(keyword, str) and keyword.strip():
+                                    valid_keywords.append(keyword.strip())
+                            valid_pair["keywords"] = valid_keywords
+                        else:
+                            valid_pair["keywords"] = []
+                        
                         # 保留媒体类型设置如果存在
                         if "media_types" in pair:
                             try:
@@ -289,7 +323,9 @@ class UIConfigManager:
                         "end_id": 0,
                         "remove_captions": False,
                         "hide_author": False,
-                        "send_final_message": False
+                        "send_final_message": False,
+                        "text_filter": [{"original_text": "", "target_text": ""}],
+                        "keywords": []
                     }]
                     logger.warning("转发频道对列表为空，已添加默认项")
                 

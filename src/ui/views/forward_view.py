@@ -111,147 +111,207 @@ class ForwardView(QWidget):
     
     def _create_config_panel(self):
         """创建配置标签页"""
-        # 频道配置标签页（原源频道标签页）
+        # 频道配置标签页（改为滚动区域）
         self.channel_tab = QWidget()
-        channel_layout = QVBoxLayout(self.channel_tab)
-        channel_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
-        channel_layout.setSpacing(4)  # 减小间距
+        # 创建主布局，只包含滚动区域
+        main_config_layout = QVBoxLayout(self.channel_tab)
+        main_config_layout.setContentsMargins(0, 0, 0, 0)  # 移除主布局边距
+        main_config_layout.setSpacing(0)  # 移除主布局间距
         
-        # 源频道和目标频道输入表单
-        form_layout = QFormLayout()
+        # 创建滚动区域
+        config_scroll_area = QScrollArea()
+        config_scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
+        config_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        config_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        config_scroll_area.setFrameShape(QScrollArea.NoFrame)  # 移除边框，使界面更简洁
+        
+        # 创建滚动内容容器
+        scroll_content_widget = QWidget()
+        config_layout = QVBoxLayout(scroll_content_widget)
+        config_layout.setContentsMargins(12, 12, 12, 12)  # 增加滚动内容边距
+        config_layout.setSpacing(15)  # 增加间距，使界面更舒适
+        
+        # 第一行：源频道
+        source_form_layout = QFormLayout()
+        source_form_layout.setSpacing(10)
+        source_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        source_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.source_input = QLineEdit()
         self.source_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("源频道:", self.source_input)
+        source_form_layout.addRow("源频道:", self.source_input)
+        config_layout.addLayout(source_form_layout)
+        
+        # 第二行：目标频道
+        target_form_layout = QFormLayout()
+        target_form_layout.setSpacing(10)
+        target_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        target_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.target_input = QLineEdit()
         self.target_input.setPlaceholderText("目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)")
-        form_layout.addRow("目标频道:", self.target_input)
+        target_form_layout.addRow("目标频道:", self.target_input)
+        config_layout.addLayout(target_form_layout)
         
-        channel_layout.addLayout(form_layout)
+        # 第三行：文本替换
+        text_replace_form_layout = QFormLayout()
+        text_replace_form_layout.setSpacing(10)
+        text_replace_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        text_replace_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
-        # 添加频道对按钮和消息ID范围放在同一行
-        button_layout = QHBoxLayout()
+        self.original_text_input = QLineEdit()
+        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔如：A,B")
+        text_replace_form_layout.addRow("文本替换:", self.original_text_input)
+        config_layout.addLayout(text_replace_form_layout)
         
-        # 消息ID范围放在左边
-        button_layout.addWidget(QLabel("起始ID:"))
-        self.start_id = QSpinBox()
-        self.start_id.setRange(0, 999999999)
-        self.start_id.setValue(0)
-        self.start_id.setSpecialValueText("最早消息")  # 当值为0时显示为"最早消息"
-        self.start_id.setFixedWidth(100)
-        button_layout.addWidget(self.start_id)
+        # 第四行：替换为
+        replace_to_form_layout = QFormLayout()
+        replace_to_form_layout.setSpacing(10)
+        replace_to_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
-        button_layout.addWidget(QLabel("结束ID:"))
-        self.end_id = QSpinBox()
-        self.end_id.setRange(0, 999999999)
-        self.end_id.setValue(0)
-        self.end_id.setSpecialValueText("最新消息")  # 当值为0时显示为"最新消息"
-        self.end_id.setFixedWidth(100)
-        button_layout.addWidget(self.end_id)
+        self.target_text_input = QLineEdit()
+        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
+        replace_to_form_layout.addRow("替换为:", self.target_text_input)
+        config_layout.addLayout(replace_to_form_layout)
         
-        # 添加弹性空间，将按钮推到右边
-        button_layout.addStretch(1)
+        # 第五行：过滤选项label
+        filter_options_label = QLabel("过滤选项:")
+        filter_options_label.setStyleSheet("font-weight: bold;")
+        config_layout.addWidget(filter_options_label)
         
-        # "添加频道对"和"删除所选"按钮放在右边
-        self.add_pair_button = QPushButton("添加频道对")
-        self.remove_pair_button = QPushButton("删除所选")
+        # 第六行：关键词过滤
+        keyword_form_layout = QFormLayout()
+        keyword_form_layout.setSpacing(10)
+        keyword_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        keyword_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
-        button_layout.addWidget(self.add_pair_button)
-        button_layout.addWidget(self.remove_pair_button)
+        self.keyword_input = QLineEdit()
+        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        keyword_form_layout.addRow("关键词过滤:", self.keyword_input)
+        config_layout.addLayout(keyword_form_layout)
         
-        channel_layout.addLayout(button_layout)
-        
-        # 要转发的媒体类型
-        media_layout = QHBoxLayout()
-        media_layout.setContentsMargins(0, 8, 0, 0)  # 增加上边距
-        
-        media_layout.addWidget(QLabel("要转发的媒体类型:"))
+        # 第七行：媒体类型
+        # 媒体类型复选框布局（移除标签）
+        media_types_layout = QHBoxLayout()
         
         self.photo_check = QCheckBox("照片")
         self.photo_check.setChecked(True)
-        media_layout.addWidget(self.photo_check)
+        media_types_layout.addWidget(self.photo_check)
         
         self.video_check = QCheckBox("视频")
         self.video_check.setChecked(True)
-        media_layout.addWidget(self.video_check)
+        media_types_layout.addWidget(self.video_check)
         
         self.document_check = QCheckBox("文档")
         self.document_check.setChecked(True)
-        media_layout.addWidget(self.document_check)
+        media_types_layout.addWidget(self.document_check)
         
         self.audio_check = QCheckBox("音频")
         self.audio_check.setChecked(True)
-        media_layout.addWidget(self.audio_check)
+        media_types_layout.addWidget(self.audio_check)
         
         self.animation_check = QCheckBox("动画")
         self.animation_check.setChecked(True)
-        media_layout.addWidget(self.animation_check)
+        media_types_layout.addWidget(self.animation_check)
         
-        media_layout.addStretch(1)  # 添加弹簧，让控件靠左对齐
-        channel_layout.addLayout(media_layout)
+        media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        config_layout.addLayout(media_types_layout)
         
-        # 转发选项区域（移动到频道对列表上方）
-        options_group = QGroupBox("转发选项")
-        options_group_layout = QVBoxLayout(options_group)
-        options_group_layout.setContentsMargins(5, 5, 5, 5)
+        # 第八行：转发参数
+        forward_params_label = QLabel("转发参数:")
+        forward_params_label.setStyleSheet("font-weight: bold;")
+        config_layout.addWidget(forward_params_label)
         
-        # 创建水平布局将三个转发选项排成一行
-        options_horizontal_layout = QHBoxLayout()
+        # 转发参数复选框布局
+        forward_params_layout = QHBoxLayout()
         
-        # 移除说明文字选项
-        self.remove_captions_check = QCheckBox("移除媒体说明文字")
-        self.remove_captions_check.setChecked(True)  # 默认选中
-        options_horizontal_layout.addWidget(self.remove_captions_check)
+        self.remove_captions_check = QCheckBox("移除媒体说明")
+        self.remove_captions_check.setChecked(True)
+        forward_params_layout.addWidget(self.remove_captions_check)
         
-        # 隐藏原作者选项
         self.hide_author_check = QCheckBox("隐藏原作者")
-        self.hide_author_check.setChecked(True)  # 默认选中
-        options_horizontal_layout.addWidget(self.hide_author_check)
+        self.hide_author_check.setChecked(True)
+        forward_params_layout.addWidget(self.hide_author_check)
         
-        # 转发完成后发送最后一条消息选项
-        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
-        self.send_final_message_check.setChecked(True)  # 默认选中
-        options_horizontal_layout.addWidget(self.send_final_message_check)
+        self.send_final_message_check = QCheckBox("转发完成发送最后一条消息")
+        self.send_final_message_check.setChecked(True)
+        forward_params_layout.addWidget(self.send_final_message_check)
         
-        # 添加弹性空间，让复选框靠左对齐
-        options_horizontal_layout.addStretch(1)
+        forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        config_layout.addLayout(forward_params_layout)
         
-        # 将水平布局添加到组框布局中
-        options_group_layout.addLayout(options_horizontal_layout)
+        # 第九行：起始ID，结束ID，添加频道对按钮，删除所选按钮
+        id_and_buttons_layout = QHBoxLayout()
         
-        # 添加转发选项组到频道布局
-        channel_layout.addWidget(options_group)
+        # 起始ID和结束ID
+        id_and_buttons_layout.addWidget(QLabel("起始ID:"))
+        self.start_id = QSpinBox()
+        self.start_id.setRange(0, 999999999)
+        self.start_id.setValue(0)
+        self.start_id.setSpecialValueText("最早消息")
+        self.start_id.setFixedWidth(100)
+        id_and_buttons_layout.addWidget(self.start_id)
         
-        # 创建频道列表部分
+        id_and_buttons_layout.addWidget(QLabel("结束ID:"))
+        self.end_id = QSpinBox()
+        self.end_id.setRange(0, 999999999)
+        self.end_id.setValue(0)
+        self.end_id.setSpecialValueText("最新消息")
+        self.end_id.setFixedWidth(100)
+        id_and_buttons_layout.addWidget(self.end_id)
+        
+        # 添加一些间距
+        id_and_buttons_layout.addSpacing(20)
+        
+        # 添加频道对和删除按钮
+        self.add_pair_button = QPushButton("添加频道对")
+        self.add_pair_button.setMinimumHeight(28)
+        id_and_buttons_layout.addWidget(self.add_pair_button)
+        
+        self.remove_pair_button = QPushButton("删除所选")
+        self.remove_pair_button.setMinimumHeight(28)
+        id_and_buttons_layout.addWidget(self.remove_pair_button)
+        
+        # 添加弹性空间，让控件靠左对齐
+        id_and_buttons_layout.addStretch(1)
+        
+        config_layout.addLayout(id_and_buttons_layout)
+        
+        # 第十行到底部：已配置频道对
         # 频道列表标题
         self.pairs_list_label = QLabel("已配置频道对:  0对")
-        self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
-        channel_layout.addWidget(self.pairs_list_label)
+        self.pairs_list_label.setStyleSheet("font-weight: bold;")
+        config_layout.addWidget(self.pairs_list_label)
         
-        # 创建滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)  # 允许小部件调整大小
-        scroll_area.setFixedHeight(100)  # 设置滚动区域的固定高度
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # 创建频道对列表滚动区域
+        pairs_scroll_area = QScrollArea()
+        pairs_scroll_area.setWidgetResizable(True)
+        pairs_scroll_area.setMinimumHeight(240)
+        pairs_scroll_area.setMaximumHeight(300)
+        pairs_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        pairs_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         
-        # 创建一个容器部件来包含列表
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(0)
+        # 创建频道对列表容器
+        pairs_scroll_content = QWidget()
+        pairs_scroll_layout = QVBoxLayout(pairs_scroll_content)
+        pairs_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        pairs_scroll_layout.setSpacing(0)
         
         # 频道对列表
         self.pairs_list = QListWidget()
         self.pairs_list.setSelectionMode(QListWidget.ExtendedSelection)
-        self.pairs_list.setContextMenuPolicy(Qt.CustomContextMenu)  # 设置自定义右键菜单
-        self.pairs_list.customContextMenuRequested.connect(self._show_context_menu)  # 连接右键菜单事件
-        scroll_layout.addWidget(self.pairs_list)
+        self.pairs_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.pairs_list.customContextMenuRequested.connect(self._show_context_menu)
+        pairs_scroll_layout.addWidget(self.pairs_list)
         
-        # 设置滚动区域的内容
-        scroll_area.setWidget(scroll_content)
-        channel_layout.addWidget(scroll_area)
+        # 设置频道对列表滚动区域的内容
+        pairs_scroll_area.setWidget(pairs_scroll_content)
+        config_layout.addWidget(pairs_scroll_area, 1)  # 添加伸展系数
+        
+        # 设置主滚动区域的内容
+        config_scroll_area.setWidget(scroll_content_widget)
+        main_config_layout.addWidget(config_scroll_area)
         
         # 转发选项标签页
         self.options_tab = QWidget()
@@ -444,6 +504,26 @@ class ForwardView(QWidget):
             QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
             return
         
+        # 获取文本替换规则
+        original_texts = [t.strip() for t in self.original_text_input.text().split(',') if t.strip()]
+        target_texts = [t.strip() for t in self.target_text_input.text().split(',') if t.strip()]
+        
+        # 构建文本替换规则
+        text_filter = []
+        max_len = max(len(original_texts), len(target_texts)) if original_texts or target_texts else 0
+        for i in range(max_len):
+            original = original_texts[i] if i < len(original_texts) else ""
+            target = target_texts[i] if i < len(target_texts) else ""
+            if original or target:  # 只添加非空的规则
+                text_filter.append({"original_text": original, "target_text": target})
+        
+        # 如果没有文本替换规则，添加一个空的默认规则
+        if not text_filter:
+            text_filter = [{"original_text": "", "target_text": ""}]
+        
+        # 获取关键词
+        keywords = [k.strip() for k in self.keyword_input.text().split(',') if k.strip()]
+        
         try:
             # 使用UIChannelPair进行验证
             channel_pair = {
@@ -455,7 +535,9 @@ class ForwardView(QWidget):
                 'end_id': end_id,
                 'remove_captions': self.remove_captions_check.isChecked(),
                 'hide_author': self.hide_author_check.isChecked(),
-                'send_final_message': self.send_final_message_check.isChecked()
+                'send_final_message': self.send_final_message_check.isChecked(),
+                'text_filter': text_filter,
+                'keywords': keywords
             }
             
             # 添加到列表中
@@ -485,6 +567,23 @@ class ForwardView(QWidget):
                     id_range_str = f"ID范围: 最早-{end_id}"
                 id_range_str = " - " + id_range_str
             
+            # 构建文本替换显示文本
+            text_filter_str = ""
+            if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
+                replacements = []
+                for rule in text_filter:
+                    original = rule.get("original_text", "")
+                    target = rule.get("target_text", "")
+                    if original or target:
+                        replacements.append(f"{original}->{target}")
+                if replacements:
+                    text_filter_str = f" - 替换: {', '.join(replacements)}"
+            
+            # 构建关键词显示文本
+            keywords_str = ""
+            if keywords:
+                keywords_str = f" - 关键词: {', '.join(keywords)}"
+            
             # 构建转发选项显示文本
             options_str = []
             if channel_pair['remove_captions']:
@@ -499,7 +598,7 @@ class ForwardView(QWidget):
                 options_display = f" - 选项: {', '.join(options_str)}"
             
             # 构建显示文本
-            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
+            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
             
             item.setText(display_text)
             item.setData(Qt.UserRole, channel_pair)
@@ -508,6 +607,9 @@ class ForwardView(QWidget):
             # 清空输入框
             self.source_input.clear()
             self.target_input.clear()
+            self.original_text_input.clear()
+            self.target_text_input.clear()
+            self.keyword_input.clear()
             
             # 更新标题
             self._update_pairs_list_title()
@@ -986,6 +1088,10 @@ class ForwardView(QWidget):
             hide_author = pair.get('hide_author', False)
             send_final_message = pair.get('send_final_message', False)
             
+            # 获取新增字段
+            text_filter = pair.get('text_filter', [])
+            keywords = pair.get('keywords', [])
+            
             if source_channel and target_channels:
                 # 保存第一个频道对的ID设置，用于设置默认值
                 if first_pair_start_id == 0 and first_pair_end_id == 0:
@@ -1001,7 +1107,9 @@ class ForwardView(QWidget):
                     'end_id': end_id,
                     'remove_captions': remove_captions,
                     'hide_author': hide_author,
-                    'send_final_message': send_final_message
+                    'send_final_message': send_final_message,
+                    'text_filter': text_filter,
+                    'keywords': keywords
                 }
                 
                 # 添加到列表
@@ -1031,6 +1139,23 @@ class ForwardView(QWidget):
                         id_range_str = f"ID范围: 最早-{end_id}"
                     id_range_str = " - " + id_range_str
                 
+                # 构建文本替换显示文本
+                text_filter_str = ""
+                if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
+                    replacements = []
+                    for rule in text_filter:
+                        original = rule.get("original_text", "")
+                        target = rule.get("target_text", "")
+                        if original or target:
+                            replacements.append(f"{original}->{target}")
+                    if replacements:
+                        text_filter_str = f" - 替换: {', '.join(replacements)}"
+                
+                # 构建关键词显示文本
+                keywords_str = ""
+                if keywords:
+                    keywords_str = f" - 关键词: {', '.join(keywords)}"
+                
                 # 构建转发选项显示文本
                 options_str = []
                 if channel_pair['remove_captions']:
@@ -1045,7 +1170,7 @@ class ForwardView(QWidget):
                     options_display = f" - 选项: {', '.join(options_str)}"
                 
                 # 构建显示文本
-                display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
+                display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
                 
                 # 创建列表项
                 item = QListWidgetItem()
@@ -1305,82 +1430,137 @@ class ForwardView(QWidget):
         # 创建编辑对话框
         edit_dialog = QDialog(self)
         edit_dialog.setWindowTitle("编辑频道对")
-        edit_dialog.setMinimumWidth(550)  # 原宽度400加三分之一: 400 * 4/3 = 533
-        edit_dialog.setMinimumHeight(500)  # 增加50像素高度
+        edit_dialog.setMinimumWidth(650)  # 增加宽度以容纳更多字段
+        edit_dialog.setMinimumHeight(650)  # 增加高度以容纳更多字段
         
-        # 对话框布局
-        dialog_layout = QVBoxLayout(edit_dialog)
+        # 创建主布局，只包含滚动区域
+        main_dialog_layout = QVBoxLayout(edit_dialog)
+        main_dialog_layout.setContentsMargins(0, 0, 0, 0)
+        main_dialog_layout.setSpacing(0)
         
-        # 表单布局
-        form_layout = QFormLayout()
+        # 创建滚动区域
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
         
-        # 源频道输入
+        # 创建滚动内容容器
+        scroll_content_widget = QWidget()
+        dialog_layout = QVBoxLayout(scroll_content_widget)
+        dialog_layout.setContentsMargins(15, 15, 15, 15)
+        dialog_layout.setSpacing(15)
+        
+        # 第一行：源频道
+        source_form_layout = QFormLayout()
+        source_form_layout.setSpacing(10)
+        source_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        source_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
         source_input = QLineEdit(channel_pair.get('source_channel', ''))
-        form_layout.addRow("源频道:", source_input)
+        source_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
+        source_form_layout.addRow("源频道:", source_input)
+        dialog_layout.addLayout(source_form_layout)
         
-        # 目标频道输入
+        # 第二行：目标频道
+        target_form_layout = QFormLayout()
+        target_form_layout.setSpacing(10)
+        target_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        target_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
         target_input = QLineEdit(', '.join(channel_pair.get('target_channels', [])))
-        form_layout.addRow("目标频道:", target_input)
+        target_input.setPlaceholderText("目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)")
+        target_form_layout.addRow("目标频道:", target_input)
+        dialog_layout.addLayout(target_form_layout)
         
-        # 消息ID范围
-        id_layout = QHBoxLayout()
+        # 第三行：文本替换
+        text_replace_form_layout = QFormLayout()
+        text_replace_form_layout.setSpacing(10)
+        text_replace_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        text_replace_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
-        # 起始ID
-        start_id_input = QSpinBox()
-        start_id_input.setRange(0, 999999999)
-        start_id_input.setValue(channel_pair.get('start_id', 0))
-        start_id_input.setSpecialValueText("最早消息")
+        # 解析文本替换规则
+        text_filter = channel_pair.get('text_filter', [])
+        original_texts = []
+        target_texts = []
         
-        # 结束ID
-        end_id_input = QSpinBox()
-        end_id_input.setRange(0, 999999999)
-        end_id_input.setValue(channel_pair.get('end_id', 0))
-        end_id_input.setSpecialValueText("最新消息")
+        for rule in text_filter:
+            if isinstance(rule, dict):
+                original_text = rule.get('original_text', '')
+                target_text = rule.get('target_text', '')
+                if original_text or target_text:
+                    original_texts.append(original_text)
+                    target_texts.append(target_text)
         
-        id_layout.addWidget(QLabel("起始ID:"))
-        id_layout.addWidget(start_id_input)
-        id_layout.addWidget(QLabel("结束ID:"))
-        id_layout.addWidget(end_id_input)
+        original_text_input = QLineEdit(', '.join(original_texts))
+        original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔")
+        text_replace_form_layout.addRow("文本替换:", original_text_input)
+        dialog_layout.addLayout(text_replace_form_layout)
         
-        # 添加ID范围布局
-        dialog_layout.addLayout(form_layout)
-        dialog_layout.addLayout(id_layout)
+        # 第四行：替换为
+        replace_to_form_layout = QFormLayout()
+        replace_to_form_layout.setSpacing(10)
+        replace_to_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
-        # 媒体类型选择
+        target_text_input = QLineEdit(', '.join(target_texts))
+        target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
+        replace_to_form_layout.addRow("替换为:", target_text_input)
+        dialog_layout.addLayout(replace_to_form_layout)
+        
+        # 第五行：过滤选项label
+        filter_options_label = QLabel("过滤选项:")
+        filter_options_label.setStyleSheet("font-weight: bold;")
+        dialog_layout.addWidget(filter_options_label)
+        
+        # 第六行：关键词过滤
+        keyword_form_layout = QFormLayout()
+        keyword_form_layout.setSpacing(10)
+        keyword_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        keyword_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
+        keywords = channel_pair.get('keywords', [])
+        keyword_input = QLineEdit(', '.join(keywords))
+        keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        keyword_form_layout.addRow("关键词过滤:", keyword_input)
+        dialog_layout.addLayout(keyword_form_layout)
+        
+        # 第七行：媒体类型
         media_types = channel_pair.get('media_types', [])
         
-        media_group = QGroupBox("媒体类型")
-        media_layout = QHBoxLayout(media_group)
+        # 媒体类型复选框布局（移除标签）
+        media_types_layout = QHBoxLayout()
         
         photo_check = QCheckBox("照片")
         photo_check.setChecked(self._is_media_type_in_list(MediaType.PHOTO, media_types))
-        media_layout.addWidget(photo_check)
+        media_types_layout.addWidget(photo_check)
         
         video_check = QCheckBox("视频")
         video_check.setChecked(self._is_media_type_in_list(MediaType.VIDEO, media_types))
-        media_layout.addWidget(video_check)
+        media_types_layout.addWidget(video_check)
         
         document_check = QCheckBox("文档")
         document_check.setChecked(self._is_media_type_in_list(MediaType.DOCUMENT, media_types))
-        media_layout.addWidget(document_check)
+        media_types_layout.addWidget(document_check)
         
         audio_check = QCheckBox("音频")
         audio_check.setChecked(self._is_media_type_in_list(MediaType.AUDIO, media_types))
-        media_layout.addWidget(audio_check)
+        media_types_layout.addWidget(audio_check)
         
         animation_check = QCheckBox("动画")
         animation_check.setChecked(self._is_media_type_in_list(MediaType.ANIMATION, media_types))
-        media_layout.addWidget(animation_check)
+        media_types_layout.addWidget(animation_check)
         
-        # 添加媒体类型组
-        dialog_layout.addWidget(media_group)
+        media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        dialog_layout.addLayout(media_types_layout)
         
-        # 转发选项组
-        options_group = QGroupBox("转发选项")
-        options_layout = QVBoxLayout(options_group)
+        # 第八行：转发参数
+        forward_params_label = QLabel("转发参数:")
+        forward_params_label.setStyleSheet("font-weight: bold;")
+        dialog_layout.addWidget(forward_params_label)
         
-        # 创建水平布局将三个转发选项排成一行
-        options_horizontal_layout = QHBoxLayout()
+        # 转发参数复选框布局
+        forward_params_layout = QHBoxLayout()
         
         # 确保布尔值转换（处理JSON中的true/false或其他类型）
         def to_bool(value):
@@ -1397,29 +1577,47 @@ class ForwardView(QWidget):
         hide_author_value = to_bool(channel_pair.get('hide_author', False))
         send_final_message_value = to_bool(channel_pair.get('send_final_message', False))
         
-        # 移除媒体说明文字
-        remove_captions_check = QCheckBox("移除媒体说明文字")
+        remove_captions_check = QCheckBox("移除媒体说明")
         remove_captions_check.setChecked(remove_captions_value)
-        options_horizontal_layout.addWidget(remove_captions_check)
+        forward_params_layout.addWidget(remove_captions_check)
         
-        # 隐藏原作者
         hide_author_check = QCheckBox("隐藏原作者")
         hide_author_check.setChecked(hide_author_value)
-        options_horizontal_layout.addWidget(hide_author_check)
+        forward_params_layout.addWidget(hide_author_check)
         
-        # 转发完成后发送最后一条消息
-        send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
+        send_final_message_check = QCheckBox("转发完成发送最后一条消息")
         send_final_message_check.setChecked(send_final_message_value)
-        options_horizontal_layout.addWidget(send_final_message_check)
+        forward_params_layout.addWidget(send_final_message_check)
         
-        # 添加弹性空间，让复选框靠左对齐
-        options_horizontal_layout.addStretch(1)
+        forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        dialog_layout.addLayout(forward_params_layout)
         
-        # 将水平布局添加到组框布局中
-        options_layout.addLayout(options_horizontal_layout)
+        # 第九行：起始ID，结束ID
+        id_and_buttons_layout = QHBoxLayout()
         
-        # 添加转发选项组
-        dialog_layout.addWidget(options_group)
+        # 起始ID和结束ID
+        id_and_buttons_layout.addWidget(QLabel("起始ID:"))
+        start_id_input = QSpinBox()
+        start_id_input.setRange(0, 999999999)
+        start_id_input.setValue(channel_pair.get('start_id', 0))
+        start_id_input.setSpecialValueText("最早消息")
+        
+        # 结束ID
+        end_id_input = QSpinBox()
+        end_id_input.setRange(0, 999999999)
+        end_id_input.setValue(channel_pair.get('end_id', 0))
+        end_id_input.setSpecialValueText("最新消息")
+        
+        id_and_buttons_layout.addWidget(start_id_input)
+        id_and_buttons_layout.addWidget(QLabel("结束ID:"))
+        id_and_buttons_layout.addWidget(end_id_input)
+        id_and_buttons_layout.addStretch(1)
+        
+        dialog_layout.addLayout(id_and_buttons_layout)
+        
+        # 设置滚动区域的内容
+        scroll_area.setWidget(scroll_content_widget)
+        main_dialog_layout.addWidget(scroll_area)
         
         # 按钮布局
         button_layout = QHBoxLayout()
@@ -1430,7 +1628,7 @@ class ForwardView(QWidget):
         button_layout.addWidget(save_button)
         button_layout.addWidget(cancel_button)
         
-        dialog_layout.addLayout(button_layout)
+        main_dialog_layout.addLayout(button_layout)
         
         # 连接按钮信号
         save_button.clicked.connect(edit_dialog.accept)
@@ -1466,6 +1664,26 @@ class ForwardView(QWidget):
                 if not new_media_types:
                     raise ValueError("至少需要选择一种媒体类型")
                 
+                # 获取文本替换规则
+                original_texts = [t.strip() for t in original_text_input.text().split(',') if t.strip()]
+                target_texts = [t.strip() for t in target_text_input.text().split(',') if t.strip()]
+                
+                # 构建文本替换规则
+                text_filter = []
+                max_len = max(len(original_texts), len(target_texts)) if original_texts or target_texts else 0
+                for i in range(max_len):
+                    original = original_texts[i] if i < len(original_texts) else ""
+                    target = target_texts[i] if i < len(target_texts) else ""
+                    if original or target:  # 只添加非空的规则
+                        text_filter.append({"original_text": original, "target_text": target})
+                
+                # 如果没有文本替换规则，添加一个空的默认规则
+                if not text_filter:
+                    text_filter = [{"original_text": "", "target_text": ""}]
+                
+                # 获取关键词
+                keywords = [k.strip() for k in keyword_input.text().split(',') if k.strip()]
+                
                 # 使用UIChannelPair进行验证
                 validated_source = UIChannelPair.validate_channel_id(new_source, "源频道")
                 validated_targets = [UIChannelPair.validate_channel_id(t, f"目标频道 {i+1}") 
@@ -1480,7 +1698,9 @@ class ForwardView(QWidget):
                     'end_id': end_id_input.value(),
                     'remove_captions': remove_captions_check.isChecked(),
                     'hide_author': hide_author_check.isChecked(),
-                    'send_final_message': send_final_message_check.isChecked()
+                    'send_final_message': send_final_message_check.isChecked(),
+                    'text_filter': text_filter,
+                    'keywords': keywords
                 }
                 
                 # 更新列表项和数据
@@ -1532,6 +1752,25 @@ class ForwardView(QWidget):
                         id_range_str = f"ID范围: 最早-{end_id}"
                     id_range_str = " - " + id_range_str
                 
+                # 构建文本替换显示文本
+                text_filter = updated_pair.get('text_filter', [])
+                text_filter_str = ""
+                if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
+                    replacements = []
+                    for rule in text_filter:
+                        original = rule.get("original_text", "")
+                        target = rule.get("target_text", "")
+                        if original or target:
+                            replacements.append(f"{original}->{target}")
+                    if replacements:
+                        text_filter_str = f" - 替换: {', '.join(replacements)}"
+                
+                # 构建关键词显示文本
+                keywords = updated_pair.get('keywords', [])
+                keywords_str = ""
+                if keywords:
+                    keywords_str = f" - 关键词: {', '.join(keywords)}"
+                
                 # 构建转发选项显示文本
                 options_str = []
                 if updated_pair.get('remove_captions', False):
@@ -1546,7 +1785,7 @@ class ForwardView(QWidget):
                     options_display = f" - 选项: {', '.join(options_str)}"
                 
                 # 构建新的显示文本
-                display_text = f"{updated_pair['source_channel']} → {', '.join(updated_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
+                display_text = f"{updated_pair['source_channel']} → {', '.join(updated_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
                 
                 # 更新列表项
                 item.setText(display_text)

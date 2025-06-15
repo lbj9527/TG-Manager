@@ -97,6 +97,12 @@ class UIChannelPair(BaseModel):
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
     hide_author: bool = Field(False, description="是否隐藏原作者")
     send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
+    # 新增字段：文本替换规则和关键词过滤
+    text_filter: List[Dict[str, str]] = Field(
+        default_factory=lambda: [{"original_text": "", "target_text": ""}],
+        description="文本替换规则列表"
+    )
+    keywords: List[str] = Field(default_factory=list, description="关键词列表(用于关键词过滤)")
 
     @validator('source_channel')
     def validate_source_channel(cls, v):
@@ -123,6 +129,45 @@ class UIChannelPair(BaseModel):
         if v > 0 and values.get('start_id', 0) > 0 and v < values['start_id']:
             raise ValueError("结束消息ID必须大于起始消息ID (当两者都不为0时)")
         return v
+
+    @validator('text_filter')
+    def validate_text_filter(cls, v):
+        if not v:
+            return [{"original_text": "", "target_text": ""}]
+        
+        # 确保每个规则都有必要的字段
+        validated_rules = []
+        for rule in v:
+            if isinstance(rule, dict):
+                validated_rule = {
+                    "original_text": rule.get("original_text", ""),
+                    "target_text": rule.get("target_text", "")
+                }
+                validated_rules.append(validated_rule)
+            else:
+                # 如果不是字典，创建默认规则
+                validated_rules.append({"original_text": "", "target_text": ""})
+        
+        # 如果没有有效规则，添加默认规则
+        if not validated_rules:
+            validated_rules = [{"original_text": "", "target_text": ""}]
+        
+        return validated_rules
+
+    @validator('keywords')
+    def validate_keywords(cls, v):
+        # 过滤空关键词并去除首尾空格
+        if not v:
+            return []
+        
+        validated_keywords = []
+        for keyword in v:
+            if keyword and isinstance(keyword, str):
+                keyword = keyword.strip()
+                if keyword:  # 只添加非空关键词
+                    validated_keywords.append(keyword)
+        
+        return validated_keywords
 
     @classmethod
     def validate_channel_id(cls, channel_id: str, field_name: str) -> str:
@@ -575,7 +620,9 @@ def create_default_config() -> UIConfig:
                     end_id=0,
                     remove_captions=False,
                     hide_author=False,
-                    send_final_message=False
+                    send_final_message=False,
+                    text_filter=[{"original_text": "", "target_text": ""}],
+                    keywords=[]
                 )
             ],
             forward_delay=0.1,
