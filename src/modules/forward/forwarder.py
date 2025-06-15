@@ -90,6 +90,22 @@ class Forwarder():
         
         _logger.info("开始转发消息")
         
+        # 重新从配置文件读取最新配置
+        _logger.info("重新从配置文件读取最新转发配置")
+        ui_config = self.ui_config_manager.reload_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.forward_config = self.config.get('FORWARD', {})
+        self.general_config = self.config.get('GENERAL', {})
+        
+        # 更新临时目录路径
+        self.tmp_path = Path(self.forward_config.get('tmp_path', 'tmp'))
+        self.tmp_path.mkdir(exist_ok=True)
+        
+        # 重新初始化组件配置
+        self.message_filter = MessageFilter(self.config)
+        self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
+        self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config)
+        
         # 创建临时会话目录
         temp_dir = self._ensure_temp_dir()
         
@@ -97,6 +113,10 @@ class Forwarder():
         channel_pairs = self.forward_config.get('forward_channel_pairs', [])
         info_message = f"配置的频道对数量: {len(channel_pairs)}"
         _logger.info(info_message)
+        
+        if not channel_pairs:
+            _logger.warning("没有有效的频道对配置，无法启动转发")
+            return
         
         # 转发计数
         forward_count = 0
@@ -107,8 +127,13 @@ class Forwarder():
         
         # 处理每个频道对
         for pair in channel_pairs:
-            source_channel = pair["source_channel"]
-            target_channels = pair["target_channels"]
+            source_channel = pair.get("source_channel", "")
+            target_channels = pair.get("target_channels", [])
+            
+            if not source_channel:
+                warning_message = "源频道不能为空，跳过"
+                _logger.warning(warning_message)
+                continue
             
             if not target_channels:
                 warning_message = f"源频道 {source_channel} 没有配置目标频道，跳过"
@@ -411,3 +436,27 @@ class Forwarder():
                 asyncio.create_task(self.app.check_connection_status_now())
             except Exception as e:
                 _logger.error(f"触发连接状态检查失败: {e}") 
+
+    async def stop_forward(self):
+        """
+        停止转发操作
+        """
+        _logger.info("收到停止转发信号")
+        
+        # 设置停止标志（如果有的话）
+        if hasattr(self, 'should_stop'):
+            self.should_stop = True
+        
+        # 停止并行处理器
+        if hasattr(self, 'parallel_processor') and self.parallel_processor:
+            if hasattr(self.parallel_processor, 'download_running'):
+                self.parallel_processor.download_running = False
+            if hasattr(self.parallel_processor, 'upload_running'):
+                self.parallel_processor.upload_running = False
+        
+        # 停止直接转发器
+        if hasattr(self, 'direct_forwarder') and self.direct_forwarder:
+            if hasattr(self.direct_forwarder, 'should_stop'):
+                self.direct_forwarder.should_stop = True
+        
+        _logger.info("转发器已停止") 

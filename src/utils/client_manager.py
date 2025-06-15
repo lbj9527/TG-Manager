@@ -194,7 +194,9 @@ class ClientManager(QObject):
                 api_id=self.api_id,
                 api_hash=self.api_hash,
                 phone_number=self.phone_number,
-                **proxy_args
+                **proxy_args,
+                sleep_threshold = 30,
+                max_concurrent_transmissions = 2
             )
             logger.info("客户端创建成功")
             return self.client

@@ -20,6 +20,7 @@ import asyncio
 import time
 import os
 from pathlib import Path
+from datetime import datetime
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType, UIChannelPair, UIForwardConfig
@@ -565,114 +566,107 @@ class ForwardView(QWidget):
     
     def _start_forward(self):
         """开始转发操作"""
-        # 检查是否有选择频道对
-        if not self.pairs_list.count():
-            QMessageBox.warning(self, "警告", "请添加至少一个频道对")
+        # 检查是否有转发器实例
+        if not hasattr(self, 'forwarder') or self.forwarder is None:
+            QMessageBox.warning(self, "错误", "转发器未初始化，无法启动转发")
             return
 
-        # 获取转发配置
-        forward_config = self._get_forward_config()
-        if not forward_config:
-            return
-
+        # 添加状态消息
+        self._add_status_message("开始转发...")
+        
+        # 自动切换到转发进度选项卡
+        self.config_tabs.setCurrentIndex(2)  # 转发进度选项卡是第3个（索引为2）
+        
         # 更新按钮状态
         self.start_forward_button.setEnabled(False)
         self.stop_forward_button.setEnabled(True)
 
-        # 更新进度条状态
-        self.progress_bar.setFormat("准备转发...")
-        self.progress_bar.setRange(0, 0)  # 显示持续进度
-        
-        # 自动切换到转发进度标签页
-        self.config_tabs.setCurrentWidget(self.progress_tab)
-
-        # 创建一个新的事件循环运行器来执行转发任务
-        self.forward_task = run_async_task(self._run_forward_task(forward_config))
-    
-    async def _run_forward_task(self, forward_config):
-        """运行转发任务的异步方法"""
+        # 异步启动转发
+        import asyncio
         try:
-            # 确保转发器能读取到最新配置
-            if hasattr(self.forwarder, 'config'):
-                self.forwarder.config = self.config.copy() if isinstance(self.config, dict) else {}
-            
-            # 发送转发开始信号
-            self.forward_started.emit(forward_config)
-            
-            # 使用Qt信号在主线程中更新UI状态
-            QMetaObject.invokeMethod(self, "_update_forward_status", 
-                                    Qt.QueuedConnection,
-                                    Q_ARG(str, "转发任务已开始"))
-            
-            # 等待转发完成
-            await asyncio.sleep(0.5)  # 给UI一些时间更新
-            
-            # 调用forwarder的forward_messages方法执行实际转发
-            await self.forwarder.forward_messages()
-            
-            # 注意：forward_completed信号会由forwarder触发，通过信号/槽连接来更新UI
-            
-        except asyncio.CancelledError:
-            # 任务被取消，正常退出
-            logger.info("转发任务已取消")
-            # 不需要更新UI，因为取消任务的代码已经更新了UI
-            
+            # 创建启动转发的任务
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_start_forward())
         except Exception as e:
-            # 捕获并处理其他异常
-            error_message = f"转发过程中发生错误: {str(e)}"
-            logger.error(error_message)
-            
-            # 添加详细错误信息到日志
-            import traceback
-            logger.debug(f"错误详情:\n{traceback.format_exc()}")
-            
-            # 使用Qt信号在主线程中更新UI
-            QMetaObject.invokeMethod(
-                self, 
-                "_on_forward_error_ui_update", 
-                Qt.QueuedConnection,
-                Q_ARG(str, error_message)
-            )
+            logger.error(f"启动转发时出错: {e}")
+            self._add_status_message(f"启动转发失败: {e}")
+            # 恢复按钮状态
+            self.start_forward_button.setEnabled(True)
+            self.stop_forward_button.setEnabled(False)
     
-    @Slot(str)
-    def _update_forward_status(self, status_message):
-        """在主线程中更新转发状态
+    async def _async_start_forward(self):
+        """异步启动转发"""
+        try:
+            self._add_status_message("正在启动转发器...")
+            await self.forwarder.forward_messages()
+            self._add_status_message("转发完成")
+        except Exception as e:
+            logger.error(f"异步启动转发失败: {e}")
+            self._add_status_message(f"启动转发失败: {e}")
+            # 恢复按钮状态
+            self.start_forward_button.setEnabled(True)
+            self.stop_forward_button.setEnabled(False)
+
+    def _add_status_message(self, message):
+        """添加状态消息到界面显示
         
         Args:
-            status_message: 状态消息
+            message: 要显示的状态消息
         """
-        self.overall_status_label.setText(status_message)
+        try:
+            # 格式化消息，添加时间戳
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            formatted_message = f"[{timestamp}] {message}"
+            
+            # 显示在总体状态标签中
+            if hasattr(self, 'overall_status_label'):
+                self.overall_status_label.setText(formatted_message)
+            
+            # 同时在控制台输出
+            print(formatted_message)
+            
+        except Exception as e:
+            print(f"添加状态消息失败: {e}")
+            # 如果格式化失败，至少显示原始消息
+            if hasattr(self, 'overall_status_label'):
+                self.overall_status_label.setText(str(message))
     
     def _stop_forward(self):
-        """停止转发操作"""
-        # 调用forwarder的停止方法
-        if hasattr(self, 'forwarder') and self.forwarder:
-            # 如果存在forwarder实例，调用其停止方法
-            if hasattr(self.forwarder, 'stop') and callable(self.forwarder.stop):
-                self.forwarder.stop()
-                logger.info("已发送停止转发信号")
+        """停止转发"""
+        # 检查是否有转发器实例
+        if not hasattr(self, 'forwarder') or self.forwarder is None:
+            self._add_status_message("转发器未初始化")
+            return
         
-        # 取消正在运行的任务
-        if hasattr(self, 'forward_task') and self.forward_task is not None:
-            try:
-                if not self.forward_task.done():
-                    self.forward_task.cancel()
-                    logger.info("已取消转发任务")
-            except Exception as e:
-                logger.error(f"取消任务时出错: {e}")
-            finally:
-                self.forward_task = None
+        # 添加状态消息
+        self._add_status_message("停止转发...")
         
-        # 更新UI状态
-        self.overall_status_label.setText("转发已停止")
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("转发已中止")
-        
-        # 恢复按钮状态
+        # 更新按钮状态
         self.start_forward_button.setEnabled(True)
         self.stop_forward_button.setEnabled(False)
+        
+        # 异步停止转发
+        import asyncio
+        try:
+            # 创建停止转发的任务
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_stop_forward())
+        except Exception as e:
+            logger.error(f"停止转发时出错: {e}")
+            self._add_status_message(f"停止转发失败: {e}")
     
+    async def _async_stop_forward(self):
+        """异步停止转发"""
+        try:
+            # 如果转发器有停止方法，调用它
+            if hasattr(self.forwarder, 'stop_forward'):
+                await self.forwarder.stop_forward()
+            self._add_status_message("转发已停止")
+        except Exception as e:
+            logger.error(f"异步停止转发失败: {e}")
+            self._add_status_message(f"停止转发失败: {e}")
+
     def _on_forward_complete_ui_update(self):
         """转发完成后的UI更新"""
         # 更新状态
@@ -1176,60 +1170,16 @@ class ForwardView(QWidget):
         # self.pairs_list.scrollToBottom()
     
     def _get_forward_config(self):
-        """收集转发配置信息
+        """收集转发配置信息（已弃用）
+        
+        此方法已被弃用，转发配置现在直接从配置文件实时读取
         
         Returns:
-            dict: 转发配置信息，如果验证失败则返回None
+            None: 此方法不再返回配置，仅保留以防止兼容性问题
         """
-        # 检查是否有forwarder实例
-        if not hasattr(self, 'forwarder') or self.forwarder is None:
-            error_message = "转发器实例不存在，无法开始转发"
-            logger.error(error_message)
-            QMessageBox.critical(self, "错误", error_message)
-            return None
-            
-        # 频道对列表
-        channel_pairs = []
-        
-        # 检查是否有频道对
-        if len(self.channel_pairs) == 0:
-            # 提示用户
-            response = QMessageBox.question(self, "无转发频道对", 
-                "转发列表中没有配置频道对，是否使用默认频道对(@username → @username)？\n"
-                "可以在开始转发后修改API配置中的具体频道信息。",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            
-            if response == QMessageBox.No:
-                return None
-            
-            # 创建默认频道对
-            default_pair = {
-                'source_channel': "@username",
-                'target_channels': ["@username"],
-                'media_types': self._get_media_types(),
-                'start_id': self.start_id.value(),
-                'end_id': self.end_id.value()
-            }
-            channel_pairs.append(default_pair)
-            logger.debug("使用默认频道对进行转发")
-        else:
-            channel_pairs = self.channel_pairs
-            # 确保每个频道对都有媒体类型
-            for pair in channel_pairs:
-                if not pair.get('media_types'):
-                    pair['media_types'] = self._get_media_types()
-        
-        # 收集其他配置
-        config = {
-            'channel_pairs': channel_pairs,
-            'tmp_path': self.tmp_path.text() or "tmp",
-            'media_types': self._get_media_types(),
-            'default_start_id': self.start_id.value(),
-            'default_end_id': self.end_id.value(),
-            'timestamp': int(time.time())
-        }
-        
-        return config 
+        # 此方法已被弃用，转发配置现在在forwarder中实时从配置文件读取
+        logger.warning("_get_forward_config方法已被弃用，配置现在从配置文件实时读取")
+        return None
 
     def _show_context_menu(self, pos):
         """显示右键菜单
