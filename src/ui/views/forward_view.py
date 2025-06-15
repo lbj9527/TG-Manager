@@ -221,18 +221,32 @@ class ForwardView(QWidget):
         scroll_area.setWidget(scroll_content)
         channel_layout.addWidget(scroll_area)
         
+        # 转发选项区域（添加到频道配置标签卡）
+        options_group = QGroupBox("转发选项")
+        options_group_layout = QVBoxLayout(options_group)
+        options_group_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # 移除说明文字选项
+        self.remove_captions_check = QCheckBox("移除媒体说明文字")
+        self.remove_captions_check.setChecked(True)  # 默认选中
+        options_group_layout.addWidget(self.remove_captions_check)
+        
+        # 隐藏原作者选项
+        self.hide_author_check = QCheckBox("隐藏原作者")
+        self.hide_author_check.setChecked(True)  # 默认选中
+        options_group_layout.addWidget(self.hide_author_check)
+        
+        # 转发完成后发送最后一条消息选项
+        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
+        self.send_final_message_check.setChecked(True)  # 默认选中
+        options_group_layout.addWidget(self.send_final_message_check)
+        
+        channel_layout.addWidget(options_group)
+        
         # 转发选项标签页
         self.options_tab = QWidget()
         options_layout = QVBoxLayout(self.options_tab)
         options_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # 移除说明文字选项
-        self.remove_captions_check = QCheckBox("移除媒体说明文字")
-        options_layout.addWidget(self.remove_captions_check)
-        
-        # 隐藏原作者选项
-        self.hide_author_check = QCheckBox("隐藏原作者")
-        options_layout.addWidget(self.hide_author_check)
         
         # 转发延迟
         delay_layout = QHBoxLayout()
@@ -261,11 +275,6 @@ class ForwardView(QWidget):
         
         options_layout.addLayout(tmp_layout)
         
-        # 自定义文字尾巴复选框
-        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
-        self.send_final_message_check.setChecked(False)
-        options_layout.addWidget(self.send_final_message_check)
-        
         # HTML文件路径
         html_file_layout = QHBoxLayout()
         html_file_layout.addWidget(QLabel("HTML文件:"))
@@ -273,11 +282,11 @@ class ForwardView(QWidget):
         self.final_message_html_file = QLineEdit()
         self.final_message_html_file.setReadOnly(True)
         self.final_message_html_file.setPlaceholderText("选择HTML文件")
-        self.final_message_html_file.setEnabled(False)  # 初始状态禁用
+        self.final_message_html_file.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
         html_file_layout.addWidget(self.final_message_html_file)
         
         self.browse_html_button = QPushButton("浏览...")
-        self.browse_html_button.setEnabled(False)  # 初始状态禁用
+        self.browse_html_button.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
         html_file_layout.addWidget(self.browse_html_button)
         
         options_layout.addLayout(html_file_layout)
@@ -433,7 +442,10 @@ class ForwardView(QWidget):
                                    for i, t in enumerate(target_channels)],
                 'media_types': media_types,
                 'start_id': start_id,
-                'end_id': end_id
+                'end_id': end_id,
+                'remove_captions': self.remove_captions_check.isChecked(),
+                'hide_author': self.hide_author_check.isChecked(),
+                'send_final_message': self.send_final_message_check.isChecked()
             }
             
             # 添加到列表中
@@ -463,8 +475,21 @@ class ForwardView(QWidget):
                     id_range_str = f"ID范围: 最早-{end_id}"
                 id_range_str = " - " + id_range_str
             
+            # 构建转发选项显示文本
+            options_str = []
+            if channel_pair['remove_captions']:
+                options_str.append("移除说明")
+            if channel_pair['hide_author']:
+                options_str.append("隐藏作者")
+            if channel_pair['send_final_message']:
+                options_str.append("发送完成消息")
+            
+            options_display = ""
+            if options_str:
+                options_display = f" - 选项: {', '.join(options_str)}"
+            
             # 构建显示文本
-            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}"
+            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
             
             item.setText(display_text)
             item.setData(Qt.UserRole, channel_pair)
@@ -538,6 +563,35 @@ class ForwardView(QWidget):
         """处理自定义文字尾巴选项的启用/禁用"""
         self.final_message_html_file.setEnabled(checked)
         self.browse_html_button.setEnabled(checked)
+    
+    def _is_media_type_in_list(self, media_type, media_types_list):
+        """检查媒体类型是否在列表中
+        
+        Args:
+            media_type: 要检查的媒体类型枚举
+            media_types_list: 媒体类型列表（可能包含字符串或枚举）
+            
+        Returns:
+            bool: 是否在列表中
+        """
+        if not media_types_list:
+            return False
+        
+        # 获取媒体类型的字符串值
+        target_value = media_type.value if isinstance(media_type, MediaType) else str(media_type)
+        
+        for mt in media_types_list:
+            # 统一比较字符串值
+            if isinstance(mt, MediaType):
+                if mt.value == target_value:
+                    return True
+            elif isinstance(mt, str):
+                if mt == target_value:
+                    return True
+            elif str(mt) == target_value:
+                return True
+        
+        return False
     
     def _get_media_types(self):
         """获取选中的媒体类型
@@ -779,7 +833,10 @@ class ForwardView(QWidget):
                     target_channels=["@username"],  # 使用占位符频道名
                     media_types=self._get_media_types(),
                     start_id=self.start_id.value(),
-                    end_id=self.end_id.value()
+                    end_id=self.end_id.value(),
+                    remove_captions=self.remove_captions_check.isChecked(),
+                    hide_author=self.hide_author_check.isChecked(),
+                    send_final_message=self.send_final_message_check.isChecked()
                 )
                 ui_channel_pairs.append(default_channel_pair)
                 logger.debug("使用默认频道对替代空列表")
@@ -791,17 +848,17 @@ class ForwardView(QWidget):
                         target_channels=pair['target_channels'],
                         media_types=pair.get('media_types', self._get_media_types()),
                         start_id=pair.get('start_id', 0),
-                        end_id=pair.get('end_id', 0)
+                        end_id=pair.get('end_id', 0),
+                        remove_captions=pair.get('remove_captions', False),
+                        hide_author=pair.get('hide_author', False),
+                        send_final_message=pair.get('send_final_message', False)
                     ))
             
-            # 创建UIForwardConfig对象
+            # 创建UIForwardConfig对象（移除了三个参数）
             forward_config = UIForwardConfig(
                 forward_channel_pairs=ui_channel_pairs,
-                remove_captions=self.remove_captions_check.isChecked(),
-                hide_author=self.hide_author_check.isChecked(),
                 forward_delay=round(float(self.forward_delay.value()), 1),  # 四舍五入到一位小数，解决精度问题
                 tmp_path=self.tmp_path.text(),
-                send_final_message=self.send_final_message_check.isChecked(),
                 final_message_html_file=self.final_message_html_file.text()
             )
             
@@ -900,8 +957,7 @@ class ForwardView(QWidget):
         forward_config = config.get('FORWARD', {})
         channel_pairs = forward_config.get('forward_channel_pairs', [])
         
-        # 记录第一个频道对的媒体类型和ID范围，用于设置控件初始状态
-        first_pair_media_types = []
+        # 记录第一个频道对的消息ID范围，用于设置控件初始状态
         first_pair_start_id = 0
         first_pair_end_id = 0
         
@@ -915,10 +971,14 @@ class ForwardView(QWidget):
             start_id = pair.get('start_id', 0)
             end_id = pair.get('end_id', 0)
             
+            # 获取转发选项参数
+            remove_captions = pair.get('remove_captions', False)
+            hide_author = pair.get('hide_author', False)
+            send_final_message = pair.get('send_final_message', False)
+            
             if source_channel and target_channels:
-                # 保存第一个频道对的设置，用于设置默认值
-                if not first_pair_media_types:
-                    first_pair_media_types = media_types
+                # 保存第一个频道对的ID设置，用于设置默认值
+                if first_pair_start_id == 0 and first_pair_end_id == 0:
                     first_pair_start_id = start_id
                     first_pair_end_id = end_id
                 
@@ -928,7 +988,10 @@ class ForwardView(QWidget):
                     'target_channels': target_channels,
                     'media_types': media_types,
                     'start_id': start_id,
-                    'end_id': end_id
+                    'end_id': end_id,
+                    'remove_captions': remove_captions,
+                    'hide_author': hide_author,
+                    'send_final_message': send_final_message
                 }
                 
                 # 添加到列表
@@ -936,15 +999,15 @@ class ForwardView(QWidget):
                 
                 # 创建媒体类型显示文本
                 media_types_str = []
-                if MediaType.PHOTO in media_types:
+                if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                     media_types_str.append("照片")
-                if MediaType.VIDEO in media_types:
+                if self._is_media_type_in_list(MediaType.VIDEO, media_types):
                     media_types_str.append("视频")
-                if MediaType.DOCUMENT in media_types:
+                if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
                     media_types_str.append("文档")
-                if MediaType.AUDIO in media_types:
+                if self._is_media_type_in_list(MediaType.AUDIO, media_types):
                     media_types_str.append("音频")
-                if MediaType.ANIMATION in media_types:
+                if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
                     media_types_str.append("动画")
                 
                 # 构建ID范围显示文本
@@ -958,9 +1021,24 @@ class ForwardView(QWidget):
                         id_range_str = f"ID范围: 最早-{end_id}"
                     id_range_str = " - " + id_range_str
                 
+                # 构建转发选项显示文本
+                options_str = []
+                if channel_pair['remove_captions']:
+                    options_str.append("移除说明")
+                if channel_pair['hide_author']:
+                    options_str.append("隐藏作者")
+                if channel_pair['send_final_message']:
+                    options_str.append("发送完成消息")
+                
+                options_display = ""
+                if options_str:
+                    options_display = f" - 选项: {', '.join(options_str)}"
+                
+                # 构建显示文本
+                display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
+                
                 # 创建列表项
                 item = QListWidgetItem()
-                display_text = f"{source_channel} → {', '.join(target_channels)} (媒体类型：{', '.join(media_types_str)}){id_range_str}"
                 item.setText(display_text)
                 item.setData(Qt.UserRole, channel_pair)
                 self.pairs_list.addItem(item)
@@ -968,26 +1046,17 @@ class ForwardView(QWidget):
         # 更新频道对列表标题
         self._update_pairs_list_title()
         
-        # 加载其他转发选项
-        self.remove_captions_check.setChecked(forward_config.get('remove_captions', False))
-        self.hide_author_check.setChecked(forward_config.get('hide_author', False))
+        # 注意：新增频道对界面的媒体类型和转发选项保持默认选中状态，不受配置文件影响
+        # 只有右键编辑菜单才需要从配置加载状态
         
-        # 加载自定义文字尾巴选项
-        self.send_final_message_check.setChecked(forward_config.get('send_final_message', False))
+        # 加载HTML文件设置
         self.final_message_html_file.setText(forward_config.get('final_message_html_file', ''))
-        self.final_message_html_file.setEnabled(self.send_final_message_check.isChecked())
-        self.browse_html_button.setEnabled(self.send_final_message_check.isChecked())
+        # HTML文件输入框状态根据当前的send_final_message_check状态来设置
+        current_send_final_state = self.send_final_message_check.isChecked()
+        self.final_message_html_file.setEnabled(current_send_final_state)
+        self.browse_html_button.setEnabled(current_send_final_state)
         
-        # 加载媒体类型复选框
-        media_types = first_pair_media_types or forward_config.get('media_types', [])
-        media_types_str = [str(t) for t in media_types]  # 确保类型为字符串
-        
-        self.photo_check.setChecked(MediaType.PHOTO in media_types_str)
-        self.video_check.setChecked(MediaType.VIDEO in media_types_str)
-        self.document_check.setChecked(MediaType.DOCUMENT in media_types_str) 
-        self.audio_check.setChecked(MediaType.AUDIO in media_types_str)
-        self.animation_check.setChecked(MediaType.ANIMATION in media_types_str)
-        
+        # 新增界面的媒体类型和转发选项保持默认选中，不从配置加载
         # 加载消息ID设置（使用第一个频道对的ID设置）
         self.start_id.setValue(first_pair_start_id)
         self.end_id.setValue(first_pair_end_id)
@@ -1268,33 +1337,69 @@ class ForwardView(QWidget):
         
         # 媒体类型选择
         media_types = channel_pair.get('media_types', [])
-        media_types_str = [str(t) for t in media_types]
         
         media_group = QGroupBox("媒体类型")
         media_layout = QHBoxLayout(media_group)
         
         photo_check = QCheckBox("照片")
-        photo_check.setChecked(MediaType.PHOTO in media_types_str)
+        photo_check.setChecked(self._is_media_type_in_list(MediaType.PHOTO, media_types))
         media_layout.addWidget(photo_check)
         
         video_check = QCheckBox("视频")
-        video_check.setChecked(MediaType.VIDEO in media_types_str)
+        video_check.setChecked(self._is_media_type_in_list(MediaType.VIDEO, media_types))
         media_layout.addWidget(video_check)
         
         document_check = QCheckBox("文档")
-        document_check.setChecked(MediaType.DOCUMENT in media_types_str)
+        document_check.setChecked(self._is_media_type_in_list(MediaType.DOCUMENT, media_types))
         media_layout.addWidget(document_check)
         
         audio_check = QCheckBox("音频")
-        audio_check.setChecked(MediaType.AUDIO in media_types_str)
+        audio_check.setChecked(self._is_media_type_in_list(MediaType.AUDIO, media_types))
         media_layout.addWidget(audio_check)
         
         animation_check = QCheckBox("动画")
-        animation_check.setChecked(MediaType.ANIMATION in media_types_str)
+        animation_check.setChecked(self._is_media_type_in_list(MediaType.ANIMATION, media_types))
         media_layout.addWidget(animation_check)
         
         # 添加媒体类型组
         dialog_layout.addWidget(media_group)
+        
+        # 转发选项组
+        options_group = QGroupBox("转发选项")
+        options_layout = QVBoxLayout(options_group)
+        
+        # 确保布尔值转换（处理JSON中的true/false或其他类型）
+        def to_bool(value):
+            if isinstance(value, bool):
+                return value
+            elif isinstance(value, str):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            elif isinstance(value, (int, float)):
+                return bool(value)
+            else:
+                return bool(value)
+        
+        remove_captions_value = to_bool(channel_pair.get('remove_captions', False))
+        hide_author_value = to_bool(channel_pair.get('hide_author', False))
+        send_final_message_value = to_bool(channel_pair.get('send_final_message', False))
+        
+        # 移除媒体说明文字
+        remove_captions_check = QCheckBox("移除媒体说明文字")
+        remove_captions_check.setChecked(remove_captions_value)
+        options_layout.addWidget(remove_captions_check)
+        
+        # 隐藏原作者
+        hide_author_check = QCheckBox("隐藏原作者")
+        hide_author_check.setChecked(hide_author_value)
+        options_layout.addWidget(hide_author_check)
+        
+        # 转发完成后发送最后一条消息
+        send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
+        send_final_message_check.setChecked(send_final_message_value)
+        options_layout.addWidget(send_final_message_check)
+        
+        # 添加转发选项组
+        dialog_layout.addWidget(options_group)
         
         # 按钮布局
         button_layout = QHBoxLayout()
@@ -1352,7 +1457,10 @@ class ForwardView(QWidget):
                     'target_channels': validated_targets,
                     'media_types': new_media_types,
                     'start_id': start_id_input.value(),
-                    'end_id': end_id_input.value()
+                    'end_id': end_id_input.value(),
+                    'remove_captions': remove_captions_check.isChecked(),
+                    'hide_author': hide_author_check.isChecked(),
+                    'send_final_message': send_final_message_check.isChecked()
                 }
                 
                 # 更新列表项和数据
@@ -1379,15 +1487,15 @@ class ForwardView(QWidget):
                 media_types = updated_pair.get('media_types', [])
                 media_types_str = []
                 
-                if MediaType.PHOTO in media_types:
+                if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                     media_types_str.append("照片")
-                if MediaType.VIDEO in media_types:
+                if self._is_media_type_in_list(MediaType.VIDEO, media_types):
                     media_types_str.append("视频")
-                if MediaType.DOCUMENT in media_types:
+                if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
                     media_types_str.append("文档")
-                if MediaType.AUDIO in media_types:
+                if self._is_media_type_in_list(MediaType.AUDIO, media_types):
                     media_types_str.append("音频")
-                if MediaType.ANIMATION in media_types:
+                if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
                     media_types_str.append("动画")
                 
                 # 构建ID范围显示文本
@@ -1404,8 +1512,21 @@ class ForwardView(QWidget):
                         id_range_str = f"ID范围: 最早-{end_id}"
                     id_range_str = " - " + id_range_str
                 
+                # 构建转发选项显示文本
+                options_str = []
+                if updated_pair.get('remove_captions', False):
+                    options_str.append("移除说明")
+                if updated_pair.get('hide_author', False):
+                    options_str.append("隐藏作者")
+                if updated_pair.get('send_final_message', False):
+                    options_str.append("发送完成消息")
+                
+                options_display = ""
+                if options_str:
+                    options_display = f" - 选项: {', '.join(options_str)}"
+                
                 # 构建新的显示文本
-                display_text = f"{updated_pair['source_channel']} → {', '.join(updated_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}"
+                display_text = f"{updated_pair['source_channel']} → {', '.join(updated_pair['target_channels'])} (媒体类型：{', '.join(media_types_str)}){id_range_str}{options_display}"
                 
                 # 更新列表项
                 item.setText(display_text)

@@ -4,6 +4,88 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.1.3] - 2025-01-20
+
+### 🏗️ 重大架构调整 (Major Architecture Changes)
+- **转发模块配置结构重构**：将转发选项从全局配置移动到每个频道对的独立配置中
+  - **参数迁移**：`remove_captions`、`hide_author`、`send_final_message` 三个参数从全局移动到每个频道对配置
+  - **配置粒度优化**：用户现在可以为每个频道对单独配置转发选项，实现更精细的控制
+  - **向后兼容**：保持与旧配置格式的兼容性，自动迁移现有配置
+
+### 🎨 UI界面重大改进 (UI/UX Improvements)
+- **布局重组**：
+  - 将三个转发选项控件从"转发选项"标签卡移动到"频道配置"标签卡
+  - 在频道配置界面添加"转发选项"分组框，提供更直观的配置体验
+  - 更新频道对列表显示，包含转发选项的状态信息
+
+- **编辑功能增强**：
+  - 频道对编辑对话框新增转发选项配置区域
+  - 支持右键编辑现有频道对的转发选项
+  - 显示文本优化，清晰展示每个频道对的配置状态
+
+### 🔧 技术实现优化 (Technical Implementation)
+- **配置模型更新**：
+  ```python
+  # UIChannelPair 新增字段
+  remove_captions: bool = Field(False, description="是否移除媒体说明文字")
+  hide_author: bool = Field(False, description="是否隐藏原作者")
+  send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
+  
+  # UIForwardConfig 移除全局字段
+  # remove_captions, hide_author, send_final_message 已移至频道对配置
+  ```
+
+- **配置保存/加载逻辑重构**：
+  - 更新 `_save_config()` 方法，将转发选项保存到每个频道对中
+  - 更新 `load_config()` 方法，从频道对配置中读取转发选项
+  - 更新 `_add_channel_pair()` 和 `_edit_channel_pair()` 方法，支持新的配置结构
+
+- **默认配置调整**：
+  - 更新 `create_default_config()` 函数，在默认频道对中包含转发选项
+  - 确保新用户创建的配置文件使用新的结构
+
+### 📋 配置文件格式变更 (Configuration Format Changes)
+- **新配置结构**：
+  ```json
+  {
+    "FORWARD": {
+      "forward_channel_pairs": [
+        {
+          "source_channel": "@source",
+          "target_channels": ["@target1", "@target2"],
+          "media_types": ["photo", "video"],
+          "start_id": 0,
+          "end_id": 0,
+          "remove_captions": true,        // 新增：转发选项
+          "hide_author": false,           // 新增：转发选项
+          "send_final_message": true      // 新增：转发选项
+        }
+      ],
+      "forward_delay": 0.1,
+      "tmp_path": "tmp",
+      "final_message_html_file": ""
+      // 移除：remove_captions, hide_author, send_final_message 全局参数
+    }
+  }
+  ```
+
+### 🚀 功能增强 (Feature Enhancements)
+- **精细化控制**：
+  - 不同频道对可以有不同的转发策略
+  - 支持为重要频道对单独设置隐藏作者
+  - 灵活的说明文字处理策略
+  - 个性化的转发完成消息配置
+
+- **用户体验提升**：
+  - 更直观的配置界面，转发选项与频道对配置集成
+  - 清晰的状态显示，一目了然地查看每个频道对的配置
+  - 便捷的编辑功能，支持单独修改频道对的转发选项
+
+### 🔄 向后兼容性 (Backward Compatibility)
+- **配置自动迁移**：程序启动时自动检测旧配置格式并迁移
+- **功能保持**：原有转发功能完全保持，无功能缺失
+- **平滑升级**：用户升级后无需手动调整配置
+
 ## [2.1.2] - 2025-01-20
 
 ### 🛠️ 错误修复 (Bug Fixes)

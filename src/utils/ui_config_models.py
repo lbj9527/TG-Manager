@@ -93,6 +93,10 @@ class UIChannelPair(BaseModel):
     )
     start_id: int = Field(0, description="起始消息ID (0表示从最早消息开始)")
     end_id: int = Field(0, description="结束消息ID (0表示转发到最新消息)")
+    # 转发选项参数
+    remove_captions: bool = Field(False, description="是否移除媒体说明文字")
+    hide_author: bool = Field(False, description="是否隐藏原作者")
+    send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
 
     @validator('source_channel')
     def validate_source_channel(cls, v):
@@ -417,11 +421,8 @@ class UIUploadConfig(BaseModel):
 class UIForwardConfig(BaseModel):
     """转发配置模型"""
     forward_channel_pairs: List[UIChannelPair] = Field(..., description="转发频道对列表")
-    remove_captions: bool = Field(False, description="是否移除媒体说明文字")
-    hide_author: bool = Field(False, description="是否隐藏原作者")
     forward_delay: float = Field(0.1, description="转发间隔时间(秒)", ge=0)
     tmp_path: str = Field("tmp", description="临时文件路径")
-    send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
     final_message_html_file: str = Field("", description="最后一条消息的HTML文件路径")
 
     @validator('forward_channel_pairs')
@@ -571,14 +572,14 @@ def create_default_config() -> UIConfig:
                     target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
                     media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
                     start_id=0,
-                    end_id=0
+                    end_id=0,
+                    remove_captions=False,
+                    hide_author=False,
+                    send_final_message=False
                 )
             ],
-            remove_captions=False,
-            hide_author=False,
             forward_delay=0.1,
             tmp_path="tmp",
-            send_final_message=False,
             final_message_html_file=""
         ),
         MONITOR=UIMonitorConfig(
