@@ -191,6 +191,38 @@ class ForwardView(QWidget):
         media_layout.addStretch(1)  # 添加弹簧，让控件靠左对齐
         channel_layout.addLayout(media_layout)
         
+        # 转发选项区域（移动到频道对列表上方）
+        options_group = QGroupBox("转发选项")
+        options_group_layout = QVBoxLayout(options_group)
+        options_group_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # 创建水平布局将三个转发选项排成一行
+        options_horizontal_layout = QHBoxLayout()
+        
+        # 移除说明文字选项
+        self.remove_captions_check = QCheckBox("移除媒体说明文字")
+        self.remove_captions_check.setChecked(True)  # 默认选中
+        options_horizontal_layout.addWidget(self.remove_captions_check)
+        
+        # 隐藏原作者选项
+        self.hide_author_check = QCheckBox("隐藏原作者")
+        self.hide_author_check.setChecked(True)  # 默认选中
+        options_horizontal_layout.addWidget(self.hide_author_check)
+        
+        # 转发完成后发送最后一条消息选项
+        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
+        self.send_final_message_check.setChecked(True)  # 默认选中
+        options_horizontal_layout.addWidget(self.send_final_message_check)
+        
+        # 添加弹性空间，让复选框靠左对齐
+        options_horizontal_layout.addStretch(1)
+        
+        # 将水平布局添加到组框布局中
+        options_group_layout.addLayout(options_horizontal_layout)
+        
+        # 添加转发选项组到频道布局
+        channel_layout.addWidget(options_group)
+        
         # 创建频道列表部分
         # 频道列表标题
         self.pairs_list_label = QLabel("已配置频道对:  0对")
@@ -220,28 +252,6 @@ class ForwardView(QWidget):
         # 设置滚动区域的内容
         scroll_area.setWidget(scroll_content)
         channel_layout.addWidget(scroll_area)
-        
-        # 转发选项区域（添加到频道配置标签卡）
-        options_group = QGroupBox("转发选项")
-        options_group_layout = QVBoxLayout(options_group)
-        options_group_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # 移除说明文字选项
-        self.remove_captions_check = QCheckBox("移除媒体说明文字")
-        self.remove_captions_check.setChecked(True)  # 默认选中
-        options_group_layout.addWidget(self.remove_captions_check)
-        
-        # 隐藏原作者选项
-        self.hide_author_check = QCheckBox("隐藏原作者")
-        self.hide_author_check.setChecked(True)  # 默认选中
-        options_group_layout.addWidget(self.hide_author_check)
-        
-        # 转发完成后发送最后一条消息选项
-        self.send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
-        self.send_final_message_check.setChecked(True)  # 默认选中
-        options_group_layout.addWidget(self.send_final_message_check)
-        
-        channel_layout.addWidget(options_group)
         
         # 转发选项标签页
         self.options_tab = QWidget()
@@ -1295,7 +1305,8 @@ class ForwardView(QWidget):
         # 创建编辑对话框
         edit_dialog = QDialog(self)
         edit_dialog.setWindowTitle("编辑频道对")
-        edit_dialog.setMinimumWidth(400)
+        edit_dialog.setMinimumWidth(550)  # 原宽度400加三分之一: 400 * 4/3 = 533
+        edit_dialog.setMinimumHeight(500)  # 增加50像素高度
         
         # 对话框布局
         dialog_layout = QVBoxLayout(edit_dialog)
@@ -1368,6 +1379,9 @@ class ForwardView(QWidget):
         options_group = QGroupBox("转发选项")
         options_layout = QVBoxLayout(options_group)
         
+        # 创建水平布局将三个转发选项排成一行
+        options_horizontal_layout = QHBoxLayout()
+        
         # 确保布尔值转换（处理JSON中的true/false或其他类型）
         def to_bool(value):
             if isinstance(value, bool):
@@ -1386,18 +1400,23 @@ class ForwardView(QWidget):
         # 移除媒体说明文字
         remove_captions_check = QCheckBox("移除媒体说明文字")
         remove_captions_check.setChecked(remove_captions_value)
-        options_layout.addWidget(remove_captions_check)
-
+        options_horizontal_layout.addWidget(remove_captions_check)
         
         # 隐藏原作者
         hide_author_check = QCheckBox("隐藏原作者")
         hide_author_check.setChecked(hide_author_value)
-        options_layout.addWidget(hide_author_check)
+        options_horizontal_layout.addWidget(hide_author_check)
         
         # 转发完成后发送最后一条消息
         send_final_message_check = QCheckBox("转发完成后发送最后一条消息")
         send_final_message_check.setChecked(send_final_message_value)
-        options_layout.addWidget(send_final_message_check)
+        options_horizontal_layout.addWidget(send_final_message_check)
+        
+        # 添加弹性空间，让复选框靠左对齐
+        options_horizontal_layout.addStretch(1)
+        
+        # 将水平布局添加到组框布局中
+        options_layout.addLayout(options_horizontal_layout)
         
         # 添加转发选项组
         dialog_layout.addWidget(options_group)
