@@ -1387,6 +1387,7 @@ class ForwardView(QWidget):
         remove_captions_check = QCheckBox("移除媒体说明文字")
         remove_captions_check.setChecked(remove_captions_value)
         options_layout.addWidget(remove_captions_check)
+
         
         # 隐藏原作者
         hide_author_check = QCheckBox("隐藏原作者")

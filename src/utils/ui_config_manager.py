@@ -257,7 +257,11 @@ class UIConfigManager:
                             "source_channel": source_channel,
                             "target_channels": valid_targets,
                             "start_id": pair.get("start_id", 0),  # 保留原始的start_id
-                            "end_id": pair.get("end_id", 0)      # 保留原始的end_id
+                            "end_id": pair.get("end_id", 0),      # 保留原始的end_id
+                            # 添加转发选项布尔字段
+                            "remove_captions": pair.get("remove_captions", False),
+                            "hide_author": pair.get("hide_author", False),  
+                            "send_final_message": pair.get("send_final_message", False)
                         }
                         
                         # 保留媒体类型设置如果存在
@@ -282,7 +286,10 @@ class UIConfigManager:
                         "source_channel": "",
                         "target_channels": [""],
                         "start_id": 0,
-                        "end_id": 0
+                        "end_id": 0,
+                        "remove_captions": False,
+                        "hide_author": False,
+                        "send_final_message": False
                     }]
                     logger.warning("转发频道对列表为空，已添加默认项")
                 
@@ -351,7 +358,10 @@ class UIConfigManager:
                             "target_channels": valid_targets,
                             "remove_captions": pair.get("remove_captions", False),
                             "start_id": pair.get("start_id", 0),  # 保留原始的start_id
-                            "end_id": pair.get("end_id", 0)      # 保留原始的end_id
+                            "end_id": pair.get("end_id", 0),      # 保留原始的end_id
+                            # 添加转发选项布尔字段
+                            "hide_author": pair.get("hide_author", False),  
+                            "send_final_message": pair.get("send_final_message", False)
                         }
                         
                         # 处理文本替换规则
