@@ -243,8 +243,93 @@ class TGManagerApp(QObject):
         # 设置清理处理器
         self.cleanup_manager.setup_cleanup_handlers()
         
+        # 启动时清理临时目录
+        self._cleanup_temp_directories_on_startup()
+        
         # 连接信号
         self._connect_signals()
+    
+    def _cleanup_temp_directories_on_startup(self):
+        """启动时清理临时目录"""
+        try:
+            import shutil
+            from pathlib import Path
+            
+            logger.info("程序启动，开始清理临时目录...")
+            
+            # 定义需要清理的临时目录列表
+            temp_dirs = [
+                "tmp",                      # 通用临时目录
+                "temp",                     # 临时处理目录
+                Path("tmp") / "downloads",  # 临时下载目录
+                Path("tmp") / "uploads",    # 临时上传目录
+                Path("temp") / "restricted_forward",  # 禁止转发内容处理临时目录
+            ]
+            
+            cleaned_count = 0
+            total_size_cleaned = 0
+            
+            for temp_dir in temp_dirs:
+                temp_path = Path(temp_dir)
+                
+                if temp_path.exists() and temp_path.is_dir():
+                    try:
+                        # 计算目录大小（用于日志记录）
+                        dir_size = self._calculate_directory_size(temp_path)
+                        
+                        # 清理目录内容，但保留目录本身
+                        for item in temp_path.iterdir():
+                            if item.is_file():
+                                item.unlink()
+                                logger.debug(f"已删除临时文件: {item}")
+                            elif item.is_dir():
+                                shutil.rmtree(item)
+                                logger.debug(f"已删除临时目录: {item}")
+                        
+                        if dir_size > 0:
+                            cleaned_count += 1
+                            total_size_cleaned += dir_size
+                            logger.info(f"已清理临时目录: {temp_path} (释放 {dir_size / 1024 / 1024:.2f} MB)")
+                        
+                    except Exception as e:
+                        logger.warning(f"清理临时目录 {temp_path} 时出错: {e}")
+                        continue
+            
+            if cleaned_count > 0:
+                logger.info(f"启动清理完成，共清理 {cleaned_count} 个目录，释放 {total_size_cleaned / 1024 / 1024:.2f} MB 空间")
+            else:
+                logger.debug("启动清理完成，没有找到需要清理的临时文件")
+                
+        except Exception as e:
+            logger.error(f"启动时清理临时目录失败: {e}")
+            import traceback
+            logger.debug(f"启动清理错误详情:\n{traceback.format_exc()}")
+    
+    def _calculate_directory_size(self, directory_path: Path) -> int:
+        """计算目录总大小（字节）
+        
+        Args:
+            directory_path: 目录路径
+            
+        Returns:
+            int: 目录总大小（字节）
+        """
+        total_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(directory_path):
+                for filename in filenames:
+                    file_path = os.path.join(dirpath, filename)
+                    # 跳过符号链接避免重复计算
+                    if not os.path.islink(file_path):
+                        try:
+                            total_size += os.path.getsize(file_path)
+                        except OSError:
+                            # 文件可能在计算过程中被删除
+                            pass
+        except Exception as e:
+            logger.debug(f"计算目录大小时出错: {e}")
+        
+        return total_size
     
     def _connect_signals(self):
         """连接各种信号"""

@@ -301,4 +301,96 @@ class MessageIterator:
             await asyncio.sleep(e.x)
         except Exception as e:
             _logger.error(f"获取消息失败: {e}")
-            _logger.exception("详细错误信息：") 
+            _logger.exception("详细错误信息：")
+
+    async def iter_messages_by_ids(self, chat_id: Union[str, int], message_ids: List[int]) -> AsyncGenerator[Message, None]:
+        """
+        按指定的消息ID列表获取消息
+        
+        Args:
+            chat_id: 频道ID
+            message_ids: 要获取的消息ID列表
+        
+        Yields:
+            Message: 消息对象，按照消息ID顺序
+        """
+        if not message_ids:
+            _logger.info("消息ID列表为空，无需获取消息")
+            return
+        
+        # 排序消息ID，确保按从小到大的顺序处理
+        sorted_ids = sorted(message_ids)
+        total_messages = len(sorted_ids)
+        
+        _logger.info(f"开始按ID列表获取消息: chat_id={chat_id}, 消息数量={total_messages}")
+        _logger.debug(f"消息ID列表: {sorted_ids[:20]}{'...' if len(sorted_ids) > 20 else ''}")
+        
+        # 分批获取消息，避免单次请求过多
+        batch_size = 50  # 每次最多获取50条消息
+        successful_count = 0
+        failed_count = 0
+        
+        try:
+            # 分批处理消息ID
+            for i in range(0, total_messages, batch_size):
+                batch_ids = sorted_ids[i:i + batch_size]
+                batch_start = i + 1
+                batch_end = min(i + batch_size, total_messages)
+                
+                _logger.debug(f"获取消息批次 {batch_start}-{batch_end}/{total_messages}: IDs {batch_ids[0]}-{batch_ids[-1]}")
+                
+                try:
+                    # 使用FloodWait处理器包装get_messages调用
+                    messages = await self._execute_with_flood_wait(
+                        self.client.get_messages, 
+                        chat_id, 
+                        batch_ids,
+                        max_retries=3,
+                        base_delay=1.0
+                    )
+                    
+                    # 处理返回的消息
+                    if messages:
+                        # 如果返回的是单个消息，转换为列表
+                        if not isinstance(messages, list):
+                            messages = [messages]
+                        
+                        # 过滤掉None消息并按ID排序
+                        valid_messages = [msg for msg in messages if msg is not None]
+                        valid_messages.sort(key=lambda x: x.id)
+                        
+                        for message in valid_messages:
+                            successful_count += 1
+                            yield message
+                    
+                    # 计算失败的消息数量
+                    expected_count = len(batch_ids)
+                    actual_count = len(messages) if messages else 0
+                    if isinstance(messages, list):
+                        actual_count = len([msg for msg in messages if msg is not None])
+                    elif messages is not None:
+                        actual_count = 1
+                    else:
+                        actual_count = 0
+                    
+                    batch_failed = expected_count - actual_count
+                    failed_count += batch_failed
+                    
+                    if batch_failed > 0:
+                        _logger.debug(f"批次中有 {batch_failed} 条消息获取失败（可能已删除或无权限）")
+                    
+                    # 批次间的适当延迟，避免频繁请求
+                    if i + batch_size < total_messages:
+                        await asyncio.sleep(0.5)
+                        
+                except Exception as e:
+                    _logger.error(f"获取消息批次失败 (IDs {batch_ids[0]}-{batch_ids[-1]}): {e}")
+                    failed_count += len(batch_ids)
+                    continue
+            
+            # 记录最终统计
+            _logger.info(f"按ID获取消息完成: 成功 {successful_count} 条, 失败 {failed_count} 条, 总计 {total_messages} 条")
+            
+        except Exception as e:
+            _logger.error(f"按ID获取消息时发生错误: {e}")
+            raise 

@@ -175,6 +175,26 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
                             else:
                                 media_types.append(media_type)
                         pair_dict['media_types'] = media_types
+                    
+                    # 添加关键词到每个频道对配置中
+                    if hasattr(pair, 'keywords'):
+                        pair_dict['keywords'] = pair.keywords
+                    
+                    # 添加其他过滤选项到每个频道对配置中
+                    for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions"]:
+                        if hasattr(pair, filter_field):
+                            pair_dict[filter_field] = getattr(pair, filter_field)
+                    
+                    # 添加文本替换规则
+                    text_replacements = {}
+                    if hasattr(pair, 'text_filter') and pair.text_filter:
+                        for rule in pair.text_filter:
+                            original = rule.get("original_text", "")
+                            target = rule.get("target_text", "")
+                            if original:  # 只添加非空的原文
+                                text_replacements[original] = target
+                    pair_dict['text_filter'] = getattr(pair, 'text_filter', [])  # UI格式
+                    pair_dict['text_replacements'] = text_replacements  # 内部处理格式
                     channel_pairs.append(pair_dict)
                 forward_dict['forward_channel_pairs'] = channel_pairs
             

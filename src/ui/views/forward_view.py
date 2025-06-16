@@ -186,9 +186,20 @@ class ForwardView(QWidget):
         keyword_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         keyword_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
+        # 关键词输入框和说明布局
+        keyword_layout = QHBoxLayout()
+        keyword_layout.setSpacing(8)
+        
         self.keyword_input = QLineEdit()
         self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔")
-        keyword_form_layout.addRow("关键词过滤:", self.keyword_input)
+        keyword_layout.addWidget(self.keyword_input)
+        
+        # 添加关键词过滤说明
+        keyword_note = QLabel("只转发包含关键词的消息")
+        keyword_note.setStyleSheet("color: #ff6666; font-size: 12px; font-weight: bold;")
+        keyword_layout.addWidget(keyword_note)
+        
+        keyword_form_layout.addRow("关键词过滤:", keyword_layout)
         config_layout.addLayout(keyword_form_layout)
         
         # 第七行：媒体类型

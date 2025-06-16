@@ -130,6 +130,19 @@ class Forwarder():
             source_channel = pair.get("source_channel", "")
             target_channels = pair.get("target_channels", [])
             
+            # 添加调试信息，显示频道对配置的详细内容
+            _logger.debug(f"完整频道对配置: {pair}")
+            _logger.debug(f"关键词配置: {pair.get('keywords', [])} (类型: {type(pair.get('keywords', []))})")
+            _logger.debug(f"媒体类型配置: {pair.get('media_types', [])}")
+            _logger.debug(f"文本替换配置: {pair.get('text_filter', [])}")
+            
+            # 显示关键词配置状态
+            keywords_in_config = pair.get('keywords', [])
+            if keywords_in_config:
+                _logger.info(f"🔍 频道对 [{source_channel}] 关键词过滤: {', '.join(keywords_in_config)}")
+            else:
+                _logger.info(f"📢 频道对 [{source_channel}] 无关键词过滤，转发所有类型的消息")
+            
             if not source_channel:
                 warning_message = "源频道不能为空，跳过"
                 _logger.warning(warning_message)
@@ -176,8 +189,13 @@ class Forwarder():
                     status_message = "源频道允许直接转发，获取媒体组和消息..."
                     _logger.info(status_message)
                     
-                    # 获取媒体组和消息，传入当前频道对配置
-                    media_groups = await self.media_group_collector.get_media_groups(source_id, source_channel, pair)
+                    # 获取目标频道列表（用于历史检查）
+                    target_channel_list = [target[0] for target in valid_target_channels]
+                    
+                    # 使用优化的媒体组获取方法，先过滤已转发的消息ID
+                    media_groups = await self.media_group_collector.get_media_groups_optimized(
+                        source_id, source_channel, target_channel_list, pair, self.history_manager
+                    )
                     
                     # 发送总媒体组数量
                     total_groups = len(media_groups)
@@ -188,31 +206,27 @@ class Forwarder():
                     # 获取是否隐藏作者配置
                     hide_author = self.forward_config.get('hide_author', False)
                     
-                    # 处理每个媒体组
+                    # 如果没有媒体组，跳过此频道对
+                    if not media_groups:
+                        _logger.info(f"源频道 {source_channel} 没有未转发的媒体组/消息，跳过")
+                        continue
+                    
+                    # 遍历每个媒体组并转发
                     for group_id, messages in media_groups.items():
                         # 更新进度
                         group_count += 1
-                        progress_percentage = (group_count / total_groups) * 100
                         
-                        # 转发媒体组
+                        # 转发媒体组到所有目标频道
                         success = await self.direct_forwarder.forward_media_group_directly(
-                            messages, 
-                            source_channel, 
-                            source_id, 
-                            valid_target_channels,
-                            hide_author
+                            messages, source_channel, source_id, valid_target_channels, hide_author, pair
                         )
                         
                         if success:
                             forward_count += 1
                             total_forward_count += 1
                         
-                        # 检查是否达到转发限制
-                        if self.general_config.get('limit', 0) > 0 and forward_count >= self.general_config.get('limit', 0):
-                            status_message = f"已达到转发限制 {self.general_config.get('limit', 0)}，暂停 {self.general_config.get('pause_time', 60)} 秒"
-                            _logger.info(status_message)
-                            await asyncio.sleep(self.general_config.get('pause_time', 60))
-                            forward_count = 0
+                        # 简短的延迟，避免请求过于频繁
+                        await asyncio.sleep(0.5)
                 else:
                     # 源频道不允许转发，需要下载后重新上传
                     status_message = "源频道不允许直接转发，将使用下载后重新上传的方式"
@@ -227,14 +241,18 @@ class Forwarder():
                     status_message = "获取媒体组信息..."
                     _logger.info(status_message)
                     
-                    # 获取媒体组信息，传入当前频道对配置
-                    media_groups_info = await self.media_group_collector.get_media_groups_info(source_id, pair)
+                    # 获取目标频道列表（用于历史检查）
+                    target_channel_list = [target[0] for target in valid_target_channels]
+                    
+                    # 使用优化的媒体组信息获取方法，先过滤已转发的消息ID
+                    media_groups_info = await self.media_group_collector.get_media_groups_info_optimized(
+                        source_id, source_channel, target_channel_list, pair, self.history_manager
+                    )
                     total_groups = len(media_groups_info)
                     
                     # 如果没有媒体组，跳过此频道对
                     if not media_groups_info:
-                        warning_message = f"源频道 {source_channel} 没有媒体组/消息，跳过"
-                        _logger.warning(warning_message)
+                        _logger.info(f"源频道 {source_channel} 没有未转发的媒体组/消息，跳过")
                         continue
                     
                     # 启动下载和上传任务
@@ -270,7 +288,7 @@ class Forwarder():
                 continue
         
         # 转发完成
-        status_message = f"所有转发任务完成，共转发 {total_forward_count} 个媒体组/消息"
+        status_message = f"🎉 转发任务完成，成功转发 {total_forward_count} 个媒体组/消息"
         _logger.info(status_message)
         
         # 发送最终消息
