@@ -16,11 +16,29 @@ from src.modules.forward.media_group_download import MediaGroupDownload
 from src.utils.video_processor import VideoProcessor
 from src.utils.logger import get_logger
 
+# 导入pyropatch FloodWait处理器
+try:
+    from src.utils.pyropatch_flood_handler import (
+        execute_with_pyropatch_flood_wait,
+        is_pyropatch_available
+    )
+    PYROPATCH_AVAILABLE = True
+except ImportError:
+    PYROPATCH_AVAILABLE = False
+
+# 导入原有FloodWait处理器作为备选
+try:
+    from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
+    FALLBACK_HANDLER_AVAILABLE = True
+except ImportError:
+    FALLBACK_HANDLER_AVAILABLE = False
+
 _logger = get_logger()
 
 class MediaUploader:
     """
     媒体上传器，负责将下载的媒体组上传到目标频道
+    集成pyropatch和内置FloodWait处理器，提供智能限流处理
     """
     
     def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None):
@@ -38,6 +56,40 @@ class MediaUploader:
         self.video_processor = VideoProcessor()
         self._video_dimensions = {}
         self._video_durations = {}
+        
+        # 选择最佳可用的FloodWait处理器
+        if PYROPATCH_AVAILABLE and is_pyropatch_available():
+            self._flood_wait_method = "pyropatch"
+            _logger.info("MediaUploader: 使用pyropatch FloodWait处理器")
+        elif FALLBACK_HANDLER_AVAILABLE:
+            self._flood_wait_method = "fallback"
+            self.flood_wait_handler = FloodWaitHandler(max_retries=3, base_delay=1.0)
+            _logger.info("MediaUploader: 使用内置FloodWait处理器")
+        else:
+            self._flood_wait_method = "none"
+            _logger.warning("MediaUploader: 未找到可用的FloodWait处理器")
+    
+    async def _execute_with_flood_wait(self, func, *args, **kwargs):
+        """
+        统一的FloodWait处理执行器，根据可用性选择最佳处理器
+        
+        Args:
+            func: 要执行的函数
+            *args: 位置参数
+            **kwargs: 关键字参数
+            
+        Returns:
+            函数执行结果
+        """
+        max_retries = self.general_config.get('max_retries', 3)
+        
+        if self._flood_wait_method == "pyropatch":
+            return await execute_with_pyropatch_flood_wait(func, *args, max_retries=max_retries, **kwargs)
+        elif self._flood_wait_method == "fallback":
+            return await self.flood_wait_handler.handle_flood_wait(func, *args, **kwargs)
+        else:
+            # 没有FloodWait处理器，直接执行
+            return await func(*args, **kwargs)
     
     async def upload_media_group_to_channel(self, 
                                           media_group: List[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio]], 
@@ -60,16 +112,17 @@ class MediaUploader:
         Returns:
             Union[List[Message], bool]: 上传成功时返回消息对象列表，失败时返回False
         """
-        retry_count = 0
-        max_retries = self.general_config.get('max_retries', 3)
-        
         message_ids = [m.id for m in media_group_download.messages]
         group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
         
         # 检查媒体组是否为空
         if not media_group:
-            _logger.error(f"媒体组为空，无法上传")
+            _logger.warning(f"媒体组为空（可能所有文件都是0字节），跳过上传到 {target_info}")
             return False
+        
+        # 统计媒体组信息
+        media_group_size = len(media_group)
+        _logger.info(f"准备上传 {media_group_size} 个有效媒体文件到 {target_info}")
             
         # 检查每个媒体项的文件路径
         for i, media_item in enumerate(media_group):
@@ -82,166 +135,124 @@ class MediaUploader:
                 if not Path(media_file).exists():
                     _logger.error(f"媒体文件不存在: {media_file}")
                     return False
-                    
-                # 记录文件信息以便调试
-                # try:
-                #     file_size = Path(media_file).stat().st_size
-                #     _logger.info(f"媒体文件 {i+1}/{len(media_group)}: {media_file}, 大小: {file_size} 字节")
-                # except Exception as e:
-                #     _logger.warning(f"无法获取媒体文件信息: {media_file}, 错误: {e}")
         
-        while retry_count < max_retries:          
-            try:
-                if len(media_group) == 1:
-                    # 单个媒体
-                    media_item = media_group[0]
-                    sent_message = None
-                    
-                    if isinstance(media_item, InputMediaPhoto):
-                        debug_message = f"尝试发送照片到 {target_info}"
-                        _logger.debug(debug_message)
-                        
-                        sent_message = await self.client.send_photo(
-                            chat_id=target_id,
-                            photo=media_item.media,
-                            caption=media_item.caption,
-                            disable_notification=True
-                        )
-                    elif isinstance(media_item, InputMediaVideo):
-                        # 使用缩略图
-                        thumb = None
-                        if thumbnails:
-                            thumb = thumbnails.get(media_item.media)
-                            if thumb and not Path(thumb).exists():
-                                _logger.warning(f"缩略图文件不存在: {thumb}，不使用缩略图")
-                                thumb = None
-                        
-                        debug_message = f"尝试发送视频到 {target_info}"
-                        _logger.debug(debug_message)
-                        
-                        sent_message = await self.client.send_video(
-                            chat_id=target_id,
-                            video=media_item.media,
-                            caption=media_item.caption,
-                            supports_streaming=True,
-                            thumb=thumb,
-                            width=self._get_video_width(media_item.media),
-                            height=self._get_video_height(media_item.media),
-                            duration=self._get_video_duration(media_item.media),
-                            disable_notification=True
-                        )
-                    elif isinstance(media_item, InputMediaDocument):
-                        debug_message = f"尝试发送文档到 {target_info}"
-                        _logger.debug(debug_message)
-                        
-                        sent_message = await self.client.send_document(
-                            chat_id=target_id,
-                            document=media_item.media,
-                            caption=media_item.caption,
-                            disable_notification=True
-                        )
-                    elif isinstance(media_item, InputMediaAudio):
-                        debug_message = f"尝试发送音频到 {target_info}"
-                        _logger.debug(debug_message)
-                        
-                        sent_message = await self.client.send_audio(
-                            chat_id=target_id,
-                            audio=media_item.media,
-                            caption=media_item.caption,
-                            disable_notification=True
-                        )
-                    else:
-                        warning_message = f"未知媒体类型: {type(media_item)}"
-                        _logger.warning(warning_message)
-                        return False
-                    
-                    # 确保sent_message存在
-                    if not sent_message:
-                        _logger.warning(f"媒体上传成功，但没有获取到消息对象")
-                        sent_messages = []
-                    else:
-                        sent_messages = [sent_message]
-                else:
-                    # 媒体组
-                    debug_message = f"尝试发送媒体组到 {target_info}"
+        # 使用FloodWaitHandler处理上传
+        async def upload_operation():
+            if len(media_group) == 1:
+                # 单个媒体
+                media_item = media_group[0]
+                sent_message = None
+                
+                if isinstance(media_item, InputMediaPhoto):
+                    debug_message = f"尝试发送照片到 {target_info}"
                     _logger.debug(debug_message)
                     
-                    sent_messages = await self.client.send_media_group(
+                    sent_message = await self.client.send_photo(
                         chat_id=target_id,
-                        media=media_group,
+                        photo=media_item.media,
+                        caption=media_item.caption,
                         disable_notification=True
                     )
-                
-                # 记录转发历史
-                if self.history_manager:
-                    for message in media_group_download.messages:
-                        self.history_manager.add_forward_record(
-                            media_group_download.source_channel,
-                            message.id,
-                            target_channel,
-                            media_group_download.source_id
-                        )
-                
-                # 上传成功后立即清理缩略图
-                if thumbnails:
-                    debug_message = f"上传成功，清理缩略图: {group_id} 到 {target_info}"
+                elif isinstance(media_item, InputMediaVideo):
+                    # 使用缩略图
+                    thumb = None
+                    if thumbnails:
+                        thumb = thumbnails.get(media_item.media)
+                        if thumb and not Path(thumb).exists():
+                            _logger.warning(f"缩略图文件不存在: {thumb}，不使用缩略图")
+                            thumb = None
+                    
+                    debug_message = f"尝试发送视频到 {target_info}"
                     _logger.debug(debug_message)
-                    for video_path, thumbnail_path in thumbnails.items():
-                        self.video_processor.delete_thumbnail(thumb_path=thumbnail_path)
-                        _logger.debug(f"已删除缩略图: {thumbnail_path}")
-                
-                success_message = f"媒体上传到 {target_info} 成功"
-                _logger.info(success_message)
-                
-                # 返回消息对象列表，用于后续复制
-                return sent_messages
-            
-            except FloodWait as e:
-                warning_message = f"上传媒体时遇到限制，等待 {e.x} 秒"
-                _logger.warning(warning_message)
-                
-                try:
-                    await asyncio.sleep(e.x)
-                except asyncio.CancelledError:
-                    warning_message = "上传任务已取消(FloodWait等待期间)"
+                    
+                    sent_message = await self.client.send_video(
+                        chat_id=target_id,
+                        video=media_item.media,
+                        caption=media_item.caption,
+                        supports_streaming=True,
+                        thumb=thumb,
+                        width=self._get_video_width(media_item.media),
+                        height=self._get_video_height(media_item.media),
+                        duration=self._get_video_duration(media_item.media),
+                        disable_notification=True
+                    )
+                elif isinstance(media_item, InputMediaDocument):
+                    debug_message = f"尝试发送文档到 {target_info}"
+                    _logger.debug(debug_message)
+                    
+                    sent_message = await self.client.send_document(
+                        chat_id=target_id,
+                        document=media_item.media,
+                        caption=media_item.caption,
+                        disable_notification=True
+                    )
+                elif isinstance(media_item, InputMediaAudio):
+                    debug_message = f"尝试发送音频到 {target_info}"
+                    _logger.debug(debug_message)
+                    
+                    sent_message = await self.client.send_audio(
+                        chat_id=target_id,
+                        audio=media_item.media,
+                        caption=media_item.caption,
+                        disable_notification=True
+                    )
+                else:
+                    warning_message = f"未知媒体类型: {type(media_item)}"
                     _logger.warning(warning_message)
                     return False
+                
+                # 确保sent_message存在
+                if not sent_message:
+                    _logger.warning(f"媒体上传成功，但没有获取到消息对象")
+                    sent_messages = []
+                else:
+                    sent_messages = [sent_message]
+            else:
+                # 媒体组
+                debug_message = f"尝试发送媒体组到 {target_info}"
+                _logger.debug(debug_message)
+                
+                sent_messages = await self.client.send_media_group(
+                    chat_id=target_id,
+                    media=media_group,
+                    disable_notification=True
+                )
             
-            except Exception as e:
-                retry_count += 1
-                error_message = f"上传媒体到频道 {target_info} 失败 (尝试 {retry_count}/{max_retries}): {str(e)}"
-                _logger.error(error_message)
-                
-                # 记录详细错误信息
-                import traceback
-                error_details = traceback.format_exc()
-                _logger.error(f"错误详情:\n{error_details}")
-                
-                # 检查是否是无效文件错误
-                if "Invalid file" in str(e):
-                    # 记录每个媒体项的详细信息
-                    for i, media_item in enumerate(media_group):
-                        media_file = getattr(media_item, 'media', None)
-                        item_type = type(media_item).__name__
-                        _logger.error(f"媒体项 {i+1}/{len(media_group)} 类型: {item_type}, 文件: {media_file}")
-                
-                if retry_count >= max_retries:
-                    break
-                
-                status_message = f"将在 {2 * retry_count} 秒后重试上传 {group_id}"
-                _logger.info(status_message)
-                
-                # 指数退避
-                try:
-                    await asyncio.sleep(2 * retry_count)
-                except asyncio.CancelledError:
-                    warning_message = "上传任务已取消(重试等待期间)"
-                    _logger.warning(warning_message)
-                    return False
+            return sent_messages
         
-        error_message = f"上传媒体到 {target_info} 失败，已达到最大重试次数 {max_retries}"
-        _logger.error(error_message)
-        return False
+        # 使用FloodWaitHandler执行上传操作
+        upload_result = await self._execute_with_flood_wait(upload_operation)
+        
+        if upload_result is not False and upload_result is not None:
+            sent_messages = upload_result
+            
+            # 记录转发历史
+            if self.history_manager:
+                for message in media_group_download.messages:
+                    self.history_manager.add_forward_record(
+                        media_group_download.source_channel,
+                        message.id,
+                        target_channel,
+                        media_group_download.source_id
+                    )
+            
+            # 上传成功后立即清理缩略图
+            if thumbnails:
+                debug_message = f"上传成功，清理缩略图: {group_id} 到 {target_info}"
+                _logger.debug(debug_message)
+                for video_path, thumbnail_path in thumbnails.items():
+                    self.video_processor.delete_thumbnail(thumb_path=thumbnail_path)
+                    _logger.debug(f"已删除缩略图: {thumbnail_path}")
+            
+            success_message = f"媒体上传到 {target_info} 成功"
+            _logger.info(success_message)
+            
+            # 返回消息对象列表，用于后续复制
+            return sent_messages
+        else:
+            error_message = f"上传媒体到 {target_info} 失败，已达到最大重试次数 {max_retries}"
+            _logger.error(error_message)
+            return False
     
     async def prepare_media_group_for_upload_parallel(self, 
                                                      media_group_download: MediaGroupDownload, 
@@ -279,6 +290,17 @@ class MediaUploader:
                 import aiofiles.os
                 if not await aiofiles.os.path.exists(file_path_str):
                     _logger.warning(f"文件不存在: {file_path_str}，跳过")
+                    return None
+                
+                # 检查文件大小，过滤0字节文件
+                try:
+                    file_size = await aiofiles.os.path.getsize(file_path_str)
+                    if file_size == 0:
+                        _logger.warning(f"文件大小为0B，跳过上传: {file_path_str}")
+                        return None
+                    _logger.debug(f"文件 {file_path.name} 大小: {file_size} 字节")
+                except Exception as size_error:
+                    _logger.error(f"无法获取文件大小: {file_path_str}, 错误: {size_error}")
                     return None
                     
                 # 只为第一个文件添加标题
@@ -354,13 +376,36 @@ class MediaUploader:
         
         # 过滤掉None和异常结果
         media_group = []
+        original_file_count = len(tasks)
+        zero_size_files = []
+        
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 _logger.error(f"创建第{i+1}个InputMedia对象时发生异常: {result}")
             elif result is not None:
                 media_group.append(result)
+            else:
+                # 记录被过滤的文件信息
+                if i < len(media_group_download.downloaded_files):
+                    file_path, media_type = media_group_download.downloaded_files[i]
+                    zero_size_files.append(f"{file_path.name}({media_type})")
         
-        _logger.info(f"成功并行创建 {len(media_group)}/{len(tasks)} 个InputMedia对象")
+        # 记录过滤结果
+        if zero_size_files:
+            _logger.warning(f"过滤掉 {len(zero_size_files)} 个0字节文件: {', '.join(zero_size_files)}")
+        
+        valid_file_count = len(media_group)
+        filtered_count = original_file_count - valid_file_count
+        
+        if filtered_count > 0:
+            _logger.info(f"媒体组重组完成: 原有{original_file_count}个文件，过滤{filtered_count}个无效文件，剩余{valid_file_count}个有效文件")
+        
+        # 如果所有文件都被过滤掉了
+        if not media_group:
+            _logger.warning(f"所有文件都被过滤（0字节或异常），无法创建媒体组")
+            return []
+        
+        _logger.info(f"成功创建 {len(media_group)}/{original_file_count} 个有效InputMedia对象")
         return media_group
 
     async def _get_video_width_async(self, video_path: str) -> Optional[int]:

@@ -11,11 +11,29 @@ from pyrogram.errors import FloodWait
 
 from src.utils.logger import get_logger
 
+# 导入pyropatch FloodWait处理器
+try:
+    from src.utils.pyropatch_flood_handler import (
+        execute_with_pyropatch_flood_wait,
+        is_pyropatch_available
+    )
+    PYROPATCH_AVAILABLE = True
+except ImportError:
+    PYROPATCH_AVAILABLE = False
+
+# 导入原有FloodWait处理器作为备选
+try:
+    from src.utils.flood_wait_handler import execute_with_flood_wait
+    FALLBACK_HANDLER_AVAILABLE = True
+except ImportError:
+    FALLBACK_HANDLER_AVAILABLE = False
+
 _logger = get_logger()
 
 class MessageIterator:
     """
     消息迭代器，用于高效地获取频道消息
+    集成pyropatch和内置FloodWait处理器，提供智能限流处理
     """
     
     def __init__(self, client: Client, channel_resolver=None):
@@ -28,7 +46,44 @@ class MessageIterator:
         """
         self.client = client
         self.channel_resolver = channel_resolver
+        
+        # 选择最佳可用的FloodWait处理器
+        if PYROPATCH_AVAILABLE and is_pyropatch_available():
+            self._flood_wait_method = "pyropatch"
+            _logger.info("MessageIterator: 使用pyropatch FloodWait处理器")
+        elif FALLBACK_HANDLER_AVAILABLE:
+            self._flood_wait_method = "fallback"
+            _logger.info("MessageIterator: 使用内置FloodWait处理器")
+        else:
+            self._flood_wait_method = "none"
+            _logger.warning("MessageIterator: 未找到可用的FloodWait处理器")
     
+    async def _execute_with_flood_wait(self, func, *args, max_retries=3, base_delay=1.0, **kwargs):
+        """
+        统一的FloodWait处理执行器，根据可用性选择最佳处理器
+        
+        Args:
+            func: 要执行的函数
+            *args: 位置参数
+            max_retries: 最大重试次数
+            base_delay: 基础延迟时间
+            **kwargs: 关键字参数
+            
+        Returns:
+            函数执行结果
+        """
+        if self._flood_wait_method == "pyropatch":
+            return await execute_with_pyropatch_flood_wait(
+                func, *args, max_retries=max_retries, base_delay=base_delay, **kwargs
+            )
+        elif self._flood_wait_method == "fallback":
+            return await execute_with_flood_wait(
+                func, *args, max_retries=max_retries, base_delay=base_delay, **kwargs
+            )
+        else:
+            # 没有FloodWait处理器，直接执行
+            return await func(*args, **kwargs)
+
     async def check_message_range(self, chat_id: Union[str, int], start_id: int, end_id: int) -> tuple[int, int]:
         """
         检查并调整消息ID范围，确保范围合理
@@ -103,7 +158,7 @@ class MessageIterator:
         _logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
         
         # 限流相关配置 - 平衡速度和稳定性
-        batch_size = 30  # 适中的批次大小，平衡速度和稳定性
+        batch_size = 50  # 适中的批次大小，平衡速度和稳定性
         base_delay = 2.0  # 适中的基础延迟时间
         max_delay = 120.0  # 增加最大延迟时间到2分钟
         retry_count = 0
@@ -115,11 +170,7 @@ class MessageIterator:
         # 如果消息数量很大且预期会有限流，可以考虑启用极保守模式
         if total_messages > 2000:  # 提高阈值，只有超过2000条消息才启用保守模式
             _logger.info(f"消息数量很大({total_messages}条)，将采用保守的获取策略")
-            base_delay = 4.0  # 适度增加到4秒
-            batch_size = 20   # 减少到20个
-        elif total_messages > 1000:
-            _logger.info(f"消息数量较大({total_messages}条)，将采用适度保守的获取策略")
-            base_delay = 3.0  # 适度增加到3秒
+            base_delay = 3.0  # 适度增加到4秒
             batch_size = 25   # 减少到25个
         
         try:
@@ -140,8 +191,14 @@ class MessageIterator:
                 retry_count = 0
                 while retry_count < 3:
                     try:
-                        # 使用get_messages按ID批量获取
-                        messages = await self.client.get_messages(chat_id, batch_ids)
+                        # 使用FloodWait处理器包装get_messages调用
+                        messages = await self._execute_with_flood_wait(
+                            self.client.get_messages, 
+                            chat_id, 
+                            batch_ids,
+                            max_retries=3,
+                            base_delay=1.0
+                        )
                         
                         # 处理获取到的消息
                         valid_count = 0
@@ -186,14 +243,26 @@ class MessageIterator:
                             for msg_id in batch_ids:
                                 try:
                                     await asyncio.sleep(1.0)  # 逐个获取时的延迟
-                                    message = await self.client.get_messages(chat_id, msg_id)
+                                    message = await self._execute_with_flood_wait(
+                                        self.client.get_messages,
+                                        chat_id,
+                                        msg_id,
+                                        max_retries=2,
+                                        base_delay=0.5
+                                    )
                                     if message and message.id == msg_id:
                                         fetched_messages_map[msg_id] = message
                                 except FloodWait as fw:
                                     _logger.warning(f"逐个获取时遇到限流，等待 {fw.x} 秒")
                                     await asyncio.sleep(fw.x)
                                     try:
-                                        message = await self.client.get_messages(chat_id, msg_id)
+                                        message = await self._execute_with_flood_wait(
+                                            self.client.get_messages,
+                                            chat_id,
+                                            msg_id,
+                                            max_retries=1,
+                                            base_delay=0.5
+                                        )
                                         if message and message.id == msg_id:
                                             fetched_messages_map[msg_id] = message
                                     except Exception as retry_e:

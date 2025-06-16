@@ -19,6 +19,7 @@ from src.modules.forward.message_downloader import MessageDownloader
 from src.modules.forward.media_uploader import MediaUploader
 from src.modules.forward.media_group_collector import MediaGroupCollector
 from src.utils.logger import get_logger
+from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
 
 _logger = get_logger()
 
@@ -53,6 +54,7 @@ class ParallelProcessor:
         # 初始化下载和上传组件
         self.message_downloader = MessageDownloader(client)
         self.media_uploader = MediaUploader(client, history_manager, general_config)
+        self.flood_wait_handler = FloodWaitHandler(max_retries=3, base_delay=1.0)
     
     async def process_parallel_download_upload(self, 
                                        source_channel: str, 
@@ -145,6 +147,22 @@ class ParallelProcessor:
             
             raise
     
+    async def _get_message_with_flood_wait(self, source_id: int, message_id: int) -> Optional[Message]:
+        """
+        使用FloodWait处理器获取消息
+        
+        Args:
+            source_id: 源频道ID
+            message_id: 消息ID
+            
+        Returns:
+            Optional[Message]: 获取到的消息对象，失败返回None
+        """
+        async def get_message():
+            return await self.client.get_messages(source_id, message_id)
+        
+        return await execute_with_flood_wait(get_message, max_retries=3)
+    
     async def _producer_download_media_groups_parallel(self, 
                                                  source_channel: str, 
                                                  source_id: int, 
@@ -218,7 +236,7 @@ class ParallelProcessor:
                     
                     for message_id in message_ids:
                         try:                 
-                            message = await self.client.get_messages(source_id, message_id)
+                            message = await self._get_message_with_flood_wait(source_id, message_id)
                             if message:
                                 messages.append(message)
                                 _logger.debug(f"获取消息 {message_id} 成功")
@@ -361,7 +379,7 @@ class ParallelProcessor:
                     media_group = await self.media_uploader.prepare_media_group_for_upload_parallel(media_group_download, thumbnails)
                     
                     if not media_group:
-                        _logger.warning("没有有效的媒体文件可上传，跳过这个媒体组")
+                        _logger.warning(f"媒体组 {group_id} {message_ids} 没有有效的媒体文件可上传（可能所有文件都是0字节），跳过这个媒体组")
                         # 清理空目录
                         self.media_uploader.cleanup_media_group_dir(media_group_dir)
                         self.media_group_queue.task_done()
@@ -403,27 +421,31 @@ class ParallelProcessor:
                             try:
                                 _logger.info(f"尝试从已上传频道复制{group_id} {message_ids} 到 {target_info}")
                                 
-                                if is_media_group:
-                                    # 媒体组使用copy_media_group方法
-                                    # 只需要第一条消息的ID，因为copy_media_group会自动找到其他消息
-                                    first_message = first_upload_messages[0]
-                                    copied_msgs = await self.client.copy_media_group(
-                                        chat_id=target_id,
-                                        from_chat_id=first_upload_channel_id,
-                                        message_id=first_message.id
-                                    )
-                                    copy_success = True
-                                else:
-                                    # 单条消息使用copy_message方法
-                                    first_message = first_upload_messages[0]
-                                    copied_msg = await self.client.copy_message(
-                                        chat_id=target_id,
-                                        from_chat_id=first_upload_channel_id,
-                                        message_id=first_message.id
-                                    )
-                                    copy_success = True
+                                # 使用FloodWait处理器执行复制操作
+                                async def copy_operation():
+                                    if is_media_group:
+                                        # 媒体组使用copy_media_group方法
+                                        # 只需要第一条消息的ID，因为copy_media_group会自动找到其他消息
+                                        first_message = first_upload_messages[0]
+                                        copied_msgs = await self.client.copy_media_group(
+                                            chat_id=target_id,
+                                            from_chat_id=first_upload_channel_id,
+                                            message_id=first_message.id
+                                        )
+                                        return copied_msgs
+                                    else:
+                                        # 单条消息使用copy_message方法
+                                        first_message = first_upload_messages[0]
+                                        copied_msg = await self.client.copy_message(
+                                            chat_id=target_id,
+                                            from_chat_id=first_upload_channel_id,
+                                            message_id=first_message.id
+                                        )
+                                        return copied_msg
                                 
-                                if copy_success:
+                                copy_result = await execute_with_flood_wait(copy_operation, max_retries=3)
+                                
+                                if copy_result is not None:
                                     # 记录转发历史
                                     if self.history_manager:
                                         for message in media_group_download.messages:
@@ -444,6 +466,8 @@ class ParallelProcessor:
                                     # 添加短暂延迟，避免频繁API调用
                                     await asyncio.sleep(0.5)
                                     continue
+                                else:
+                                    _logger.warning(f"从已上传频道复制失败，将尝试直接上传")
                                 
                             except Exception as copy_error:
                                 _logger.warning(f"从已上传频道复制失败，将尝试直接上传: {copy_error}")

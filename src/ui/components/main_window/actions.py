@@ -312,7 +312,9 @@ class ActionsMixin:
                         # 使用计时器在主线程中显示错误对话框
                         def show_error_in_main_thread():
                             self._show_login_error(error_msg)
-                            
+                        
+                        # 导入QTimer确保可用性
+                        from PySide6.QtCore import QTimer
                         QTimer.singleShot(100, show_error_in_main_thread)
                 
                 # 启动登录任务
