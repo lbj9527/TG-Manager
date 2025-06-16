@@ -540,20 +540,20 @@ class ForwardView(QWidget):
                 'keywords': keywords
             }
             
-            # 添加到列表中
+            # 添加到列表
             item = QListWidgetItem()
             
             # 创建媒体类型显示文本
             media_types_str = []
-            if MediaType.PHOTO in media_types:
+            if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                 media_types_str.append("照片")
-            if MediaType.VIDEO in media_types:
+            if self._is_media_type_in_list(MediaType.VIDEO, media_types):
                 media_types_str.append("视频")
-            if MediaType.DOCUMENT in media_types:
+            if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
                 media_types_str.append("文档")
-            if MediaType.AUDIO in media_types:
+            if self._is_media_type_in_list(MediaType.AUDIO, media_types):
                 media_types_str.append("音频")
-            if MediaType.ANIMATION in media_types:
+            if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
                 media_types_str.append("动画")
             
             # 构建ID范围显示文本
@@ -948,7 +948,10 @@ class ForwardView(QWidget):
                     end_id=self.end_id.value(),
                     remove_captions=self.remove_captions_check.isChecked(),
                     hide_author=self.hide_author_check.isChecked(),
-                    send_final_message=self.send_final_message_check.isChecked()
+                    send_final_message=self.send_final_message_check.isChecked(),
+                    # 添加text_filter和keywords字段
+                    text_filter=[{"original_text": "", "target_text": ""}],
+                    keywords=[]
                 )
                 ui_channel_pairs.append(default_channel_pair)
                 logger.debug("使用默认频道对替代空列表")
@@ -963,7 +966,10 @@ class ForwardView(QWidget):
                         end_id=pair.get('end_id', 0),
                         remove_captions=pair.get('remove_captions', False),
                         hide_author=pair.get('hide_author', False),
-                        send_final_message=pair.get('send_final_message', False)
+                        send_final_message=pair.get('send_final_message', False),
+                        # 添加text_filter和keywords字段
+                        text_filter=pair.get('text_filter', [{"original_text": "", "target_text": ""}]),
+                        keywords=pair.get('keywords', [])
                     ))
             
             # 创建UIForwardConfig对象（移除了三个参数）
@@ -1195,6 +1201,9 @@ class ForwardView(QWidget):
         # 加载消息ID设置（使用第一个频道对的ID设置）
         self.start_id.setValue(first_pair_start_id)
         self.end_id.setValue(first_pair_end_id)
+        
+        # 主界面的文本替换和关键词输入框保持默认为空，不从配置文件加载
+        # 只有右键编辑菜单中才会从配置加载这些字段的值
         
         # 加载其他设置
         forward_delay = forward_config.get('forward_delay', 0)
