@@ -93,6 +93,11 @@ else:
   - 📄 **文档**：各种文档格式
   - 🎵 **音频**：音乐和语音文件
   - 🎭 **动画**：GIF动画文件
+- **灵活的最终消息配置**：
+  - 🎯 **频道对级别配置**：每个频道对可以配置独立的最终消息
+  - 📄 **HTML文件支持**：支持富文本、表情和超链接
+  - 🔄 **多样化内容**：不同频道对可发送不同的营销信息或总结
+  - ⚙️ **独立开关**：每个频道对可单独启用或禁用最终消息
 
 ### 🎯 并行处理架构
 - **🔄 完全并行**：下载和上传采用生产者-消费者模式真正并行执行
@@ -223,8 +228,38 @@ TG-Manager/
 }
 ```
 
-## 🎯 使用场景
+### 转发配置
+```json
+{
+  "FORWARD": {
+    "forward_channel_pairs": [
+      {
+        "source_channel": "@source_channel",
+        "target_channels": ["@target1", "@target2"],
+        "media_types": ["text", "photo", "video", "document", "audio", "animation"],
+        "send_final_message": true,
+        "final_message_html_file": "/path/to/custom_message.html",
+        "text_filter": [
+          {"original_text": "原文", "target_text": "替换文"}
+        ],
+        "keywords": ["关键词1", "关键词2"],
+        "remove_captions": false,
+        "hide_author": true
+      }
+    ],
+    "forward_delay": 0.5,
+    "tmp_path": "tmp"
+  }
+}
+```
 
+#### 最终消息配置说明
+- **`send_final_message`**: 是否在转发完成后发送最终消息
+- **`final_message_html_file`**: 最终消息HTML文件路径（支持富文本、表情、超链接）
+- **频道对级别配置**: 每个频道对可以配置不同的最终消息内容
+- **灵活应用场景**: 
+  - 营销频道：发送购买链接和优惠信息
+  - 新闻频道：发送内容总结和相关链接
 ### 1. 内容聚合
 - 从多个新闻频道聚合内容到统一频道
 - 按主题分类转发不同类型的内容

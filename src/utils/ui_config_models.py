@@ -97,6 +97,7 @@ class UIChannelPair(BaseModel):
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
     hide_author: bool = Field(False, description="是否隐藏原作者")
     send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
+    final_message_html_file: str = Field("", description="最后一条消息的HTML文件路径")
     # 新增字段：文本替换规则和关键词过滤
     text_filter: List[Dict[str, str]] = Field(
         default_factory=lambda: [{"original_text": "", "target_text": ""}],
@@ -157,17 +158,21 @@ class UIChannelPair(BaseModel):
     @validator('keywords')
     def validate_keywords(cls, v):
         # 过滤空关键词并去除首尾空格
+        if isinstance(v, list):
+            # 过滤掉空字符串和仅包含空白字符的关键词
+            filtered_keywords = [keyword.strip() for keyword in v if keyword and keyword.strip()]
+            return filtered_keywords
+        return v
+
+    @validator('final_message_html_file')
+    def validate_final_message_html_file(cls, v):
+        # 如果路径为空，直接返回
         if not v:
-            return []
-        
-        validated_keywords = []
-        for keyword in v:
-            if keyword and isinstance(keyword, str):
-                keyword = keyword.strip()
-                if keyword:  # 只添加非空关键词
-                    validated_keywords.append(keyword)
-        
-        return validated_keywords
+            return v
+        # 检查路径是否包含非法字符
+        if re.search(r'[<>"|?*]', v):
+            raise ValueError("最终消息HTML文件路径包含非法字符")
+        return v
 
     @classmethod
     def validate_channel_id(cls, channel_id: str, field_name: str) -> str:
@@ -324,13 +329,11 @@ class UIMonitorChannelPair(BaseModel):
     @validator('keywords')
     def validate_keywords(cls, v):
         # 过滤空关键词并去除首尾空格
-        if not v:
-            return []
-        validated_keywords = []
-        for keyword in v:
-            if keyword and keyword.strip():
-                validated_keywords.append(keyword.strip())
-        return validated_keywords
+        if isinstance(v, list):
+            # 过滤掉空字符串和仅包含空白字符的关键词
+            filtered_keywords = [keyword.strip() for keyword in v if keyword and keyword.strip()]
+            return filtered_keywords
+        return v
 
     class Config:
         title = "监听频道对"
@@ -468,7 +471,6 @@ class UIForwardConfig(BaseModel):
     forward_channel_pairs: List[UIChannelPair] = Field(..., description="转发频道对列表")
     forward_delay: float = Field(0.1, description="转发间隔时间(秒)", ge=0)
     tmp_path: str = Field("tmp", description="临时文件路径")
-    final_message_html_file: str = Field("", description="最后一条消息的HTML文件路径")
 
     @validator('forward_channel_pairs')
     def validate_forward_channel_pairs(cls, v):
@@ -478,10 +480,7 @@ class UIForwardConfig(BaseModel):
 
     @validator('forward_delay')
     def round_forward_delay(cls, v):
-        """将转发延迟四舍五入到一位小数，避免浮点数精度问题"""
-        if v is not None:
-            return round(v, 1)
-        return v
+        return round(v, 1)
 
     @validator('tmp_path')
     def validate_tmp_path(cls, v):
@@ -490,16 +489,6 @@ class UIForwardConfig(BaseModel):
         # 修改路径字符检查，允许Windows盘符格式（如D:）
         if re.search(r'[<>"|?*]', v):
             raise ValueError("临时文件路径包含非法字符")
-        return v
-
-    @validator('final_message_html_file')
-    def validate_html_file_path(cls, v):
-        # 如果路径为空，直接返回
-        if not v:
-            return v
-        # 检查路径是否包含非法字符
-        if re.search(r'[<>"|?*]', v):
-            raise ValueError("HTML文件路径包含非法字符")
         return v
 
     class Config:
@@ -621,13 +610,13 @@ def create_default_config() -> UIConfig:
                     remove_captions=False,
                     hide_author=False,
                     send_final_message=False,
+                    final_message_html_file="",
                     text_filter=[{"original_text": "", "target_text": ""}],
                     keywords=[]
                 )
             ],
             forward_delay=0.1,
-            tmp_path="tmp",
-            final_message_html_file=""
+            tmp_path="tmp"
         ),
         MONITOR=UIMonitorConfig(
             monitor_channel_pairs=[

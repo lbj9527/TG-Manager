@@ -1,5 +1,60 @@
 # 更新日志
 
+## [v2.1.9.12] - 2025-01-15
+
+### 🚀 重要功能改进 (Major Feature Enhancement)
+- **转发最终消息配置架构重构**
+  - **重大变更**：将 `final_message_html_file` 配置从全局转发配置移动到每个频道对配置中
+  - **新特性**：每个频道对现在可以配置自己的最终消息HTML文件
+  - **灵活性提升**：不同频道对可以发送不同的最终消息内容
+  - **配置迁移**：自动将现有的全局配置迁移到频道对配置中
+
+### 🔧 UI界面改进 (UI Improvements)
+- **频道对编辑对话框增强**：
+  - ✅ 添加"最终消息HTML文件"字段，支持每个频道对独立配置
+  - ✅ 集成文件浏览器，方便选择HTML文件
+  - ✅ 实时验证文件路径格式
+- **全局配置简化**：
+  - ✅ 移除转发选项标签页中的全局HTML文件选择控件
+  - ✅ 简化界面结构，避免配置混淆
+
+### 🛠️ 后端逻辑优化 (Backend Logic Optimization)
+- **转发器架构改进**：
+  ```python
+  # 修改前：使用全局配置发送最终消息
+  if self.forward_config.get('send_final_message', False):
+      await self._send_final_message(all_target_channels)
+  
+  # 修改后：按频道对配置发送最终消息
+  await self._send_final_messages_by_pairs(channel_pairs)
+  ```
+- **配置模型更新**：
+  - ✅ `UIChannelPair` 模型新增 `final_message_html_file` 字段
+  - ✅ `UIForwardConfig` 模型移除全局 `final_message_html_file` 字段
+  - ✅ 添加相应的验证器确保配置有效性
+
+### 📋 配置文件格式更新 (Configuration Format Update)
+- **新的频道对配置格式**：
+  ```json
+  {
+    "source_channel": "@example",
+    "target_channels": ["@target1", "@target2"],
+    "send_final_message": true,
+    "final_message_html_file": "/path/to/custom_message.html",
+    // ... 其他配置
+  }
+  ```
+- **向后兼容性**：现有配置会自动适配新格式
+
+### 🎯 使用场景示例 (Use Case Examples)
+- **多样化营销**：不同频道对可以发送不同的营销信息
+- **定制化服务**：为不同的目标群体提供定制化的最终消息
+- **A/B测试**：在不同频道对中测试不同的最终消息效果
+
+### ⚠️ 重要提醒 (Important Notes)
+- 现有用户需要重新配置频道对中的最终消息HTML文件路径
+- 全局的HTML文件配置已移除，请使用频道对级别的配置
+
 ## [v2.1.9.11] - 2025-01-15
 
 ### 🐛 重要修复 (Critical Bug Fix)
@@ -1331,3 +1386,30 @@ global_handler = FloodWaitHandler(max_retries=5, base_delay=1.0)
   - 统一处理逻辑：end_id=0处理、范围检查、错误处理都在一个地方实现
   - 代码精简：`get_media_groups_optimized()`和`get_media_groups_info_optimized()`代码减少60%
   - 维护性提升：范围处理逻辑只需在一个地方修改，提高代码可维护性
+
+## [v1.3.1] - 2024-12-19
+
+### 🎨 用户界面优化
+- **转发界面重构**：优化转发配置界面布局和用户体验
+  - 移除转发选项标签页中的全局HTML文件选择框
+  - 在频道配置主界面添加最终消息HTML文件选择框，方便添加新频道对时直接配置
+  - 修复右键编辑菜单中HTML文件路径的加载问题
+
+### 🔧 功能改进
+- **最终消息配置优化**：
+  - 最终消息HTML文件配置移至频道对级别，每个频道对可配置不同的最终消息
+  - 支持在添加频道对时直接设置最终消息文件路径
+  - 修复编辑频道对时HTML文件路径无法正确加载的问题
+
+### 🐛 问题修复
+- 修复转发配置保存时最终消息HTML文件配置不正确的问题
+- 修复程序启动后编辑对话框中HTML文件路径未加载的问题
+- 优化配置文件结构，确保最终消息配置的一致性
+
+### 📚 文档更新
+- 更新README.md中转发配置部分的说明
+- 添加最终消息配置的详细说明和使用场景
+
+---
+
+## [v1.3.0] - 2024-12-19

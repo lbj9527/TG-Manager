@@ -256,7 +256,27 @@ class ForwardView(QWidget):
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         config_layout.addLayout(forward_params_layout)
         
-        # 第九行：起始ID，结束ID，添加频道对按钮，删除所选按钮
+        # 第九行：最终消息HTML文件路径
+        html_file_form_layout = QFormLayout()
+        html_file_form_layout.setSpacing(10)
+        html_file_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        html_file_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
+        html_file_layout = QHBoxLayout()
+        self.main_final_message_html_file = QLineEdit()
+        self.main_final_message_html_file.setPlaceholderText("选择最终消息HTML文件")
+        self.main_final_message_html_file.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
+        html_file_layout.addWidget(self.main_final_message_html_file)
+        
+        self.main_browse_html_button = QPushButton("浏览")
+        self.main_browse_html_button.setMaximumWidth(60)
+        self.main_browse_html_button.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
+        html_file_layout.addWidget(self.main_browse_html_button)
+        
+        html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
+        config_layout.addLayout(html_file_form_layout)
+        
+        # 第十行：起始ID，结束ID，添加频道对按钮，删除所选按钮
         id_and_buttons_layout = QHBoxLayout()
         
         # 起始ID和结束ID
@@ -293,7 +313,7 @@ class ForwardView(QWidget):
         
         config_layout.addLayout(id_and_buttons_layout)
         
-        # 第十行到底部：已配置频道对
+        # 第十一行到底部：已配置频道对
         # 频道列表标题
         self.pairs_list_label = QLabel("已配置频道对:  0对")
         self.pairs_list_label.setStyleSheet("font-weight: bold;")
@@ -359,31 +379,6 @@ class ForwardView(QWidget):
         tmp_layout.addWidget(self.browse_tmp_button)
         
         options_layout.addLayout(tmp_layout)
-        
-        # HTML文件路径
-        html_file_layout = QHBoxLayout()
-        html_file_layout.addWidget(QLabel("HTML文件:"))
-        
-        self.final_message_html_file = QLineEdit()
-        self.final_message_html_file.setReadOnly(True)
-        self.final_message_html_file.setPlaceholderText("选择HTML文件")
-        self.final_message_html_file.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
-        html_file_layout.addWidget(self.final_message_html_file)
-        
-        self.browse_html_button = QPushButton("浏览...")
-        self.browse_html_button.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
-        html_file_layout.addWidget(self.browse_html_button)
-        
-        options_layout.addLayout(html_file_layout)
-        
-        # 添加HTML文件说明
-        html_info = QLabel(
-            "提示: HTML文件支持文字、表情和超链接，可用于发送活动总结或购买链接等信息。\n"
-            "转发完成后会自动发送该文件内容作为最后一条消息。"
-        )
-        html_info.setWordWrap(True)
-        html_info.setStyleSheet("font-size: 12px; color: #666; margin-top: 5px;")
-        options_layout.addWidget(html_info)
         
         # 添加弹性空间
         options_layout.addStretch(1)
@@ -464,8 +459,8 @@ class ForwardView(QWidget):
         # 临时目录浏览
         self.browse_tmp_button.clicked.connect(self._browse_tmp_path)
         
-        # HTML文件浏览
-        self.browse_html_button.clicked.connect(self._browse_html_file)
+        # 主界面HTML文件浏览
+        self.main_browse_html_button.clicked.connect(self._browse_main_html_file)
         
         # 自定义文字尾巴设置状态控制
         self.send_final_message_check.toggled.connect(self._handle_final_message_option)
@@ -551,6 +546,7 @@ class ForwardView(QWidget):
                 'remove_captions': self.remove_captions_check.isChecked(),
                 'hide_author': self.hide_author_check.isChecked(),
                 'send_final_message': self.send_final_message_check.isChecked(),
+                'final_message_html_file': self.main_final_message_html_file.text().strip(),
                 'text_filter': text_filter,
                 'keywords': keywords
             }
@@ -627,6 +623,7 @@ class ForwardView(QWidget):
             self.original_text_input.clear()
             self.target_text_input.clear()
             self.keyword_input.clear()
+            self.main_final_message_html_file.clear()
             
             # 更新标题
             self._update_pairs_list_title()
@@ -675,23 +672,23 @@ class ForwardView(QWidget):
         if directory:
             self.tmp_path.setText(directory)
     
-    def _browse_html_file(self):
-        """浏览HTML文件"""
-        current_path = os.path.dirname(self.final_message_html_file.text()) or QDir.homePath()
+    def _browse_main_html_file(self):
+        """浏览主界面HTML文件"""
+        current_path = os.path.dirname(self.main_final_message_html_file.text()) or QDir.homePath()
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
-            "选择HTML文件",
+            "选择最终消息HTML文件",
             current_path,
             "HTML文件 (*.html);;所有文件 (*.*)"
         )
         
         if file_path:
-            self.final_message_html_file.setText(file_path)
+            self.main_final_message_html_file.setText(file_path)
     
     def _handle_final_message_option(self, checked):
         """处理自定义文字尾巴选项的启用/禁用"""
-        self.final_message_html_file.setEnabled(checked)
-        self.browse_html_button.setEnabled(checked)
+        self.main_final_message_html_file.setEnabled(checked)
+        self.main_browse_html_button.setEnabled(checked)
     
     def _is_media_type_in_list(self, media_type, media_types_list):
         """检查媒体类型是否在列表中
@@ -969,6 +966,7 @@ class ForwardView(QWidget):
                     remove_captions=self.remove_captions_check.isChecked(),
                     hide_author=self.hide_author_check.isChecked(),
                     send_final_message=self.send_final_message_check.isChecked(),
+                    final_message_html_file=self.main_final_message_html_file.text().strip(),
                     # 添加text_filter和keywords字段
                     text_filter=[{"original_text": "", "target_text": ""}],
                     keywords=[]
@@ -987,17 +985,17 @@ class ForwardView(QWidget):
                         remove_captions=pair.get('remove_captions', False),
                         hide_author=pair.get('hide_author', False),
                         send_final_message=pair.get('send_final_message', False),
+                        final_message_html_file=pair.get('final_message_html_file', ''),
                         # 添加text_filter和keywords字段
                         text_filter=pair.get('text_filter', [{"original_text": "", "target_text": ""}]),
                         keywords=pair.get('keywords', [])
                     ))
             
-            # 创建UIForwardConfig对象（移除了三个参数）
+            # 创建UIForwardConfig对象（移除final_message_html_file参数）
             forward_config = UIForwardConfig(
                 forward_channel_pairs=ui_channel_pairs,
                 forward_delay=round(float(self.forward_delay.value()), 1),  # 四舍五入到一位小数，解决精度问题
-                tmp_path=self.tmp_path.text(),
-                final_message_html_file=self.final_message_html_file.text()
+                tmp_path=self.tmp_path.text()
             )
             
             # 组织完整配置，确保保留现有的其他配置项（特别是主题设置）
@@ -1034,6 +1032,10 @@ class ForwardView(QWidget):
             
             # 更新本地配置引用
             self.config = updated_config
+            
+            # 重新加载配置到UI，确保编辑对话框显示最新数据
+            logger.debug("重新加载配置到UI，同步最新的配置数据")
+            self.load_config(updated_config)
             
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"配置保存失败: {str(e)}")
@@ -1095,12 +1097,12 @@ class ForwardView(QWidget):
         forward_config = config.get('FORWARD', {})
         channel_pairs = forward_config.get('forward_channel_pairs', [])
         
-        # 记录第一个频道对的消息ID范围，用于设置控件初始状态
+        # 初始化变量用于保存第一个频道对的ID设置
         first_pair_start_id = 0
         first_pair_end_id = 0
         
         # 添加频道对到列表
-        for pair in channel_pairs:
+        for i, pair in enumerate(channel_pairs):
             source_channel = pair.get('source_channel')
             target_channels = pair.get('target_channels', [])
             media_types = pair.get('media_types', [MediaType.TEXT, MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION])
@@ -1117,6 +1119,7 @@ class ForwardView(QWidget):
             # 获取新增字段
             text_filter = pair.get('text_filter', [])
             keywords = pair.get('keywords', [])
+            final_message_html_file = pair.get('final_message_html_file', '')
             
             if source_channel and target_channels:
                 # 保存第一个频道对的ID设置，用于设置默认值
@@ -1134,6 +1137,7 @@ class ForwardView(QWidget):
                     'remove_captions': remove_captions,
                     'hide_author': hide_author,
                     'send_final_message': send_final_message,
+                    'final_message_html_file': final_message_html_file,
                     'text_filter': text_filter,
                     'keywords': keywords
                 }
@@ -1211,13 +1215,6 @@ class ForwardView(QWidget):
         
         # 注意：新增频道对界面的媒体类型和转发选项保持默认选中状态，不受配置文件影响
         # 只有右键编辑菜单才需要从配置加载状态
-        
-        # 加载HTML文件设置
-        self.final_message_html_file.setText(forward_config.get('final_message_html_file', ''))
-        # HTML文件输入框状态根据当前的send_final_message_check状态来设置
-        current_send_final_state = self.send_final_message_check.isChecked()
-        self.final_message_html_file.setEnabled(current_send_final_state)
-        self.browse_html_button.setEnabled(current_send_final_state)
         
         # 新增界面的媒体类型和转发选项保持默认选中，不从配置加载
         # 加载消息ID设置（使用第一个频道对的ID设置）
@@ -1627,6 +1624,37 @@ class ForwardView(QWidget):
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         dialog_layout.addLayout(forward_params_layout)
         
+        # 第九行：最终消息HTML文件路径
+        html_file_form_layout = QFormLayout()
+        html_file_form_layout.setSpacing(10)
+        html_file_form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        html_file_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        
+        html_file_layout = QHBoxLayout()
+        html_file_input = QLineEdit(channel_pair.get('final_message_html_file', ''))
+        html_file_input.setPlaceholderText("选择最终消息HTML文件")
+        html_file_layout.addWidget(html_file_input)
+        
+        html_file_browse_btn = QPushButton("浏览")
+        html_file_browse_btn.setMaximumWidth(60)
+        html_file_layout.addWidget(html_file_browse_btn)
+        
+        html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
+        dialog_layout.addLayout(html_file_form_layout)
+        
+        # 连接浏览按钮
+        def browse_html_file():
+            file_path, _ = QFileDialog.getOpenFileName(
+                edit_dialog,
+                "选择最终消息HTML文件",
+                "",
+                "HTML文件 (*.html);;所有文件 (*)"
+            )
+            if file_path:
+                html_file_input.setText(file_path)
+        
+        html_file_browse_btn.clicked.connect(browse_html_file)
+        
         # 第九行：起始ID，结束ID
         id_and_buttons_layout = QHBoxLayout()
         
@@ -1736,6 +1764,7 @@ class ForwardView(QWidget):
                     'remove_captions': remove_captions_check.isChecked(),
                     'hide_author': hide_author_check.isChecked(),
                     'send_final_message': send_final_message_check.isChecked(),
+                    'final_message_html_file': html_file_input.text().strip(),
                     'text_filter': text_filter,
                     'keywords': keywords
                 }

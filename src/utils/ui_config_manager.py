@@ -261,7 +261,9 @@ class UIConfigManager:
                             # 添加转发选项布尔字段
                             "remove_captions": pair.get("remove_captions", False),
                             "hide_author": pair.get("hide_author", False),  
-                            "send_final_message": pair.get("send_final_message", False)
+                            "send_final_message": pair.get("send_final_message", False),
+                            # 添加最终消息HTML文件路径字段
+                            "final_message_html_file": pair.get("final_message_html_file", "")
                         }
                         
                         # 处理文本替换规则
@@ -324,6 +326,7 @@ class UIConfigManager:
                         "remove_captions": False,
                         "hide_author": False,
                         "send_final_message": False,
+                        "final_message_html_file": "",
                         "text_filter": [{"original_text": "", "target_text": ""}],
                         "keywords": []
                     }]
