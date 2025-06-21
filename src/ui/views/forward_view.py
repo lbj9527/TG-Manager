@@ -206,6 +206,10 @@ class ForwardView(QWidget):
         # 媒体类型复选框布局（移除标签）
         media_types_layout = QHBoxLayout()
         
+        self.text_check = QCheckBox("纯文本")
+        self.text_check.setChecked(True)
+        media_types_layout.addWidget(self.text_check)
+        
         self.photo_check = QCheckBox("照片")
         self.photo_check.setChecked(True)
         media_types_layout.addWidget(self.photo_check)
@@ -556,6 +560,8 @@ class ForwardView(QWidget):
             
             # 创建媒体类型显示文本
             media_types_str = []
+            if self._is_media_type_in_list(MediaType.TEXT, media_types):
+                media_types_str.append("纯文本")
             if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                 media_types_str.append("照片")
             if self._is_media_type_in_list(MediaType.VIDEO, media_types):
@@ -723,6 +729,9 @@ class ForwardView(QWidget):
             list: 媒体类型列表
         """
         media_types = []
+        
+        if self.text_check.isChecked():
+            media_types.append(MediaType.TEXT)
         
         if self.photo_check.isChecked():
             media_types.append(MediaType.PHOTO)
@@ -1094,7 +1103,7 @@ class ForwardView(QWidget):
         for pair in channel_pairs:
             source_channel = pair.get('source_channel')
             target_channels = pair.get('target_channels', [])
-            media_types = pair.get('media_types', [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION])
+            media_types = pair.get('media_types', [MediaType.TEXT, MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION])
             
             # 确保优先从频道对中获取消息ID范围
             start_id = pair.get('start_id', 0)
@@ -1134,6 +1143,8 @@ class ForwardView(QWidget):
                 
                 # 创建媒体类型显示文本
                 media_types_str = []
+                if self._is_media_type_in_list(MediaType.TEXT, media_types):
+                    media_types_str.append("纯文本")
                 if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                     media_types_str.append("照片")
                 if self._is_media_type_in_list(MediaType.VIDEO, media_types):
@@ -1551,6 +1562,10 @@ class ForwardView(QWidget):
         # 媒体类型复选框布局（移除标签）
         media_types_layout = QHBoxLayout()
         
+        text_check = QCheckBox("纯文本")
+        text_check.setChecked(self._is_media_type_in_list(MediaType.TEXT, media_types))
+        media_types_layout.addWidget(text_check)
+        
         photo_check = QCheckBox("照片")
         photo_check.setChecked(self._is_media_type_in_list(MediaType.PHOTO, media_types))
         media_types_layout.addWidget(photo_check)
@@ -1670,6 +1685,8 @@ class ForwardView(QWidget):
                 
                 # 收集媒体类型
                 new_media_types = []
+                if text_check.isChecked():
+                    new_media_types.append(MediaType.TEXT)
                 if photo_check.isChecked():
                     new_media_types.append(MediaType.PHOTO)
                 if video_check.isChecked():
@@ -1747,6 +1764,8 @@ class ForwardView(QWidget):
                 media_types = updated_pair.get('media_types', [])
                 media_types_str = []
                 
+                if self._is_media_type_in_list(MediaType.TEXT, media_types):
+                    media_types_str.append("纯文本")
                 if self._is_media_type_in_list(MediaType.PHOTO, media_types):
                     media_types_str.append("照片")
                 if self._is_media_type_in_list(MediaType.VIDEO, media_types):

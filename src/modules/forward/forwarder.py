@@ -106,6 +106,12 @@ class Forwarder():
         self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
         self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config)
         
+        # 更新MediaGroupCollector使用新的MessageFilter实例
+        self.media_group_collector.message_filter = self.message_filter
+        
+        # 更新DirectForwarder使用新的MessageFilter实例
+        self.direct_forwarder.message_filter = self.message_filter
+        
         # 创建临时会话目录
         temp_dir = self._ensure_temp_dir()
         

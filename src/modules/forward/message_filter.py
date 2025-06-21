@@ -148,10 +148,6 @@ class MessageFilter:
                     if self._is_media_type_allowed(message_media_type, allowed_media_types):
                         group_has_allowed_media = True
                         break
-                else:
-                    # 无媒体类型的消息（如纯文本），默认允许
-                    group_has_allowed_media = True
-                    break
             
             group_ids = [msg.id for msg in group_messages]
             
@@ -304,9 +300,14 @@ class MessageFilter:
         # 2. 应用媒体类型过滤
         allowed_media_types = pair_config.get('media_types', [])
         if allowed_media_types:
-            # 将MediaType枚举转换为字符串
-            allowed_media_types_str = [str(mt) for mt in allowed_media_types]
-            current_messages, media_filtered = self.apply_media_type_filter(current_messages, allowed_media_types_str)
+            # 确保媒体类型是字符串列表，使用.value属性正确转换枚举
+            media_types_str = []
+            for t in allowed_media_types:
+                if hasattr(t, 'value'):
+                    media_types_str.append(t.value)
+                else:
+                    media_types_str.append(str(t))
+            current_messages, media_filtered = self.apply_media_type_filter(current_messages, media_types_str)
             all_filtered_messages.extend(media_filtered)
             filter_stats['media_type_filtered'] = len(media_filtered)
             if len(media_filtered) > 0:
@@ -381,6 +382,9 @@ class MessageFilter:
             return "voice"
         elif message.video_note:
             return "video_note"
+        elif message.text or message.caption:
+            # 纯文本消息（包括只有文本或说明的消息）
+            return "text"
         return None
     
     def _is_media_type_allowed(self, message_media_type: str, allowed_media_types: List[str]) -> bool:
@@ -439,17 +443,22 @@ class MessageFilter:
             # 如果找不到对应的配置，使用默认值
             if not media_types:
                 # 使用所有支持的媒体类型作为默认值
-                media_types = ["photo", "video", "document", "audio", "animation"]
+                media_types = ["text", "photo", "video", "document", "audio", "animation"]
                 _logger.warning(f"找不到源频道 {source_channel} 的媒体类型配置，使用默认值")
         
-        # 确保媒体类型是字符串列表
-        media_types_str = [str(t) for t in media_types]
+        # 确保媒体类型是字符串列表，使用.value属性正确转换枚举
+        media_types_str = []
+        for t in media_types:
+            if hasattr(t, 'value'):
+                media_types_str.append(t.value)
+            else:
+                media_types_str.append(str(t))
         
         # 获取消息媒体类型
         message_media_type = self._get_message_media_type(message)
         
         if not message_media_type:
-            # 非媒体消息，默认允许
-            return True
+            # 如果无法识别媒体类型，默认不允许
+            return False
         
         return self._is_media_type_allowed(message_media_type, media_types_str) 

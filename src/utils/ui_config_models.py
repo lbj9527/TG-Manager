@@ -88,7 +88,7 @@ class UIChannelPair(BaseModel):
     source_channel: str = Field(..., description="源频道")
     target_channels: List[str] = Field(..., description="目标频道列表")
     media_types: List[MediaType] = Field(
-        default_factory=lambda: [MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
+        default_factory=lambda: [MediaType.TEXT, MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
         description="要转发的媒体类型"
     )
     start_id: int = Field(0, description="起始消息ID (0表示从最早消息开始)")
@@ -615,7 +615,7 @@ def create_default_config() -> UIConfig:
                 UIChannelPair(
                     source_channel="@username",  # 占位符频道名，用户需要替换为实际频道
                     target_channels=["@username"],  # 占位符频道名，用户需要替换为实际频道
-                    media_types=[MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
+                    media_types=[MediaType.TEXT, MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, MediaType.AUDIO, MediaType.ANIMATION],
                     start_id=0,
                     end_id=0,
                     remove_captions=False,

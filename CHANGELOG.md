@@ -1,5 +1,82 @@
 # 更新日志
 
+## [v2.1.9.11] - 2025-01-15
+
+### 🐛 重要修复 (Critical Bug Fix)
+- **修复转发模块纯文本类型在配置更新后无法生效的问题**
+  - **问题描述**：用户在右键编辑菜单中勾选纯文本类型并保存配置后，第二次转发时纯文本消息仍被过滤，无法转发
+  - **根本原因**：
+    1. `Forwarder.forward_messages()` 方法中虽然重新加载了配置并创建了新的 `MessageFilter` 实例
+    2. 但转发流程中的两个关键组件使用的 `MessageFilter` 实例没有被更新：
+       - `MediaGroupCollector.message_filter` - 在早期过滤阶段调用 `is_media_allowed()`
+       - `DirectForwarder.message_filter` - 在转发阶段调用 `apply_all_filters()`
+    3. 导致这些组件仍使用过时的媒体类型配置，过滤掉了应该转发的消息
+  - **修复内容**：
+    - ✅ 在 `forward_messages()` 方法中重新初始化 `MessageFilter` 后，同步更新 `MediaGroupCollector.message_filter` 实例
+    - ✅ 在 `forward_messages()` 方法中重新初始化 `MessageFilter` 后，同步更新 `DirectForwarder.message_filter` 实例
+    - ✅ 确保转发过程中所有组件都使用最新的配置
+  - **测试验证**：现在配置更新后的纯文本类型设置会立即生效，**所有媒体类型**的配置修改都会正确应用
+
+### 🔧 技术实现 (Technical Implementation)
+- **配置同步优化**：
+  ```python
+  # 修复前：各组件使用独立的MessageFilter实例
+  self.message_filter = MessageFilter(self.config)
+  
+  # 修复后：同步更新所有组件的MessageFilter实例
+  self.message_filter = MessageFilter(self.config)
+  self.media_group_collector.message_filter = self.message_filter
+  self.direct_forwarder.message_filter = self.message_filter
+  ```
+- **影响范围**：
+  - ✅ **早期过滤阶段**：`MediaGroupCollector.get_media_groups_optimized()` 现在使用最新配置
+  - ✅ **转发过滤阶段**：`DirectForwarder.forward_media_group_directly()` 现在使用最新配置
+  - ✅ **所有媒体类型**：photo、video、document、audio、animation、text 的配置更新都会立即生效
+
+## [v2.1.9.10] - 2025-01-15
+
+### 🐛 重要修复 (Critical Bug Fix)
+- **修复转发模块纯文本类型支持问题**
+  - **问题描述**：右键编辑频道对时勾选纯文本复选框，保存配置后转发时纯文本修改未生效
+  - **根本原因**：
+    1. `_add_channel_pair`方法中缺少对纯文本类型的显示处理
+    2. `load_config`方法中默认媒体类型列表不包含TEXT类型
+    3. `MessageFilter`中MediaType枚举转字符串时未使用`.value`属性
+  - **修复内容**：
+    - ✅ 在`_add_channel_pair`方法的媒体类型显示中添加纯文本支持
+    - ✅ 修改`load_config`方法默认媒体类型包含`MediaType.TEXT`
+    - ✅ 修复`MessageFilter.apply_all_filters`中的枚举转换逻辑
+    - ✅ 修复`MessageFilter.is_media_allowed`中的枚举转换逻辑
+  - **测试验证**：现在纯文本类型在所有转发场景下都能正常工作
+
+### 🔧 技术实现 (Technical Implementation)
+- **枚举转换优化**：
+  ```python
+  # 修复前：可能导致转换错误
+  allowed_media_types_str = [str(mt) for mt in allowed_media_types]
+  
+  # 修复后：确保正确转换
+  for mt in allowed_media_types:
+      if hasattr(mt, 'value'):
+          allowed_media_types_str.append(mt.value)
+      else:
+          allowed_media_types_str.append(str(mt))
+  ```
+
+- **UI显示完善**：
+  ```python
+  # 在媒体类型显示中添加纯文本支持
+  if self._is_media_type_in_list(MediaType.TEXT, media_types):
+      media_types_str.append("纯文本")
+  ```
+
+### 📊 影响范围 (Impact Scope)
+- **转发模块**：纯文本消息现在可以正常被识别和转发
+- **配置管理**：右键编辑菜单中的纯文本选项生效
+- **用户体验**：完整的6种媒体类型支持（纯文本、照片、视频、文档、音频、动画）
+
+---
+
 ## [v2.1.9.9] - 2025-06-17
 
 ### 🚀 性能重大优化 (Major Performance Optimization)
