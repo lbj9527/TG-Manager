@@ -137,7 +137,7 @@ class Forwarder():
             target_channels = pair.get("target_channels", [])
             
             # 添加调试信息，显示频道对配置的详细内容
-            _logger.debug(f"完整频道对配置: {pair}")
+            _logger.debug(f"频道对配置: {pair}")
             _logger.debug(f"关键词配置: {pair.get('keywords', [])} (类型: {type(pair.get('keywords', []))})")
             _logger.debug(f"媒体类型配置: {pair.get('media_types', [])}")
             _logger.debug(f"文本替换配置: {pair.get('text_filter', [])}")
@@ -298,7 +298,17 @@ class Forwarder():
         _logger.info(status_message)
         
         # 发送最终消息到每个启用了最终消息的频道对
-        await self._send_final_messages_by_pairs(channel_pairs)
+        if total_forward_count > 0:
+            _logger.info("转发任务完成，准备检查并发送最终消息...")
+            try:
+                await self._send_final_messages_by_pairs(channel_pairs)
+                _logger.info("最终消息发送流程已完成")
+            except Exception as e:
+                _logger.error(f"发送最终消息时发生错误: {e}")
+                import traceback
+                _logger.error(f"错误详情: {traceback.format_exc()}")
+        else:
+            _logger.info("没有转发任何消息，跳过最终消息发送")
         
         # 清理临时文件
         await self._clean_media_dirs(temp_dir)
@@ -310,16 +320,28 @@ class Forwarder():
         Args:
             channel_pairs: 频道对列表，每个频道对是一个字典，包含'source_channel'和'target_channels'
         """
+        _logger.info(f"开始检查最终消息发送配置，共有 {len(channel_pairs)} 个频道对")
+        
         for pair in channel_pairs:
             source_channel = pair.get("source_channel", "")
             target_channels = pair.get("target_channels", [])
             
+            _logger.debug(f"检查频道对 [{source_channel}] 的最终消息配置")
+            
             # 检查是否启用了发送最终消息功能
-            if not pair.get('send_final_message', False):
+            send_final_message = pair.get('send_final_message', False)
+            _logger.debug(f"频道对 [{source_channel}] send_final_message: {send_final_message}")
+            
+            if not send_final_message:
+                _logger.debug(f"频道对 [{source_channel}] 未启用发送最终消息功能，跳过")
                 continue
+            
+            _logger.info(f"✅ 频道对 [{source_channel}] 启用了最终消息发送功能")
             
             # 获取HTML文件路径
             html_file_path = pair.get('final_message_html_file', '')
+            _logger.debug(f"频道对 [{source_channel}] HTML文件路径: {html_file_path}")
+            
             if not html_file_path:
                 _logger.warning(f"频道对 [{source_channel}] 未指定最终消息HTML文件路径，跳过发送最终消息")
                 continue
@@ -328,6 +350,8 @@ class Forwarder():
             if not html_path.exists() or not html_path.is_file():
                 _logger.error(f"频道对 [{source_channel}] 最终消息HTML文件不存在或不是文件: {html_file_path}")
                 continue
+            
+            _logger.debug(f"✅ 频道对 [{source_channel}] HTML文件验证通过")
             
             try:
                 # 读取HTML文件内容
@@ -338,7 +362,7 @@ class Forwarder():
                     _logger.warning(f"频道对 [{source_channel}] 最终消息HTML文件内容为空，跳过发送最终消息")
                     continue
                 
-                _logger.info(f"准备发送最终消息到频道对 [{source_channel}] 的 {len(target_channels)} 个目标频道")
+                _logger.debug(f"✅ 频道对 [{source_channel}] HTML内容读取成功，长度: {len(html_content)} 字符")
                 
                 # 使用HTML解析模式发送消息
                 from pyrogram import enums
@@ -348,25 +372,33 @@ class Forwarder():
                     try:
                         target_id = await self.channel_resolver.get_channel_id(target)
                         target_info_str, (target_title, _) = await self.channel_resolver.format_channel_info(target_id)
-                        await self.client.send_message(
+                        
+                        message = await self.client.send_message(
                             chat_id=target_id,
                             text=html_content,
                             parse_mode=enums.ParseMode.HTML,
                             disable_web_page_preview=False  # 允许网页预览
                         )
-                        _logger.info(f"已发送最终消息到 {target_info_str}")
+                        
+                        _logger.info(f"✅ 最终消息发送成功! 目标: {target_info_str}, 消息ID: {message.id}")
                         
                         # 添加短暂延迟避免速率限制
                         await asyncio.sleep(0.5)
                         
                     except Exception as e:
-                        _logger.error(f"向 {target} 发送最终消息失败: {e}")
+                        _logger.error(f"❌ 向 {target} 发送最终消息失败: {e}")
+                        import traceback
+                        _logger.error(f"详细错误信息: {traceback.format_exc()}")
                         continue
                 
-                _logger.info(f"频道对 [{source_channel}] 最终消息发送完成")
+                _logger.info(f"✅ 频道对 [{source_channel}] 最终消息发送流程完成")
                 
             except Exception as e:
-                _logger.error(f"处理频道对 [{source_channel}] 最终消息失败: {e}")
+                _logger.error(f"❌ 处理频道对 [{source_channel}] 最终消息失败: {e}")
+                import traceback
+                _logger.error(f"详细错误信息: {traceback.format_exc()}")
+        
+        _logger.info(f"最终消息发送检查完成")
     
     def _ensure_temp_dir(self) -> Path:
         """

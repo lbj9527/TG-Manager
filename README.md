@@ -390,3 +390,82 @@ rm sessions/tg_manager.session*
 ---
 
 **⭐ 如果这个项目对您有帮助，请给我们一个Star！**
+
+## 转发功能
+转发功能允许您将消息从源频道转发到目标频道，支持多种过滤条件和自定义选项。
+
+### 配置最终消息
+可以为每个频道对配置在转发完成后自动发送的最终消息：
+
+```json
+{
+  "source_channel": "@source",
+  "target_channels": ["@target1", "@target2"],
+  "send_final_message": true,
+  "final_message_html_file": "path/to/message.html"
+}
+```
+
+### 最终消息调试
+如果最终消息未发送，请检查日志中的以下调试信息：
+
+1. **配置加载调试信息**：确认配置是否正确读取
+   ```
+   === 配置加载调试信息 ===
+   加载的 forward_channel_pairs 数量: 1
+   加载的频道对 #1 配置:
+     - send_final_message: true (类型: <class 'bool'>)
+     - final_message_html_file: path/to/file.html
+   ```
+
+2. **最终消息发送检查**：确认处理流程
+   ```
+   === 开始最终消息发送检查 ===
+   频道对 #1 详细配置:
+     - send_final_message: true (类型: <class 'bool'>)
+     - final_message_html_file: path/to/file.html
+   ```
+
+3. **文件验证**：确认HTML文件存在且可读取
+   ```
+   ✅ 频道对 [源频道] HTML文件验证通过
+   ✅ 频道对 [源频道] HTML内容读取成功
+   ```
+
+4. **发送成功确认**：确认消息发送到目标频道
+   ```
+   ✅ 最终消息发送成功! 目标: 频道名, 消息ID: 12345
+   ```
+
+### 常见问题排查
+- **配置未生效**：检查 `send_final_message` 是否为 `true`（布尔值）
+- **文件路径问题**：确保 `final_message_html_file` 路径正确且文件存在
+- **HTML内容为空**：检查HTML文件是否包含有效内容
+- **发送失败**：查看详细错误信息和目标频道权限
+
+## 开发注意事项
+
+### ⚠️ 配置转换重要提醒
+当在UI模型中添加新的配置字段时，**必须**同时在 `src/utils/config_utils.py` 的 `convert_ui_config_to_dict` 函数中添加对应的转换逻辑：
+
+1. **频道对配置字段**：需要在 `filter_field` 列表中添加新字段
+   ```python
+   for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions", "hide_author", "send_final_message"]:
+       if hasattr(pair, filter_field):
+           pair_dict[filter_field] = getattr(pair, filter_field)
+   ```
+
+2. **特殊字段处理**：如文件路径等需要单独处理
+   ```python
+   if hasattr(pair, 'final_message_html_file'):
+       pair_dict['final_message_html_file'] = pair.final_message_html_file
+   ```
+
+3. **常见遗漏问题**：
+   - ❌ 只在UI模型中添加字段，忘记配置转换
+   - ❌ 配置在UI中显示正确，但转发时丢失
+   - ✅ UI模型 + 配置转换 + 功能实现 三步都要完成
+
+**记住这个教训**：UI配置 → 内部配置的转换是必须的步骤，遗漏会导致配置在运行时丢失！
+
+### 架构设计

@@ -181,9 +181,13 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
                         pair_dict['keywords'] = pair.keywords
                     
                     # 添加其他过滤选项到每个频道对配置中
-                    for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions"]:
+                    for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions", "hide_author", "send_final_message"]:
                         if hasattr(pair, filter_field):
                             pair_dict[filter_field] = getattr(pair, filter_field)
+                    
+                    # 添加最终消息HTML文件路径
+                    if hasattr(pair, 'final_message_html_file'):
+                        pair_dict['final_message_html_file'] = pair.final_message_html_file
                     
                     # 添加文本替换规则
                     text_replacements = {}
