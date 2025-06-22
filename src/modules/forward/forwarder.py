@@ -221,8 +221,9 @@ class Forwarder():
                     # 添加进度事件
                     group_count = 0
                     
-                    # 获取是否隐藏作者配置
-                    hide_author = self.forward_config.get('hide_author', False)
+                    # 获取当前频道对的隐藏作者配置
+                    hide_author = pair.get('hide_author', False)
+                    _logger.debug(f"频道对 [{source_channel}] hide_author 配置: {hide_author}")
                     
                     # 如果没有媒体组，跳过此频道对
                     if not media_groups:
