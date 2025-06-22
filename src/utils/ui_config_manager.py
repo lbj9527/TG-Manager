@@ -258,6 +258,7 @@ class UIConfigManager:
                             "target_channels": valid_targets,
                             "start_id": pair.get("start_id", 0),  # 保留原始的start_id
                             "end_id": pair.get("end_id", 0),      # 保留原始的end_id
+                            "enabled": pair.get("enabled", True),  # 添加启用状态，默认启用以兼容旧配置
                             # 添加转发选项布尔字段
                             "remove_captions": pair.get("remove_captions", False),
                             "hide_author": pair.get("hide_author", False),  
@@ -398,6 +399,7 @@ class UIConfigManager:
                             "remove_captions": pair.get("remove_captions", False),
                             "start_id": pair.get("start_id", 0),  # 保留原始的start_id
                             "end_id": pair.get("end_id", 0),      # 保留原始的end_id
+                            "enabled": pair.get("enabled", True),  # 添加启用状态，默认启用以兼容旧配置
                             # 添加转发选项布尔字段
                             "hide_author": pair.get("hide_author", False),  
                             "send_final_message": pair.get("send_final_message", False)

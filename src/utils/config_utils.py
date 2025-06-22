@@ -181,7 +181,7 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
                         pair_dict['keywords'] = pair.keywords
                     
                     # 添加其他过滤选项到每个频道对配置中
-                    for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions", "hide_author", "send_final_message"]:
+                    for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions", "hide_author", "send_final_message", "enabled"]:
                         if hasattr(pair, filter_field):
                             pair_dict[filter_field] = getattr(pair, filter_field)
                     

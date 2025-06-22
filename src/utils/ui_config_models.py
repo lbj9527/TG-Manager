@@ -93,6 +93,8 @@ class UIChannelPair(BaseModel):
     )
     start_id: int = Field(0, description="起始消息ID (0表示从最早消息开始)")
     end_id: int = Field(0, description="结束消息ID (0表示转发到最新消息)")
+    # 启用/禁用状态
+    enabled: bool = Field(True, description="是否启用此频道对转发")
     # 转发选项参数
     remove_captions: bool = Field(False, description="是否移除媒体说明文字")
     hide_author: bool = Field(False, description="是否隐藏原作者")

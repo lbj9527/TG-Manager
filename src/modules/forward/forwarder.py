@@ -131,10 +131,19 @@ class Forwarder():
         # 收集所有目标频道用于最终消息发送
         all_target_channels = []
         
+        # 跟踪实际转发了消息的频道对
+        forwarded_pairs = []
+        
         # 处理每个频道对
         for pair in channel_pairs:
             source_channel = pair.get("source_channel", "")
             target_channels = pair.get("target_channels", [])
+            
+            # 检查频道对是否启用
+            is_enabled = pair.get("enabled", True)
+            if not is_enabled:
+                _logger.info(f"跳过已禁用的频道对: {source_channel}")
+                continue
             
             # 添加调试信息，显示频道对配置的详细内容
             _logger.debug(f"频道对配置: {pair}")
@@ -161,6 +170,9 @@ class Forwarder():
             
             info_message = f"准备从 {source_channel} 转发到 {len(target_channels)} 个目标频道"
             _logger.info(info_message)
+            
+            # 记录本频道对的转发计数
+            pair_forward_count = 0
             
             try:
                 # 解析源频道ID
@@ -230,6 +242,7 @@ class Forwarder():
                         if success:
                             forward_count += 1
                             total_forward_count += 1
+                            pair_forward_count += 1
                         
                         # 简短的延迟，避免请求过于频繁
                         await asyncio.sleep(0.5)
@@ -274,6 +287,7 @@ class Forwarder():
                         
                         # 记录本组转发的消息数
                         total_forward_count += forward_count
+                        pair_forward_count += forward_count
                         info_message = f"从 {source_channel} 已转发 {forward_count} 个媒体组/消息"
                         _logger.info(info_message)
                         
@@ -284,6 +298,13 @@ class Forwarder():
                         error_details = traceback.format_exc()
                         _logger.error(error_details)
                         continue
+                
+                # 如果这个频道对实际转发了消息，记录到forwarded_pairs
+                if pair_forward_count > 0:
+                    forwarded_pairs.append(pair)
+                    _logger.debug(f"频道对 [{source_channel}] 成功转发了 {pair_forward_count} 条消息，将发送最终消息")
+                else:
+                    _logger.debug(f"频道对 [{source_channel}] 没有转发任何消息，不发送最终消息")
             
             except Exception as e:
                 error_message = f"处理频道对 {source_channel} 失败: {str(e)}"
@@ -297,36 +318,42 @@ class Forwarder():
         status_message = f"🎉 转发任务完成，成功转发 {total_forward_count} 个媒体组/消息"
         _logger.info(status_message)
         
-        # 发送最终消息到每个启用了最终消息的频道对
-        if total_forward_count > 0:
-            _logger.info("转发任务完成，准备检查并发送最终消息...")
+        # 只为实际转发了消息的频道对发送最终消息
+        if forwarded_pairs:
+            _logger.info(f"转发任务完成，准备为 {len(forwarded_pairs)} 个已转发的频道对检查并发送最终消息...")
             try:
-                await self._send_final_messages_by_pairs(channel_pairs)
+                await self._send_final_messages_by_pairs(forwarded_pairs)
                 _logger.info("最终消息发送流程已完成")
             except Exception as e:
                 _logger.error(f"发送最终消息时发生错误: {e}")
                 import traceback
                 _logger.error(f"错误详情: {traceback.format_exc()}")
         else:
-            _logger.info("没有转发任何消息，跳过最终消息发送")
+            _logger.info("没有频道对转发任何消息，跳过最终消息发送")
         
         # 清理临时文件
         await self._clean_media_dirs(temp_dir)
     
-    async def _send_final_messages_by_pairs(self, channel_pairs: List[Dict[str, Union[str, List[str]]]]):
+    async def _send_final_messages_by_pairs(self, forwarded_pairs: List[Dict[str, Union[str, List[str]]]]):
         """
-        发送最终消息到每个启用了最终消息的频道对
+        发送最终消息到每个启用了最终消息且实际转发了消息的频道对
         
         Args:
-            channel_pairs: 频道对列表，每个频道对是一个字典，包含'source_channel'和'target_channels'
+            forwarded_pairs: 实际转发了消息的频道对列表，每个频道对是一个字典，包含'source_channel'和'target_channels'
         """
-        _logger.info(f"开始检查最终消息发送配置，共有 {len(channel_pairs)} 个频道对")
+        _logger.info(f"开始检查最终消息发送配置，共有 {len(forwarded_pairs)} 个已转发的频道对")
         
-        for pair in channel_pairs:
+        for pair in forwarded_pairs:
             source_channel = pair.get("source_channel", "")
             target_channels = pair.get("target_channels", [])
             
             _logger.debug(f"检查频道对 [{source_channel}] 的最终消息配置")
+            
+            # 检查频道对是否启用（双重检查，虽然forwarded_pairs应该只包含启用的频道对）
+            is_enabled = pair.get("enabled", True)
+            if not is_enabled:
+                _logger.debug(f"频道对 [{source_channel}] 已禁用，跳过最终消息发送")
+                continue
             
             # 检查是否启用了发送最终消息功能
             send_final_message = pair.get('send_final_message', False)

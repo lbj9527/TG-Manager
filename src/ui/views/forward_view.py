@@ -242,15 +242,15 @@ class ForwardView(QWidget):
         forward_params_layout = QHBoxLayout()
         
         self.remove_captions_check = QCheckBox("移除媒体说明")
-        self.remove_captions_check.setChecked(True)
+        self.remove_captions_check.setChecked(False)
         forward_params_layout.addWidget(self.remove_captions_check)
         
         self.hide_author_check = QCheckBox("隐藏原作者")
-        self.hide_author_check.setChecked(True)
+        self.hide_author_check.setChecked(False)
         forward_params_layout.addWidget(self.hide_author_check)
         
         self.send_final_message_check = QCheckBox("转发完成发送最后一条消息")
-        self.send_final_message_check.setChecked(True)
+        self.send_final_message_check.setChecked(False)
         forward_params_layout.addWidget(self.send_final_message_check)
         
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
@@ -543,6 +543,7 @@ class ForwardView(QWidget):
                 'media_types': media_types,
                 'start_id': start_id,
                 'end_id': end_id,
+                'enabled': True,  # 新添加的频道对默认启用
                 'remove_captions': self.remove_captions_check.isChecked(),
                 'hide_author': self.hide_author_check.isChecked(),
                 'send_final_message': self.send_final_message_check.isChecked(),
@@ -982,6 +983,7 @@ class ForwardView(QWidget):
                         media_types=pair.get('media_types', self._get_media_types()),
                         start_id=pair.get('start_id', 0),
                         end_id=pair.get('end_id', 0),
+                        enabled=pair.get('enabled', True),  # 确保enabled字段被保存
                         remove_captions=pair.get('remove_captions', False),
                         hide_author=pair.get('hide_author', False),
                         send_final_message=pair.get('send_final_message', False),
@@ -1033,9 +1035,7 @@ class ForwardView(QWidget):
             # 更新本地配置引用
             self.config = updated_config
             
-            # 重新加载配置到UI，确保编辑对话框显示最新数据
-            logger.debug("重新加载配置到UI，同步最新的配置数据")
-            self.load_config(updated_config)
+            logger.debug("配置保存完成，保持当前UI状态不变")
             
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"配置保存失败: {str(e)}")
@@ -1134,6 +1134,7 @@ class ForwardView(QWidget):
                     'media_types': media_types,
                     'start_id': start_id,
                     'end_id': end_id,
+                    'enabled': pair.get('enabled', True),  # 默认启用，兼容旧配置
                     'remove_captions': remove_captions,
                     'hide_author': hide_author,
                     'send_final_message': send_final_message,
@@ -1145,69 +1146,13 @@ class ForwardView(QWidget):
                 # 添加到列表
                 self.channel_pairs.append(channel_pair)
                 
-                # 创建媒体类型显示文本
-                media_types_str = []
-                if self._is_media_type_in_list(MediaType.TEXT, media_types):
-                    media_types_str.append("纯文本")
-                if self._is_media_type_in_list(MediaType.PHOTO, media_types):
-                    media_types_str.append("照片")
-                if self._is_media_type_in_list(MediaType.VIDEO, media_types):
-                    media_types_str.append("视频")
-                if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
-                    media_types_str.append("文档")
-                if self._is_media_type_in_list(MediaType.AUDIO, media_types):
-                    media_types_str.append("音频")
-                if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
-                    media_types_str.append("动画")
-                
-                # 构建ID范围显示文本
-                id_range_str = ""
-                if start_id > 0 or end_id > 0:
-                    if start_id > 0 and end_id > 0:
-                        id_range_str = f"ID范围: {start_id}-{end_id}"
-                    elif start_id > 0:
-                        id_range_str = f"ID范围: {start_id}+"
-                    else:
-                        id_range_str = f"ID范围: 最早-{end_id}"
-                    id_range_str = " - " + id_range_str
-                
-                # 构建文本替换显示文本
-                text_filter_str = ""
-                if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
-                    replacements = []
-                    for rule in text_filter:
-                        original = rule.get("original_text", "")
-                        target = rule.get("target_text", "")
-                        if original or target:
-                            replacements.append(f"{original}->{target}")
-                    if replacements:
-                        text_filter_str = f" - 替换: {', '.join(replacements)}"
-                
-                # 构建关键词显示文本
-                keywords_str = ""
-                if keywords:
-                    keywords_str = f" - 关键词: {', '.join(keywords)}"
-                
-                # 构建转发选项显示文本
-                options_str = []
-                if channel_pair['remove_captions']:
-                    options_str.append("移除说明")
-                if channel_pair['hide_author']:
-                    options_str.append("隐藏作者")
-                if channel_pair['send_final_message']:
-                    options_str.append("发送完成消息")
-                
-                options_display = ""
-                if options_str:
-                    options_display = f" - 选项: {', '.join(options_str)}"
-                
-                # 构建显示文本
-                display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
-                
                 # 创建列表项
                 item = QListWidgetItem()
-                item.setText(display_text)
                 item.setData(Qt.UserRole, channel_pair)
+                
+                # 使用统一的显示更新方法
+                self._update_channel_pair_display(item, channel_pair)
+                
                 self.pairs_list.addItem(item)
         
         # 更新频道对列表标题
@@ -1424,10 +1369,24 @@ class ForwardView(QWidget):
         if not current_item:
             return
         
+        # 获取频道对数据，检查启用状态
+        channel_pair = current_item.data(Qt.UserRole)
+        is_enabled = channel_pair.get('enabled', True) if channel_pair else True
+        
         # 创建菜单
         context_menu = QMenu(self)
         
-        # 添加菜单项
+        # 添加禁用/启用菜单项
+        if is_enabled:
+            toggle_action = context_menu.addAction("禁用")
+            toggle_action.setToolTip("禁用此频道对，转发时将跳过")
+        else:
+            toggle_action = context_menu.addAction("启用")
+            toggle_action.setToolTip("启用此频道对，转发时将包含")
+        
+        context_menu.addSeparator()  # 添加分隔线
+        
+        # 添加其他菜单项
         edit_action = context_menu.addAction("编辑")
         delete_action = context_menu.addAction("删除")
         
@@ -1435,7 +1394,9 @@ class ForwardView(QWidget):
         action = context_menu.exec(QCursor.pos())
         
         # 处理用户选择
-        if action == edit_action:
+        if action == toggle_action:
+            self._toggle_channel_pair_enabled(current_item)
+        elif action == edit_action:
             self._edit_channel_pair(current_item)
         elif action == delete_action:
             # 删除操作直接调用已有的删除方法
@@ -1761,6 +1722,7 @@ class ForwardView(QWidget):
                     'media_types': new_media_types,
                     'start_id': start_id_input.value(),
                     'end_id': end_id_input.value(),
+                    'enabled': channel_pair.get('enabled', True),  # 保留原来的启用状态
                     'remove_captions': remove_captions_check.isChecked(),
                     'hide_author': hide_author_check.isChecked(),
                     'send_final_message': send_final_message_check.isChecked(),
@@ -1789,80 +1751,133 @@ class ForwardView(QWidget):
             # 更新列表项显示
             item = self.pairs_list.item(row)
             if item:
-                # 创建媒体类型显示文本
-                media_types = updated_pair.get('media_types', [])
-                media_types_str = []
-                
-                if self._is_media_type_in_list(MediaType.TEXT, media_types):
-                    media_types_str.append("纯文本")
-                if self._is_media_type_in_list(MediaType.PHOTO, media_types):
-                    media_types_str.append("照片")
-                if self._is_media_type_in_list(MediaType.VIDEO, media_types):
-                    media_types_str.append("视频")
-                if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
-                    media_types_str.append("文档")
-                if self._is_media_type_in_list(MediaType.AUDIO, media_types):
-                    media_types_str.append("音频")
-                if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
-                    media_types_str.append("动画")
-                
-                # 构建ID范围显示文本
-                start_id = updated_pair.get('start_id', 0)
-                end_id = updated_pair.get('end_id', 0)
-                id_range_str = ""
-                
-                if start_id > 0 or end_id > 0:
-                    if start_id > 0 and end_id > 0:
-                        id_range_str = f"ID范围: {start_id}-{end_id}"
-                    elif start_id > 0:
-                        id_range_str = f"ID范围: {start_id}+"
-                    else:
-                        id_range_str = f"ID范围: 最早-{end_id}"
-                    id_range_str = " - " + id_range_str
-                
-                # 构建文本替换显示文本
-                text_filter = updated_pair.get('text_filter', [])
-                text_filter_str = ""
-                if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
-                    replacements = []
-                    for rule in text_filter:
-                        original = rule.get("original_text", "")
-                        target = rule.get("target_text", "")
-                        if original or target:
-                            replacements.append(f"{original}->{target}")
-                    if replacements:
-                        text_filter_str = f" - 替换: {', '.join(replacements)}"
-                
-                # 构建关键词显示文本
-                keywords = updated_pair.get('keywords', [])
-                keywords_str = ""
-                if keywords:
-                    keywords_str = f" - 关键词: {', '.join(keywords)}"
-                
-                # 构建转发选项显示文本
-                options_str = []
-                if updated_pair.get('remove_captions', False):
-                    options_str.append("移除说明")
-                if updated_pair.get('hide_author', False):
-                    options_str.append("隐藏作者")
-                if updated_pair.get('send_final_message', False):
-                    options_str.append("发送完成消息")
-                
-                options_display = ""
-                if options_str:
-                    options_display = f" - 选项: {', '.join(options_str)}"
-                
-                # 构建新的显示文本
-                display_text = f"{updated_pair['source_channel']} → {', '.join(updated_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
-                
-                # 更新列表项
-                item.setText(display_text)
+                # 更新列表项数据
                 item.setData(Qt.UserRole, updated_pair)
                 
+                # 使用统一的显示更新方法
+                self._update_channel_pair_display(item, updated_pair)
+                
                 # 记录日志
-                logger.debug(f"频道对已更新: {display_text}")
+                logger.debug(f"频道对已更新: {updated_pair['source_channel']}")
                 
                 # 显示成功消息
                 QMessageBox.information(self, "更新成功", "频道对已成功更新，请点击保存配置")
         else:
-            logger.error(f"无法更新频道对，行索引无效: {row}") 
+            logger.error(f"无法更新频道对，行索引无效: {row}")
+    
+    def _toggle_channel_pair_enabled(self, item):
+        """切换频道对的启用/禁用状态
+        
+        Args:
+            item: 要切换状态的列表项
+        """
+        # 获取项目索引
+        row = self.pairs_list.row(item)
+        
+        # 获取频道对数据
+        channel_pair = item.data(Qt.UserRole)
+        if not channel_pair:
+            return
+        
+        # 切换启用状态
+        current_enabled = channel_pair.get('enabled', True)
+        new_enabled = not current_enabled
+        channel_pair['enabled'] = new_enabled
+        
+        # 更新 channel_pairs 列表中的数据
+        if 0 <= row < len(self.channel_pairs):
+            self.channel_pairs[row]['enabled'] = new_enabled
+        
+        # 更新列表项数据
+        item.setData(Qt.UserRole, channel_pair)
+        
+        # 更新显示文本，添加禁用状态标识
+        self._update_channel_pair_display(item, channel_pair)
+        
+        # 显示状态切换消息
+        status_text = "启用" if new_enabled else "禁用"
+        source_channel = channel_pair.get('source_channel', '未知频道')
+        QMessageBox.information(self, "状态更新", f"频道对 {source_channel} 已{status_text}，请保存配置使更改生效")
+        
+        logger.debug(f"频道对 {source_channel} 状态切换为: {'启用' if new_enabled else '禁用'}")
+    
+    def _update_channel_pair_display(self, item, channel_pair):
+        """更新频道对的显示文本
+        
+        Args:
+            item: 列表项
+            channel_pair: 频道对数据
+        """
+        # 创建媒体类型显示文本
+        media_types = channel_pair.get('media_types', [])
+        media_types_str = []
+        
+        if self._is_media_type_in_list(MediaType.TEXT, media_types):
+            media_types_str.append("纯文本")
+        if self._is_media_type_in_list(MediaType.PHOTO, media_types):
+            media_types_str.append("照片")
+        if self._is_media_type_in_list(MediaType.VIDEO, media_types):
+            media_types_str.append("视频")
+        if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
+            media_types_str.append("文档")
+        if self._is_media_type_in_list(MediaType.AUDIO, media_types):
+            media_types_str.append("音频")
+        if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
+            media_types_str.append("动画")
+        
+        # 构建ID范围显示文本
+        start_id = channel_pair.get('start_id', 0)
+        end_id = channel_pair.get('end_id', 0)
+        id_range_str = ""
+        
+        if start_id > 0 or end_id > 0:
+            if start_id > 0 and end_id > 0:
+                id_range_str = f"ID范围: {start_id}-{end_id}"
+            elif start_id > 0:
+                id_range_str = f"ID范围: {start_id}+"
+            else:
+                id_range_str = f"ID范围: 最早-{end_id}"
+            id_range_str = " - " + id_range_str
+        
+        # 构建文本替换显示文本
+        text_filter = channel_pair.get('text_filter', [])
+        text_filter_str = ""
+        if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
+            replacements = []
+            for rule in text_filter:
+                original = rule.get("original_text", "")
+                target = rule.get("target_text", "")
+                if original or target:
+                    replacements.append(f"{original}->{target}")
+            if replacements:
+                text_filter_str = f" - 替换: {', '.join(replacements)}"
+        
+        # 构建关键词显示文本
+        keywords = channel_pair.get('keywords', [])
+        keywords_str = ""
+        if keywords:
+            keywords_str = f" - 关键词: {', '.join(keywords)}"
+        
+        # 构建转发选项显示文本
+        options_str = []
+        if channel_pair.get('remove_captions', False):
+            options_str.append("移除说明")
+        if channel_pair.get('hide_author', False):
+            options_str.append("隐藏作者")
+        if channel_pair.get('send_final_message', False):
+            options_str.append("发送完成消息")
+        
+        options_display = ""
+        if options_str:
+            options_display = f" - 选项: {', '.join(options_str)}"
+        
+        # 构建基础显示文本
+        display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
+        
+        # 添加启用/禁用状态标识
+        is_enabled = channel_pair.get('enabled', True)
+        if not is_enabled:
+            display_text = f"[已禁用] {display_text}"
+        
+        # 更新列表项文本
+        item.setText(display_text)
