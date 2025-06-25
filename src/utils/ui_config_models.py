@@ -106,6 +106,8 @@ class UIChannelPair(BaseModel):
         description="文本替换规则列表"
     )
     keywords: List[str] = Field(default_factory=list, description="关键词列表(用于关键词过滤)")
+    # 新增字段：排除含链接消息
+    exclude_links: bool = Field(False, description="是否排除含链接的消息")
 
     @validator('source_channel')
     def validate_source_channel(cls, v):

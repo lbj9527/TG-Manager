@@ -253,6 +253,10 @@ class ForwardView(QWidget):
         self.send_final_message_check.setChecked(False)
         forward_params_layout.addWidget(self.send_final_message_check)
         
+        self.exclude_links_check = QCheckBox("排除含链接消息")
+        self.exclude_links_check.setChecked(True)  # 默认勾选，方便用户使用
+        forward_params_layout.addWidget(self.exclude_links_check)
+        
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         config_layout.addLayout(forward_params_layout)
         
@@ -549,7 +553,8 @@ class ForwardView(QWidget):
                 'send_final_message': self.send_final_message_check.isChecked(),
                 'final_message_html_file': self.main_final_message_html_file.text().strip(),
                 'text_filter': text_filter,
-                'keywords': keywords
+                'keywords': keywords,
+                'exclude_links': self.exclude_links_check.isChecked()
             }
             
             # 添加到列表
@@ -606,6 +611,8 @@ class ForwardView(QWidget):
                 options_str.append("隐藏作者")
             if channel_pair['send_final_message']:
                 options_str.append("发送完成消息")
+            if channel_pair['exclude_links']:
+                options_str.append("排除链接")
             
             options_display = ""
             if options_str:
@@ -970,7 +977,8 @@ class ForwardView(QWidget):
                     final_message_html_file=self.main_final_message_html_file.text().strip(),
                     # 添加text_filter和keywords字段
                     text_filter=[{"original_text": "", "target_text": ""}],
-                    keywords=[]
+                    keywords=[],
+                    exclude_links=self.exclude_links_check.isChecked()
                 )
                 ui_channel_pairs.append(default_channel_pair)
                 logger.debug("使用默认频道对替代空列表")
@@ -990,7 +998,8 @@ class ForwardView(QWidget):
                         final_message_html_file=pair.get('final_message_html_file', ''),
                         # 添加text_filter和keywords字段
                         text_filter=pair.get('text_filter', [{"original_text": "", "target_text": ""}]),
-                        keywords=pair.get('keywords', [])
+                        keywords=pair.get('keywords', []),
+                        exclude_links=pair.get('exclude_links', False)
                     ))
             
             # 创建UIForwardConfig对象（移除final_message_html_file参数）
@@ -1097,9 +1106,10 @@ class ForwardView(QWidget):
         forward_config = config.get('FORWARD', {})
         channel_pairs = forward_config.get('forward_channel_pairs', [])
         
-        # 初始化变量用于保存第一个频道对的ID设置
+        # 初始化变量用于保存第一个频道对的ID设置和转发参数
         first_pair_start_id = 0
         first_pair_end_id = 0
+        first_pair_exclude_links = True  # 默认值为True
         
         # 添加频道对到列表
         for i, pair in enumerate(channel_pairs):
@@ -1115,6 +1125,7 @@ class ForwardView(QWidget):
             remove_captions = pair.get('remove_captions', False)
             hide_author = pair.get('hide_author', False)
             send_final_message = pair.get('send_final_message', False)
+            exclude_links = pair.get('exclude_links', False)
             
             # 获取新增字段
             text_filter = pair.get('text_filter', [])
@@ -1122,10 +1133,11 @@ class ForwardView(QWidget):
             final_message_html_file = pair.get('final_message_html_file', '')
             
             if source_channel and target_channels:
-                # 保存第一个频道对的ID设置，用于设置默认值
-                if first_pair_start_id == 0 and first_pair_end_id == 0:
+                # 保存第一个频道对的ID设置和exclude_links状态，用于设置默认值
+                if i == 0:
                     first_pair_start_id = start_id
                     first_pair_end_id = end_id
+                    first_pair_exclude_links = exclude_links
                 
                 # 创建频道对数据
                 channel_pair = {
@@ -1140,7 +1152,8 @@ class ForwardView(QWidget):
                     'send_final_message': send_final_message,
                     'final_message_html_file': final_message_html_file,
                     'text_filter': text_filter,
-                    'keywords': keywords
+                    'keywords': keywords,
+                    'exclude_links': exclude_links
                 }
                 
                 # 添加到列表
@@ -1158,13 +1171,12 @@ class ForwardView(QWidget):
         # 更新频道对列表标题
         self._update_pairs_list_title()
         
-        # 注意：新增频道对界面的媒体类型和转发选项保持默认选中状态，不受配置文件影响
-        # 只有右键编辑菜单才需要从配置加载状态
-        
-        # 新增界面的媒体类型和转发选项保持默认选中，不从配置加载
         # 加载消息ID设置（使用第一个频道对的ID设置）
         self.start_id.setValue(first_pair_start_id)
         self.end_id.setValue(first_pair_end_id)
+        
+        # 加载主界面的exclude_links复选框状态（使用第一个频道对的设置，如果没有频道对则保持默认勾选）
+        self.exclude_links_check.setChecked(first_pair_exclude_links)
         
         # 主界面的文本替换和关键词输入框保持默认为空，不从配置文件加载
         # 只有右键编辑菜单中才会从配置加载这些字段的值
@@ -1569,6 +1581,7 @@ class ForwardView(QWidget):
         remove_captions_value = to_bool(channel_pair.get('remove_captions', False))
         hide_author_value = to_bool(channel_pair.get('hide_author', False))
         send_final_message_value = to_bool(channel_pair.get('send_final_message', False))
+        exclude_links_value = to_bool(channel_pair.get('exclude_links', False))
         
         remove_captions_check = QCheckBox("移除媒体说明")
         remove_captions_check.setChecked(remove_captions_value)
@@ -1581,6 +1594,10 @@ class ForwardView(QWidget):
         send_final_message_check = QCheckBox("转发完成发送最后一条消息")
         send_final_message_check.setChecked(send_final_message_value)
         forward_params_layout.addWidget(send_final_message_check)
+        
+        exclude_links_check = QCheckBox("排除含链接消息")
+        exclude_links_check.setChecked(exclude_links_value)
+        forward_params_layout.addWidget(exclude_links_check)
         
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         dialog_layout.addLayout(forward_params_layout)
@@ -1728,7 +1745,8 @@ class ForwardView(QWidget):
                     'send_final_message': send_final_message_check.isChecked(),
                     'final_message_html_file': html_file_input.text().strip(),
                     'text_filter': text_filter,
-                    'keywords': keywords
+                    'keywords': keywords,
+                    'exclude_links': exclude_links_check.isChecked()
                 }
                 
                 # 更新列表项和数据
@@ -1866,6 +1884,8 @@ class ForwardView(QWidget):
             options_str.append("隐藏作者")
         if channel_pair.get('send_final_message', False):
             options_str.append("发送完成消息")
+        if channel_pair.get('exclude_links', False):
+            options_str.append("排除链接")
         
         options_display = ""
         if options_str:

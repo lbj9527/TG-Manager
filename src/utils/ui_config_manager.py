@@ -263,6 +263,7 @@ class UIConfigManager:
                             "remove_captions": pair.get("remove_captions", False),
                             "hide_author": pair.get("hide_author", False),  
                             "send_final_message": pair.get("send_final_message", False),
+                            "exclude_links": pair.get("exclude_links", False),  # 添加exclude_links字段处理
                             # 添加最终消息HTML文件路径字段
                             "final_message_html_file": pair.get("final_message_html_file", "")
                         }
@@ -329,7 +330,8 @@ class UIConfigManager:
                         "send_final_message": False,
                         "final_message_html_file": "",
                         "text_filter": [{"original_text": "", "target_text": ""}],
-                        "keywords": []
+                        "keywords": [],
+                        "exclude_links": False
                     }]
                     logger.warning("转发频道对列表为空，已添加默认项")
                 
@@ -402,7 +404,8 @@ class UIConfigManager:
                             "enabled": pair.get("enabled", True),  # 添加启用状态，默认启用以兼容旧配置
                             # 添加转发选项布尔字段
                             "hide_author": pair.get("hide_author", False),  
-                            "send_final_message": pair.get("send_final_message", False)
+                            "send_final_message": pair.get("send_final_message", False),
+                            "exclude_links": pair.get("exclude_links", False)
                         }
                         
                         # 处理文本替换规则
@@ -475,7 +478,6 @@ class UIConfigManager:
                         valid_pair["exclude_replies"] = bool(pair.get("exclude_replies", False))
                         # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
                         valid_pair["exclude_text"] = bool(pair.get("exclude_text", pair.get("exclude_media", False)))
-                        valid_pair["exclude_links"] = bool(pair.get("exclude_links", False))
                         
                         valid_pairs.append(valid_pair)
                     except Exception as e:
@@ -492,7 +494,8 @@ class UIConfigManager:
                             MediaType.PHOTO, MediaType.VIDEO, MediaType.DOCUMENT, 
                             MediaType.AUDIO, MediaType.ANIMATION, MediaType.STICKER,
                             MediaType.VOICE, MediaType.VIDEO_NOTE
-                        ]
+                        ],
+                        "exclude_links": False
                     }]
                     logger.warning("监听频道对列表为空，已添加默认项")
                 
