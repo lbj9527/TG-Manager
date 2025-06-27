@@ -1,5 +1,158 @@
 # 更新日志
 
+## [v2.1.9.29] - 2024-12-22
+
+### 🔧 关键修复 (Critical Fix) 
+
+#### 修复媒体组文本传递机制中的重复过滤问题 (Fix Duplicate Filtering in Media Group Text Transfer Mechanism)
+- **问题根源分析**：
+  - **双重过滤问题**：MediaGroupCollector和DirectForwarder都在调用过滤器，导致文本信息在第二次过滤时丢失
+  - **数据传递缺失**：MediaGroupCollector过滤后的结果没有包含媒体组文本信息，DirectForwarder无法获取预提取的文本
+  - **时序问题**：包含文本的照片消息在第一次过滤中被移除，第二次过滤时已无法获取原始文本
+
+- **完整修复方案**：
+  - 🔧 **修改MediaGroupCollector返回值**：`get_media_groups_optimized`现在返回`(media_groups, media_group_texts)`元组
+  - 📤 **增强数据传递机制**：Forwarder将媒体组文本信息添加到频道对配置中传递给DirectForwarder
+  - 🎯 **优化DirectForwarder逻辑**：优先使用传递的媒体组文本，避免重复过滤
+  - 📝 **增强调试支持**：添加详细的调试日志跟踪文本传递过程
+
+- **修复效果**：
+  - ✅ **消除重复过滤**：确保过滤器只在MediaGroupCollector中运行一次
+  - ✅ **保证文本传递**：即使包含文本的消息被过滤，文本信息也能正确传递到DirectForwarder
+  - ✅ **保持功能完整性**：所有原有功能（文本替换、媒体类型过滤等）继续正常工作
+  - ✅ **向后兼容**：兼容没有预提取文本的情况，自动降级到原有逻辑
+
+- **技术实现细节**：
+  ```python
+  # MediaGroupCollector现在返回文本信息
+  media_groups, media_group_texts = await self.media_group_collector.get_media_groups_optimized(...)
+  
+  # Forwarder传递文本信息
+  enhanced_pair_config = pair.copy()
+  enhanced_pair_config['media_group_texts'] = media_group_texts
+  
+  # DirectForwarder优先使用传递的文本
+  if pair_config and 'media_group_texts' in pair_config:
+      media_group_texts = pair_config.get('media_group_texts', {})
+      # 跳过重复过滤，直接使用预过滤的消息
+  ```
+
+## [v2.1.9.28] - 2024-12-22
+
+### 🔧 关键修复 (Critical Fix)
+
+#### 修复媒体类型过滤导致媒体组文本丢失的问题 (Fix Media Group Text Loss Due to Media Type Filtering)
+- **问题描述**：
+  - 当剔除照片等媒体类型时，媒体说明仍然被移除
+  - 用户反映第一条消息（照片）包含文本，但被媒体类型过滤剔除后，整个媒体组的文本内容丢失
+
+- **根本原因**：
+  - **时序问题**：媒体类型过滤在文本提取之前执行，包含文本的照片消息被过滤掉后，文本内容随之丢失
+  - **处理顺序错误**：
+    1. 通用过滤
+    2. 关键词过滤（只有设置关键词时才保存媒体组文本）
+    3. **媒体类型过滤** ← 包含文本的消息在这一步被移除
+  - **文本保存不完整**：只有设置了关键词过滤时才会保存媒体组文本，其他情况下文本内容直接丢失
+
+- **修复方案**：
+  - 🎯 **预提取文本**：在任何过滤开始之前，预先提取并保存所有媒体组的文本内容
+  - 📝 **新增方法**：实现 `_extract_media_group_texts()` 方法，专门负责文本预提取
+  - 🔧 **优化处理顺序**：
+    1. **文本预提取** ← 新增步骤，确保文本不丢失
+    2. 通用过滤
+    3. 关键词过滤
+    4. 媒体类型过滤
+  - 🎛️ **智能合并**：将预提取的文本与关键词过滤产生的文本智能合并
+
+- **技术实现**：
+  ```python
+  def _extract_media_group_texts(self, messages: List[Message]) -> Dict[str, str]:
+      """预提取所有媒体组的文本内容，在任何过滤开始之前执行"""
+      media_groups = self._group_messages_by_media_group(messages)
+      media_group_texts = {}
+      
+      for group_messages in media_groups:
+          media_group_id = getattr(group_messages[0], 'media_group_id', None)
+          if not media_group_id:
+              continue
+              
+          # 寻找第一个有文本内容的消息
+          for message in group_messages:
+              text_content = message.caption or message.text
+              if text_content:
+                  media_group_texts[media_group_id] = text_content
+                  break
+      
+      return media_group_texts
+  
+  # 在apply_all_filters中的新处理顺序
+  def apply_all_filters(self, messages, pair_config):
+      # 0. 预提取媒体组文本（关键新步骤）
+      media_group_texts = self._extract_media_group_texts(current_messages)
+      
+      # 1-3. 执行各种过滤...
+      
+      # 最终合并文本映射
+      filter_stats['media_group_texts'] = media_group_texts
+  ```
+
+- **日志改进**：
+  - 添加预提取文本的调试日志：`📝 预提取媒体组文本: 找到 X 个媒体组的文本内容`
+  - 每个媒体组的文本提取都有详细日志：`预提取媒体组 {id} 的文本: '{text[:50]}...'`
+
+- **用户价值**：
+  - ✅ **文本永不丢失**：无论过滤掉哪些媒体类型，包含文本的消息的文本内容都会被保留
+  - ✅ **智能文本应用**：保留的文本会正确应用到重组后的媒体组
+  - ✅ **一致的行为**：不管媒体组中第一条消息是什么类型，文本处理逻辑都保持一致
+  - ✅ **文本替换生效**：预提取的文本同样会应用文本替换规则
+
+- **修复验证**：
+  - 测试场景1：媒体组 [照片+视频]，排除照片，保留视频和文本 ✅
+  - 测试场景2：媒体组 [视频+照片]，排除照片，保留视频和文本 ✅
+  - 测试场景3：媒体组 [照片+照片+视频]，排除照片，保留视频和文本 ✅
+
+## [v2.1.9.27] - 2024-12-22
+
+### 🔧 关键修复 (Critical Fix)
+
+#### 修复媒体组标题处理的不一致问题 (Fix Inconsistent Media Group Caption Handling)
+- **问题描述**：
+  - 在剔除视频时媒体说明正常保留，但在剔除照片时媒体说明被意外移除
+  - 不同过滤场景下媒体组标题处理逻辑不一致，导致用户体验不统一
+
+- **根本原因**：
+  - 重组媒体组时，标题处理逻辑依赖于消息顺序和消息类型
+  - 照片消息通常没有`caption`，视频消息通常有`caption`
+  - 原逻辑强制使用"每条消息自己的标题"，导致无标题的消息（如照片）丢失媒体组标题
+
+- **修复方案**：
+  - 🎯 **智能标题选择**：当没有保存的媒体组文本时，自动寻找第一个有标题的消息作为媒体组标题
+  - 📝 **统一媒体组格式**：确保重组后的媒体组始终遵循Telegram标准格式（只有第一条消息带标题）
+  - 🔧 **一致的处理逻辑**：无论过滤掉的是什么类型的媒体，标题处理逻辑保持统一
+
+- **技术实现**：
+  ```python
+  # 修复前的有问题逻辑
+  else:
+      caption = message.caption or ""  # 可能导致空标题
+  
+  # 修复后的智能逻辑
+  if not group_caption:
+      for msg in filtered_messages:
+          if msg.caption:
+              group_caption = msg.caption  # 找到第一个有标题的消息
+              break
+  
+  # 统一的标题分配
+  caption = group_caption if i == 0 else ""  # 只有第一条消息带标题
+  ```
+
+- **用户价值**：
+  - ✅ **一致的体验**：无论剔除什么类型的媒体，标题处理逻辑统一
+  - ✅ **智能保留**：自动寻找并保留有意义的媒体组标题
+  - ✅ **文本替换生效**：确保文本替换在所有过滤场景下都能正常工作
+  - ✅ **符合规范**：重组后的媒体组符合Telegram媒体组显示标准
+
 ## [v2.1.9.26] - 2024-12-22
 
 ### 🔧 关键修复 (Critical Fix)

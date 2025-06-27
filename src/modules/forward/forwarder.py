@@ -211,7 +211,7 @@ class Forwarder():
                     target_channel_list = [target[0] for target in valid_target_channels]
                     
                     # 使用优化的媒体组获取方法，先过滤已转发的消息ID
-                    media_groups = await self.media_group_collector.get_media_groups_optimized(
+                    media_groups, media_group_texts = await self.media_group_collector.get_media_groups_optimized(
                         source_id, source_channel, target_channel_list, pair, self.history_manager
                     )
                     
@@ -235,9 +235,13 @@ class Forwarder():
                         # 更新进度
                         group_count += 1
                         
+                        # 将媒体组文本信息添加到频道对配置中，以便DirectForwarder使用
+                        enhanced_pair_config = pair.copy()
+                        enhanced_pair_config['media_group_texts'] = media_group_texts
+                        
                         # 转发媒体组到所有目标频道
                         success = await self.direct_forwarder.forward_media_group_directly(
-                            messages, source_channel, source_id, valid_target_channels, hide_author, pair
+                            messages, source_channel, source_id, valid_target_channels, hide_author, enhanced_pair_config
                         )
                         
                         if success:

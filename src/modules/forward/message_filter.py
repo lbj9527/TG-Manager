@@ -381,6 +381,13 @@ class MessageFilter:
         current_messages = messages[:]
         all_filtered_messages = []
         
+        # 0. 预提取媒体组文本（在任何过滤开始之前）
+        # 这确保即使包含文本的消息被媒体类型过滤掉，我们仍能保留文本内容
+        media_group_texts = self._extract_media_group_texts(current_messages)
+        filter_stats['media_group_texts'] = media_group_texts
+        if media_group_texts:
+            _logger.debug(f"📝 预提取媒体组文本: 找到 {len(media_group_texts)} 个媒体组的文本内容")
+        
         # 1. 应用通用过滤规则（排除纯文本消息、包含链接的消息）
         current_messages, general_filtered = self.apply_general_filters(current_messages, pair_config)
         all_filtered_messages.extend(general_filtered)
@@ -392,10 +399,13 @@ class MessageFilter:
         keywords = pair_config.get('keywords', [])
         _logger.debug(f"关键词配置: {keywords} (类型: {type(keywords)})")
         if keywords:
-            current_messages, keyword_filtered, media_group_texts = self.apply_keyword_filter_with_text_processing(current_messages, keywords)
+            current_messages, keyword_filtered, keyword_media_group_texts = self.apply_keyword_filter_with_text_processing(current_messages, keywords)
             all_filtered_messages.extend(keyword_filtered)
             filter_stats['keyword_filtered'] = len(keyword_filtered)
-            filter_stats['media_group_texts'] = media_group_texts  # 保存媒体组文本映射
+            # 合并关键词过滤产生的媒体组文本（但预提取的优先级更高）
+            for group_id, text in keyword_media_group_texts.items():
+                if group_id not in media_group_texts:
+                    media_group_texts[group_id] = text
         else:
             _logger.debug(f"未设置关键词过滤，跳过关键词过滤")
         
@@ -415,6 +425,8 @@ class MessageFilter:
             if len(media_filtered) > 0:
                 _logger.info(f"媒体类型过滤: 过滤了 {len(media_filtered)} 条不符合类型要求的消息")
         
+        # 更新最终的媒体组文本映射
+        filter_stats['media_group_texts'] = media_group_texts
         filter_stats['final_count'] = len(current_messages)
         
         # 总结日志
@@ -555,4 +567,50 @@ class MessageFilter:
             # 如果无法识别媒体类型，默认不允许
             return False
         
-        return self._is_media_type_allowed(message_media_type, media_types_str) 
+        return self._is_media_type_allowed(message_media_type, media_types_str)
+    
+    def _extract_media_group_texts(self, messages: List[Message]) -> Dict[str, str]:
+        """
+        预提取所有媒体组的文本内容
+        在任何过滤开始之前执行，确保文本内容不会因为媒体类型过滤而丢失
+        
+        Args:
+            messages: 消息列表
+            
+        Returns:
+            Dict[str, str]: 媒体组ID到文本内容的映射
+        """
+        if not messages:
+            return {}
+        
+        # 按媒体组分组
+        media_groups = self._group_messages_by_media_group(messages)
+        media_group_texts = {}
+        
+        for group_messages in media_groups:
+            # 获取媒体组ID
+            media_group_id = getattr(group_messages[0], 'media_group_id', None)
+            
+            # 只处理真正的媒体组（有媒体组ID的）
+            if not media_group_id:
+                continue
+            
+            # 寻找媒体组中第一个有文本内容的消息
+            group_text = ""
+            for message in group_messages:
+                text_content = ""
+                if message.caption:
+                    text_content = message.caption
+                elif message.text:
+                    text_content = message.text
+                
+                if text_content:
+                    group_text = text_content
+                    break  # 找到第一个有文本的消息就停止
+            
+            # 如果找到了文本内容，记录到映射中
+            if group_text:
+                media_group_texts[media_group_id] = group_text
+                _logger.debug(f"预提取媒体组 {media_group_id} 的文本: '{group_text[:50]}...'")
+        
+        return media_group_texts 

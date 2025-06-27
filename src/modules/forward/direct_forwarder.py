@@ -64,9 +64,27 @@ class DirectForwarder:
         # 如果提供了频道对配置，应用过滤规则
         filtered_messages = messages
         media_group_texts = {}
-        if pair_config:
+        
+        # 优先使用Forwarder传递的媒体组文本信息（避免重复过滤）
+        if pair_config and 'media_group_texts' in pair_config:
+            media_group_texts = pair_config.get('media_group_texts', {})
+            _logger.debug(f"🔍 DirectForwarder接收到Forwarder传递的媒体组文本: {len(media_group_texts)} 个")
+            for group_id, text in media_group_texts.items():
+                _logger.debug(f"  媒体组 {group_id}: '{text[:50]}...'")
+            # 不需要重新过滤，因为MediaGroupCollector已经过滤过了
+            filtered_messages = messages
+        elif pair_config:
+            # 如果没有预传递的文本信息，才进行过滤
             filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
             media_group_texts = filter_stats.get('media_group_texts', {})
+            
+            # 添加调试日志查看媒体组文本内容
+            if media_group_texts:
+                _logger.debug(f"🔍 DirectForwarder获取到媒体组文本: {list(media_group_texts.keys())}")
+                for group_id, text in media_group_texts.items():
+                    _logger.debug(f"  媒体组 {group_id}: '{text[:50]}...'")
+            else:
+                _logger.debug(f"🔍 DirectForwarder未获取到任何媒体组文本")
             
             if not filtered_messages:
                 _logger.info(f"⚠️ 所有消息都被过滤器过滤掉，跳过转发")
@@ -218,14 +236,40 @@ class DirectForwarder:
                             # 重组的媒体组：使用send_media_group发送，保持真正的媒体组格式
                             _logger.info(f"📝 重组媒体组转发: 使用send_media_group发送 {len(filtered_messages)} 条媒体")
                             
+                            # 添加调试日志查看媒体组ID
+                            _logger.debug(f"🔍 当前媒体组ID: {original_media_group_id}")
+                            _logger.debug(f"🔍 可用的媒体组文本: {list(media_group_texts.keys())}")
+                            
                             # 获取媒体组原始文本（如果有保存的）
                             group_caption = ""
                             if original_media_group_id and original_media_group_id in media_group_texts:
                                 group_caption = media_group_texts[original_media_group_id]
-                                _logger.debug(f"使用保存的媒体组文本: '{group_caption[:50]}...'")
+                                _logger.debug(f"✅ 使用保存的媒体组文本: '{group_caption[:50]}...'")
+                            
+                            # 如果没有保存的媒体组文本，寻找第一个有标题的消息作为媒体组标题
+                            if not group_caption:
+                                _logger.debug(f"🔍 未找到保存的媒体组文本，在过滤后的消息中寻找标题")
+                                for msg in filtered_messages:
+                                    if msg.caption:
+                                        group_caption = msg.caption
+                                        _logger.debug(f"✅ 使用第一个有标题的消息作为媒体组标题: '{group_caption[:50]}...'")
+                                        break
+                                
+                                # 如果过滤后的消息中没有标题，尝试从原始消息中寻找
+                                if not group_caption:
+                                    _logger.debug(f"🔍 过滤后的消息中没有标题，尝试从原始消息中寻找")
+                                    for msg in messages:
+                                        if msg.caption:
+                                            group_caption = msg.caption
+                                            _logger.debug(f"✅ 从原始消息中找到标题: '{group_caption[:50]}...'")
+                                            break
+                            
+                            if not group_caption:
+                                _logger.warning(f"⚠️ 无法找到媒体组标题，媒体组将没有说明文字")
                             
                             # 检查是否移除说明
                             remove_captions = pair_config.get('remove_captions', False)
+                            _logger.debug(f"🔍 移除说明配置: {remove_captions}")
                             
                             # 创建InputMedia列表
                             media_list = []
@@ -235,22 +279,15 @@ class DirectForwarder:
                                     # 如果配置了移除说明，所有消息都不带标题
                                     caption = ""
                                 elif group_caption and i == 0:
-                                    # 如果有保存的媒体组文本，第一条消息使用组文本作为标题
+                                    # 有媒体组文本时，第一条消息使用媒体组文本作为标题
                                     caption = group_caption
                                     # 应用文本替换
                                     if text_replacements:
                                         caption, _ = self.message_filter.apply_text_replacements(caption, text_replacements)
                                         _logger.debug(f"文本替换后的媒体组标题: '{caption[:50]}...'")
-                                elif group_caption and i > 0:
-                                    # 有保存的媒体组文本时，其余消息不带标题
-                                    caption = ""
                                 else:
-                                    # 没有保存的媒体组文本时，使用每条消息自己的原始标题
-                                    caption = message.caption or ""
-                                    # 应用文本替换
-                                    if text_replacements and caption:
-                                        caption, _ = self.message_filter.apply_text_replacements(caption, text_replacements)
-                                        _logger.debug(f"消息 {message.id} 文本替换后的标题: '{caption[:30]}...'")
+                                    # 其余消息不带标题，保持Telegram媒体组的标准格式
+                                    caption = ""
                                 
                                 # 根据消息类型创建对应的InputMedia对象
                                 input_media = await self._create_input_media_from_message(message, caption)

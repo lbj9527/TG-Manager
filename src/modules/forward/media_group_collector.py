@@ -129,9 +129,9 @@ class MediaGroupCollector:
         
         return start_id, end_id, True
 
-    async def get_media_groups_optimized(self, source_id: int, source_channel: str, target_channels: List[str], pair: dict = None, history_manager=None) -> Dict[str, List[Message]]:
+    async def get_media_groups_optimized(self, source_id: int, source_channel: str, target_channels: List[str], pair: dict = None, history_manager=None) -> Tuple[Dict[str, List[Message]], Dict[str, str]]:
         """
-        优化的获取源频道媒体组消息方法，先过滤已转发的消息ID再获取消息
+        优化的获取源频道媒体组方法，先过滤已转发的消息ID再获取消息
         
         Args:
             source_id: 源频道ID
@@ -141,16 +141,18 @@ class MediaGroupCollector:
             history_manager: 历史管理器实例
             
         Returns:
-            Dict[str, List[Message]]: 媒体组ID与消息列表的映射
+            Tuple[Dict[str, List[Message]], Dict[str, str]]: (媒体组ID与消息列表的映射, 媒体组文本映射)
         """
         media_groups: Dict[str, List[Message]] = {}
+        media_group_texts: Dict[str, str] = {}
         
         # 解析消息范围
         start_id, end_id, is_valid = await self._resolve_message_range(source_id, pair)
         
         # 如果范围无效，回退到原有逻辑
         if not is_valid:
-            return await self.get_media_groups(source_id, source_channel, pair)
+            fallback_groups = await self.get_media_groups(source_id, source_channel, pair)
+            return fallback_groups, {}
         
         # 预过滤已转发的消息ID
         unforwarded_ids = self._filter_unforwarded_ids(start_id, end_id, source_channel, target_channels, history_manager)
@@ -158,7 +160,7 @@ class MediaGroupCollector:
         # 如果没有未转发的消息，直接返回空结果
         if not unforwarded_ids:
             _logger.info("所有消息都已转发，无需获取新消息")
-            return media_groups
+            return media_groups, media_group_texts
         
         # 按指定ID列表获取消息
         all_messages = []
@@ -168,7 +170,11 @@ class MediaGroupCollector:
         # 应用过滤规则（使用新的统一过滤器）
         if pair and all_messages:
             filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            # 获取媒体组文本映射
+            media_group_texts = filter_stats.get('media_group_texts', {})
             _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+            if media_group_texts:
+                _logger.debug(f"🔍 MediaGroupCollector获取到媒体组文本: {len(media_group_texts)} 个")
         else:
             filtered_messages = all_messages
         
@@ -188,7 +194,7 @@ class MediaGroupCollector:
             media_groups[group_id].sort(key=lambda x: x.id)
         
         _logger.info(f"优化获取完成: 获得 {len(media_groups)} 个媒体组")
-        return media_groups
+        return media_groups, media_group_texts
 
     async def get_media_groups_info_optimized(self, source_id: int, source_channel: str, target_channels: List[str], pair: dict = None, history_manager=None) -> List[Tuple[str, List[int]]]:
         """
