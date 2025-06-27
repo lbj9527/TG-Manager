@@ -1,5 +1,258 @@
 # 更新日志
 
+## [v2.1.9.26] - 2024-12-22
+
+### 🔧 关键修复 (Critical Fix)
+
+#### 修复重组媒体组时媒体说明被意外移除的问题 (Fix Media Caption Loss in Regrouped Media)
+- **问题描述**：
+  - 在实现媒体组重组功能后，发现即使没有勾选"移除媒体说明"，转发后的媒体说明也被移除了
+  - 问题出现在重组模式下的标题处理逻辑，强制将非首条消息的标题设为空字符串
+
+- **根本原因**：
+  - 重组逻辑中假设只有首条消息需要标题，其余消息强制为空
+  - 当没有保存的媒体组文本时，`group_caption` 为空，导致所有消息标题都丢失
+  - 没有正确处理每条消息自身的原始标题
+
+- **修复方案**：
+  - 🎯 **分情况处理标题**：
+    - `remove_captions=true`：所有消息都不带标题 ✅
+    - 有保存的媒体组文本：首条消息用组文本，其余为空 ✅  
+    - 无保存的媒体组文本：每条消息使用自己的原始标题 ✅
+  - 📝 **保留文本替换**：在保留原始标题的同时，正确应用文本替换规则
+  - 🔧 **详细日志**：添加每条消息标题处理的调试日志，便于问题排查
+
+- **技术实现**：
+  ```python
+  # 修复前的有问题逻辑
+  caption = group_caption if i == 0 else ""  # 强制其余消息为空
+  
+  # 修复后的正确逻辑
+  if remove_captions:
+      caption = ""  # 配置移除时才为空
+  elif group_caption and i == 0:
+      caption = group_caption  # 有组文本时用于首条
+  elif group_caption and i > 0:
+      caption = ""  # 有组文本时其余为空
+  else:
+      caption = message.caption or ""  # 无组文本时保留原始标题
+      # 应用文本替换...
+  ```
+
+- **用户体验提升**：
+  - ✅ **配置一致性**：不勾选"移除媒体说明"时，媒体说明被正确保留
+  - ✅ **文本替换生效**：保留说明的同时，文本替换规则正常工作
+  - ✅ **媒体组完整性**：重组后的媒体组保持原有的标题信息
+  - ✅ **行为可预期**：用户配置与实际转发结果完全一致
+
+## [v2.1.9.25] - 2024-12-22
+
+### 🔧 关键修复 (Critical Fix)
+
+#### 彻底解决媒体组过滤绕过问题 (Final Fix for Media Group Filter Bypass)
+- **问题根源**：
+  - `MediaGroupCollector` 在获取消息后立即过滤，传递给 `DirectForwarder` 的是已过滤结果
+  - `DirectForwarder` 无法知道原始媒体组大小，无法判断是否发生了过滤
+  - 导致 `copy_media_group` 方法绕过过滤结果，转发原始完整媒体组
+
+- **修复方案**：
+  - 🎯 **智能重组判断**：基于媒体组ID和配置中排除的媒体类型来判断是否需要重组
+  - 📝 **配置分析**：检查 `media_types` 配置，判断是否排除了某些媒体类型
+  - 🔧 **强制重组模式**：当检测到媒体组可能被过滤时，强制使用 `send_media_group` 重组
+
+- **技术实现**：
+  ```python
+  # 检查配置是否排除了某些媒体类型
+  allowed_media_types = pair_config.get('media_types', [])
+  all_media_types = ['text', 'photo', 'video', 'document', 'audio', 'animation', 'sticker', 'voice', 'video_note']
+  has_excluded_media_types = len(allowed_media_types) < len(all_media_types)
+  
+  # 重组条件：有媒体组ID，排除了某些媒体类型，且当前有多条消息
+  has_filtering = (original_media_group_id is not None and 
+                  has_excluded_media_types and 
+                  current_group_size > 1)
+  ```
+
+- **日志改进**：
+  - 清晰显示检测到的过滤情况：媒体组ID、排除的媒体类型、当前消息数
+  - 便于调试和验证过滤是否正确应用
+
+- **用户价值**：
+  - ✅ **精确过滤**：确保排除的媒体类型（如视频）不会被转发
+  - ✅ **保持格式**：过滤后的媒体组仍保持真正的媒体组格式
+  - ✅ **配置生效**：媒体类型过滤配置100%生效，无绕过风险
+
+## [v2.1.9.24] - 2024-12-22
+
+### 🚀 重大改进 (Major Improvement)
+
+#### 使用send_media_group重组媒体组，保持真正的媒体组格式 (Media Group Reorganization with send_media_group)
+- **功能描述**：
+  - 当媒体组因媒体类型过滤而需要重组时，现在使用 `send_media_group` 发送，保持Telegram原生媒体组格式
+  - 相比之前逐条发送 `copy_message` 的方式，新方式保持了真正的媒体组特性
+- **技术实现**：
+  - 🎯 **InputMedia系列支持**：添加了 `InputMediaPhoto`、`InputMediaVideo`、`InputMediaDocument`、`InputMediaAudio`、`InputMediaAnimation` 的导入和使用
+  - 🔧 **智能媒体创建**：新增 `_create_input_media_from_message()` 方法，根据消息类型自动创建对应的InputMedia对象
+  - 📝 **标题处理优化**：
+    - 若用户设置移除媒体说明（`remove_captions: true`），所有InputMedia都不包含标题
+    - 若用户未设置移除媒体说明，将原始文本或替换后的文本填入第一个InputMedia对象作为媒体组标题
+    - 其余媒体不带标题，形成统一的媒体组
+- **用户体验提升**：
+  - ✅ **真正的媒体组**：重组后的媒体在Telegram中显示为完整的媒体组，而非独立消息
+  - ✅ **统一标题**：媒体组标题只显示在第一条媒体上，符合Telegram媒体组显示规范
+  - ✅ **保持格式**：重组后保持原始媒体组的视觉效果和交互体验
+- **技术优势**：
+  - 📈 **性能提升**：一次API调用发送整个媒体组，比逐条发送更高效
+  - 🎨 **视觉一致性**：重组后的媒体组与原始媒体组在外观上完全一致
+  - 🔄 **原子操作**：整个媒体组作为一个单元发送，避免了逐条发送可能出现的间断
+- **实现细节**：
+  ```python
+  # 创建InputMedia列表
+  media_list = []
+  for i, message in enumerate(filtered_messages):
+      # 第一条消息带标题，其余消息不带标题
+      caption = group_caption if i == 0 else ""
+      
+      # 根据消息类型创建对应的InputMedia对象
+      input_media = await self._create_input_media_from_message(message, caption)
+      if input_media:
+          media_list.append(input_media)
+  
+  # 使用send_media_group发送重组后的媒体组
+  forwarded_messages = await self.client.send_media_group(
+      chat_id=target_id,
+      media=media_list,
+      disable_notification=True
+  )
+  ```
+- **文件位置**：`src/modules/forward/direct_forwarder.py`
+  - 新增方法：`_create_input_media_from_message()`
+  - 修改方法：`forward_media_group_directly()` 中的重组逻辑
+
+### 🎯 用户价值 (User Value)
+- **完美媒体组体验**：重组后的媒体组在接收端看起来与原始媒体组完全相同
+- **标题控制灵活**：支持完全移除标题或将原始标题应用到媒体组
+- **过滤效果精确**：在保持媒体组格式的同时，精确过滤掉不需要的媒体类型
+
+---
+
+## [v2.1.9.23] - 2024-12-22
+
+### 🚨 关键修复 (Critical Fix)
+
+#### 修复媒体组过滤被绕过的严重问题 (Fix Media Group Filter Bypass)
+- **问题描述**：
+  - 媒体组中的视频等不需要的媒体类型被正确过滤，但在转发时仍然被转发
+  - 过滤器工作正常，但转发器使用 `copy_media_group` 方法绕过了过滤结果
+- **根本原因**：
+  - `copy_media_group` 方法基于媒体组中任意一条消息ID，会自动获取**整个原始媒体组**的所有消息
+  - 当媒体组被部分过滤时，重组判断逻辑 `is_regrouped_media` 可能为 `False`
+  - 导致使用 `copy_media_group` 或 `forward_messages` 方法，这些方法会忽略过滤结果
+- **修复方案**：
+  - 🔧 **强制重组模式**：当检测到媒体组发生过滤时（`len(filtered_messages) != len(messages)`），强制使用重组模式
+  - 📝 **简化判断逻辑**：移除对 `original_media_group_id` 的依赖，以过滤状态为准
+  - 🎯 **确保过滤生效**：重组模式使用 `copy_message` 逐条转发，确保只转发通过过滤的消息
+- **技术实现**：
+  ```python
+  # 修复前的有缺陷的逻辑
+  is_regrouped_media = (original_media_group_id and 
+                       len(filtered_messages) > 1 and 
+                       len(filtered_messages) < len(messages))
+  
+  # 修复后的可靠逻辑
+  has_filtering = len(filtered_messages) != len(messages)
+  is_regrouped_media = (has_filtering and len(filtered_messages) > 1)
+  ```
+- **影响范围**：
+  - ✅ 彻底解决媒体组中视频等不需要类型仍被转发的问题
+  - ✅ 确保媒体类型过滤100%生效
+  - ✅ 保持文本内容和转发功能的完整性
+- **文件位置**：`src/modules/forward/direct_forwarder.py` - `forward_media_group_directly`方法
+
+---
+
+## [v2.1.9.22] - 2024-12-22
+
+### 🚀 重大功能更新 (Major Feature Updates)
+
+#### 📊 消息级别媒体类型过滤 (Message-level Media Type Filtering)
+- **实现精确的消息级别过滤**：
+  - **问题解决**：修复了媒体组中视频仍被转发的问题
+  - **过滤策略变更**：从"媒体组级别"过滤改为"消息级别"精确过滤
+  - **具体表现**：
+    - 以前：媒体组 `[photo, video, document]` 中有允许的 `photo`，整个组都被转发
+    - 现在：只转发 `photo` 和 `document`，`video` 被精确过滤掉
+  - **实现位置**：`src/modules/forward/message_filter.py` - `apply_media_type_filter`方法
+
+#### 🔄 媒体组文本重组功能 (Media Group Text Reorganization)
+- **智能媒体组重组**：
+  - **触发条件**：关键词过滤通过后，媒体类型过滤导致媒体组部分消息被过滤
+  - **文本保存机制**：在关键词过滤阶段保存媒体组的原始文本内容
+  - **重组转发逻辑**：
+    - 保留通过过滤的媒体文件
+    - 将原始文本（或文本替换后的内容）作为第一条消息的标题
+    - 其余消息不带标题，形成新的媒体组
+  - **实现位置**：
+    - `src/modules/forward/message_filter.py` - `apply_keyword_filter_with_text_processing`方法
+    - `src/modules/forward/direct_forwarder.py` - `forward_media_group_directly`方法
+
+#### 🔧 过滤逻辑优化 (Filter Logic Optimization)
+- **删除废弃的过滤规则**：
+  - 移除转发消息过滤（`exclude_forwards`）
+  - 移除回复消息过滤（`exclude_replies`）
+  - 这些功能已被舍弃，简化过滤逻辑
+- **过滤顺序调整**：
+  - **新顺序**：通用过滤规则 → 关键词过滤 → 媒体类型过滤
+  - **旧顺序**：关键词过滤 → 通用过滤规则 → 媒体类型过滤
+  - 优化处理效率，先过滤明显不符合的消息
+
+### 🛠️ 技术实现细节 (Technical Implementation)
+
+#### 消息过滤器增强
+- **新增方法**：
+  - `apply_keyword_filter_with_text_processing()`：带文本处理的关键词过滤
+  - 返回值包含媒体组文本映射：`Dict[str, str]`
+- **修改方法**：
+  - `apply_media_type_filter()`：改为消息级别精确过滤
+  - `apply_all_filters()`：集成新的过滤流程和文本处理
+
+#### 直接转发器增强
+- **重组媒体组处理**：
+  - 检测 `is_regrouped_media`：判断是否为重组的媒体组
+  - 智能转发策略：单独发送每条消息，第一条带统一标题
+  - 延迟控制：消息间0.2秒延迟避免频率限制
+
+#### 媒体组收集器更新
+- **统一过滤应用**：
+  - 所有获取方法都使用新的 `apply_all_filters()` 方法
+  - 移除旧的 `is_media_allowed()` 方法调用
+  - 保持过滤逻辑一致性
+
+### 📈 性能与体验提升 (Performance & UX Improvements)
+
+#### 日志优化
+- **过滤结果展示**：
+  - 显示媒体组部分过滤的详细信息
+  - 记录重组媒体组的转发过程
+  - 提供清晰的过滤统计信息
+
+#### 转发体验
+- **精确控制**：用户可以精确控制转发的媒体类型
+- **文本保持**：媒体组重组后保持原始文本信息
+- **灵活配置**：支持复杂的过滤和转发需求
+
+### 🔍 配置影响 (Configuration Impact)
+- **向后兼容**：现有配置文件无需修改
+- **功能增强**：媒体类型过滤更加精确有效
+- **废弃字段**：`exclude_forwards`和`exclude_replies`字段不再使用（保留兼容性）
+
+### 🎯 用户价值 (User Value)
+- **精确过滤**：彻底解决视频误转发问题
+- **智能重组**：保持内容完整性的同时精确过滤
+- **简化配置**：移除不必要的过滤选项，降低配置复杂度
+
+---
+
 ## [v2.1.9.21] - 2024-12-22
 
 ### 🐛 关键配置加载修复 (Critical Configuration Loading Fix)

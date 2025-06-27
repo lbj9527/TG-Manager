@@ -7,7 +7,7 @@ import asyncio
 from typing import List, Tuple, Dict, Union, Optional, Set
 
 from pyrogram import Client
-from pyrogram.types import Message
+from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation
 from pyrogram.errors import FloodWait, ChatForwardsRestricted, ChannelPrivate
 
 from src.utils.logger import get_logger
@@ -44,7 +44,7 @@ class DirectForwarder:
                                          hide_author: bool = False,
                                          pair_config: Dict = None) -> bool:
         """
-        直接转发媒体组到目标频道，支持统一的过滤功能
+        直接转发媒体组到目标频道，支持统一的过滤功能和媒体组文本重组
         
         Args:
             messages: 消息列表
@@ -63,8 +63,10 @@ class DirectForwarder:
         
         # 如果提供了频道对配置，应用过滤规则
         filtered_messages = messages
+        media_group_texts = {}
         if pair_config:
             filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
+            media_group_texts = filter_stats.get('media_group_texts', {})
             
             if not filtered_messages:
                 _logger.info(f"⚠️ 所有消息都被过滤器过滤掉，跳过转发")
@@ -72,6 +74,11 @@ class DirectForwarder:
             
             if len(filtered_messages) != len(messages):
                 _logger.info(f"✅ 过滤完成，剩余 {len(filtered_messages)}/{len(messages)} 条消息进行转发")
+                
+                # 如果是媒体组且进行了媒体类型过滤，需要重组
+                original_media_group_id = getattr(messages[0], 'media_group_id', None)
+                if original_media_group_id and len(filtered_messages) > 1:
+                    _logger.info(f"📝 媒体组部分过滤，需要重组媒体组并应用标题")
         
         # 检查是否需要文本替换
         text_replacements = {}
@@ -85,9 +92,37 @@ class DirectForwarder:
                     if original:  # 只添加非空的原文
                         text_replacements[original] = target
         
-        # 如果有文本替换需求，需要使用copy方式而不是forward方式
+        # 检查是否是重组的媒体组（多条消息但原本是一个媒体组）
+        original_media_group_id = getattr(messages[0], 'media_group_id', None) if messages else None
+        
+        # 判断是否需要重组：
+        # 1. 消息有媒体组ID（说明原本是媒体组）
+        # 2. 配置中排除了某些媒体类型（可能导致过滤）
+        # 3. 当前消息数量大于1（避免单条消息使用重组模式）
+        current_group_size = len(filtered_messages)
+        
+        # 检查配置是否排除了某些常见的媒体类型
+        allowed_media_types = pair_config.get('media_types', []) if pair_config else []
+        all_media_types = ['text', 'photo', 'video', 'document', 'audio', 'animation', 'sticker', 'voice', 'video_note']
+        has_excluded_media_types = len(allowed_media_types) < len(all_media_types)
+        
+        # 重组条件：有媒体组ID，排除了某些媒体类型，且当前有多条消息
+        has_filtering = (original_media_group_id is not None and 
+                        has_excluded_media_types and 
+                        current_group_size > 1)
+        
+        is_regrouped_media = has_filtering
+
+        # 如果检测到可能的过滤，强制重组模式（避免copy_media_group绕过过滤结果）
+        if has_filtering:
+            excluded_types = [t for t in all_media_types if t not in allowed_media_types]
+            _logger.info(f"🔧 检测到媒体组可能被过滤 (媒体组ID: {original_media_group_id}, 排除类型: {excluded_types}, 当前消息数: {current_group_size})，使用重组模式确保过滤生效")
+        
+        # 如果有文本替换需求或需要重组，需要使用copy方式
         need_text_replacement = bool(text_replacements)
-        force_copy_mode = need_text_replacement or pair_config.get('remove_captions', False)
+        force_copy_mode = (need_text_replacement or 
+                         pair_config.get('remove_captions', False) or 
+                         is_regrouped_media)
         
         # 检查是否是单条消息
         is_single = len(filtered_messages) == 1
@@ -177,10 +212,79 @@ class DirectForwarder:
                         _logger.error(f"转发单条消息 {message.id} 到 {target_info} 失败: {e}，跳过")
                         continue
                 else:
-                    # 媒体组转发
+                    # 媒体组转发（包括重组后的媒体组）
                     try:
-                        if force_copy_mode:
-                            # 需要文本替换或移除说明，使用copy_media_group
+                        if is_regrouped_media:
+                            # 重组的媒体组：使用send_media_group发送，保持真正的媒体组格式
+                            _logger.info(f"📝 重组媒体组转发: 使用send_media_group发送 {len(filtered_messages)} 条媒体")
+                            
+                            # 获取媒体组原始文本（如果有保存的）
+                            group_caption = ""
+                            if original_media_group_id and original_media_group_id in media_group_texts:
+                                group_caption = media_group_texts[original_media_group_id]
+                                _logger.debug(f"使用保存的媒体组文本: '{group_caption[:50]}...'")
+                            
+                            # 检查是否移除说明
+                            remove_captions = pair_config.get('remove_captions', False)
+                            
+                            # 创建InputMedia列表
+                            media_list = []
+                            for i, message in enumerate(filtered_messages):
+                                # 处理每条消息的标题
+                                if remove_captions:
+                                    # 如果配置了移除说明，所有消息都不带标题
+                                    caption = ""
+                                elif group_caption and i == 0:
+                                    # 如果有保存的媒体组文本，第一条消息使用组文本作为标题
+                                    caption = group_caption
+                                    # 应用文本替换
+                                    if text_replacements:
+                                        caption, _ = self.message_filter.apply_text_replacements(caption, text_replacements)
+                                        _logger.debug(f"文本替换后的媒体组标题: '{caption[:50]}...'")
+                                elif group_caption and i > 0:
+                                    # 有保存的媒体组文本时，其余消息不带标题
+                                    caption = ""
+                                else:
+                                    # 没有保存的媒体组文本时，使用每条消息自己的原始标题
+                                    caption = message.caption or ""
+                                    # 应用文本替换
+                                    if text_replacements and caption:
+                                        caption, _ = self.message_filter.apply_text_replacements(caption, text_replacements)
+                                        _logger.debug(f"消息 {message.id} 文本替换后的标题: '{caption[:30]}...'")
+                                
+                                # 根据消息类型创建对应的InputMedia对象
+                                input_media = await self._create_input_media_from_message(message, caption)
+                                if input_media:
+                                    media_list.append(input_media)
+                                else:
+                                    _logger.warning(f"无法为消息 {message.id} 创建InputMedia对象，跳过")
+                            
+                            if media_list:
+                                # 使用send_media_group发送重组后的媒体组
+                                _logger.debug(f"发送包含 {len(media_list)} 个媒体的重组媒体组")
+                                forwarded_messages = await self.client.send_media_group(
+                                    chat_id=target_id,
+                                    media=media_list,
+                                    disable_notification=True
+                                )
+                                
+                                # 记录转发历史
+                                if self.history_manager:
+                                    for message in filtered_messages:
+                                        self.history_manager.add_forward_record(
+                                            source_channel,
+                                            message.id,
+                                            target_channel,
+                                            source_id
+                                        )
+                                
+                                _logger.info(f"✅ 重组媒体组 {message_ids} 转发到 {target_info} 成功")
+                                success_count += 1
+                            else:
+                                _logger.error(f"无法创建任何有效的InputMedia对象，重组媒体组转发失败")
+                                continue
+                        elif force_copy_mode:
+                            # 普通媒体组，需要文本替换或移除说明
                             _logger.debug(f"使用copy_media_group方法转发媒体组 (支持文本替换)")
                             
                             # 获取第一条消息用于文本处理
@@ -209,6 +313,20 @@ class DirectForwarder:
                                 message_id=first_message_id,
                                 captions=final_caption
                             )
+                            
+                            # 转发成功后才记录历史
+                            if self.history_manager:
+                                for message in filtered_messages:
+                                    self.history_manager.add_forward_record(
+                                        source_channel,
+                                        message.id,
+                                        target_channel,
+                                        source_id
+                                    )
+                            
+                            _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
+                            success_count += 1
+                            
                         elif hide_author:
                             # 使用copy_media_group方法隐藏作者
                             _logger.debug(f"使用copy_media_group方法隐藏作者转发媒体组消息")
@@ -220,6 +338,19 @@ class DirectForwarder:
                                 from_chat_id=source_id,
                                 message_id=first_message_id
                             )
+                            
+                            # 转发成功后才记录历史
+                            if self.history_manager:
+                                for message in filtered_messages:
+                                    self.history_manager.add_forward_record(
+                                        source_channel,
+                                        message.id,
+                                        target_channel,
+                                        source_id
+                                    )
+                            
+                            _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
+                            success_count += 1
                         else:
                             # 使用forward_messages批量转发
                             _logger.debug(f"使用forward_messages方法保留作者批量转发媒体组消息")
@@ -230,19 +361,19 @@ class DirectForwarder:
                                 message_ids=message_ids,
                                 disable_notification=True
                             )
-                        
-                        # 转发成功后才记录历史
-                        if self.history_manager:
-                            for message in filtered_messages:
-                                self.history_manager.add_forward_record(
-                                    source_channel,
-                                    message.id,
-                                    target_channel,
-                                    source_id
-                                )
-                        
-                        _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
-                        success_count += 1
+                            
+                            # 转发成功后才记录历史
+                            if self.history_manager:
+                                for message in filtered_messages:
+                                    self.history_manager.add_forward_record(
+                                        source_channel,
+                                        message.id,
+                                        target_channel,
+                                        source_id
+                                    )
+                            
+                            _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
+                            success_count += 1
                     except Exception as e:
                         _logger.error(f"转发媒体组 {message_ids} 到 {target_info} 失败: {e}，跳过")
                         continue
@@ -292,3 +423,28 @@ class DirectForwarder:
                 if original:  # 只添加非空的原文
                     text_replacements[original] = target
         return text_replacements 
+
+    async def _create_input_media_from_message(self, message: Message, caption: str) -> Optional[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation]]:
+        """
+        根据消息类型创建对应的InputMedia对象
+        
+        Args:
+            message: 消息对象
+            caption: 消息的标题
+            
+        Returns:
+            Optional[Union[InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation]]: 创建的InputMedia对象或None
+        """
+        if message.photo:
+            return InputMediaPhoto(message.photo.file_id, caption=caption)
+        elif message.video:
+            return InputMediaVideo(message.video.file_id, caption=caption)
+        elif message.document:
+            return InputMediaDocument(message.document.file_id, caption=caption)
+        elif message.audio:
+            return InputMediaAudio(message.audio.file_id, caption=caption)
+        elif message.animation:
+            return InputMediaAnimation(message.animation.file_id, caption=caption)
+        else:
+            _logger.warning(f"消息 {message.id} 不包含支持的媒体类型，无法创建InputMedia对象")
+            return None 

@@ -161,11 +161,19 @@ class MediaGroupCollector:
             return media_groups
         
         # 按指定ID列表获取消息
+        all_messages = []
         async for message in self.message_iterator.iter_messages_by_ids(source_id, unforwarded_ids):
-            # 筛选媒体类型
-            if not self.message_filter.is_media_allowed(message, source_channel):
-                continue
-            
+            all_messages.append(message)
+        
+        # 应用过滤规则（使用新的统一过滤器）
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+        else:
+            filtered_messages = all_messages
+        
+        # 将过滤后的消息按媒体组分组
+        for message in filtered_messages:
             # 获取媒体组ID
             group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
@@ -214,16 +222,24 @@ class MediaGroupCollector:
             _logger.info("所有消息都已转发，无需获取新消息")
             return media_groups_info
         
-        # 按指定ID列表获取消息基本信息
+        # 按指定ID列表获取消息
+        all_messages = []
         async for message in self.message_iterator.iter_messages_by_ids(source_id, unforwarded_ids):
-            # 筛选媒体类型，传入源频道信息
-            if not self.message_filter.is_media_allowed(message, source_channel):
-                continue
-            
+            all_messages.append(message)
+        
+        # 应用过滤规则（使用新的统一过滤器）
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+        else:
+            filtered_messages = all_messages
+        
+        # 将过滤后的消息按媒体组分组（只保存ID）
+        for message in filtered_messages:
             # 获取媒体组ID
             group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
-            # 添加到媒体组信息
+            # 添加到媒体组
             if group_id not in media_groups:
                 media_groups[group_id] = []
             
@@ -238,23 +254,16 @@ class MediaGroupCollector:
         # 按第一个消息ID排序，确保从旧到新处理
         media_groups_info.sort(key=lambda x: x[1][0] if x[1] else 0)
         
-        # 添加更详细的日志输出
-        _logger.info(f"优化获取完成: 找到 {len(media_groups_info)} 个未转发的媒体组")
-        for i, (group_id, message_ids) in enumerate(media_groups_info[:10]):  # 只记录前10个，避免日志过长
-            _logger.info(f"媒体组 {i+1}/{len(media_groups_info)}: group_id={group_id}, 消息IDs={message_ids}")
-        
-        if len(media_groups_info) > 10:
-            _logger.info(f"还有 {len(media_groups_info) - 10} 个媒体组未显示")
-        
+        _logger.info(f"优化获取媒体组信息完成: 获得 {len(media_groups_info)} 个媒体组")
         return media_groups_info
 
     async def get_media_groups(self, source_id: int, source_channel: str, pair: dict = None) -> Dict[str, List[Message]]:
         """
-        获取源频道的媒体组消息（原有方法，保持向后兼容）
+        获取源频道的媒体组消息
         
         Args:
             source_id: 源频道ID
-            source_channel: 源频道
+            source_channel: 源频道标识
             pair: 频道对配置，包含start_id和end_id
             
         Returns:
@@ -279,12 +288,24 @@ class MediaGroupCollector:
             _logger.warning(f"无效的end_id值 '{pair.get('end_id')}', 将使用默认值0")
             end_id = 0
         
-        # 获取消息
+        _logger.info(f"开始获取媒体组消息，范围: start_id={start_id}, end_id={end_id}")
+        
+        # 收集所有消息
+        all_messages = []
         async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
-            # 筛选媒体类型
-            if not self.message_filter.is_media_allowed(message, source_channel):
-                continue
-            
+            all_messages.append(message)
+        
+        _logger.info(f"获取到原始消息 {len(all_messages)} 条")
+        
+        # 应用过滤规则（使用新的统一过滤器）
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+        else:
+            filtered_messages = all_messages
+        
+        # 将过滤后的消息按媒体组分组
+        for message in filtered_messages:
             # 获取媒体组ID
             group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
@@ -298,11 +319,12 @@ class MediaGroupCollector:
         for group_id in media_groups:
             media_groups[group_id].sort(key=lambda x: x.id)
         
+        _logger.info(f"获取完成: 共 {len(media_groups)} 个媒体组")
         return media_groups
     
     async def get_media_groups_info(self, source_id: int, pair: dict = None) -> List[Tuple[str, List[int]]]:
         """
-        获取源频道的媒体组基本信息（不下载内容）（原有方法，保持向后兼容）
+        获取源频道的媒体组基本信息（不下载内容）
         
         Args:
             source_id: 源频道ID
@@ -331,15 +353,24 @@ class MediaGroupCollector:
             _logger.warning(f"无效的end_id值 '{pair.get('end_id')}', 将使用默认值0")
             end_id = 0
             
-        # 获取源频道标识符，用于传递给消息过滤器
-        source_channel = pair.get('source_channel')
+        _logger.info(f"开始获取媒体组信息，范围: start_id={start_id}, end_id={end_id}")
         
-        # 获取消息基本信息
+        # 收集所有消息
+        all_messages = []
         async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
-            # 筛选媒体类型，传入源频道信息
-            if not self.message_filter.is_media_allowed(message, source_channel):
-                continue
-            
+            all_messages.append(message)
+        
+        _logger.info(f"获取到原始消息 {len(all_messages)} 条")
+        
+        # 应用过滤规则（使用新的统一过滤器）
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+        else:
+            filtered_messages = all_messages
+        
+        # 将过滤后的消息按媒体组分组（只保存ID）
+        for message in filtered_messages:
             # 获取媒体组ID
             group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
@@ -358,12 +389,5 @@ class MediaGroupCollector:
         # 按第一个消息ID排序，确保从旧到新处理
         media_groups_info.sort(key=lambda x: x[1][0] if x[1] else 0)
         
-        # 添加更详细的日志输出
-        _logger.info(f"找到 {len(media_groups_info)} 个媒体组")
-        for i, (group_id, message_ids) in enumerate(media_groups_info[:10]):  # 只记录前10个，避免日志过长
-            _logger.info(f"媒体组 {i+1}/{len(media_groups_info)}: group_id={group_id}, 消息IDs={message_ids}")
-        
-        if len(media_groups_info) > 10:
-            _logger.info(f"还有 {len(media_groups_info) - 10} 个媒体组未显示")
-        
+        _logger.info(f"获取媒体组信息完成: 找到 {len(media_groups_info)} 个媒体组")
         return media_groups_info 

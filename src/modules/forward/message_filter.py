@@ -119,7 +119,7 @@ class MessageFilter:
     
     def apply_media_type_filter(self, messages: List[Message], allowed_media_types: List[str]) -> Tuple[List[Message], List[Message]]:
         """
-        应用媒体类型过滤，支持媒体组级别的过滤
+        应用媒体类型过滤，支持消息级别的精确过滤
         
         Args:
             messages: 消息列表
@@ -138,26 +138,31 @@ class MessageFilter:
         filtered_messages = []
         
         for group_messages in media_groups:
-            # 检查媒体组中是否有任何消息的媒体类型在允许列表中
-            group_has_allowed_media = False
+            group_passed = []
+            group_filtered = []
             
+            # 对媒体组中的每条消息单独进行媒体类型检查
             for message in group_messages:
                 message_media_type = self._get_message_media_type(message)
                 
-                if message_media_type:
-                    if self._is_media_type_allowed(message_media_type, allowed_media_types):
-                        group_has_allowed_media = True
-                        break
+                if message_media_type and self._is_media_type_allowed(message_media_type, allowed_media_types):
+                    group_passed.append(message)
+                else:
+                    group_filtered.append(message)
+                    _logger.debug(f"消息 [ID: {message.id}] 媒体类型 '{message_media_type}' 不在允许列表中，被过滤")
             
-            group_ids = [msg.id for msg in group_messages]
+            # 添加通过和被过滤的消息
+            passed_messages.extend(group_passed)
+            filtered_messages.extend(group_filtered)
             
-            if group_has_allowed_media:
-                passed_messages.extend(group_messages)
-                _logger.debug(f"媒体组 [ID: {group_ids}] 包含允许的媒体类型，通过过滤")
-            else:
-                filtered_messages.extend(group_messages)
-                media_types_in_group = [self._get_message_media_type(msg) for msg in group_messages]
-                _logger.debug(f"媒体组 [ID: {group_ids}] 媒体类型 {media_types_in_group} 不在允许列表中，被过滤")
+            # 日志记录
+            if group_passed and group_filtered:
+                passed_ids = [msg.id for msg in group_passed]
+                filtered_ids = [msg.id for msg in group_filtered]
+                _logger.info(f"媒体组部分过滤: 通过消息 {passed_ids}, 过滤消息 {filtered_ids}")
+            elif group_filtered:
+                filtered_ids = [msg.id for msg in group_filtered]
+                _logger.debug(f"媒体组全部过滤: {filtered_ids}")
         
         return passed_messages, filtered_messages
     
@@ -189,7 +194,7 @@ class MessageFilter:
     def apply_general_filters(self, messages: List[Message], pair_config: Dict[str, Any]) -> Tuple[List[Message], List[Message]]:
         """
         应用通用过滤规则，支持媒体组级别的过滤
-        （排除转发消息、回复消息、纯文本消息、包含链接的消息）
+        （排除纯文本消息、包含链接的消息）
         
         Args:
             messages: 消息列表
@@ -204,9 +209,7 @@ class MessageFilter:
         passed_messages = []
         filtered_messages = []
         
-        # 获取过滤规则
-        exclude_forwards = pair_config.get('exclude_forwards', False)
-        exclude_replies = pair_config.get('exclude_replies', False)
+        # 获取过滤规则（已删除转发消息和回复消息过滤）
         exclude_text = pair_config.get('exclude_text', False)
         exclude_links = pair_config.get('exclude_links', False)
         
@@ -216,18 +219,6 @@ class MessageFilter:
             
             # 检查媒体组中是否有任何消息触发过滤规则
             for message in group_messages:
-                # 排除转发消息
-                if exclude_forwards and message.forward_from:
-                    should_filter_group = True
-                    filter_reason = "包含转发消息"
-                    break
-                
-                # 排除回复消息
-                if exclude_replies and message.reply_to_message:
-                    should_filter_group = True
-                    filter_reason = "包含回复消息"
-                    break
-                
                 # 排除纯文本消息（整个媒体组都是纯文本才过滤）
                 if exclude_text:
                     is_media_message = bool(message.photo or message.video or message.document or 
@@ -264,6 +255,108 @@ class MessageFilter:
         
         return passed_messages, filtered_messages
     
+    def apply_keyword_filter_with_text_processing(self, messages: List[Message], keywords: List[str]) -> Tuple[List[Message], List[Message], Dict[str, str]]:
+        """
+        应用关键词过滤，并处理媒体组文本重组
+        媒体组中任何一条消息包含关键词，则整个媒体组都通过过滤，同时记录文本内容
+        
+        Args:
+            messages: 消息列表
+            keywords: 关键词列表
+            
+        Returns:
+            Tuple[List[Message], List[Message], Dict[str, str]]: (通过的消息, 被过滤的消息, 媒体组文本映射)
+        """
+        if not keywords:
+            return messages, [], {}
+        
+        # 首先按媒体组分组
+        media_groups = self._group_messages_by_media_group(messages)
+        
+        passed_messages = []
+        filtered_messages = []
+        media_group_texts = {}  # 存储媒体组ID到文本的映射
+        
+        # 用于统计
+        passed_groups = []
+        filtered_groups = []
+        
+        for group_messages in media_groups:
+            # 检查媒体组中是否有任何消息包含关键词
+            group_has_keyword = False
+            keywords_found_in_group = []
+            group_text = ""  # 记录媒体组的文本内容
+            
+            for message in group_messages:
+                # 获取要检查的文本内容
+                text_content = ""
+                if message.caption:
+                    text_content = message.caption
+                elif message.text:
+                    text_content = message.text
+                
+                # 记录第一个有文本的消息内容作为媒体组文本
+                if text_content and not group_text:
+                    group_text = text_content
+                
+                if text_content:
+                    # 检查是否包含任何关键词（不区分大小写）
+                    for keyword in keywords:
+                        if keyword.lower() in text_content.lower():
+                            group_has_keyword = True
+                            if keyword not in keywords_found_in_group:
+                                keywords_found_in_group.append(keyword)
+            
+            # 获取媒体组ID用于日志和文本映射
+            group_ids = [msg.id for msg in group_messages]
+            media_group_id = getattr(group_messages[0], 'media_group_id', None)
+            
+            if group_has_keyword:
+                # 整个媒体组通过过滤
+                passed_messages.extend(group_messages)
+                passed_groups.append(group_ids)
+                
+                # 如果是媒体组且有文本，记录文本内容
+                if media_group_id and group_text:
+                    media_group_texts[media_group_id] = group_text
+                
+                _logger.debug(f"媒体组 [ID: {group_ids}] 包含关键词 {keywords_found_in_group}，整个媒体组通过过滤")
+            else:
+                # 整个媒体组被过滤
+                filtered_messages.extend(group_messages)
+                filtered_groups.append(group_ids)
+        
+        # 汇总日志显示
+        if filtered_groups:
+            filtered_count = sum(len(group) for group in filtered_groups)
+            group_count = len(filtered_groups)
+            sample_groups = filtered_groups[:3]  # 显示前3个媒体组
+            group_display = []
+            for group in sample_groups:
+                if len(group) == 1:
+                    group_display.append(str(group[0]))
+                else:
+                    group_display.append(f"[{','.join(map(str, group))}]")
+            
+            more_indicator = f", +{group_count - 3}个媒体组" if group_count > 3 else ""
+            _logger.info(f"关键词过滤: {group_count} 个媒体组({filtered_count} 条消息)不包含关键词 {keywords} 被过滤 (组ID: {', '.join(group_display)}{more_indicator})")
+        
+        if passed_groups:
+            passed_count = sum(len(group) for group in passed_groups)
+            group_count = len(passed_groups)
+            sample_groups = passed_groups[:3]  # 显示前3个媒体组
+            group_display = []
+            for group in sample_groups:
+                if len(group) == 1:
+                    group_display.append(str(group[0]))
+                else:
+                    group_display.append(f"[{','.join(map(str, group))}]")
+            
+            more_indicator = f", +{group_count - 3}个媒体组" if group_count > 3 else ""
+            _logger.info(f"关键词过滤: {group_count} 个媒体组({passed_count} 条消息)包含关键词通过过滤 (组ID: {', '.join(group_display)}{more_indicator})")
+        
+        return passed_messages, filtered_messages, media_group_texts
+    
     def apply_all_filters(self, messages: List[Message], pair_config: Dict[str, Any]) -> Tuple[List[Message], List[Message], Dict[str, Any]]:
         """
         应用所有过滤规则的统一入口
@@ -278,26 +371,35 @@ class MessageFilter:
         original_count = len(messages)
         filter_stats = {
             'original_count': original_count,
+            'general_filtered': 0,
             'keyword_filtered': 0,
             'media_type_filtered': 0,
-            'general_filtered': 0,
-            'final_count': 0
+            'final_count': 0,
+            'media_group_texts': {}  # 新增: 媒体组文本映射
         }
         
         current_messages = messages[:]
         all_filtered_messages = []
         
-        # 1. 应用关键词过滤
+        # 1. 应用通用过滤规则（排除纯文本消息、包含链接的消息）
+        current_messages, general_filtered = self.apply_general_filters(current_messages, pair_config)
+        all_filtered_messages.extend(general_filtered)
+        filter_stats['general_filtered'] = len(general_filtered)
+        if len(general_filtered) > 0:
+            _logger.info(f"通用过滤: 过滤了 {len(general_filtered)} 条消息 (链接/纯文本)")
+        
+        # 2. 应用关键词过滤（使用新的带文本处理的方法）
         keywords = pair_config.get('keywords', [])
         _logger.debug(f"关键词配置: {keywords} (类型: {type(keywords)})")
         if keywords:
-            current_messages, keyword_filtered = self.apply_keyword_filter(current_messages, keywords)
+            current_messages, keyword_filtered, media_group_texts = self.apply_keyword_filter_with_text_processing(current_messages, keywords)
             all_filtered_messages.extend(keyword_filtered)
             filter_stats['keyword_filtered'] = len(keyword_filtered)
+            filter_stats['media_group_texts'] = media_group_texts  # 保存媒体组文本映射
         else:
             _logger.debug(f"未设置关键词过滤，跳过关键词过滤")
         
-        # 2. 应用媒体类型过滤
+        # 3. 应用媒体类型过滤（现在是消息级别的精确过滤）
         allowed_media_types = pair_config.get('media_types', [])
         if allowed_media_types:
             # 确保媒体类型是字符串列表，使用.value属性正确转换枚举
@@ -313,14 +415,7 @@ class MessageFilter:
             if len(media_filtered) > 0:
                 _logger.info(f"媒体类型过滤: 过滤了 {len(media_filtered)} 条不符合类型要求的消息")
         
-        # 3. 应用通用过滤规则
-        current_messages, general_filtered = self.apply_general_filters(current_messages, pair_config)
-        all_filtered_messages.extend(general_filtered)
-        filter_stats['general_filtered'] = len(general_filtered)
         filter_stats['final_count'] = len(current_messages)
-        
-        if len(general_filtered) > 0:
-            _logger.info(f"通用过滤: 过滤了 {len(general_filtered)} 条消息 (转发/回复/链接/纯文本)")
         
         # 总结日志
         total_filtered = len(all_filtered_messages)
