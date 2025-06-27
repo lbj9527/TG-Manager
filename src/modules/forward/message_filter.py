@@ -404,7 +404,6 @@ class MessageFilter:
             r'www\.[^\s]+',         # www开头的链接
             r't\.me/[^\s]+',        # Telegram链接
             r'@\w+',                # @用户名
-            r'#\w+',                # #标签
         ]
         
         for pattern in link_patterns:
