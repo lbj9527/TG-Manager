@@ -42,6 +42,9 @@ class ParallelProcessor:
         self.history_manager = history_manager
         self.general_config = general_config or {}
         
+        # 初始化停止标志
+        self.should_stop = False
+        
         # 创建媒体组队列
         self.media_group_queue = asyncio.Queue()
         
@@ -187,6 +190,11 @@ class ParallelProcessor:
             _logger.info(f"开始并行下载 {total_groups} 个媒体组")
             
             for group_id, message_ids in media_groups_info:
+                # 检查是否收到停止信号
+                if self.should_stop or not self.download_running:
+                    _logger.info("收到停止信号，终止下载任务")
+                    break
+                    
                 try:   
                     # 更新进度
                     processed_groups += 1
@@ -318,6 +326,11 @@ class ParallelProcessor:
             _logger.info("开始上传媒体组到目标频道")
             
             while True:         
+                # 检查是否收到停止信号
+                if self.should_stop or not self.upload_running:
+                    _logger.info("收到停止信号，终止上传任务")
+                    break
+                    
                 # 从队列获取下一个媒体组
                 try:
                     media_group_download = await asyncio.wait_for(
@@ -401,6 +414,11 @@ class ParallelProcessor:
                     
                     # 依次上传到需要转发的目标频道
                     for target_channel, target_id, target_info in target_channels:    
+                        # 检查是否收到停止信号
+                        if self.should_stop or not self.upload_running:
+                            _logger.info("收到停止信号，终止目标频道上传")
+                            break
+                            
                         # 检查是否已转发到此频道
                         all_forwarded = True
                         for message in media_group_download.messages:

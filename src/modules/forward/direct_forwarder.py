@@ -4,7 +4,7 @@
 """
 
 import asyncio
-from typing import List, Tuple, Dict, Union, Optional, Set
+from typing import List, Tuple, Dict, Union, Optional, Set, Any
 
 from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio, InputMediaAnimation
@@ -22,16 +22,21 @@ class DirectForwarder:
     支持统一的过滤功能
     """
     
-    def __init__(self, client: Client, history_manager=None):
+    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None):
         """
         初始化直接转发器
         
         Args:
             client: Pyrogram客户端实例
             history_manager: 历史记录管理器实例，用于记录已转发的消息
+            general_config: 通用配置
         """
         self.client = client
         self.history_manager = history_manager
+        self.general_config = general_config or {}
+        
+        # 初始化停止标志
+        self.should_stop = False
         
         # 初始化消息过滤器
         self.message_filter = MessageFilter()
@@ -69,8 +74,8 @@ class DirectForwarder:
         if pair_config and 'media_group_texts' in pair_config:
             media_group_texts = pair_config.get('media_group_texts', {})
             _logger.debug(f"🔍 DirectForwarder接收到Forwarder传递的媒体组文本: {len(media_group_texts)} 个")
-            for group_id, text in media_group_texts.items():
-                _logger.debug(f"  媒体组 {group_id}: '{text[:50]}...'")
+            # for group_id, text in media_group_texts.items():
+            #     _logger.debug(f"  媒体组 {group_id}: '{text[:50]}...'")
             # 不需要重新过滤，因为MediaGroupCollector已经过滤过了
             filtered_messages = messages
         elif pair_config:
@@ -155,6 +160,11 @@ class DirectForwarder:
         success_count = 0
         
         for target_channel, target_id, target_info in target_channels:
+            # 检查是否收到停止信号
+            if self.should_stop:
+                _logger.info("收到停止信号，终止目标频道转发")
+                break
+                
             # 检查是否已转发到此频道
             all_forwarded = True
             for message in filtered_messages:

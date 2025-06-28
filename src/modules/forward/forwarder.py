@@ -75,13 +75,19 @@ class Forwarder():
         self.message_filter = MessageFilter(self.config)
         self.message_iterator = MessageIterator(client, channel_resolver)
         self.message_downloader = MessageDownloader(client)
-        self.direct_forwarder = DirectForwarder(client, history_manager)
+        self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config)
         self.media_uploader = MediaUploader(client, history_manager, self.general_config)
         self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
         self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config)
         
+        # 设置MessageIterator的转发器引用，用于停止检查
+        self.message_iterator.set_forwarder(self)
+        
         # 初始化视频处理器
         self.video_processor = VideoProcessor()
+        
+        # 初始化停止标志
+        self.should_stop = False
     
     async def forward_messages(self):
         """
@@ -89,6 +95,15 @@ class Forwarder():
         """
         
         _logger.info("开始转发消息")
+        
+        # 重置停止标志，确保重新开始转发时能正常工作
+        self.should_stop = False
+        if hasattr(self, 'parallel_processor') and self.parallel_processor:
+            self.parallel_processor.should_stop = False
+            self.parallel_processor.download_running = False
+            self.parallel_processor.upload_running = False
+        if hasattr(self, 'direct_forwarder') and self.direct_forwarder:
+            self.direct_forwarder.should_stop = False
         
         # 重新从配置文件读取最新配置
         _logger.info("重新从配置文件读取最新转发配置")
@@ -105,6 +120,9 @@ class Forwarder():
         self.message_filter = MessageFilter(self.config)
         self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
         self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config)
+        
+        # 重新设置MessageIterator的转发器引用，用于停止检查
+        self.message_iterator.set_forwarder(self)
         
         # 更新MediaGroupCollector使用新的MessageFilter实例
         self.media_group_collector.message_filter = self.message_filter
@@ -136,6 +154,11 @@ class Forwarder():
         
         # 处理每个频道对
         for pair in channel_pairs:
+            # 检查是否收到停止信号
+            if self.should_stop:
+                _logger.info("收到停止信号，终止转发任务")
+                break
+                
             source_channel = pair.get("source_channel", "")
             target_channels = pair.get("target_channels", [])
             
@@ -232,6 +255,11 @@ class Forwarder():
                     
                     # 遍历每个媒体组并转发
                     for group_id, messages in media_groups.items():
+                        # 检查是否收到停止信号
+                        if self.should_stop:
+                            _logger.info("收到停止信号，终止媒体组转发")
+                            break
+                            
                         # 更新进度
                         group_count += 1
                         
@@ -251,6 +279,10 @@ class Forwarder():
                         
                         # 简短的延迟，避免请求过于频繁
                         await asyncio.sleep(0.5)
+                    
+                    # 如果收到停止信号，跳出频道对循环
+                    if self.should_stop:
+                        break
                 else:
                     # 源频道不允许转发，需要下载后重新上传
                     status_message = "源频道不允许直接转发，将使用下载后重新上传的方式"
@@ -535,9 +567,8 @@ class Forwarder():
         """
         _logger.info("收到停止转发信号")
         
-        # 设置停止标志（如果有的话）
-        if hasattr(self, 'should_stop'):
-            self.should_stop = True
+        # 设置停止标志
+        self.should_stop = True
         
         # 停止并行处理器
         if hasattr(self, 'parallel_processor') and self.parallel_processor:
@@ -545,6 +576,8 @@ class Forwarder():
                 self.parallel_processor.download_running = False
             if hasattr(self.parallel_processor, 'upload_running'):
                 self.parallel_processor.upload_running = False
+            if hasattr(self.parallel_processor, 'should_stop'):
+                self.parallel_processor.should_stop = True
         
         # 停止直接转发器
         if hasattr(self, 'direct_forwarder') and self.direct_forwarder:

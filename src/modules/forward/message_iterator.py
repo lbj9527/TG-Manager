@@ -42,10 +42,13 @@ class MessageIterator:
         
         Args:
             client: Pyrogram客户端实例
-            channel_resolver: 频道解析器实例，用于获取消息ID范围
+            channel_resolver: 频道解析器实例，用于解析频道信息和权限检查
         """
         self.client = client
         self.channel_resolver = channel_resolver
+        
+        # 转发器引用，用于检查停止标志
+        self.forwarder = None
         
         # 选择最佳可用的FloodWait处理器
         if PYROPATCH_AVAILABLE and is_pyropatch_available():
@@ -183,6 +186,11 @@ class MessageIterator:
             
             # 分批获取消息ID
             for batch_num, batch_start in enumerate(range(actual_start_id, actual_end_id + 1, batch_size), 1):
+                # 检查是否收到停止信号
+                if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
+                    _logger.info("收到停止信号，终止消息范围获取")
+                    return
+                    
                 batch_end = min(batch_start + batch_size - 1, actual_end_id)
                 batch_ids = list(range(batch_start, batch_end + 1))
                 
@@ -190,6 +198,11 @@ class MessageIterator:
                 
                 retry_count = 0
                 while retry_count < 3:
+                    # 再次检查停止信号（在重试循环内）
+                    if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
+                        _logger.info("收到停止信号，终止批次重试")
+                        return
+                        
                     try:
                         # 使用FloodWait处理器包装get_messages调用
                         messages = await self._execute_with_flood_wait(
@@ -333,6 +346,11 @@ class MessageIterator:
         try:
             # 分批处理消息ID
             for i in range(0, total_messages, batch_size):
+                # 检查是否收到停止信号
+                if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
+                    _logger.info("收到停止信号，终止消息获取")
+                    return
+                    
                 batch_ids = sorted_ids[i:i + batch_size]
                 batch_start = i + 1
                 batch_end = min(i + batch_size, total_messages)
@@ -360,6 +378,11 @@ class MessageIterator:
                         valid_messages.sort(key=lambda x: x.id)
                         
                         for message in valid_messages:
+                            # 在yield消息前再次检查停止标志
+                            if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
+                                _logger.info("收到停止信号，终止消息输出")
+                                return
+                                
                             successful_count += 1
                             yield message
                     
@@ -394,3 +417,12 @@ class MessageIterator:
         except Exception as e:
             _logger.error(f"按ID获取消息时发生错误: {e}")
             raise 
+
+    def set_forwarder(self, forwarder):
+        """
+        设置转发器引用，用于检查停止标志
+        
+        Args:
+            forwarder: 转发器实例
+        """
+        self.forwarder = forwarder 
