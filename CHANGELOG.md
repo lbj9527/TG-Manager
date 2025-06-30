@@ -1,5 +1,84 @@
 # 更新日志
 
+## [v2.2.0] - 2024-12-22
+
+### 🚀 重大功能升级 (Major Feature Enhancement)
+
+#### 禁止转发频道统一过滤功能实现 (Unified Filtering for Protected Content Channels)
+- **核心升级**：
+  - **🎯 功能统一化**：禁止转发频道现已支持与非禁止转发频道完全相同的过滤和处理功能
+  - **🔧 代码复用优化**：重构并行处理器(ParallelProcessor)，使用`apply_all_filters`统一过滤逻辑
+  - **📦 架构改进**：消除代码重复，提升维护性和功能一致性
+
+- **新增功能支持**：
+  - ✅ **统一过滤逻辑**：禁止转发频道现在使用`apply_all_filters`函数进行统一的消息过滤
+  - ✅ **关键词过滤**：支持媒体组级别的关键词过滤，任一消息包含关键词则整个媒体组通过
+  - ✅ **媒体类型过滤**：支持消息级别的精确媒体类型过滤，可按需保留特定类型内容
+  - ✅ **文本替换功能**：支持对消息标题和文本内容进行替换处理
+  - ✅ **排除含链接消息**：自动过滤包含链接的消息（HTTP/HTTPS/t.me/@用户名等）
+  - ✅ **移除标题功能**：根据配置决定是否移除消息标题
+  - ✅ **媒体组文本重组**：确保媒体组文本内容正确保留和应用，支持预提取机制
+  - ✅ **发送最终消息**：支持转发完成后发送最终消息功能
+
+- **技术实现详情**：
+  ```python
+  # ParallelProcessor构造函数新增MessageFilter支持
+  def __init__(self, client, history_manager=None, general_config=None, config=None):
+      self.message_filter = MessageFilter(config or {})  # 新增过滤器组件
+  
+  # 主要方法签名更新，支持频道对配置
+  async def process_parallel_download_upload(self, source_channel, source_id, 
+                                           media_groups_info, temp_dir, 
+                                           target_channels, pair_config=None) -> int:
+  
+  # 生产者方法中集成统一过滤逻辑
+  async def _producer_download_media_groups_parallel(..., pair_config=None):
+      # 应用过滤规则（使用新的统一过滤器）
+      if pair_config and messages:
+          filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
+          media_group_texts = filter_stats.get('media_group_texts', {})
+  ```
+
+- **智能文本处理优化**：
+  - 🎯 **预提取媒体组文本**：在过滤开始前预先提取媒体组文本，防止因媒体类型过滤导致文本丢失
+  - 📝 **优先级处理机制**：优先使用预提取的媒体组文本，确保文本内容完整性
+  - 🔄 **智能回退逻辑**：预提取失败时自动回退到原有文本获取逻辑
+  - 🎛️ **文本替换集成**：预提取的文本同样支持文本替换规则应用
+
+- **转发器集成改进**：
+  ```python
+  # Forwarder中的ParallelProcessor初始化更新
+  self.parallel_processor = ParallelProcessor(client, history_manager, 
+                                              general_config, self.config)
+  
+  # 调用时传递频道对配置
+  forward_count = await self.parallel_processor.process_parallel_download_upload(
+      source_channel, source_id, media_groups_info, 
+      channel_temp_dir, valid_target_channels, pair)
+  ```
+
+- **性能与计数优化**：
+  - 📊 **准确计数返回**：并行处理器现在返回实际转发的媒体组数量
+  - ⚡ **处理效率提升**：通过统一过滤减少重复逻辑，提升处理效率
+  - 🎯 **内存使用优化**：优化过滤过程中的内存使用，减少不必要的对象创建
+
+- **用户体验提升**：
+  - ✅ **功能一致性**：禁止转发和非禁止转发频道现在享有完全相同的过滤功能
+  - ✅ **配置统一性**：所有频道对配置在禁止转发模式下都能正常工作
+  - ✅ **行为可预期性**：用户配置的过滤规则在任何转发模式下都有一致的行为
+  - ✅ **功能完整性**：消除了因频道限制导致的功能缺失问题
+
+- **代码质量改进**：
+  - 🔧 **架构统一**：消除了禁止转发和非禁止转发频道之间的代码重复
+  - 📝 **维护性提升**：过滤逻辑集中在MessageFilter中，便于维护和扩展
+  - 🎯 **测试便利性**：统一的接口使得测试覆盖更加全面
+  - 🛡️ **稳定性增强**：减少代码分支，降低出错概率
+
+- **向后兼容性**：
+  - ✅ **完全兼容**：现有配置和使用方式保持100%兼容
+  - ✅ **平滑升级**：无需修改任何用户配置，功能自动增强
+  - ✅ **行为保持**：原有工作的功能继续正常工作，新增功能自动可用
+
 ## [v2.1.9.29] - 2024-12-22
 
 ### 🔧 关键修复 (Critical Fix) 

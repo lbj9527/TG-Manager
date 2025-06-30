@@ -18,6 +18,7 @@ from src.modules.forward.media_group_download import MediaGroupDownload
 from src.modules.forward.message_downloader import MessageDownloader
 from src.modules.forward.media_uploader import MediaUploader
 from src.modules.forward.media_group_collector import MediaGroupCollector
+from src.modules.forward.message_filter import MessageFilter
 from src.utils.logger import get_logger
 from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
 
@@ -29,7 +30,7 @@ class ParallelProcessor:
     实现生产者-消费者模式
     """
     
-    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None):
+    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None, config: Dict[str, Any] = None):
         """
         初始化并行处理器
         
@@ -37,10 +38,14 @@ class ParallelProcessor:
             client: Pyrogram客户端实例
             history_manager: 历史记录管理器实例
             general_config: 通用配置
+            config: 完整配置，用于初始化MessageFilter
         """
         self.client = client
         self.history_manager = history_manager
         self.general_config = general_config or {}
+        
+        # 初始化消息过滤器
+        self.message_filter = MessageFilter(config or {})
         
         # 初始化停止标志
         self.should_stop = False
@@ -64,7 +69,8 @@ class ParallelProcessor:
                                        source_id: int, 
                                        media_groups_info: List[Tuple[str, List[int]]], 
                                        temp_dir: Path,
-                                       target_channels: List[Tuple[str, int, str]]):
+                                       target_channels: List[Tuple[str, int, str]],
+                                       pair_config: Dict[str, Any] = None) -> int:
         """
         并行处理媒体组下载和上传
         
@@ -74,7 +80,12 @@ class ParallelProcessor:
             media_groups_info: 媒体组信息列表[(group_id, [message_ids])]
             temp_dir: 临时下载目录
             target_channels: 目标频道列表，用于检查是否已转发
+            pair_config: 频道对配置，包含过滤规则等
+            
+        Returns:
+            int: 实际转发的媒体组数量
         """
+        forward_count = 0
         try:
             # 设置下载和上传标志
             self.download_running = True
@@ -85,7 +96,7 @@ class ParallelProcessor:
             # 创建生产者和消费者任务
             producer_task = asyncio.create_task(
                 self._producer_download_media_groups_parallel(
-                    source_channel, source_id, media_groups_info, temp_dir, target_channels
+                    source_channel, source_id, media_groups_info, temp_dir, target_channels, pair_config
                 )
             )
             consumer_task = asyncio.create_task(
@@ -96,20 +107,24 @@ class ParallelProcessor:
             self.consumer_task = consumer_task
             
             # 等待生产者和消费者任务完成
-            await producer_task
+            producer_result = await producer_task
             _logger.info("下载任务完成，等待所有上传完成...")
             
             # 发送结束信号
             await self.media_group_queue.put(None)
             
             # 等待消费者任务完成
-            await consumer_task
+            consumer_result = await consumer_task
             
             # 重置任务引用
             self.producer_task = None
             self.consumer_task = None
             
-            _logger.info("媒体组下载和上传任务完成")
+            # 计算实际转发的数量
+            if isinstance(producer_result, int):
+                forward_count = producer_result
+            
+            _logger.info(f"媒体组下载和上传任务完成，共转发 {forward_count} 个媒体组")
             
         except Exception as e:
             _logger.error(f"下载和上传任务失败: {str(e)}")
@@ -149,6 +164,8 @@ class ParallelProcessor:
                     pass
             
             raise
+        
+        return forward_count
     
     async def _get_message_with_flood_wait(self, source_id: int, message_id: int) -> Optional[Message]:
         """
@@ -171,7 +188,8 @@ class ParallelProcessor:
                                                  source_id: int, 
                                                  media_groups_info: List[Tuple[str, List[int]]], 
                                                  temp_dir: Path,
-                                                 target_channels: List[Tuple[str, int, str]]):
+                                                 target_channels: List[Tuple[str, int, str]],
+                                                 pair_config: Dict[str, Any] = None) -> int:
         """
         生产者：并行下载媒体组
         
@@ -181,6 +199,10 @@ class ParallelProcessor:
             media_groups_info: 媒体组信息列表[(group_id, [message_ids])]
             temp_dir: 临时下载目录
             target_channels: 目标频道列表，用于检查是否已转发
+            pair_config: 频道对配置，包含过滤规则等
+            
+        Returns:
+            int: 实际转发的媒体组数量
         """
         try:
             forward_count = 0
@@ -255,37 +277,85 @@ class ParallelProcessor:
                         _logger.warning(f"媒体组 {group_id} 没有获取到有效消息，跳过")
                         continue
                     
-                    # 下载媒体文件
-                    _logger.info(f"正在下载媒体组 {group_id} 的 {len(messages)} 条媒体消息")
+                    # 应用过滤规则（使用新的统一过滤器）
+                    filtered_messages = messages
+                    media_group_texts = {}
+                    if pair_config and messages:
+                        filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
+                        # 获取媒体组文本映射
+                        media_group_texts = filter_stats.get('media_group_texts', {})
+                        _logger.info(f"媒体组 {group_id} 过滤完成: 原始消息 {len(messages)} 条，通过过滤 {len(filtered_messages)} 条")
+                        
+                        if not filtered_messages:
+                            _logger.info(f"媒体组 {group_id} 中的所有消息都被过滤，跳过")
+                            continue
+                        
+                        if media_group_texts:
+                            _logger.debug(f"媒体组 {group_id} 获取到媒体组文本: {len(media_group_texts)} 个")
                     
-                    downloaded_files = await self.message_downloader.download_messages(messages, group_dir, source_id)
+                    # 下载媒体文件（使用过滤后的消息）
+                    _logger.info(f"正在下载媒体组 {group_id} 的 {len(filtered_messages)} 条媒体消息")
+                    
+                    downloaded_files = await self.message_downloader.download_messages(filtered_messages, group_dir, source_id)
                     if not downloaded_files:
                         _logger.warning(f"媒体组 {group_id} 没有媒体文件可下载，跳过")
                         continue
                     
-                    # 获取消息文本
+                    # 获取消息文本（优先使用媒体组文本映射）
                     caption = None
-                    for message in messages:
-                        if message.caption or message.text:
-                            caption = message.caption or message.text
-                            break
                     
-                    # 移除原始标题
-                    if self.general_config.get('remove_captions', False):
+                    # 如果有媒体组文本映射，优先使用
+                    if media_group_texts:
+                        # 获取第一个媒体组的文本
+                        first_media_group_id = None
+                        for message in filtered_messages:
+                            if message.media_group_id:
+                                first_media_group_id = message.media_group_id
+                                break
+                        
+                        if first_media_group_id and first_media_group_id in media_group_texts:
+                            caption = media_group_texts[first_media_group_id]
+                            _logger.debug(f"使用预提取的媒体组文本: '{caption[:50]}...'")
+                    
+                    # 如果没有找到媒体组文本，回退到原有逻辑
+                    if not caption:
+                        for message in filtered_messages:
+                            if message.caption or message.text:
+                                caption = message.caption or message.text
+                                break
+                    
+                    # 应用文本替换规则
+                    if caption and pair_config:
+                        text_replacements = pair_config.get('text_filter', {})
+                        if text_replacements and isinstance(text_replacements, dict):
+                            original_caption = caption
+                            caption, has_replacement = self.message_filter.apply_text_replacements(caption, text_replacements)
+                            if has_replacement:
+                                _logger.info(f"媒体组 {group_id} 文本替换: '{original_caption[:30]}...' -> '{caption[:30]}...'")
+                    
+                    # 检查是否移除标题
+                    remove_captions = False
+                    if pair_config:
+                        remove_captions = pair_config.get('remove_captions', False)
+                    else:
+                        remove_captions = self.general_config.get('remove_captions', False)
+                    
+                    if remove_captions:
                         caption = None
+                        _logger.debug(f"媒体组 {group_id} 根据配置移除了标题")
                     
-                    # 创建媒体组下载结果对象
+                    # 创建媒体组下载结果对象（使用过滤后的消息）
                     media_group_download = MediaGroupDownload(
                         source_channel=source_channel,
                         source_id=source_id,
-                        messages=messages,
+                        messages=filtered_messages,
                         download_dir=group_dir,
                         downloaded_files=downloaded_files,
                         caption=caption
                     )
                     
                     # 将下载完成的媒体组放入队列
-                    _logger.info(f"媒体组 {group_id} 下载完成，放入上传队列: 消息IDs={[m.id for m in messages]}")
+                    _logger.info(f"媒体组 {group_id} 下载完成，放入上传队列: 消息IDs={[m.id for m in filtered_messages]}")
                     
                     await self.media_group_queue.put(media_group_download)
                     
@@ -308,7 +378,9 @@ class ParallelProcessor:
             _logger.error(error_details)
         finally:
             self.download_running = False
-            _logger.info("生产者(下载)任务结束")
+            _logger.info(f"生产者(下载)任务结束，共处理 {forward_count} 个媒体组")
+        
+        return forward_count
     
     async def _consumer_upload_media_groups(self, target_channels: List[Tuple[str, int, str]]):
         """

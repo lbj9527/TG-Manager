@@ -78,7 +78,7 @@ class Forwarder():
         self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config)
         self.media_uploader = MediaUploader(client, history_manager, self.general_config)
         self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
-        self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config)
+        self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config)
         
         # 设置MessageIterator的转发器引用，用于停止检查
         self.message_iterator.set_forwarder(self)
@@ -119,7 +119,7 @@ class Forwarder():
         # 重新初始化组件配置
         self.message_filter = MessageFilter(self.config)
         self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
-        self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config)
+        self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config, self.config)
         
         # 重新设置MessageIterator的转发器引用，用于停止检查
         self.message_iterator.set_forwarder(self)
@@ -314,12 +314,13 @@ class Forwarder():
                     # 启动下载和上传任务
                     try:
                         # 使用并行处理器处理此频道对
-                        await self.parallel_processor.process_parallel_download_upload(
+                        forward_count = await self.parallel_processor.process_parallel_download_upload(
                             source_channel,
                             source_id,
                             media_groups_info,
                             channel_temp_dir,
-                            valid_target_channels
+                            valid_target_channels,
+                            pair
                         )
                         
                         # 记录本组转发的消息数
