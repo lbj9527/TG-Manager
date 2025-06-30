@@ -1,5 +1,99 @@
 # 更新日志
 
+## [v2.2.1] - 2024-12-30
+
+### 🔧 关键修复 (Critical Fix)
+
+#### 修复ParallelProcessor中文本替换功能失效的BUG (Fix Text Replacement Function Failure in ParallelProcessor)
+- **问题根源**：
+  - **字段获取错误**：在`ParallelProcessor._producer_download_media_groups_parallel`方法中，错误地从`text_filter`字段获取文本替换字典
+  - **数据格式不匹配**：`text_filter`是列表格式`[{'original_text': '...', 'target_text': '...'}]`，而代码期望字典格式`{'原文': '替换文本'}`
+  - **功能完全失效**：导致文本替换规则完全无法生效，用户配置的文本替换被忽略
+
+- **发现过程**：
+  - 通过实际转发日志分析发现：配置的"莫七七" → "莫八八"替换规则未生效
+  - 日志显示："使用预提取的媒体组文本: '#十六夜 #莫七七   6.12-18自录...'"
+  - 文本中的"莫七七"没有被替换为"莫八八"，表明文本替换逻辑完全失效
+
+- **修复内容**：
+  ```python
+  # 修复前 (❌ 错误代码)
+  text_replacements = pair_config.get('text_filter', {})
+  
+  # 修复后 (✅ 正确代码)  
+  text_replacements = pair_config.get('text_replacements', {})
+  ```
+
+#### 修复ParallelProcessor中重复过滤导致关键词消息丢失的BUG (Fix Duplicate Filtering Causing Keyword Message Loss in ParallelProcessor)
+- **问题根源**：
+  - **重复过滤架构缺陷**：MediaGroupCollector和ParallelProcessor都在进行过滤，导致重复处理
+  - **关键词文本丢失**：包含关键词的消息在第一次过滤后被媒体类型过滤移除，第二次过滤时找不到关键词文本
+  - **性能浪费**：重复过滤导致不必要的性能开销和逻辑复杂性
+
+- **发现过程**：
+  - 用户配置关键词"莫七七"，媒体类型排除"video"
+  - MediaGroupCollector：媒体组通过关键词过滤，但视频消息114246被媒体类型过滤移除
+  - ParallelProcessor：对剩余9条消息重新过滤，没有"莫七七"文本，整个媒体组被关键词过滤拒绝
+  - 日志证据：`关键词过滤: 1 个媒体组(9 条消息)不包含关键词 ['莫七七'] 被过滤`
+
+- **修复策略**：
+  ```python
+  # 修复前 (❌ 重复过滤)
+  # MediaGroupCollector: apply_all_filters() -> 过滤后消息
+  # ParallelProcessor: apply_all_filters() -> 再次过滤！
+  
+  # 修复后 (✅ 统一过滤，避免重复)
+  # MediaGroupCollector: apply_all_filters() -> 过滤后消息
+  # ParallelProcessor: 直接使用已过滤消息，只提取文本信息
+  ```
+
+- **技术实现**：
+  - **保留MediaGroupCollector过滤**：性能最优，在数据获取阶段就完成过滤
+  - **移除ParallelProcessor重复过滤**：改为只提取媒体组文本信息，直接使用已过滤消息
+  - **维持v2.2.0架构目标**：禁止转发频道通过MediaGroupCollector使用统一的`apply_all_filters`逻辑
+
+#### 修复禁止转发频道中媒体组文本丢失的BUG (Fix Media Group Text Loss in Restricted Channels)
+- **问题根源**：
+  - **架构设计缺陷**：禁止转发频道使用MediaGroupCollector + ParallelProcessor架构，但缺乏文本信息传递机制
+  - **文本传递中断**：MediaGroupCollector的`get_media_groups_info_optimized`方法只返回消息ID，不返回预提取的媒体组文本
+  - **重复提取失败**：ParallelProcessor重新提取文本时，包含文本的消息已被媒体类型过滤移除
+  - **功能不一致**：非禁止转发频道(DirectForwarder)有完善的文本传递机制，但禁止转发频道缺失此功能
+
+- **发现过程**：
+  - 用户配置：`'remove_captions': False`（未勾选移除媒体说明）
+  - 预提取成功：`DEBUG | 预提取媒体组 -8847434337627453974 的文本: '#十六夜 #莫七七   6.12-18自录...'`
+  - ParallelProcessor中文本丢失：`DEBUG | 媒体组 -8847434337627453974 获取到媒体组文本: 0 个`
+  - 结果：转发成功但媒体组没有文本内容
+
+- **修复策略**：
+  ```python
+  # 修复前 (❌ 文本信息传递中断)
+  # MediaGroupCollector: get_media_groups_info_optimized() -> List[媒体组ID, 消息ID列表]
+  # ParallelProcessor: 重新提取文本 -> 失败（包含文本的消息已被过滤）
+  
+  # 修复后 (✅ 完整的文本传递链路)
+  # MediaGroupCollector: get_media_groups_info_optimized() -> (媒体组信息, 媒体组文本映射)
+  # Forwarder: 将媒体组文本添加到配置中传递给ParallelProcessor
+  # ParallelProcessor: 优先使用预传递的媒体组文本信息
+  ```
+
+- **技术实现**：
+  - **修改MediaGroupCollector返回值**：`get_media_groups_info_optimized`方法现在返回`(媒体组信息, 媒体组文本映射)`
+  - **增强Forwarder传递机制**：将媒体组文本信息添加到频道对配置中，传递给ParallelProcessor
+  - **优化ParallelProcessor文本获取**：优先使用Forwarder传递的预提取文本，支持多种媒体组ID格式匹配
+  - **文本替换正常工作**：确保\"莫七七\" → \"莫八八\"等文本替换规则在媒体组中正确应用
+
+- **用户价值**：
+  - ✅ **保留媒体组文本**：用户配置不移除说明时，媒体组的文本内容得到完整保留
+  - ✅ **文本替换生效**：文本替换功能在禁止转发频道中正常工作
+  - ✅ **功能一致性**：禁止转发频道与非禁止转发频道享受完全一致的文本处理功能
+  - ✅ **架构统一性**：v2.2.0的统一过滤架构现在真正完整，无功能缺失
+
+### 影响范围
+- **修复v2.2.0架构缺陷**：v2.2.0实现了统一过滤但存在文本传递机制不完整的问题
+- **提升用户体验**：用户不再遇到媒体组文本意外丢失的问题
+- **确保功能完整性**：禁止转发频道现在完全支持文本保留和替换功能
+
 ## [v2.2.0] - 2024-12-22
 
 ### 🚀 重大功能升级 (Major Feature Enhancement)

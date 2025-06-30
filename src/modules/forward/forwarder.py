@@ -301,7 +301,7 @@ class Forwarder():
                     target_channel_list = [target[0] for target in valid_target_channels]
                     
                     # 使用优化的媒体组信息获取方法，先过滤已转发的消息ID
-                    media_groups_info = await self.media_group_collector.get_media_groups_info_optimized(
+                    media_groups_info, media_group_texts = await self.media_group_collector.get_media_groups_info_optimized(
                         source_id, source_channel, target_channel_list, pair, self.history_manager
                     )
                     total_groups = len(media_groups_info)
@@ -310,6 +310,12 @@ class Forwarder():
                     if not media_groups_info:
                         _logger.info(f"源频道 {source_channel} 没有未转发的媒体组/消息，跳过")
                         continue
+                    
+                    # 将媒体组文本信息添加到频道对配置中，传递给ParallelProcessor
+                    pair_with_texts = pair.copy()
+                    pair_with_texts['media_group_texts'] = media_group_texts
+                    if media_group_texts:
+                        _logger.debug(f"🔍 Forwarder向ParallelProcessor传递媒体组文本: {len(media_group_texts)} 个")
                     
                     # 启动下载和上传任务
                     try:
@@ -320,7 +326,7 @@ class Forwarder():
                             media_groups_info,
                             channel_temp_dir,
                             valid_target_channels,
-                            pair
+                            pair_with_texts  # 传递包含媒体组文本的配置
                         )
                         
                         # 记录本组转发的消息数

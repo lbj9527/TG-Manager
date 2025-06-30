@@ -277,21 +277,22 @@ class ParallelProcessor:
                         _logger.warning(f"媒体组 {group_id} 没有获取到有效消息，跳过")
                         continue
                     
-                    # 应用过滤规则（使用新的统一过滤器）
-                    filtered_messages = messages
+                    # 获取媒体组文本信息（优先使用Forwarder传递的预提取文本）
                     media_group_texts = {}
-                    if pair_config and messages:
-                        filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
-                        # 获取媒体组文本映射
-                        media_group_texts = filter_stats.get('media_group_texts', {})
-                        _logger.info(f"媒体组 {group_id} 过滤完成: 原始消息 {len(messages)} 条，通过过滤 {len(filtered_messages)} 条")
-                        
-                        if not filtered_messages:
-                            _logger.info(f"媒体组 {group_id} 中的所有消息都被过滤，跳过")
-                            continue
-                        
-                        if media_group_texts:
-                            _logger.debug(f"媒体组 {group_id} 获取到媒体组文本: {len(media_group_texts)} 个")
+                    if pair_config and 'media_group_texts' in pair_config:
+                        # 优先使用Forwarder传递的媒体组文本信息（避免重复过滤导致文本丢失）
+                        media_group_texts = pair_config.get('media_group_texts', {})
+                        _logger.debug(f"🔍 ParallelProcessor接收到Forwarder传递的媒体组文本: {len(media_group_texts)} 个")
+                        # for group_id, text in media_group_texts.items():
+                        #     _logger.debug(f"  媒体组 {group_id}: '{text[:50]}...'")
+                    elif pair_config and messages:
+                        # 如果没有预传递的文本信息，才重新提取（备用方案）
+                        media_group_texts = self.message_filter._extract_media_group_texts(messages)
+                        _logger.debug(f"媒体组 {group_id} 重新提取媒体组文本: {len(media_group_texts)} 个")
+                    
+                    # 使用MediaGroupCollector传入的已过滤消息
+                    filtered_messages = messages
+                    _logger.debug(f"媒体组 {group_id} 使用已过滤消息: {len(filtered_messages)} 条")
                     
                     # 下载媒体文件（使用过滤后的消息）
                     _logger.info(f"正在下载媒体组 {group_id} 的 {len(filtered_messages)} 条媒体消息")
@@ -306,27 +307,38 @@ class ParallelProcessor:
                     
                     # 如果有媒体组文本映射，优先使用
                     if media_group_texts:
-                        # 获取第一个媒体组的文本
-                        first_media_group_id = None
+                        # 尝试多种方式匹配媒体组文本
                         for message in filtered_messages:
                             if message.media_group_id:
-                                first_media_group_id = message.media_group_id
-                                break
+                                # 尝试直接使用数字形式的media_group_id
+                                if message.media_group_id in media_group_texts:
+                                    caption = media_group_texts[message.media_group_id]
+                                    _logger.debug(f"✅ 使用预提取的媒体组文本(数字ID): '{caption[:50]}...'")
+                                    break
+                                # 尝试使用字符串形式的media_group_id
+                                elif str(message.media_group_id) in media_group_texts:
+                                    caption = media_group_texts[str(message.media_group_id)]
+                                    _logger.debug(f"✅ 使用预提取的媒体组文本(字符串ID): '{caption[:50]}...'")
+                                    break
                         
-                        if first_media_group_id and first_media_group_id in media_group_texts:
-                            caption = media_group_texts[first_media_group_id]
-                            _logger.debug(f"使用预提取的媒体组文本: '{caption[:50]}...'")
+                        # 如果单个消息，尝试使用single_格式的ID
+                        if not caption and len(filtered_messages) == 1:
+                            single_id = f"single_{filtered_messages[0].id}"
+                            if single_id in media_group_texts:
+                                caption = media_group_texts[single_id]
+                                _logger.debug(f"✅ 使用预提取的单条消息文本: '{caption[:50]}...'")
                     
                     # 如果没有找到媒体组文本，回退到原有逻辑
                     if not caption:
                         for message in filtered_messages:
                             if message.caption or message.text:
                                 caption = message.caption or message.text
+                                _logger.debug(f"⚠️ 未找到预提取文本，使用过滤后消息的文本: '{caption[:50] if caption else 'None'}...'")
                                 break
                     
                     # 应用文本替换规则
                     if caption and pair_config:
-                        text_replacements = pair_config.get('text_filter', {})
+                        text_replacements = pair_config.get('text_replacements', {})
                         if text_replacements and isinstance(text_replacements, dict):
                             original_caption = caption
                             caption, has_replacement = self.message_filter.apply_text_replacements(caption, text_replacements)
