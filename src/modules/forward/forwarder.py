@@ -317,31 +317,123 @@ class Forwarder():
                     if media_group_texts:
                         _logger.debug(f"🔍 Forwarder向ParallelProcessor传递媒体组文本: {len(media_group_texts)} 个")
                     
-                    # 启动下载和上传任务
-                    try:
-                        # 使用并行处理器处理此频道对
-                        forward_count = await self.parallel_processor.process_parallel_download_upload(
-                            source_channel,
-                            source_id,
-                            media_groups_info,
-                            channel_temp_dir,
-                            valid_target_channels,
-                            pair_with_texts  # 传递包含媒体组文本的配置
-                        )
+                    # 检查是否启用纯文本转发并预处理纯文本消息
+                    allowed_media_types = pair.get('media_types', [])
+                    hide_author = pair.get('hide_author', False)
+                    text_forward_count = 0
+                    
+                    if 'text' in allowed_media_types:
+                        _logger.info(f"用户启用了纯文本转发，开始预处理纯文本消息")
                         
-                        # 记录本组转发的消息数
-                        total_forward_count += forward_count
-                        pair_forward_count += forward_count
-                        info_message = f"从 {source_channel} 已转发 {forward_count} 个媒体组/消息"
-                        _logger.info(info_message)
+                        # 收集所有纯文本消息ID，用于后续从media_groups_info中移除
+                        processed_text_message_ids = set()
                         
-                    except Exception as e:
-                        error_message = f"下载和上传任务失败: {str(e)}"
-                        _logger.error(error_message)
-                        import traceback
-                        error_details = traceback.format_exc()
-                        _logger.error(error_details)
-                        continue
+                        # 遍历媒体组信息，查找纯文本消息
+                        for group_id, message_ids in media_groups_info:
+                            # 获取消息对象
+                            for message_id in message_ids:
+                                try:
+                                    message = await self._get_message_with_flood_wait(source_id, message_id)
+                                    if message and message.text and not message.media:
+                                        # 这是纯文本消息，进行转发处理
+                                        _logger.debug(f"发现纯文本消息 {message_id}: '{message.text[:50]}...'")
+                                        
+                                        # 应用文本替换
+                                        text_content = message.text
+                                        text_replacements = pair.get('text_replacements', {})
+                                        if text_replacements:
+                                            text_content, _ = self.message_filter.apply_text_replacements(text_content, text_replacements)
+                                        
+                                        # 检查是否移除标题
+                                        if pair.get('remove_captions', False):
+                                            continue  # 跳过此消息
+                                        
+                                        # 转发到所有目标频道
+                                        for target_channel, target_id, target_info in valid_target_channels:
+                                            # 检查是否已转发
+                                            if self.history_manager and self.history_manager.is_message_forwarded(source_channel, message_id, target_channel):
+                                                _logger.debug(f"纯文本消息 {message_id} 已转发到 {target_info}，跳过")
+                                                continue
+                                            
+                                            try:
+                                                if hide_author:
+                                                    # 隐藏作者，使用send_message
+                                                    sent_message = await self.client.send_message(
+                                                        chat_id=target_id,
+                                                        text=text_content,
+                                                        disable_web_page_preview=True
+                                                    )
+                                                    _logger.info(f"✅ 使用send_message转发纯文本消息 {message_id} 到 {target_info}")
+                                                else:
+                                                    # 保留作者，使用forward_messages
+                                                    forwarded_messages = await self.client.forward_messages(
+                                                        chat_id=target_id,
+                                                        from_chat_id=source_id,
+                                                        message_ids=message_id,
+                                                        disable_notification=True
+                                                    )
+                                                    _logger.info(f"✅ 使用forward_messages转发纯文本消息 {message_id} 到 {target_info}")
+                                                
+                                                # 记录转发历史
+                                                if self.history_manager:
+                                                    self.history_manager.add_forward_record(source_channel, message_id, target_channel, source_id)
+                                                
+                                                text_forward_count += 1
+                                                
+                                            except Exception as e:
+                                                _logger.error(f"转发纯文本消息 {message_id} 到 {target_info} 失败: {e}")
+                                        
+                                        # 标记为已处理
+                                        processed_text_message_ids.add(message_id)
+                                        
+                                except Exception as e:
+                                    _logger.error(f"获取消息 {message_id} 失败: {e}")
+                        
+                        # 从media_groups_info中移除已处理的纯文本消息
+                        if processed_text_message_ids:
+                            filtered_media_groups_info = []
+                            for group_id, message_ids in media_groups_info:
+                                # 过滤掉已处理的纯文本消息ID
+                                remaining_ids = [mid for mid in message_ids if mid not in processed_text_message_ids]
+                                if remaining_ids:  # 如果还有剩余消息，保留这个媒体组
+                                    filtered_media_groups_info.append((group_id, remaining_ids))
+                            
+                            media_groups_info = filtered_media_groups_info
+                            _logger.info(f"已处理 {len(processed_text_message_ids)} 条纯文本消息，剩余 {len(media_groups_info)} 个媒体组待处理")
+                    
+                    # 更新转发计数
+                    pair_forward_count += text_forward_count
+                    total_forward_count += text_forward_count
+                    
+                    # 如果还有媒体组需要处理，使用ParallelProcessor
+                    if media_groups_info:
+                        # 启动下载和上传任务
+                        try:
+                            # 使用并行处理器处理此频道对
+                            forward_count = await self.parallel_processor.process_parallel_download_upload(
+                                source_channel,
+                                source_id,
+                                media_groups_info,
+                                channel_temp_dir,
+                                valid_target_channels,
+                                pair_with_texts  # 传递包含媒体组文本的配置
+                            )
+                            
+                            # 记录本组转发的消息数
+                            total_forward_count += forward_count
+                            pair_forward_count += forward_count
+                            info_message = f"从 {source_channel} 已转发 {forward_count} 个媒体组/消息"
+                            _logger.info(info_message)
+                            
+                        except Exception as e:
+                            error_message = f"下载和上传任务失败: {str(e)}"
+                            _logger.error(error_message)
+                            import traceback
+                            error_details = traceback.format_exc()
+                            _logger.error(error_details)
+                            continue
+                    else:
+                        _logger.info(f"所有消息已通过纯文本方式处理，无需使用ParallelProcessor")
                 
                 # 如果这个频道对实际转发了消息，记录到forwarded_pairs
                 if pair_forward_count > 0:
@@ -592,3 +684,25 @@ class Forwarder():
                 self.direct_forwarder.should_stop = True
         
         _logger.info("转发器已停止") 
+
+    async def _get_message_with_flood_wait(self, source_id, message_id):
+        """
+        获取消息对象，并处理可能的FloodWait
+        
+        Args:
+            source_id: 源频道ID
+            message_id: 消息ID
+            
+        Returns:
+            Message: 获取的消息对象
+        """
+        try:
+            message = await self.client.get_messages(source_id, message_id)
+            return message
+        except FloodWait as e:
+            _logger.info(f"收到FloodWait，等待 {e.x} 秒后重试")
+            await asyncio.sleep(e.x)
+            return await self._get_message_with_flood_wait(source_id, message_id)
+        except Exception as e:
+            _logger.error(f"获取消息 {message_id} 失败: {e}")
+            return None 
