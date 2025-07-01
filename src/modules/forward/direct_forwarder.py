@@ -22,7 +22,7 @@ class DirectForwarder:
     支持统一的过滤功能
     """
     
-    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None):
+    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None, emit=None):
         """
         初始化直接转发器
         
@@ -30,10 +30,12 @@ class DirectForwarder:
             client: Pyrogram客户端实例
             history_manager: 历史记录管理器实例，用于记录已转发的消息
             general_config: 通用配置
+            emit: 事件发射函数，用于发送转发进度信号
         """
         self.client = client
         self.history_manager = history_manager
         self.general_config = general_config or {}
+        self.emit = emit  # 添加事件发射函数
         
         # 初始化停止标志
         self.should_stop = False
@@ -236,6 +238,14 @@ class DirectForwarder:
                         
                         _logger.info(f"✅ 消息 {message.id} 转发到 {target_info} 成功")
                         success_count += 1
+                        
+                        # 发射单条消息转发完成信号
+                        if self.emit:
+                            try:
+                                self.emit("message_forwarded", message.id, target_info)
+                            except Exception as e:
+                                _logger.debug(f"发射message_forwarded信号失败: {e}")
+                                
                     except Exception as e:
                         _logger.error(f"转发单条消息 {message.id} 到 {target_info} 失败: {e}，跳过")
                         continue
@@ -327,6 +337,15 @@ class DirectForwarder:
                                 
                                 _logger.info(f"✅ 重组媒体组 {message_ids} 转发到 {target_info} 成功")
                                 success_count += 1
+                                
+                                # 发射媒体组转发完成信号
+                                if self.emit:
+                                    try:
+                                        # 同时传递频道ID以便UI精确匹配
+                                        self.emit("media_group_forwarded", message_ids, target_info, len(message_ids), target_id)
+                                    except Exception as e:
+                                        _logger.debug(f"发射media_group_forwarded信号失败: {e}")
+                                        
                             else:
                                 _logger.error(f"无法创建任何有效的InputMedia对象，重组媒体组转发失败")
                                 continue
@@ -374,6 +393,14 @@ class DirectForwarder:
                             _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
                             success_count += 1
                             
+                            # 发射媒体组转发完成信号
+                            if self.emit:
+                                try:
+                                    # 同时传递频道ID以便UI精确匹配
+                                    self.emit("media_group_forwarded", message_ids, target_info, len(message_ids), target_id)
+                                except Exception as e:
+                                    _logger.debug(f"发射media_group_forwarded信号失败: {e}")
+                            
                         elif hide_author:
                             # 使用copy_media_group方法隐藏作者
                             _logger.debug(f"使用copy_media_group方法隐藏作者转发媒体组消息")
@@ -398,6 +425,15 @@ class DirectForwarder:
                             
                             _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
                             success_count += 1
+                            
+                            # 发射媒体组转发完成信号
+                            if self.emit:
+                                try:
+                                    # 同时传递频道ID以便UI精确匹配
+                                    self.emit("media_group_forwarded", message_ids, target_info, len(message_ids), target_id)
+                                except Exception as e:
+                                    _logger.debug(f"发射media_group_forwarded信号失败: {e}")
+                                    
                         else:
                             # 使用forward_messages批量转发
                             _logger.debug(f"使用forward_messages方法保留作者批量转发媒体组消息")
@@ -421,6 +457,15 @@ class DirectForwarder:
                             
                             _logger.info(f"✅ 媒体组 {message_ids} 转发到 {target_info} 成功")
                             success_count += 1
+                            
+                            # 发射媒体组转发完成信号
+                            if self.emit:
+                                try:
+                                    # 同时传递频道ID以便UI精确匹配
+                                    self.emit("media_group_forwarded", message_ids, target_info, len(message_ids), target_id)
+                                except Exception as e:
+                                    _logger.debug(f"发射media_group_forwarded信号失败: {e}")
+                            
                     except Exception as e:
                         _logger.error(f"转发媒体组 {message_ids} 到 {target_info} 失败: {e}，跳过")
                         continue

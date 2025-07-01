@@ -42,6 +42,10 @@ class TGManagerApp(QObject):
     app_closing = Signal()
     theme_changed = Signal(str)  # 主题变更信号
     
+    # 转发相关信号
+    message_forwarded = Signal(int, str)  # 单条消息转发信号 (消息ID, 目标信息)
+    media_group_forwarded = Signal(list, str, int, str)  # 媒体组转发信号 (消息ID列表, 目标信息, 数量, 频道ID字符串)
+    
     def __init__(self, verbose=False):
         super().__init__()
         self.app = QApplication(sys.argv)

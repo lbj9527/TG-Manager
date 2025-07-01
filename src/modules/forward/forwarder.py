@@ -75,7 +75,7 @@ class Forwarder():
         self.message_filter = MessageFilter(self.config)
         self.message_iterator = MessageIterator(client, channel_resolver)
         self.message_downloader = MessageDownloader(client)
-        self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config)
+        self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config, self._emit_event)
         self.media_uploader = MediaUploader(client, history_manager, self.general_config)
         self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
         self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config)
@@ -88,6 +88,36 @@ class Forwarder():
         
         # 初始化停止标志
         self.should_stop = False
+    
+    def _emit_event(self, event_type: str, *args):
+        """发射事件到应用层
+        
+        Args:
+            event_type: 事件类型
+            *args: 事件参数
+        """
+        try:
+            if self.app:
+                if event_type == "message_forwarded" and len(args) >= 2:
+                    message_id, target_info = args[0], args[1]
+                    self.app.message_forwarded.emit(message_id, target_info)
+                    _logger.debug(f"发射message_forwarded信号: 消息{message_id} -> {target_info}")
+                
+                elif event_type == "media_group_forwarded" and len(args) >= 4:
+                    message_ids, target_info, count, target_id = args[0], args[1], args[2], args[3]
+                    # 将频道ID转换为字符串，避免64位整数溢出
+                    target_id_str = str(target_id)
+                    self.app.media_group_forwarded.emit(message_ids, target_info, count, target_id_str)
+                    _logger.debug(f"发射media_group_forwarded信号: {len(message_ids)}条消息 -> {target_info} (ID: {target_id_str})")
+                
+                else:
+                    _logger.warning(f"未知事件类型或参数不足: {event_type}, args: {args}")
+            else:
+                _logger.warning("应用实例为空，无法发射事件")
+            
+        except Exception as e:
+            _logger.error(f"处理DirectForwarder事件失败: {e}")
+            _logger.debug(f"事件详情: type={event_type}, args={args}", exc_info=True)
     
     async def forward_messages(self):
         """

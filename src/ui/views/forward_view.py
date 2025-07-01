@@ -50,6 +50,11 @@ class ForwardView(QWidget):
         # 初始化频道对列表
         self.channel_pairs = []
         
+        # 状态表格相关数据跟踪
+        self.status_table_data = {}  # 存储每行的状态数据
+        self.forwarding_status = False  # 当前转发状态
+        self.total_message_counts = {}  # 存储每个频道对的总消息数 {(source, target): total_count}
+        
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setSpacing(2)  # 减小布局间距
@@ -409,31 +414,6 @@ class ForwardView(QWidget):
         
         status_layout.addWidget(self.status_table)
         
-        # 状态信息布局
-        status_info_layout = QHBoxLayout()
-        
-        self.overall_status_label = QLabel("等待转发...")
-        self.forwarded_count_label = QLabel("已转发: 0 条消息")
-        
-        status_info_layout.addWidget(self.overall_status_label)
-        status_info_layout.addStretch()
-        status_info_layout.addWidget(self.forwarded_count_label)
-        
-        status_layout.addLayout(status_info_layout)
-        
-        # 进度指示器
-        progress_layout = QVBoxLayout()
-        
-        progress_label = QLabel("总体进度:")
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        
-        progress_layout.addWidget(progress_label)
-        progress_layout.addWidget(self.progress_bar)
-        
-        status_layout.addLayout(progress_layout)
-        
         # 添加转发进度标签页到配置面板
         self.config_tabs.addTab(self.progress_tab, "转发进度")
     
@@ -485,10 +465,143 @@ class ForwardView(QWidget):
         # 更新频道对列表标题
         self._update_pairs_list_title()
         
+        # 初始化状态表格
+        self._update_status_table()
+    
     def _update_pairs_list_title(self):
         """更新频道对列表标题"""
         count = self.pairs_list.count()
         self.pairs_list_label.setText(f"已配置频道对:  {count}对")
+    
+    def _update_status_table(self):
+        """更新状态表格，根据已启用的频道对填充表格"""
+        # 清空表格
+        self.status_table.setRowCount(0)
+        self.status_table_data.clear()
+        
+        # 遍历所有频道对，只显示已启用的
+        row_index = 0
+        for pair in self.channel_pairs:
+            if not pair.get('enabled', True):
+                continue  # 跳过已禁用的频道对
+            
+            source_channel = pair.get('source_channel', '')
+            target_channels = pair.get('target_channels', [])
+            
+            # 为每个目标频道创建一行
+            for target_channel in target_channels:
+                self.status_table.insertRow(row_index)
+                
+                # 创建表格项（直接使用频道标识符）
+                source_item = QTableWidgetItem(source_channel)
+                target_item = QTableWidgetItem(target_channel)
+                
+                # 获取或初始化消息计数
+                key = (source_channel, target_channel)
+                forwarded_count = self.status_table_data.get(key, {}).get('forwarded', 0)
+                total_count = self.total_message_counts.get(key, -1)
+                
+                # 格式化消息数显示
+                if total_count == -1:
+                    count_text = f"{forwarded_count}/--"
+                else:
+                    count_text = f"{forwarded_count}/{total_count}"
+                
+                count_item = QTableWidgetItem(count_text)
+                status_item = QTableWidgetItem("准备中")
+                
+                # 设置表格项
+                self.status_table.setItem(row_index, 0, source_item)
+                self.status_table.setItem(row_index, 1, target_item)
+                self.status_table.setItem(row_index, 2, count_item)
+                self.status_table.setItem(row_index, 3, status_item)
+                
+                # 保存行数据用于后续更新
+                self.status_table_data[key] = {
+                    'forwarded': forwarded_count,
+                    'total': total_count,
+                    'status': "准备中"
+                }
+                
+                row_index += 1
+        
+        logger.debug(f"状态表格已更新，显示 {row_index} 个转发目标")
+    
+    async def _build_channel_id_mapping(self):
+        """建立频道ID到状态表格行的映射"""
+        if not hasattr(self, 'channel_id_to_table_row'):
+            self.channel_id_to_table_row = {}
+        self.channel_id_to_table_row.clear()
+        
+        # 遍历状态表格，为每行建立频道ID映射
+        for row in range(self.status_table.rowCount()):
+            target_item = self.status_table.item(row, 1)
+            if target_item:
+                target_channel = target_item.text()
+                await self._add_channel_id_mapping(target_channel, row)
+        
+        logger.debug(f"频道ID映射建立完成: {self.channel_id_to_table_row}")
+    
+    async def _add_channel_id_mapping(self, target_channel, row_index):
+        """异步添加频道ID映射"""
+        try:
+            if self.forwarder and hasattr(self.forwarder, 'channel_resolver'):
+                # 获取频道ID
+                channel_id = await self.forwarder.channel_resolver.get_channel_id(target_channel)
+                if channel_id:
+                    self.channel_id_to_table_row[channel_id] = row_index
+                    logger.debug(f"已添加频道ID映射: {channel_id} -> 行{row_index} ({target_channel})")
+                else:
+                    logger.warning(f"无法获取频道ID: {target_channel}")
+        except Exception as e:
+            logger.warning(f"添加频道ID映射失败 {target_channel}: {e}")
+    
+    def _calculate_total_message_count(self, source_channel, start_id, end_id):
+        """计算指定范围内的消息总数
+        
+        Args:
+            source_channel: 源频道
+            start_id: 起始消息ID
+            end_id: 结束消息ID
+            
+        Returns:
+            int: 估算的消息总数，如果无法确定则返回-1
+        """
+        # 只有当start_id和end_id都是有效的正数时，才能准确计算
+        if end_id > 0 and start_id > 0:
+            return max(0, end_id - start_id + 1)
+        elif start_id == 0 and end_id > 0:
+            # start_id为0表示"最早消息"，假设从消息ID 1开始
+            return max(0, end_id - 1 + 1)  # 等同于end_id
+        elif start_id > 0 and end_id == 0:
+            # end_id为0表示"最新消息"，无法确定具体数量
+            return -1  # 返回-1表示未知
+        else:
+            # 两者都为0或都无效，无法计算
+            return -1  # 返回-1表示未知
+    
+    def _calculate_and_update_total_message_counts(self):
+        """计算并更新所有频道对的总消息数"""
+        self.total_message_counts.clear()
+        
+        for pair in self.channel_pairs:
+            if not pair.get('enabled', True):
+                continue  # 跳过已禁用的频道对
+            
+            source_channel = pair.get('source_channel', '')
+            target_channels = pair.get('target_channels', [])
+            start_id = pair.get('start_id', 0)
+            end_id = pair.get('end_id', 0)
+            
+            # 计算此频道对的总消息数
+            total_count = self._calculate_total_message_count(source_channel, start_id, end_id)
+            
+            # 为每个目标频道存储总消息数
+            for target_channel in target_channels:
+                key = (source_channel, target_channel)
+                self.total_message_counts[key] = total_count
+        
+        logger.debug(f"已更新总消息数计算，共 {len(self.total_message_counts)} 个转发目标")
     
     def _add_channel_pair(self):
         """添加频道对"""
@@ -635,11 +748,14 @@ class ForwardView(QWidget):
             self.keyword_input.clear()
             self.main_final_message_html_file.clear()
             
-            # 更新标题
+            # 更新频道对列表标题
             self._update_pairs_list_title()
             
             # 添加到频道对列表
             self.channel_pairs.append(channel_pair)
+            
+            # 更新状态表格
+            self._update_status_table()
         
         except ValueError as e:
             QMessageBox.warning(self, "输入错误", str(e))
@@ -668,8 +784,11 @@ class ForwardView(QWidget):
                 self.channel_pairs.pop(row)
             self.pairs_list.takeItem(row)
         
-        # 更新标题
+        # 更新频道对列表标题
         self._update_pairs_list_title()
+        
+        # 更新状态表格
+        self._update_status_table()
     
     def _browse_tmp_path(self):
         """浏览临时目录"""
@@ -758,38 +877,46 @@ class ForwardView(QWidget):
         return media_types
     
     def _start_forward(self):
-        """开始转发操作"""
-        # 检查是否有转发器实例
-        if not hasattr(self, 'forwarder') or self.forwarder is None:
-            QMessageBox.warning(self, "错误", "转发器未初始化，无法启动转发")
+        """开始转发"""
+        if not self.channel_pairs:
+            QMessageBox.warning(self, "警告", "请先添加频道对")
             return
-
-        # 添加状态消息
-        self._add_status_message("开始转发...")
         
-        # 自动切换到转发进度选项卡
-        self.config_tabs.setCurrentIndex(2)  # 转发进度选项卡是第3个（索引为2）
+        # 检查是否有启用的频道对
+        enabled_pairs = [pair for pair in self.channel_pairs if pair.get('enabled', True)]
+        if not enabled_pairs:
+            QMessageBox.warning(self, "警告", "请至少启用一个频道对")
+            return
         
-        # 更新按钮状态
+        # 更新转发状态
+        self.forwarding_status = True
+        self._update_status_table_forwarding_status("转发中")
+        
+        # 按钮状态
         self.start_forward_button.setEnabled(False)
         self.stop_forward_button.setEnabled(True)
-
-        # 异步启动转发
-        import asyncio
-        try:
-            # 创建启动转发的任务
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._async_start_forward())
-        except Exception as e:
-            logger.error(f"启动转发时出错: {e}")
-            self._add_status_message(f"启动转发失败: {e}")
-            # 恢复按钮状态
-            self.start_forward_button.setEnabled(True)
-            self.stop_forward_button.setEnabled(False)
+        
+        # 获取转发配置
+        forward_config = self._get_forward_config()
+        
+        # 发送转发开始信号
+        self.forward_started.emit(forward_config)
+        
+        # 记录开始转发消息
+        self._add_status_message("开始转发...")
+        self._add_status_message("正在启动转发器...")
+        
+        # 异步开始转发
+        asyncio.create_task(self._async_start_forward())
     
     async def _async_start_forward(self):
         """异步启动转发"""
         try:
+            self._add_status_message("正在建立频道映射...")
+            
+            # 建立频道ID到状态表格行的映射
+            await self._build_channel_id_mapping()
+            
             self._add_status_message("正在启动转发器...")
             await self.forwarder.forward_messages()
             self._add_status_message("转发完成")
@@ -812,42 +939,31 @@ class ForwardView(QWidget):
             timestamp = datetime.now().strftime("%H:%M:%S")
             formatted_message = f"[{timestamp}] {message}"
             
-            # 显示在总体状态标签中
-            if hasattr(self, 'overall_status_label'):
-                self.overall_status_label.setText(formatted_message)
-            
-            # 同时在控制台输出
+            # 输出到日志和控制台
+            logger.info(formatted_message)
             print(formatted_message)
             
         except Exception as e:
             print(f"添加状态消息失败: {e}")
-            # 如果格式化失败，至少显示原始消息
-            if hasattr(self, 'overall_status_label'):
-                self.overall_status_label.setText(str(message))
+            logger.error(f"添加状态消息失败: {e}")
+            # 如果格式化失败，至少输出原始消息
+            logger.info(str(message))
     
     def _stop_forward(self):
         """停止转发"""
-        # 检查是否有转发器实例
-        if not hasattr(self, 'forwarder') or self.forwarder is None:
-            self._add_status_message("转发器未初始化")
-            return
+        # 更新转发状态
+        self.forwarding_status = False
+        self._update_status_table_forwarding_status("停止中")
         
-        # 添加状态消息
-        self._add_status_message("停止转发...")
-        
-        # 更新按钮状态
+        # 按钮状态
         self.start_forward_button.setEnabled(True)
         self.stop_forward_button.setEnabled(False)
         
+        # 记录停止转发消息
+        self._add_status_message("正在停止转发...")
+        
         # 异步停止转发
-        import asyncio
-        try:
-            # 创建停止转发的任务
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._async_stop_forward())
-        except Exception as e:
-            logger.error(f"停止转发时出错: {e}")
-            self._add_status_message(f"停止转发失败: {e}")
+        asyncio.create_task(self._async_stop_forward())
     
     async def _async_stop_forward(self):
         """异步停止转发"""
@@ -862,13 +978,12 @@ class ForwardView(QWidget):
 
     def _on_forward_complete_ui_update(self):
         """转发完成后的UI更新"""
-        # 更新状态
-        self.overall_status_label.setText("转发已完成")
+        # 记录完成状态
+        logger.info("转发已完成")
         
-        # 更新进度条
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("所有转发已完成")
+        # 更新转发状态
+        self.forwarding_status = False
+        self._update_status_table_forwarding_status("已完成")
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -899,18 +1014,17 @@ class ForwardView(QWidget):
             QMessageBox.information(self, title, message)
         except Exception as e:
             logger.error(f"显示完成对话框时出错: {e}")
-            # 备用方案：使用状态标签显示完成信息
-            self.overall_status_label.setText(f"{message} ({title})")
+            # 备用方案：使用日志记录完成信息
+            logger.info(f"{message} ({title})")
     
     def _on_forward_error_ui_update(self, error_message):
         """转发出错后的UI更新"""
-        # 更新状态
-        self.overall_status_label.setText(f"转发出错: {error_message}")
+        # 记录错误状态
+        logger.error(f"转发出错: {error_message}")
         
-        # 更新进度条状态
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("转发失败")
+        # 更新转发状态
+        self.forwarding_status = False
+        self._update_status_table_forwarding_status("出错")
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -941,8 +1055,8 @@ class ForwardView(QWidget):
             self._show_error_dialog(title, message)
         except Exception as e:
             logger.error(f"显示错误对话框时出错: {e}")
-            # 确保错误信息至少会显示在状态标签中
-            self.overall_status_label.setText(f"错误: {message}")
+            # 确保错误信息至少会记录在日志中
+            logger.error(f"错误: {message}")
     
     def _show_error_dialog(self, title, message):
         """显示错误对话框
@@ -1050,6 +1164,12 @@ class ForwardView(QWidget):
             
             logger.debug("配置保存完成，保持当前UI状态不变")
             
+            # 计算并更新总消息数
+            self._calculate_and_update_total_message_counts()
+            
+            # 更新状态表格
+            self._update_status_table()
+            
         except Exception as e:
             QMessageBox.critical(self, "保存失败", f"配置保存失败: {str(e)}")
             logger.error(f"保存配置失败: {e}")
@@ -1065,31 +1185,78 @@ class ForwardView(QWidget):
             count: 转发消息数
             status: 状态文本
         """
-        # 查找对应的行
-        for row in range(self.status_table.rowCount()):
-            if (self.status_table.item(row, 0).text() == source and
-                self.status_table.item(row, 1).text() == target):
+        key = (source, target)
+        
+        # 更新内部数据
+        if key in self.status_table_data:
+            self.status_table_data[key]['forwarded'] = count
+            self.status_table_data[key]['status'] = status
+            
+            row = self.status_table_data[key]['row']
+            total_count = self.total_message_counts.get(key, 0)
+            
+            # 更新表格显示
+            if row < self.status_table.rowCount():
+                # 格式化消息数显示
+                if total_count > 0:
+                    count_text = f"{count}/{total_count}"
+                elif total_count == -1:
+                    count_text = f"{count}/--"
+                else:
+                    count_text = f"{count}/0"
                 
                 # 更新消息数
-                self.status_table.item(row, 2).setText(str(count))
+                if self.status_table.item(row, 2):
+                    self.status_table.item(row, 2).setText(count_text)
                 
                 # 更新状态
-                self.status_table.item(row, 3).setText(status)
-                
-                # 更新总转发消息数
-                total_forwarded = sum(int(self.status_table.item(r, 2).text()) 
-                                   for r in range(self.status_table.rowCount()))
-                self.forwarded_count_label.setText(f"已转发: {total_forwarded} 条消息")
-                
-                break
+                if self.status_table.item(row, 3):
+                    self.status_table.item(row, 3).setText(status)
+        else:
+            # 如果key不存在，尝试查找匹配的行
+            for row in range(self.status_table.rowCount()):
+                if (self.status_table.item(row, 0) and self.status_table.item(row, 1) and
+                    self.status_table.item(row, 0).text() == source and
+                    self.status_table.item(row, 1).text() == target):
+                    
+                    total_count = self.total_message_counts.get(key, 0)
+                    
+                    # 格式化消息数显示
+                    if total_count > 0:
+                        count_text = f"{count}/{total_count}"
+                    elif total_count == -1:
+                        count_text = f"{count}/--"
+                    else:
+                        count_text = f"{count}/0"
+                    
+                    # 更新消息数
+                    if self.status_table.item(row, 2):
+                        self.status_table.item(row, 2).setText(count_text)
+                    
+                    # 更新状态
+                    if self.status_table.item(row, 3):
+                        self.status_table.item(row, 3).setText(status)
+                    
+                    # 更新内部数据
+                    self.status_table_data[key] = {
+                        'row': row,
+                        'forwarded': count,
+                        'total': total_count,
+                        'status': status
+                    }
+                    break
+        
+        # 计算并记录总转发消息数
+        total_forwarded = sum(data.get('forwarded', 0) for data in self.status_table_data.values())
+        logger.info(f"已转发: {total_forwarded} 条消息")
     
     def update_progress(self, value):
-        """更新进度条
+        """更新进度
         
         Args:
             value: 进度值 (0-100)
         """
-        self.progress_bar.setValue(value)
+        logger.debug(f"转发进度: {value}%")
     
     def forward_completed(self):
         """所有转发任务完成"""
@@ -1196,6 +1363,12 @@ class ForwardView(QWidget):
                 self.forward_delay.setValue(0.0)
                 
         self.tmp_path.setText(forward_config.get('tmp_path', 'tmp'))
+        
+        # 计算并更新总消息数
+        self._calculate_and_update_total_message_counts()
+        
+        # 更新状态表格
+        self._update_status_table()
 
     def set_forwarder(self, forwarder):
         """设置转发器实例
@@ -1210,8 +1383,11 @@ class ForwardView(QWidget):
         self.forwarder = forwarder
         logger.debug("转发视图已接收转发器实例")
         
-        # 连接信号
+        # 连接转发器信号
         self._connect_forwarder_signals()
+        
+        # 连接应用级别的信号
+        self._connect_app_signals()
     
     def _connect_forwarder_signals(self):
         """连接转发器信号到UI更新"""
@@ -1238,6 +1414,13 @@ class ForwardView(QWidget):
             if hasattr(self.forwarder, 'error_occurred'):
                 self.forwarder.error_occurred.connect(self._on_forward_error)
             
+            # 连接实时转发进度信号
+            if hasattr(self.forwarder, 'message_forwarded'):
+                self.forwarder.message_forwarded.connect(self._on_message_forwarded)
+            
+            if hasattr(self.forwarder, 'media_group_forwarded'):
+                self.forwarder.media_group_forwarded.connect(self._on_media_group_forwarded)
+            
             logger.debug("转发器信号连接成功")
             
             # 如果转发器没有这些信号属性，我们需要手动添加事件监听
@@ -1249,6 +1432,9 @@ class ForwardView(QWidget):
                 # 添加all_forwards_complete事件监听
                 self.forwarder.add_event_listener("all_forwards_complete", self._on_forward_complete_ui_update)
                 self.forwarder.add_event_listener("error", self._on_forward_error)
+                # 添加实时转发事件监听
+                self.forwarder.add_event_listener("message_forwarded", self._on_message_forwarded_event)
+                self.forwarder.add_event_listener("media_group_forwarded", self._on_media_group_forwarded_event)
                 logger.debug("使用事件监听器连接转发器事件")
             
         except Exception as e:
@@ -1262,8 +1448,7 @@ class ForwardView(QWidget):
         Args:
             status: 状态信息
         """
-        self.overall_status_label.setText(status)
-        logger.debug(f"转发状态更新: {status}")
+        logger.info(f"转发状态: {status}")
     
     def _update_progress(self, current, total, message_info=None):
         """更新转发进度
@@ -1273,23 +1458,20 @@ class ForwardView(QWidget):
             total: 总消息数
             message_info: 消息信息(可选)
         """
-        # 更新进度条
+        # 计算并记录进度
         if total > 0:
             percentage = min(int((current / total) * 100), 100)
-            self.progress_bar.setValue(percentage)
-            
-            # 更新进度文本
+            # 记录进度信息
             if message_info:
-                self.progress_bar.setFormat(f"{message_info} - {percentage}%")
+                logger.info(f"{message_info} - {percentage}%")
             else:
-                self.progress_bar.setFormat("正在转发...")
+                logger.info(f"正在转发... - {percentage}%")
         else:
-            # 不确定的进度，使用循环进度条
-            self.progress_bar.setRange(0, 0)
+            # 不确定的进度，记录正在转发状态
             if message_info:
-                self.progress_bar.setFormat(f"正在转发: {message_info}")
+                logger.info(f"正在转发: {message_info}")
             else:
-                self.progress_bar.setFormat("正在转发...")
+                logger.info("正在转发...")
     
     def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
         """转发完成处理
@@ -1320,14 +1502,13 @@ class ForwardView(QWidget):
             error: 错误信息
             message: 额外的消息(可选)
         """
-        # 更新UI状态
+        # 构建错误信息
         error_msg = f"转发出错: {error}"
         if message:
             error_msg += f"\n{message}"
             
-        self.overall_status_label.setText(error_msg)
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
+        # 记录错误状态
+        logger.error(error_msg)
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -1828,6 +2009,9 @@ class ForwardView(QWidget):
         QMessageBox.information(self, "状态更新", f"频道对 {source_channel} 已{status_text}，请保存配置使更改生效")
         
         logger.debug(f"频道对 {source_channel} 状态切换为: {'启用' if new_enabled else '禁用'}")
+        
+        # 更新状态表格
+        self._update_status_table()
     
     def _update_channel_pair_display(self, item, channel_pair):
         """更新频道对的显示文本
@@ -1911,3 +2095,307 @@ class ForwardView(QWidget):
         
         # 更新列表项文本
         item.setText(display_text)
+    
+    def _update_status_table_forwarding_status(self, status):
+        """更新状态表格中所有行的转发状态
+        
+        Args:
+            status: 新的状态文本（如"转发中"、"停止中"、"待转发"等）
+        """
+        for row in range(self.status_table.rowCount()):
+            if self.status_table.item(row, 3):
+                self.status_table.item(row, 3).setText(status)
+        
+        # 更新内部数据
+        for key in self.status_table_data:
+            self.status_table_data[key]['status'] = status
+        
+        logger.debug(f"已更新状态表格转发状态为: {status}")
+    
+    def _on_message_forwarded(self, message_id, target_info):
+        """处理单条消息转发信号
+        
+        Args:
+            message_id: 消息ID
+            target_info: 目标频道信息
+        """
+        try:
+            # 从target_info中提取目标频道名称
+            # target_info通常格式为 "频道名 (ID: xxx)" 或 "@channel_name"
+            target_channel = self._extract_channel_name_from_info(target_info)
+            
+            # 查找并更新对应的状态表格行
+            self._increment_forwarded_count_for_target(target_channel)
+            
+            logger.debug(f"处理单条消息转发信号: msg_id={message_id}, target={target_channel}")
+        except Exception as e:
+            logger.error(f"处理单条消息转发信号时出错: {e}")
+    
+    def _on_media_group_forwarded(self, message_ids, target_info, count, target_id_str):
+        """处理媒体组转发完成信号（PyQt6信号）
+        
+        Args:
+            message_ids: 消息ID列表
+            target_info: 目标频道信息
+            count: 消息数量
+            target_id_str: 目标频道ID字符串
+        """
+        try:
+            logger.debug(f"处理媒体组转发信号: {count}条消息, target={target_info}, target_id={target_id_str}")
+            
+            # 将字符串ID转换为整数
+            target_id = int(target_id_str)
+            
+            # 使用频道ID进行精确匹配
+            if hasattr(self, 'channel_id_to_table_row') and target_id in self.channel_id_to_table_row:
+                row = self.channel_id_to_table_row[target_id]
+                source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                target_channel = self.status_table.item(row, 1).text() if self.status_table.item(row, 1) else ""
+                
+                logger.debug(f"✅ 通过频道ID {target_id} 精确匹配到行 {row}: {source_channel} -> {target_channel}")
+                self._update_count_and_ui(source_channel, target_channel, row, count)
+                return
+            else:
+                logger.warning(f"❌ 频道ID {target_id} 在映射表中未找到")
+            
+            # 回退到名称匹配
+            target_channel = self._extract_channel_name_from_info(target_info)
+            self._increment_forwarded_count_for_target(target_channel, count)
+            
+            logger.debug(f"处理媒体组转发信号: {count}条消息, target={target_channel}")
+            
+        except Exception as e:
+            logger.error(f"处理媒体组转发信号失败: {e}")
+
+    def _on_media_group_forwarded_event(self, message_ids, target_info, count, target_id_str):
+        """处理媒体组转发完成事件（事件监听器）
+        
+        Args:
+            message_ids: 消息ID列表
+            target_info: 目标频道信息
+            count: 消息数量
+            target_id_str: 目标频道ID字符串
+        """
+        try:
+            # 将字符串ID转换为整数
+            target_id = int(target_id_str)
+            
+            # 使用频道ID进行精确匹配
+            if hasattr(self, 'channel_id_to_table_row') and target_id in self.channel_id_to_table_row:
+                row = self.channel_id_to_table_row[target_id]
+                source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                target_channel = self.status_table.item(row, 1).text() if self.status_table.item(row, 1) else ""
+                
+                logger.debug(f"✅ 通过频道ID {target_id} 精确匹配到行 {row}: {source_channel} -> {target_channel}")
+                self._update_count_and_ui(source_channel, target_channel, row, count)
+                return
+            
+            # 回退到名称匹配
+            target_channel = self._extract_channel_name_from_info(target_info)
+            self._increment_forwarded_count_for_target(target_channel, count)
+            
+            logger.debug(f"处理媒体组转发事件: {count}条消息, target={target_channel}")
+            
+        except Exception as e:
+            logger.error(f"处理媒体组转发事件失败: {e}")
+    
+    def _on_message_forwarded_event(self, message_id, target_info):
+        """处理单条消息转发完成事件（事件监听器）
+        
+        Args:
+            message_id: 消息ID  
+            target_info: 目标频道信息
+        """
+        try:
+            # 从target_info中提取目标频道名称
+            target_channel = self._extract_channel_name_from_info(target_info)
+            
+            # 查找并更新对应的状态表格行
+            self._increment_forwarded_count_for_target(target_channel, 1)
+            
+            logger.debug(f"处理单条消息转发事件: {message_id}, target={target_channel}")
+            
+        except Exception as e:
+            logger.error(f"处理单条消息转发事件失败: {e}")
+    
+    def _extract_channel_name_from_info(self, target_info):
+        """从目标频道信息中提取频道名称
+        
+        Args:
+            target_info: 目标频道信息字符串
+            
+        Returns:
+            str: 频道名称
+        """
+        try:
+            # target_info可能的格式：
+            # "频道名 (ID: -1002382449514)"
+            # "@channel_username"
+            # "频道名"
+            
+            if target_info.startswith('@'):
+                # 如果以@开头，直接返回
+                return target_info
+            elif ' (ID: ' in target_info:
+                # 如果包含ID信息，提取频道名部分
+                return target_info.split(' (ID: ')[0]
+            else:
+                # 其他情况直接返回
+                return target_info
+                
+        except Exception as e:
+            logger.error(f"提取频道名称时出错: {e}")
+            return target_info
+    
+    def _increment_forwarded_count_for_target(self, target_channel, increment=1):
+        """为指定目标频道增加已转发消息数
+        
+        Args:
+            target_channel: 目标频道名称（显示名称）
+            increment: 增加的数量，默认为1
+        """
+        try:
+            # 方法1: 首先尝试通过频道ID精确匹配
+            target_channel_id = None
+            
+            # 从转发日志中提取频道ID（如果target_channel包含ID信息）
+            if "ID: " in target_channel:
+                try:
+                    import re
+                    match = re.search(r'ID: (-?\d+)', target_channel)
+                    if match:
+                        target_channel_id = int(match.group(1))
+                except Exception as e:
+                    logger.debug(f"从target_channel提取ID失败: {e}")
+            
+            # 如果有频道ID映射，尝试使用
+            if target_channel_id and hasattr(self, 'channel_id_to_table_row'):
+                if target_channel_id in self.channel_id_to_table_row:
+                    row = self.channel_id_to_table_row[target_channel_id]
+                    logger.debug(f"✅ 通过频道ID {target_channel_id} 匹配到行 {row}")
+                    
+                    # 获取源频道和目标频道标识符
+                    source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                    target_channel_identifier = self.status_table.item(row, 1).text() if self.status_table.item(row, 1) else ""
+                    
+                    # 增加计数并更新UI
+                    self._update_count_and_ui(source_channel, target_channel_identifier, row, increment)
+                    return
+            
+            # 方法2: 尝试通过频道resolver反向查找频道ID
+            matched_row = None
+            if hasattr(self, 'forwarder') and self.forwarder and hasattr(self.forwarder, 'channel_resolver'):
+                for row in range(self.status_table.rowCount()):
+                    target_item = self.status_table.item(row, 1)
+                    if target_item:
+                        channel_identifier = target_item.text()
+                        try:
+                            # 这是一个同步调用，我们需要小心处理
+                            # 暂时使用原有的名称匹配逻辑
+                            pass
+                        except:
+                            pass
+            
+            # 方法3: 智能名称匹配（原有逻辑）
+            for row in range(self.status_table.rowCount()):
+                if (self.status_table.item(row, 1) and 
+                    self.status_table.item(row, 1).text() == target_channel):
+                    
+                    source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                    target_channel_identifier = target_channel
+                    
+                    self._update_count_and_ui(source_channel, target_channel_identifier, row, increment)
+                    return
+            
+            # 方法4: 模糊匹配策略
+            logger.debug(f"尝试模糊匹配目标频道: '{target_channel}'")
+            
+            for row in range(self.status_table.rowCount()):
+                target_item = self.status_table.item(row, 1)
+                if not target_item:
+                    continue
+                
+                table_channel = target_item.text()
+                
+                # 策略1: 移除@符号后匹配
+                table_clean = table_channel.lstrip('@')
+                target_clean = target_channel.lstrip('@')
+                
+                if table_clean == target_clean:
+                    logger.debug(f"✅ 通过移除@符号匹配成功: {table_channel} ↔ {target_channel}")
+                    source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                    self._update_count_and_ui(source_channel, table_channel, row, increment)
+                    return
+                
+                # 策略2: 包含关系匹配
+                if table_clean in target_clean or target_clean in table_clean:
+                    logger.debug(f"✅ 通过包含关系匹配成功: {table_channel} ↔ {target_channel}")
+                    source_channel = self.status_table.item(row, 0).text() if self.status_table.item(row, 0) else ""
+                    self._update_count_and_ui(source_channel, table_channel, row, increment)
+                    return
+            
+            # 所有匹配策略都失败
+            logger.warning(f"未找到目标频道的状态表格行: {target_channel}")
+            logger.debug("当前状态表格中的目标频道:")
+            for row in range(self.status_table.rowCount()):
+                if self.status_table.item(row, 1):
+                    logger.debug(f"  行{row}: '{self.status_table.item(row, 1).text()}'")
+            logger.debug(f"尝试匹配的目标频道: '{target_channel}'")
+            
+        except Exception as e:
+            logger.error(f"增加转发计数时发生错误: {e}")
+
+    def _connect_app_signals(self):
+        """连接应用级别的信号到UI更新"""
+        try:
+            # 获取应用实例
+            app = None
+            if hasattr(self.forwarder, 'app') and self.forwarder.app:
+                app = self.forwarder.app
+            elif hasattr(self, 'parent') and self.parent() and hasattr(self.parent(), 'app'):
+                app = self.parent().app
+            
+            if not app:
+                logger.warning("无法获取应用实例，无法连接应用级别的信号")
+                return
+                
+            # 连接应用的转发信号到UI处理方法
+            if hasattr(app, 'message_forwarded'):
+                app.message_forwarded.connect(self._on_message_forwarded)
+                logger.debug("已连接应用的message_forwarded信号")
+                
+            if hasattr(app, 'media_group_forwarded'):
+                app.media_group_forwarded.connect(self._on_media_group_forwarded)
+                logger.debug("已连接应用的media_group_forwarded信号")
+                
+            logger.debug("应用级别信号连接成功")
+            
+        except Exception as e:
+            logger.error(f"连接应用级别信号时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}")
+
+    def _update_count_and_ui(self, source_channel, target_channel, row, increment):
+        """更新计数和UI显示"""
+        try:
+            # 获取当前计数
+            key = (source_channel, target_channel)
+            current_count = self.status_table_data.get(key, {}).get('forwarded', 0)
+            total_count = self.status_table_data.get(key, {}).get('total', 0)
+            
+            # 增加计数
+            new_count = current_count + increment
+            
+            # 更新数据
+            if key in self.status_table_data:
+                self.status_table_data[key]['forwarded'] = new_count
+            
+            # 更新UI显示
+            count_text = f"{new_count}/{total_count}" if total_count > 0 else f"{new_count}/--"
+            if self.status_table.item(row, 2):
+                self.status_table.item(row, 2).setText(count_text)
+            
+            logger.debug(f"✅ 已更新转发计数: {target_channel} +{increment} -> {new_count}")
+            
+        except Exception as e:
+            logger.error(f"更新计数和UI时发生错误: {e}")

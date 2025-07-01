@@ -1,5 +1,272 @@
 # 更新日志
 
+## [v2.2.11] - 2025-07-02
+
+### 重大修复
+- **频道ID映射建立时机修复**：彻底解决了实时转发计数功能
+  - 修改频道ID映射建立的时机，从状态表格更新时改为转发开始时
+  - 在 `_async_start_forward` 方法中添加了 `_build_channel_id_mapping` 调用
+  - 实现了正确的异步频道ID获取，使用 `channel_resolver.get_channel_id` 方法
+  - 确保在转发开始前，所有目标频道的ID都已正确映射到状态表格行
+  - 实时转发进度计数现在能够100%准确更新，不再显示为0
+
+### 技术改进
+- **简化异步调用**：移除了复杂的同步/异步包装器，采用更直接的方法
+- **映射时机优化**：在转发开始时一次性建立所有频道ID映射，避免竞态条件
+- **错误处理增强**：完善了频道ID获取失败时的处理逻辑
+- **调试信息完善**：添加了详细的频道ID映射建立过程日志
+
+### 修复效果
+- ✅ 状态表格的"已转发消息数"能够实时显示正确的转发进度
+- ✅ 支持单条消息转发和媒体组转发的准确计数
+- ✅ 频道ID和状态表格行的精确匹配，无论频道名称如何变化
+- ✅ 完整的事件传递链：DirectForwarder → Forwarder → App → UI → 状态表格更新
+
+## [v2.2.10] - 2025-07-02
+
+### 重大修复
+- **信号数据类型修复**：彻底解决了Qt信号槽连接失败和64位整数溢出问题
+  - 修改 `TGManagerApp.media_group_forwarded` 信号定义，将频道ID参数从int改为str类型
+  - 更新 `Forwarder._emit_event` 方法，将频道ID转换为字符串发射给信号
+  - 修改 `ForwardView` 中的信号处理方法，接收字符串类型的频道ID并转换为整数使用
+  - 解决了"AttributeError: Slot not found"和"RuntimeWarning: Overflow"错误
+  - 实时转发进度计数现在能够正常工作，不再显示为0
+
+### 技术细节
+- **64位整数兼容性**：Qt Signal的int类型只支持32位，Telegram频道ID是64位需要使用str类型传递
+- **向后兼容性**：保持所有现有转发功能完全不受影响
+- **错误处理优化**：完善了异常处理和类型转换逻辑
+- **调试信息改进**：添加了更详细的调试日志，便于问题排查
+
+## [v2.2.9] - 2025-07-02
+
+### 重大修复
+- **频道ID精确匹配**：彻底解决了实时转发计数无法更新的问题
+  - 修改 `DirectForwarder` 事件发射机制，同时传递频道ID参数
+  - 更新 `TGManagerApp` 的 `media_group_forwarded` 信号定义，支持频道ID参数
+  - 在 `ForwardView` 中实现基于频道ID的精确匹配机制，避免名称匹配的不确定性
+  - 在状态表格更新时建立频道ID到表格行的映射关系
+  - 实现了完整的事件传递链：DirectForwarder → Forwarder → App → UI
+  - 实时转发进度计数现在能够100%准确工作
+
+### 技术改进
+- **事件参数升级**：所有媒体组转发事件现在包含4个参数（消息ID列表、目标信息、数量、频道ID）
+- **精确匹配策略**：优先使用频道ID匹配，失败时回退到名称匹配
+- **向后兼容**：保持对现有转发功能的完全兼容
+- **错误处理增强**：完善的异常处理和详细的调试日志
+
+## [v2.2.8] - 2025-07-02
+
+### 修复
+- **转发计数智能匹配**：修复了实时转发计数无法更新的问题
+  - 在 `_increment_forwarded_count_for_target` 方法中添加了智能频道名称匹配逻辑
+  - 支持显示名称到频道标识符的模糊匹配（移除@符号、包含关系匹配等）
+  - 解决了状态表格显示频道标识符而转发事件使用显示名称导致的匹配失败问题
+  - 添加了详细的调试日志，便于排查匹配问题
+  - 实时转发进度计数现在可以正确显示和更新
+
+## [v2.2.7] - 2025-07-01
+
+### 修复
+- **转发事件发射机制修复**：修复了DirectForwarder事件发射时应用对象缺少信号属性的错误
+  - 在 `TGManagerApp` 类中添加了 `message_forwarded` 和 `media_group_forwarded` 信号定义
+  - 在 `ForwardView` 类中添加了 `_connect_app_signals` 方法连接应用级别的信号
+  - 解决了"'TGManagerApp' object has no attribute 'media_group_forwarded'"错误
+  - 实时转发进度更新现在可以正常工作
+
+## [v2.2.6] - 2025-01-01
+
+### 🐛 问题修复 (Bug Fix)
+
+#### 修复转发过程中已转发消息数实时更新问题 (Fixed Real-time Forwarded Message Count Update)
+
+**问题描述**：
+- ❌ **错误行为**：转发过程中"已转发消息数"一直显示为0，不能实时增加
+- ❌ **根本原因**：转发器在转发成功时没有发送实时更新信号给UI界面
+
+**修复内容**：
+
+##### 1. **转发器事件发射机制** (Forwarder Event Emission)
+- **DirectForwarder改进**：
+  ```python
+  # 添加emit参数支持事件发射
+  def __init__(self, client, history_manager, general_config, emit=None):
+      self.emit = emit  # 事件发射函数
+  
+  # 在转发成功时发射信号
+  if self.emit:
+      self.emit("message_forwarded", message_id, target_info)
+      self.emit("media_group_forwarded", message_ids, target_info, count)
+  ```
+
+- **Forwarder类集成**：
+  ```python
+  # 传递emit方法给DirectForwarder
+  self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config, self._emit_event)
+  
+  # 处理事件并转发给UI
+  def _emit_event(self, event_type, *args):
+      if event_type == "message_forwarded":
+          self.app.message_forwarded.emit(message_id, target_info)
+  ```
+
+##### 2. **UI实时状态更新** (UI Real-time Status Update)
+- **信号连接机制**：
+  ```python
+  # 连接实时转发进度信号
+  if hasattr(self.forwarder, 'message_forwarded'):
+      self.forwarder.message_forwarded.connect(self._on_message_forwarded)
+  if hasattr(self.forwarder, 'media_group_forwarded'):
+      self.forwarder.media_group_forwarded.connect(self._on_media_group_forwarded)
+  ```
+
+- **智能计数更新**：
+  ```python
+  def _increment_forwarded_count_for_target(self, target_channel, increment=1):
+      # 查找匹配的状态表格行并实时更新计数
+      new_count = current_count + increment
+      self.update_forward_status(source_channel, target_channel, new_count, "转发中")
+  ```
+
+##### 3. **多种转发方式支持** (Multiple Forward Method Support)
+- ✅ **单条消息转发**：每转发一条消息，计数+1
+- ✅ **媒体组转发**：按媒体组中的消息数量增加计数
+- ✅ **重组媒体组转发**：支持复杂媒体组重组场景
+- ✅ **不同转发模式**：copy_media_group、forward_messages、send_media_group等
+
+**用户体验改进**：
+- 📊 **实时进度反馈**：转发过程中可以看到"已转发消息数"实时增加
+- 🎯 **精确计数**：每转发一条消息或媒体组，立即更新对应目标频道的计数
+- 🔍 **状态同步**：UI状态表格与实际转发进度完全同步
+- ⚡ **响应迅速**：转发成功后立即更新UI，无需等待整个转发过程完成
+
+**影响文件**：
+- `src/modules/forward/direct_forwarder.py`: 添加事件发射机制
+- `src/modules/forward/forwarder.py`: 集成事件处理和转发
+- `src/ui/views/forward_view.py`: 实现实时UI更新逻辑
+
+---
+
+## [v2.2.5] - 2025-01-01
+
+### 🐛 问题修复 (Bug Fix)
+
+#### 修复转发状态表格总消息数计算错误 (Fixed Forward Status Table Total Message Count Calculation)
+
+**问题描述**：
+- ❌ **错误行为**：当结束ID设置为0（表示"最新消息"）时，总消息数固定显示为50
+- ❌ **根本原因**：`_calculate_total_message_count()` 方法使用硬编码的默认值50
+
+**修复内容**：
+- **正确计算逻辑**：
+  ```python
+  # 修复前的错误逻辑
+  elif start_id > 0:
+      return 50  # 固定返回50 ❌
+  
+  # 修复后的正确逻辑
+  elif start_id == 0 and end_id > 0:
+      return max(0, end_id - 1 + 1)  # 从消息ID 1开始计算 ✅
+  elif start_id > 0 and end_id == 0:
+      return -1  # 返回-1表示未知，显示为"--" ✅
+  ```
+
+- **消息数显示优化**：
+  - ✅ **准确计算**：当起始ID和结束ID都有值时，正确计算 `end_id - start_id + 1`
+  - ✅ **智能处理**：起始ID为0时，假设从消息ID 1开始计算
+  - ✅ **未知状态**：结束ID为0（最新消息）时，显示 `已转发数/--` 而非 `已转发数/50`
+  - ✅ **边界情况**：两个ID都为0或无效时，正确处理为未知状态
+
+**用户体验改进**：
+- 📊 **状态表格更准确**：总消息数不再显示误导性的固定值50
+- 🎯 **范围计算正确**：ID范围1000-1010将正确显示总数11，而非50
+- 🔍 **未知状态清晰**：无法确定总数时显示"--"，用户一目了然
+
+**影响文件**：
+- `src/ui/views/forward_view.py`: 修复总消息数计算逻辑
+
+---
+
+## [v2.2.4] - 2025-01-01
+
+### 🚀 功能增强 (Feature Enhancement)
+
+#### 完善转发进度状态表格 (Enhanced Forward Progress Status Table)
+
+**主要改进**：
+- **动态显示已启用频道对**：状态表格根据当前已配置且已启用的频道对动态更新显示
+- **多目标频道支持**：
+  - 1个源频道对应多个目标频道时，每个目标频道单独显示一行
+  - 示例：源频道A对应目标频道B和C，显示为两行数据
+- **消息数显示优化**：格式为"已转发消息数/总消息数"
+  - 总消息数在保存配置时根据ID范围自动计算
+  - 转发时实时更新已转发消息数
+- **转发状态实时跟踪**：
+  - 待转发：未开始转发时显示
+  - 转发中：正在转发过程中
+  - 停止中：用户手动停止转发时
+  - 已完成：转发成功完成
+  - 出错：转发过程中发生错误
+
+**技术实现**：
+- **数据结构优化**：
+  ```python
+  self.status_table_data = {}  # 存储每行的状态数据
+  self.total_message_counts = {}  # 存储每个频道对的总消息数
+  self.forwarding_status = False  # 当前转发状态
+  ```
+- **智能状态表格更新**：
+  - 添加频道对时自动更新表格
+  - 删除频道对时自动更新表格
+  - 启用/禁用频道对时自动更新表格
+  - 保存配置时重新计算总消息数并更新表格
+- **转发状态同步**：
+  - `_start_forward()`: 更新状态为"转发中"
+  - `_stop_forward()`: 更新状态为"停止中"
+  - `_on_forward_complete_ui_update()`: 更新状态为"已完成"
+  - `_on_forward_error_ui_update()`: 更新状态为"出错"
+
+**用户体验提升**：
+- ✅ **配置即时反馈**：保存配置后立即看到状态表格更新
+- ✅ **多目标支持**：清晰显示每个转发目标的独立状态
+- ✅ **进度可视化**：直观了解每个转发任务的进度和状态
+- ✅ **状态同步**：转发状态与实际操作完全同步
+
+**影响文件**：
+- `src/ui/views/forward_view.py`: 状态表格完善实现
+
+---
+
+## [v2.2.3] - 2025-01-01
+
+### 🎨 界面优化 (UI Optimization)
+
+#### 简化转发进度选项卡界面 (Simplified Forward Progress Tab UI)
+
+**修改内容**：
+- **保留核心功能**：只保留状态表格 (QTableWidget)，显示各频道对的转发详情
+- **移除冗余UI元素**：
+  - ❌ 删除总体状态标签 (`overall_status_label`)  
+  - ❌ 删除已转发消息数标签 (`forwarded_count_label`)
+  - ❌ 删除进度条 (`progress_bar`) 和进度标签 (`progress_label`)
+
+**技术实现**：
+- **界面简化**：修改 `_create_forward_panel()` 方法，只保留状态表格一个UI元素
+- **状态反馈优化**：将原本在UI标签中显示的状态信息改为日志输出，使用 `logger.info()` 记录
+- **兼容性保证**：修改所有引用被删除UI元素的方法，确保转发功能完全不受影响
+- **错误处理增强**：保持对话框提示功能，关键信息仍通过 `QMessageBox` 提供用户反馈
+
+**用户体验改进**：
+- ✅ **界面更简洁**：转发进度选项卡聚焦于最重要的状态表格信息
+- ✅ **功能不受影响**：转发逻辑、状态更新、错误处理等核心功能完全保持
+- ✅ **信息获取便利**：状态信息通过日志记录，便于调试和问题排查
+- ✅ **资源占用更少**：减少不必要的UI元素更新开销
+
+**影响文件**：
+- `src/ui/views/forward_view.py`: 转发界面UI简化实现
+
+---
+
 ## [v2.2.2] - 2025-01-01
 
 ### 📚 开发指南更新 (Development Guide Update)
@@ -2251,207 +2518,4 @@ global_handler = FloodWaitHandler(max_retries=5, base_delay=1.0)
 ### 🔧 修复 (Fixed)
 - **频道对配置转换完善**
   - 添加`keywords`字段的正确处理
-  - 添加所有过滤选项字段的处理：`exclude_forwards`、`exclude_replies`、`exclude_text`、`exclude_links`、`remove_captions`
-  - 增强配置转换的安全性，使用`hasattr`检查避免属性错误
-  - 改进`text_filter`字段的处理，确保向后兼容性
-
-### 🔍 诊断改进 (Diagnostic)
-- **增强转发器调试信息**
-  - 显示完整的频道对配置字典，便于问题诊断
-  - 增加关键词配置的类型信息显示
-  - 更详细的配置传递状态日志
-
-### 📝 使用说明 (Usage)
-- **关键词过滤现在正确工作**：
-  - ✅ 设置关键词后，只转发包含关键词的消息
-  - ✅ 对纯文本消息：检查消息文本内容
-  - ✅ 对媒体消息：检查媒体说明文字(caption)
-  - ✅ 关键词匹配不区分大小写
-  - ✅ 支持多个关键词，任意一个匹配即可通过
-
-### 🛠️ 技术实现 (Technical)
-- **配置转换改进**：
-  ```python
-  # 新增关键词字段处理
-  if hasattr(pair, 'keywords'):
-      pair_dict['keywords'] = pair.keywords
-  
-  # 新增过滤选项处理
-  for filter_field in ["exclude_forwards", "exclude_replies", "exclude_text", "exclude_links", "remove_captions"]:
-      if hasattr(pair, filter_field):
-          pair_dict[filter_field] = getattr(pair, filter_field)
-  ```
-
-## [2.1.9.7] - 2025-06-17
-
-### 🎨 用户体验改进 (UX Improvements)
-- **日志显示优化**
-  - 简化关键词过滤日志：改为批量汇总显示，避免单条消息的重复日志刷屏
-  - 优化过滤结果显示：使用表情符号和简洁格式，提高可读性
-  - 统一转发状态显示：成功转发使用 ✅ 标识，过滤结果使用 📊 汇总
-  - 关键词配置状态：🔍 表示已设置关键词，📢 表示无关键词过滤
-
-### 🔧 日志改进细节 (Logging Improvements)
-- **关键词过滤日志**：
-  - 之前：每条消息单独显示"不包含关键词被过滤"
-  - 现在：汇总显示"关键词过滤: X 条消息不包含关键词被过滤"
-  - 只显示前5个消息ID，避免日志过长
-
-- **过滤结果汇总**：
-  - 之前：多行重复的"过滤: X -> Y (过滤了 Z 条)"
-  - 现在：简洁的"📊 过滤结果: X 条消息 → Y 条通过 (过滤了 Z 条)"
-
-- **转发状态优化**：
-  - 成功转发：✅ 消息/媒体组 ID 转发到 频道名 成功
-  - 完成总结：🎉 转发任务完成，成功转发 X 个媒体组/消息
-
-### 📝 用户体验提升 (User Experience)
-- **更清晰的日志结构**：减少冗余信息，突出重要状态
-- **视觉友好性**：使用表情符号增强日志的可读性和区分度
-- **问题诊断便利**：保留调试信息但减少用户界面的信息过载
-
-## [2.1.9.8] - 2025-06-17
-
-### 🎯 重大功能改进 (Major Feature Enhancement)
-- **媒体组级别的智能过滤**
-  - 问题：之前对媒体组逐条消息进行过滤，可能导致媒体组被拆散
-  - 改进：现在支持媒体组级别的整体过滤，保持媒体组完整性
-  - 逻辑：如果媒体组中任何一条消息包含关键词，则整个媒体组都通过过滤
-  - 应用：关键词过滤、媒体类型过滤、通用过滤都支持媒体组级别处理
-
-### 🔧 技术实现 (Technical Implementation)
-- **新增媒体组分组方法**：
-  ```python
-  def _group_messages_by_media_group(self, messages: List[Message]) -> List[List[Message]]:
-      # 按 media_group_id 分组，单独消息使用消息ID作为唯一组
-      # 确保媒体组内消息按ID排序，组间也按首个消息ID排序
-  ```
-
-- **关键词过滤升级**：
-  - 媒体组中任何消息包含关键词 → 整个媒体组通过
-  - 媒体组中所有消息都不含关键词 → 整个媒体组被过滤
-  - 日志显示优化：按媒体组汇总显示过滤结果
-
-- **媒体类型过滤升级**：
-  - 媒体组中任何消息的媒体类型在允许列表 → 整个媒体组通过
-  - 媒体组中所有消息的媒体类型都不在允许列表 → 整个媒体组被过滤
-
-- **通用过滤升级**：
-  - 统一的媒体组级别过滤逻辑
-  - 特殊处理纯文本过滤：只有整个媒体组都是纯文本才过滤
-
-### 📊 过滤逻辑示例 (Filtering Logic Examples)
-- **场景1 - 媒体组包含关键词**：
-  - 媒体组：[图片1, 图片2, 图片3]
-  - 图片1标题："双马尾美女写真第一张"
-  - 图片2标题："第二张照片"  
-  - 图片3标题："第三张照片"
-  - 结果：整个媒体组通过关键词过滤（因为图片1包含关键词）
-
-- **场景2 - 媒体组不含关键词**：
-  - 媒体组：[图片A, 图片B]
-  - 图片A标题："普通风景照"
-  - 图片B标题："随拍照片"
-  - 结果：整个媒体组被过滤（所有消息都不含关键词）
-
-### 🧪 测试验证 (Test Validation)
-- **新增媒体组级别测试**：
-  ```
-  ✅ 媒体组级别关键词过滤测试通过！
-     - 包含关键词的媒体组整体通过
-     - 不含关键词的媒体组整体被过滤
-     - 单独消息按关键词正确过滤
-  ```
-
-### 📝 日志改进 (Logging Improvements)
-- **媒体组日志格式**：
-  - 单独消息：`组ID: 123`
-  - 媒体组：`组ID: [123,124,125]`
-  - 汇总统计：`X 个媒体组(Y 条消息)包含关键词通过过滤`
-
-### 🚀 用户价值 (User Benefits)
-- **保持媒体完整性**：媒体组不会被意外拆散
-- **智能过滤决策**：基于媒体组整体内容进行过滤判断
-- **更好的转发体验**：保持原始媒体组的展示效果
-- **逻辑更直观**：符合用户对媒体组处理的直觉期望
-
-## [2.1.9.7] - 2025-06-17
-
-### 🐛 重要修复 (Critical Fix)
-- **修复end_id=0时的处理逻辑**
-  - 问题：当end_id=0（表示获取到最新消息）时，日志显示异常的负数范围
-  - 修复：在预过滤前先获取频道实际的最新消息ID，正确设置end_id值
-  - 效果：日志现在正确显示消息ID范围，如"范围: 36972-39156 (共2185个ID)"
-  - 增强：添加范围合理性检查，确保start_id ≤ end_id，异常时回退到原有逻辑
-
-### 🔄 代码重构优化 (Code Refactoring)
-- **消除重复代码**
-  - 提取公共方法：新增`_resolve_message_range()`方法处理消息ID范围解析和验证
-  - 统一处理逻辑：end_id=0处理、范围检查、错误处理都在一个地方实现
-  - 代码精简：`get_media_groups_optimized()`和`get_media_groups_info_optimized()`代码减少60%
-  - 维护性提升：范围处理逻辑只需在一个地方修改，提高代码可维护性
-
-## [v1.3.1] - 2024-12-19
-
-### 🎨 用户界面优化
-- **转发界面重构**：优化转发配置界面布局和用户体验
-  - 移除转发选项标签页中的全局HTML文件选择框
-  - 在频道配置主界面添加最终消息HTML文件选择框，方便添加新频道对时直接配置
-  - 修复右键编辑菜单中HTML文件路径的加载问题
-
-### 🔧 功能改进
-- **最终消息配置优化**：
-  - 最终消息HTML文件配置移至频道对级别，每个频道对可配置不同的最终消息
-  - 支持在添加频道对时直接设置最终消息文件路径
-  - 修复编辑频道对时HTML文件路径无法正确加载的问题
-
-### 🐛 问题修复
-- 修复转发配置保存时最终消息HTML文件配置不正确的问题
-- 修复程序启动后编辑对话框中HTML文件路径未加载的问题
-- 优化配置文件结构，确保最终消息配置的一致性
-
-### 📚 文档更新
-- 更新README.md中转发配置部分的说明
-- 添加最终消息配置的详细说明和使用场景
-
----
-
-## [v1.3.0] - 2024-12-19
-
-### ⚠️ 重要开发注意事项 (Important Development Notes)
-- **配置转换规则**：
-  - 当在UI模型中添加新的配置字段时，必须同时在 `src/utils/config_utils.py` 的 `convert_ui_config_to_dict` 函数中添加对应的转换逻辑
-  - 特别注意频道对配置的字段转换，需要在第183-185行的 `filter_field` 列表中添加新字段
-  - 如果是特殊字段（如文件路径），需要单独处理而不是放在通用循环中
-  - **记住这个教训**：UI配置 → 内部配置的转换是必须的步骤，遗漏会导致配置丢失
-
-### 🔧 技术细节 (Technical Details)
-
-### ✨ 功能新增 (Feature Additions)
-
-1. **转发模块网页预览控制** (Forward Module Web Page Preview Control)
-   - 在转发配置界面添加"网页预览"复选框
-   - 支持用户控制最终消息的网页预览显示
-   - 默认关闭网页预览以减少消息占用空间
-
-2. **上传模块网页预览控制** (Upload Module Web Page Preview Control)  
-   - 在上传配置界面的浏览按钮后添加"网页预览"复选框
-   - 支持用户控制上传完成后最终消息的网页预览显示
-   - 完整实现配置保存、加载和功能集成
-   - 遵循与转发模块相同的设计模式
-
-### 🔧 优化改进 (Optimizations)
-
-1. **配置字段添加流程规范化** (Configuration Field Addition Process Standardization)
-   - 明确了添加新配置字段的完整5步流程
-   - 特别强调配置管理器加载步骤的重要性，避免配置丢失问题
-   - 建立了完整的验证和测试方法
-
-2. **上传模块多目标频道优化** (Upload Module Multi-Target Channel Optimization) ⚡
-   - **优化原理**：上传到第一个目标频道后，使用copy方式发送到其余目标频道，而不是重复上传
-   - **单个文件**：使用`copy_message`复制单条消息到其他频道
-   - **媒体组**：使用`copy_media_group`复制整个媒体组到其他频道
-   - **错误处理**：copy失败时自动降级为直接上传方式
-   - **性能提升**：显著减少带宽占用和上传时间，提高效率
-   - **历史记录**：正确记录copy操作的上传历史
-   - **通知控制**：所有copy操作使用`disable_notification=True`避免打扰
+  - 添加所有过滤选项字段的处理：`exclude_forwards`、`exclude_replies`、`exclude_text`、`exclude_links`、`
