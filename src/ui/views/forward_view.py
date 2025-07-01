@@ -272,6 +272,12 @@ class ForwardView(QWidget):
         self.main_browse_html_button.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
         html_file_layout.addWidget(self.main_browse_html_button)
         
+        # 添加网页预览复选框
+        self.main_enable_web_page_preview_check = QCheckBox("网页预览")
+        self.main_enable_web_page_preview_check.setChecked(False)  # 默认不启用网页预览
+        self.main_enable_web_page_preview_check.setEnabled(True)  # 初始状态启用
+        html_file_layout.addWidget(self.main_enable_web_page_preview_check)
+        
         html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
         config_layout.addLayout(html_file_form_layout)
         
@@ -547,6 +553,7 @@ class ForwardView(QWidget):
                 'hide_author': self.hide_author_check.isChecked(),
                 'send_final_message': self.send_final_message_check.isChecked(),
                 'final_message_html_file': self.main_final_message_html_file.text().strip(),
+                'enable_web_page_preview': self.main_enable_web_page_preview_check.isChecked(),
                 'text_filter': text_filter,
                 'keywords': keywords,
                 'exclude_links': self.exclude_links_check.isChecked()
@@ -970,6 +977,7 @@ class ForwardView(QWidget):
                     hide_author=self.hide_author_check.isChecked(),
                     send_final_message=self.send_final_message_check.isChecked(),
                     final_message_html_file=self.main_final_message_html_file.text().strip(),
+                    enable_web_page_preview=self.main_enable_web_page_preview_check.isChecked(),  # 添加网页预览字段
                     # 添加text_filter和keywords字段
                     text_filter=[{"original_text": "", "target_text": ""}],
                     keywords=[],
@@ -991,6 +999,7 @@ class ForwardView(QWidget):
                         hide_author=pair.get('hide_author', False),
                         send_final_message=pair.get('send_final_message', False),
                         final_message_html_file=pair.get('final_message_html_file', ''),
+                        enable_web_page_preview=pair.get('enable_web_page_preview', False),  # 添加网页预览字段
                         # 添加text_filter和keywords字段
                         text_filter=pair.get('text_filter', [{"original_text": "", "target_text": ""}]),
                         keywords=pair.get('keywords', []),
@@ -1126,6 +1135,7 @@ class ForwardView(QWidget):
             text_filter = pair.get('text_filter', [])
             keywords = pair.get('keywords', [])
             final_message_html_file = pair.get('final_message_html_file', '')
+            enable_web_page_preview = pair.get('enable_web_page_preview', False)
             
             if source_channel and target_channels:
                 # 保存第一个频道对的ID设置和exclude_links状态，用于设置默认值
@@ -1146,6 +1156,7 @@ class ForwardView(QWidget):
                     'hide_author': hide_author,
                     'send_final_message': send_final_message,
                     'final_message_html_file': final_message_html_file,
+                    'enable_web_page_preview': enable_web_page_preview,
                     'text_filter': text_filter,
                     'keywords': keywords,
                     'exclude_links': exclude_links
@@ -1574,6 +1585,7 @@ class ForwardView(QWidget):
         hide_author_value = to_bool(channel_pair.get('hide_author', False))
         send_final_message_value = to_bool(channel_pair.get('send_final_message', False))
         exclude_links_value = to_bool(channel_pair.get('exclude_links', False))
+        enable_web_page_preview_value = to_bool(channel_pair.get('enable_web_page_preview', False))
         
         remove_captions_check = QCheckBox("移除媒体说明")
         remove_captions_check.setChecked(remove_captions_value)
@@ -1608,6 +1620,11 @@ class ForwardView(QWidget):
         html_file_browse_btn = QPushButton("浏览")
         html_file_browse_btn.setMaximumWidth(60)
         html_file_layout.addWidget(html_file_browse_btn)
+        
+        # 添加网页预览复选框
+        enable_web_page_preview_check = QCheckBox("网页预览")
+        enable_web_page_preview_check.setChecked(enable_web_page_preview_value)  # 使用转换后的布尔值
+        html_file_layout.addWidget(enable_web_page_preview_check)
         
         html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
         dialog_layout.addLayout(html_file_form_layout)
@@ -1736,6 +1753,7 @@ class ForwardView(QWidget):
                     'hide_author': hide_author_check.isChecked(),
                     'send_final_message': send_final_message_check.isChecked(),
                     'final_message_html_file': html_file_input.text().strip(),
+                    'enable_web_page_preview': enable_web_page_preview_check.isChecked(),
                     'text_filter': text_filter,
                     'keywords': keywords,
                     'exclude_links': exclude_links_check.isChecked()

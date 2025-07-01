@@ -1175,7 +1175,7 @@ class Uploader():
                                 chat_id=target_id,
                                 text=html_content,
                                 parse_mode=enums.ParseMode.HTML,
-                                disable_web_page_preview=False  # 允许链接预览
+                                disable_web_page_preview=True  # 禁用链接预览
                             )
                             
                             logger.info(f"最终消息发送成功，消息ID: {message.id}")

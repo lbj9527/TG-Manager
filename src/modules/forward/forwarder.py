@@ -540,7 +540,7 @@ class Forwarder():
                             chat_id=target_id,
                             text=html_content,
                             parse_mode=enums.ParseMode.HTML,
-                            disable_web_page_preview=False  # 允许网页预览
+                            disable_web_page_preview=not pair.get('enable_web_page_preview', False)  # 根据配置控制网页预览
                         )
                         
                         _logger.info(f"✅ 最终消息发送成功! 目标: {target_info_str}, 消息ID: {message.id}")

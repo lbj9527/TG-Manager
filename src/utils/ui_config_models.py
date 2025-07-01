@@ -100,6 +100,7 @@ class UIChannelPair(BaseModel):
     hide_author: bool = Field(False, description="是否隐藏原作者")
     send_final_message: bool = Field(False, description="是否在转发完成后发送最后一条消息")
     final_message_html_file: str = Field("", description="最后一条消息的HTML文件路径")
+    enable_web_page_preview: bool = Field(False, description="是否启用最终消息的网页预览")
     # 新增字段：文本替换规则和关键词过滤
     text_filter: List[Dict[str, str]] = Field(
         default_factory=lambda: [{"original_text": "", "target_text": ""}],

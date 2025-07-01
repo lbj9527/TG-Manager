@@ -265,7 +265,9 @@ class UIConfigManager:
                             "send_final_message": pair.get("send_final_message", False),
                             "exclude_links": pair.get("exclude_links", False),  # 添加exclude_links字段处理
                             # 添加最终消息HTML文件路径字段
-                            "final_message_html_file": pair.get("final_message_html_file", "")
+                            "final_message_html_file": pair.get("final_message_html_file", ""),
+                            # 添加网页预览字段处理
+                            "enable_web_page_preview": pair.get("enable_web_page_preview", False)
                         }
                         
                         # 处理文本替换规则
@@ -329,6 +331,7 @@ class UIConfigManager:
                         "hide_author": False,
                         "send_final_message": False,
                         "final_message_html_file": "",
+                        "enable_web_page_preview": False,
                         "text_filter": [{"original_text": "", "target_text": ""}],
                         "keywords": [],
                         "exclude_links": False
