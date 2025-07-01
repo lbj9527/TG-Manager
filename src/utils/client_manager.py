@@ -901,92 +901,85 @@ class ClientManager(QObject):
                 await self.reconnect_if_needed()
             return False
         
-        # 尝试发送一个简单的API请求来检查连接状态
-        try:
-            # 使用get_me()方法测试连接，但添加超时限制避免阻塞
-            # 使用asyncio.wait_for为get_me操作添加3秒超时
+        # 尝试发送一个简单的API请求来检查连接状态，添加重试机制
+        max_retries = 2
+        last_error = None
+        
+        for attempt in range(max_retries + 1):
             try:
-                me = await asyncio.wait_for(self.client.get_me(), timeout=3.0)
-            except asyncio.TimeoutError:
-                # 如果超时，视为连接已断开
-                raise ConnectionError("连接检查超时，可能是代理问题或网络不畅")
-            
-            # 连接正常
-            if not self.connection_active:
-                # 只有状态变化时才发出信号
-                self.connection_active = True
-                self.connection_status_changed.emit(True, me)
-                # 只有当状态从未连接变为已连接时，才输出日志
-                logger.info("检测到客户端已连接")
+                # 增加超时时间到10秒，给网络更多时间
+                me = await asyncio.wait_for(self.client.get_me(), timeout=10.0)
                 
-                # 重置重连计数和冷却时间
-                if hasattr(self, '_reconnect_attempts'):
-                    self._reconnect_attempts = 0
-                if hasattr(self, '_reconnect_cooldown'):
-                    self._reconnect_cooldown = 0
-            # 如果已经是连接状态，只是更新成功，不输出日志，保持静默
-            return True
-        except Exception as e:
-            # 记录错误到历史
-            self._record_error(e)
-            
-            # 连接错误，记录日志
-            error_name = type(e).__name__
-            error_detail = str(e)
-            
-            # 检查是否是数据库锁定错误
-            is_db_locked = "database is locked" in str(e).lower()
-            
-            # 检查是否是代理连接问题
-            is_proxy_error = any(keyword in str(e).lower() for keyword in ['proxy', 'sock', 'connect', 'network', 'timeout', '拒绝', 'refuse', 'reset', 'error'])
-            
-            if self.connection_active:
-                # 状态从已连接变为未连接，需要更新UI
-                # 记录所有错误类型，包括网络错误、连接错误、API错误等
-                if is_db_locked:
-                    logger.error(f"检测到会话数据库锁定: {error_name}: {error_detail}")
-                elif is_proxy_error:
-                    logger.error(f"检测到代理连接问题: {error_name}: {error_detail}")
-                else:
-                    logger.error(f"Telegram客户端连接检查失败: {error_name}: {error_detail}")
-                
-                # 发出断开连接信号
-                self.connection_active = False
-                self.connection_status_changed.emit(False, None)
-                logger.info("检测到客户端已断开连接")
-                
-                # 检查是否需要自动重连
-                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
-                    # 初始化重连尝试次数
-                    if not hasattr(self, '_reconnect_attempts'):
+                # 连接正常
+                if not self.connection_active:
+                    # 只有状态变化时才发出信号
+                    self.connection_active = True
+                    self.connection_status_changed.emit(True, me)
+                    # 只有当状态从未连接变为已连接时，才输出日志
+                    logger.info("检测到客户端已连接")
+                    
+                    # 重置重连计数和冷却时间
+                    if hasattr(self, '_reconnect_attempts'):
                         self._reconnect_attempts = 0
-                    
-                    # 增加重连尝试次数
-                    self._reconnect_attempts += 1
-                    
-                    # 根据重连次数增加冷却时间（指数退避）
-                    cooldown = min(300, 30 * (2 ** (self._reconnect_attempts - 1)))  # 最大5分钟
-                    
-                    # 记录下次可以重连的时间
-                    current_time = asyncio.get_event_loop().time()
-                    self._next_reconnect_time = current_time + cooldown
-                    
-                    logger.info(f"将在 {cooldown} 秒后尝试自动重连 (尝试次数: {self._reconnect_attempts})")
-            else:
-                # 已经是断开状态，尝试重连
-                if self.config.get('GENERAL', {}).get('auto_restart_session', True):
-                    # 避免在日志中重复报告相同的错误
-                    if not hasattr(self, '_last_error_str') or self._last_error_str != str(e):
-                        if is_db_locked:
-                            logger.error(f"会话数据库锁定，尝试重新连接: {error_detail}")
-                        elif is_proxy_error:
-                            logger.error(f"代理连接问题，尝试重新连接: {error_detail}")
-                        else:
-                            logger.error(f"客户端连接已断开，尝试重新连接: {error_detail}")
-                        # 记录当前错误，用于后续比较
-                        self._last_error_str = str(e)
-                    
-                    # 尝试重连
-                    await self.reconnect_if_needed()
+                    if hasattr(self, '_reconnect_cooldown'):
+                        self._reconnect_cooldown = 0
+                # 如果已经是连接状态，只是更新成功，不输出日志，保持静默
+                return True
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.debug(f"连接检查失败，正在重试 ({attempt + 1}/{max_retries}): {e}")
+                    await asyncio.sleep(1)  # 短暂等待后重试
+                    continue
+                else:
+                    # 所有重试都失败，跳出循环处理错误
+                    break
+        
+        # 所有重试都失败，处理连接断开
+        # 记录错误到历史
+        if last_error:
+            self._record_error(last_error)
+        
+        # 连接错误，记录日志
+        error_name = type(last_error).__name__ if last_error else "Unknown"
+        error_detail = str(last_error) if last_error else "连接检查失败"
+        
+        if self.connection_active:
+            # 状态从已连接变为未连接，需要更新UI
+            logger.error(f"客户端连接检查失败: {error_name}: {error_detail}")
             
-            return False 
+            # 发出断开连接信号
+            self.connection_active = False
+            self.connection_status_changed.emit(False, None)
+            logger.info("检测到客户端已断开连接")
+            
+            # 检查是否需要自动重连
+            if self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                # 初始化重连尝试次数
+                if not hasattr(self, '_reconnect_attempts'):
+                    self._reconnect_attempts = 0
+                
+                # 增加重连尝试次数
+                self._reconnect_attempts += 1
+                
+                # 根据重连次数增加冷却时间（指数退避）
+                cooldown = min(300, 30 * (2 ** (self._reconnect_attempts - 1)))  # 最大5分钟
+                
+                # 记录下次可以重连的时间
+                current_time = asyncio.get_event_loop().time()
+                self._next_reconnect_time = current_time + cooldown
+                
+                logger.info(f"将在 {cooldown} 秒后尝试自动重连 (尝试次数: {self._reconnect_attempts})")
+        else:
+            # 已经是断开状态，尝试重连
+            if self.config.get('GENERAL', {}).get('auto_restart_session', True):
+                # 避免在日志中重复报告相同的错误
+                if not hasattr(self, '_last_error_str') or self._last_error_str != str(last_error):
+                    logger.error(f"客户端连接已断开，尝试重新连接: {error_detail}")
+                    # 记录当前错误，用于后续比较
+                    self._last_error_str = str(last_error)
+                
+                # 尝试重连
+                await self.reconnect_if_needed()
+        
+        return False 

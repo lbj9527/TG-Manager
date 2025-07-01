@@ -116,21 +116,21 @@ class ClientHandler:
                 # 执行连接检查
                 connection_status = await self.app.client_manager.check_connection_status()
                 
-                # 根据连接状态调整检查频率
+                # 减少检查频率，避免频繁API调用
                 if connection_status:
-                    # 连接正常时，每5秒检查一次
-                    await safe_sleep(5)
+                    # 连接正常时，每30秒检查一次（从5秒增加到30秒）
+                    await safe_sleep(30)
                 else:
-                    # 连接异常时，每2秒检查一次，更快发现代理恢复
-                    await safe_sleep(2)
+                    # 连接异常时，每10秒检查一次（从2秒增加到10秒）
+                    await safe_sleep(10)
                 
             except Exception as e:
                 if isinstance(e, KeyboardInterrupt) or "cancelled" in str(e).lower():
                     logger.info("网络连接检查任务已取消")
                     break
                 logger.error(f"网络连接检查出错: {e}")
-                # 出错后减少等待时间，更快重试
-                await safe_sleep(2)
+                # 出错后也减少等待时间，避免过于频繁的重试
+                await safe_sleep(10)
                 
     async def check_connection_status_now(self):
         """立即检查网络连接状态，用于响应网络错误事件"""
