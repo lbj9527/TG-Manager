@@ -287,38 +287,43 @@ class Uploader():
                                         logger.info(f"复制消息到频道: {target_info}")
                                         
                                         # 使用copy_message复制消息
-                                        await self.client.copy_message(
+                                        copied_message = await self.client.copy_message(
                                             chat_id=target_id,
                                             from_chat_id=first_target_id,
-                                            message_id=message.id
+                                            message_id=message.id,
+                                            disable_notification=True
                                         )
                                         
-                                        logger.info(f"成功复制消息到频道: {target_info}")
-                                        total_files += 1  # 增加文件计数（每个频道算一次）
-                                        
-                                        # 记录上传历史 - 添加复制的消息记录
-                                        file_str = str(media_files[0])
-                                        file_hash = self.file_hash_cache.get(file_str)
-                                        if not file_hash:
-                                            file_hash = calculate_file_hash(media_files[0])
+                                        if copied_message:
+                                            logger.info(f"成功复制消息到频道: {target_info}")
+                                            total_files += 1  # 增加文件计数（每个频道算一次）
+                                            
+                                            # 记录上传历史 - 添加复制的消息记录
+                                            file_str = str(media_files[0])
+                                            file_hash = self.file_hash_cache.get(file_str)
+                                            if not file_hash:
+                                                file_hash = calculate_file_hash(media_files[0])
+                                                if file_hash:
+                                                    self.file_hash_cache[file_str] = file_hash
+                                            
                                             if file_hash:
-                                                self.file_hash_cache[file_str] = file_hash
-                                        
-                                        if file_hash:
-                                            target_id_str = str(target_id)
-                                            file_size = get_file_size(media_files[0])
-                                            media_type = self._get_media_type(media_files[0])
-                                            
-                                            # 添加到历史记录
-                                            self.history_manager.add_upload_record_by_hash(
-                                                file_hash=file_hash,
-                                                file_path=file_str,
-                                                target_channel=target_id_str,
-                                                file_size=file_size,
-                                                media_type=media_type
-                                            )
-                                            
-                                            logger.info(f"已记录文件 {media_files[0].name} 复制到 {target_info} 的历史记录")
+                                                target_id_str = str(target_id)
+                                                file_size = get_file_size(media_files[0])
+                                                media_type = self._get_media_type(media_files[0])
+                                                
+                                                # 添加到历史记录
+                                                self.history_manager.add_upload_record_by_hash(
+                                                    file_hash=file_hash,
+                                                    file_path=file_str,
+                                                    target_channel=target_id_str,
+                                                    file_size=file_size,
+                                                    media_type=media_type
+                                                )
+                                                
+                                                logger.info(f"已记录文件 {media_files[0].name} 复制到 {target_info} 的历史记录")
+                                        else:
+                                            logger.warning(f"复制消息到 {target_info} 返回空结果")
+                                            raise Exception("复制消息返回空结果")
                                     
                                     except Exception as e:
                                         logger.error(f"复制消息到频道 {target_info} 失败: {e}")
@@ -367,46 +372,64 @@ class Uploader():
                                     try:
                                         logger.info(f"复制媒体组到频道: {target_info}")
                                         
-                                        # 尝试使用forward_messages转发媒体组（更稳定）
-                                        forwarded = await self.client.forward_messages(
-                                            chat_id=target_id,
-                                            from_chat_id=first_target_id,
-                                            message_ids=list(range(first_message_id, first_message_id + message_count))
-                                        )
-                                        
-                                        if forwarded:
-                                            logger.info(f"成功转发媒体组到频道: {target_info}")
-                                            total_files += len(media_files)  # 增加文件计数（每个频道算一次）
+                                        # 使用copy_media_group复制媒体组（保持原始消息性质）
+                                        if len(messages) > 1 and hasattr(messages[0], 'media_group_id') and messages[0].media_group_id:
+                                            # 多条消息的媒体组，使用copy_media_group
+                                            copied_messages = await self.client.copy_media_group(
+                                                chat_id=target_id,
+                                                from_chat_id=first_target_id,
+                                                message_id=first_message_id,
+                                                disable_notification=True
+                                            )
                                             
-                                            # 记录所有文件的上传历史
-                                            for media_file in media_files:
-                                                file_str = str(media_file)
-                                                file_hash = self.file_hash_cache.get(file_str)
-                                                if not file_hash:
-                                                    file_hash = calculate_file_hash(media_file)
-                                                    if file_hash:
-                                                        self.file_hash_cache[file_str] = file_hash
-                                                
-                                                if file_hash:
-                                                    target_id_str = str(target_id)
-                                                    file_size = get_file_size(media_file)
-                                                    media_type = self._get_media_type(media_file)
-                                                    
-                                                    # 添加到历史记录
-                                                    self.history_manager.add_upload_record_by_hash(
-                                                        file_hash=file_hash,
-                                                        file_path=file_str,
-                                                        target_channel=target_id_str,
-                                                        file_size=file_size,
-                                                        media_type=media_type
-                                                    )
-                                                    
-                                                    logger.debug(f"已记录文件 {media_file.name} 的复制历史到频道 {target_info}")
-                                            
-                                            logger.info(f"已记录媒体组 {group_name} 的所有文件复制到 {target_info} 的历史记录，共 {len(media_files)} 个文件")
+                                            if copied_messages:
+                                                logger.info(f"成功复制媒体组到频道: {target_info}，共 {len(copied_messages)} 条消息")
+                                                total_files += len(media_files)  # 增加文件计数（每个频道算一次）
+                                            else:
+                                                logger.warning(f"复制媒体组到 {target_info} 返回空结果")
+                                                raise Exception("复制媒体组返回空结果")
                                         else:
-                                            logger.warning(f"转发媒体组返回空结果，可能失败")
-                                            raise Exception("转发媒体组返回空结果")
+                                            # 单条消息，使用copy_message
+                                            copied_message = await self.client.copy_message(
+                                                chat_id=target_id,
+                                                from_chat_id=first_target_id,
+                                                message_id=first_message_id,
+                                                disable_notification=True
+                                            )
+                                            
+                                            if copied_message:
+                                                logger.info(f"成功复制单条消息到频道: {target_info}")
+                                                total_files += len(media_files)  # 增加文件计数（每个频道算一次）
+                                            else:
+                                                logger.warning(f"复制消息到 {target_info} 返回空结果")
+                                                raise Exception("复制消息返回空结果")
+                                        
+                                        # 记录所有文件的上传历史
+                                        for media_file in media_files:
+                                            file_str = str(media_file)
+                                            file_hash = self.file_hash_cache.get(file_str)
+                                            if not file_hash:
+                                                file_hash = calculate_file_hash(media_file)
+                                                if file_hash:
+                                                    self.file_hash_cache[file_str] = file_hash
+                                            
+                                            if file_hash:
+                                                target_id_str = str(target_id)
+                                                file_size = get_file_size(media_file)
+                                                media_type = self._get_media_type(media_file)
+                                                
+                                                # 添加到历史记录
+                                                self.history_manager.add_upload_record_by_hash(
+                                                    file_hash=file_hash,
+                                                    file_path=file_str,
+                                                    target_channel=target_id_str,
+                                                    file_size=file_size,
+                                                    media_type=media_type
+                                                )
+                                                
+                                                logger.debug(f"已记录文件 {media_file.name} 的复制历史到频道 {target_info}")
+                                        
+                                        logger.info(f"已记录媒体组 {group_name} 的所有文件复制到 {target_info} 的历史记录，共 {len(media_files)} 个文件")
                                     
                                     except Exception as e:
                                         logger.error(f"复制媒体组到频道 {target_info} 失败: {e}")
@@ -415,9 +438,12 @@ class Uploader():
                                         direct_success, direct_uploaded = await self._upload_media_group(media_files, target_id, caption)
                                         if direct_success and direct_uploaded:
                                             total_files += len(media_files)  # 增加文件计数（直接上传成功）
+                                            logger.info(f"直接上传媒体组到 {target_info} 成功")
+                                        else:
+                                            logger.warning(f"直接上传媒体组到 {target_info} 也失败")
                                     
                                     # 简单的速率限制
-                                    await asyncio.sleep(2)
+                                    await asyncio.sleep(1.5)
                         else:
                             logger.info(f"媒体组 {group_name} 的所有文件都已存在于目标频道，不计入上传统计")
                     else:
@@ -1164,6 +1190,9 @@ class Uploader():
                 try:
                     logger.info(f"发送最终消息到频道: {target_info}")
                     
+                    # 获取网页预览配置
+                    enable_web_page_preview = bool(options.get('enable_web_page_preview', False))
+                    
                     # 使用HTML解析模式发送消息
                     from pyrogram import enums
                     
@@ -1175,7 +1204,7 @@ class Uploader():
                                 chat_id=target_id,
                                 text=html_content,
                                 parse_mode=enums.ParseMode.HTML,
-                                disable_web_page_preview=True  # 禁用链接预览
+                                disable_web_page_preview=not enable_web_page_preview  # 根据配置控制网页预览
                             )
                             
                             logger.info(f"最终消息发送成功，消息ID: {message.id}")
@@ -1722,16 +1751,21 @@ class Uploader():
                         logger.info(f"复制消息到频道: {target_info}")
                         
                         # 使用copy_message复制消息
-                        copied_msg = await self.client.copy_message(
+                        copied_message = await self.client.copy_message(
                             chat_id=target_id,
                             from_chat_id=first_target_id,
-                            message_id=message.id
+                            message_id=message.id,
+                            disable_notification=True
                         )
                         
-                        logger.info(f"成功复制消息到频道: {target_info}，消息ID: {copied_msg.id if copied_msg else '未知'}")
+                        if copied_message:
+                            logger.info(f"成功复制消息到频道: {target_info}")
+                        else:
+                            logger.warning(f"复制消息到 {target_info} 返回空结果")
+                            raise Exception("复制消息返回空结果")
                         
                         # 如果复制成功，记录上传历史（与直接上传相同）
-                        if copied_msg:
+                        if copied_message:
                             # 计算文件哈希（复用缓存）
                             file_str = str(file)
                             if file_str in self.file_hash_cache:
@@ -1743,19 +1777,19 @@ class Uploader():
                             
                             if file_hash:
                                 # 获取文件大小
-                                if hasattr(copied_msg, 'file') and hasattr(copied_msg.file, 'size'):
-                                    file_size = copied_msg.file.size
+                                if hasattr(copied_message, 'file') and hasattr(copied_message.file, 'size'):
+                                    file_size = copied_message.file.size
                                 else:
                                     file_size = get_file_size(file)
                                 
                                 # 确定媒体类型
-                                if copied_msg.photo:
+                                if copied_message.photo:
                                     media_type = "photo"
-                                elif copied_msg.video:
+                                elif copied_message.video:
                                     media_type = "video"
-                                elif copied_msg.document:
+                                elif copied_message.document:
                                     media_type = "document"
-                                elif copied_msg.audio:
+                                elif copied_message.audio:
                                     media_type = "audio"
                                 else:
                                     media_type = self._get_media_type(file)

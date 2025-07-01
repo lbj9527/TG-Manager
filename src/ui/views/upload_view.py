@@ -196,8 +196,14 @@ class UploadView(QWidget):
         self.browse_html_button = QPushButton("浏览...")
         self.browse_html_button.setEnabled(False)  # 初始状态禁用
         
+        # 添加网页预览复选框
+        self.enable_web_page_preview_check = QCheckBox("网页预览")
+        self.enable_web_page_preview_check.setChecked(False)  # 默认不启用
+        self.enable_web_page_preview_check.setEnabled(False)  # 初始状态禁用
+        
         final_message_layout.addWidget(self.final_message_html_file)
         final_message_layout.addWidget(self.browse_html_button)
+        final_message_layout.addWidget(self.enable_web_page_preview_check)
         
         final_message_widget.setMinimumHeight(30)
         caption_options_layout.addWidget(final_message_widget, 2, 1)
@@ -403,6 +409,7 @@ class UploadView(QWidget):
         is_enabled = self.send_final_message_check.isChecked()
         self.final_message_html_file.setEnabled(is_enabled)
         self.browse_html_button.setEnabled(is_enabled)
+        self.enable_web_page_preview_check.setEnabled(is_enabled)
     
     def _browse_directory(self):
         """浏览文件夹对话框"""
@@ -548,7 +555,8 @@ class UploadView(QWidget):
             'read_title_txt': self.read_title_txt_check.isChecked(),
             'send_final_message': self.send_final_message_check.isChecked(),
             'auto_thumbnail': self.auto_thumbnail_check.isChecked(),
-            'final_message_html_file': self.final_message_html_file.text()
+            'final_message_html_file': self.final_message_html_file.text(),
+            'enable_web_page_preview': self.enable_web_page_preview_check.isChecked()
         }
         
         # 创建上传配置
@@ -769,6 +777,7 @@ class UploadView(QWidget):
             # 处理HTML文件选择框和浏览按钮的启用状态
             self.final_message_html_file.setEnabled(send_final_message)
             self.browse_html_button.setEnabled(send_final_message)
+            self.enable_web_page_preview_check.setEnabled(send_final_message)
             
             # 加载HTML文件路径
             html_file_path = options.get('final_message_html_file', '')
@@ -778,12 +787,16 @@ class UploadView(QWidget):
             else:
                 self.final_message_html_file.setText("")
             
+            # 加载网页预览设置
+            enable_web_page_preview = bool(options.get('enable_web_page_preview', False))
+            self.enable_web_page_preview_check.setChecked(enable_web_page_preview)
+            
             # 设置自动缩略图选项
             auto_thumbnail = options.get('auto_thumbnail', True)
             self.auto_thumbnail_check.setChecked(auto_thumbnail)
             
             # 记录日志
-            logger.debug(f"已从配置加载选项: use_folder_name={use_folder_name}, read_title_txt={read_title_txt}, send_final_message={send_final_message}")
+            logger.debug(f"已从配置加载选项: use_folder_name={use_folder_name}, read_title_txt={read_title_txt}, send_final_message={send_final_message}, enable_web_page_preview={enable_web_page_preview}")
         
         logger.debug("上传配置已成功加载")
 

@@ -199,6 +199,8 @@ disable_web_page_preview=not pair.get('enable_web_page_preview', False)
 - **提升用户体验**：用户不再遇到媒体组文本意外丢失的问题
 - **确保功能完整性**：禁止转发频道现在完全支持文本保留和替换功能
 
+---
+
 ## [v2.2.0] - 2024-12-22
 
 ### 🚀 重大功能升级 (Major Feature Enhancement)
@@ -2424,3 +2426,32 @@ global_handler = FloodWaitHandler(max_retries=5, base_delay=1.0)
   - **记住这个教训**：UI配置 → 内部配置的转换是必须的步骤，遗漏会导致配置丢失
 
 ### 🔧 技术细节 (Technical Details)
+
+### ✨ 功能新增 (Feature Additions)
+
+1. **转发模块网页预览控制** (Forward Module Web Page Preview Control)
+   - 在转发配置界面添加"网页预览"复选框
+   - 支持用户控制最终消息的网页预览显示
+   - 默认关闭网页预览以减少消息占用空间
+
+2. **上传模块网页预览控制** (Upload Module Web Page Preview Control)  
+   - 在上传配置界面的浏览按钮后添加"网页预览"复选框
+   - 支持用户控制上传完成后最终消息的网页预览显示
+   - 完整实现配置保存、加载和功能集成
+   - 遵循与转发模块相同的设计模式
+
+### 🔧 优化改进 (Optimizations)
+
+1. **配置字段添加流程规范化** (Configuration Field Addition Process Standardization)
+   - 明确了添加新配置字段的完整5步流程
+   - 特别强调配置管理器加载步骤的重要性，避免配置丢失问题
+   - 建立了完整的验证和测试方法
+
+2. **上传模块多目标频道优化** (Upload Module Multi-Target Channel Optimization) ⚡
+   - **优化原理**：上传到第一个目标频道后，使用copy方式发送到其余目标频道，而不是重复上传
+   - **单个文件**：使用`copy_message`复制单条消息到其他频道
+   - **媒体组**：使用`copy_media_group`复制整个媒体组到其他频道
+   - **错误处理**：copy失败时自动降级为直接上传方式
+   - **性能提升**：显著减少带宽占用和上传时间，提高效率
+   - **历史记录**：正确记录copy操作的上传历史
+   - **通知控制**：所有copy操作使用`disable_notification=True`避免打扰

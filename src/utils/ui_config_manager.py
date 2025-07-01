@@ -530,6 +530,28 @@ class UIConfigManager:
                 
                 upload_config["target_channels"] = valid_targets
             
+            # 修复options字段，确保所有必要的选项都存在
+            if "options" not in upload_config:
+                upload_config["options"] = {}
+            
+            options = upload_config["options"]
+            # 设置默认值，确保所有选项都存在
+            default_options = {
+                "use_folder_name": True,
+                "read_title_txt": False,
+                "send_final_message": False,
+                "auto_thumbnail": True,
+                "final_message_html_file": "",
+                "enable_web_page_preview": False
+            }
+            
+            for key, default_value in default_options.items():
+                if key not in options:
+                    options[key] = default_value
+                    logger.debug(f"添加缺失的上传选项: {key} = {default_value}")
+            
+            upload_config["options"] = options
+            
             # 修复UI部分
             ui_config = config_data.get("UI", {})
             if not ui_config:

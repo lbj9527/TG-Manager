@@ -438,7 +438,8 @@ class UIUploadConfig(BaseModel):
             "read_title_txt": False,
             "send_final_message": False,
             "auto_thumbnail": True,
-            "final_message_html_file": ""
+            "final_message_html_file": "",
+            "enable_web_page_preview": False
         },
         description="上传选项"
     )
