@@ -191,13 +191,8 @@ class ForwardView(QWidget):
         keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发包含关键词的消息")
         keyword_layout.addWidget(self.keyword_input)
-        
-        # 添加关键词过滤说明
-        keyword_note = QLabel("只转发包含关键词的消息")
-        keyword_note.setStyleSheet("color: #ff6666; font-size: 12px; font-weight: bold;")
-        keyword_layout.addWidget(keyword_note)
         
         keyword_form_layout.addRow("关键词过滤:", keyword_layout)
         config_layout.addLayout(keyword_form_layout)
@@ -246,11 +241,11 @@ class ForwardView(QWidget):
         forward_params_layout.addWidget(self.remove_captions_check)
         
         self.hide_author_check = QCheckBox("隐藏原作者")
-        self.hide_author_check.setChecked(False)
+        self.hide_author_check.setChecked(True)
         forward_params_layout.addWidget(self.hide_author_check)
         
         self.send_final_message_check = QCheckBox("转发完成发送最后一条消息")
-        self.send_final_message_check.setChecked(False)
+        self.send_final_message_check.setChecked(True)
         forward_params_layout.addWidget(self.send_final_message_check)
         
         self.exclude_links_check = QCheckBox("排除含链接消息")
@@ -1175,9 +1170,6 @@ class ForwardView(QWidget):
         self.start_id.setValue(first_pair_start_id)
         self.end_id.setValue(first_pair_end_id)
         
-        # 加载主界面的exclude_links复选框状态（使用第一个频道对的设置，如果没有频道对则保持默认勾选）
-        self.exclude_links_check.setChecked(first_pair_exclude_links)
-        
         # 主界面的文本替换和关键词输入框保持默认为空，不从配置文件加载
         # 只有右键编辑菜单中才会从配置加载这些字段的值
         
@@ -1522,7 +1514,7 @@ class ForwardView(QWidget):
         
         keywords = channel_pair.get('keywords', [])
         keyword_input = QLineEdit(', '.join(keywords))
-        keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发含关键词的消息")
         keyword_form_layout.addRow("关键词过滤:", keyword_input)
         dialog_layout.addLayout(keyword_form_layout)
         

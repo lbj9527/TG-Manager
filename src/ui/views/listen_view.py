@@ -170,16 +170,10 @@ class ListenView(QWidget):
         keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用英文逗号分隔")
+        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用英文逗号分隔，只转发含关键词的消息")
         self.keyword_input.setMinimumWidth(540)  # 设置最小宽度为540像素
         self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # 设置水平可扩展，垂直固定
         keyword_layout.addWidget(self.keyword_input)
-        
-        # 添加备注文字
-        keyword_note = QLabel("只转发含关键词的消息")
-        keyword_note.setStyleSheet("color: #ff0000; font-size: 12px;")  # 设置为红色小字
-        keyword_note.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)  # 备注文字使用最小空间
-        keyword_layout.addWidget(keyword_note)
         
         filter_layout.addRow("关键词:", keyword_layout)
         
@@ -2352,14 +2346,9 @@ class ListenView(QWidget):
         keywords_input_layout.setSpacing(8)
         
         keywords_input = QLineEdit(', '.join(keywords))
-        keywords_input.setPlaceholderText("关键词，多个用英文逗号分隔")
+        keywords_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发含关键词的消息")
         keywords_input.setMinimumWidth(400)  # 设置最小宽度为400像素
         keywords_input_layout.addWidget(keywords_input)
-        
-        # 添加备注文字
-        keywords_note = QLabel("只转发含关键词的消息")
-        keywords_note.setStyleSheet("color: #ff0000; font-size: 12px;")  # 设置为红色小字
-        keywords_input_layout.addWidget(keywords_note)
         
         # 添加弹性空间，让备注文字靠近输入框
         keywords_input_layout.addStretch(1)
