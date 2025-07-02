@@ -413,7 +413,34 @@ class ForwardView(QWidget):
         self.status_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.status_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
-        status_layout.addWidget(self.status_table)
+        # 将状态表格添加到布局，设置拉伸因子为2（占2/3高度）
+        status_layout.addWidget(self.status_table, 2)
+        
+        # 创建日志显示区域标签
+        log_label = QLabel("转发日志:")
+        log_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+        status_layout.addWidget(log_label)
+        
+        # 创建日志显示区域
+        self.log_display = QTextEdit()
+        self.log_display.setReadOnly(True)
+        self.log_display.document().setMaximumBlockCount(1000)  # 限制最大行数，防止内存占用过多
+        self.log_display.setPlaceholderText("转发日志将在此处显示...")
+        
+        # 设置日志显示区域的样式
+        self.log_display.setStyleSheet("""
+            QTextEdit {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 9pt;
+                padding: 4px;
+            }
+        """)
+        
+        # 将日志显示区域添加到布局，设置拉伸因子为1（占1/3高度）
+        status_layout.addWidget(self.log_display, 1)
         
         # 添加转发进度标签页到配置面板
         self.config_tabs.addTab(self.progress_tab, "转发进度")
@@ -468,6 +495,11 @@ class ForwardView(QWidget):
         
         # 初始化状态表格
         self._update_status_table()
+        
+        # 初始化日志显示区域
+        if hasattr(self, 'log_display'):
+            self._add_log_message("TG-Manager 转发模块已就绪", color="#6c757d")
+            self._add_log_message("请配置频道对并点击\"开始转发\"按钮开始转发", color="#6c757d")
     
     def _update_pairs_list_title(self):
         """更新频道对列表标题"""
@@ -1063,6 +1095,17 @@ class ForwardView(QWidget):
             QMessageBox.warning(self, "警告", "请至少启用一个频道对")
             return
         
+        # 清空日志并记录开始转发
+        self._clear_log()
+        
+        # 记录转发开始信息
+        for pair in enabled_pairs:
+            source_channel = pair.get('source_channel', '')
+            target_channels = pair.get('target_channels', [])
+            if source_channel and target_channels:
+                self._log_collection_start(source_channel)
+                self._log_forward_start(source_channel, target_channels)
+        
         # 更新转发状态
         self.forwarding_status = True
         self._update_status_table_forwarding_status("转发中")
@@ -1077,15 +1120,16 @@ class ForwardView(QWidget):
         # 发送转发开始信号
         self.forward_started.emit(forward_config)
         
-        # 记录开始转发消息
+        # 记录开始转发消息到状态消息和日志显示区域
         self._add_status_message("开始转发...")
         self._add_status_message("正在启动转发器...")
+        self._add_info_log_message("========== 开始转发任务 ==========")
         
         # 自动跳转到转发进度选项卡，方便用户查看转发状态
         # 转发进度选项卡是第3个标签页，索引为2
         self.config_tabs.setCurrentIndex(2)
         
-        # 异步开始转发（包含历史统计）
+        # 异步启动转发
         asyncio.create_task(self._async_start_forward())
     
     async def _async_start_forward(self):
@@ -1127,6 +1171,10 @@ class ForwardView(QWidget):
             logger.info(formatted_message)
             print(formatted_message)
             
+            # 同时添加到UI日志显示区域
+            if hasattr(self, 'log_display'):
+                self._add_info_log_message(message)
+            
         except Exception as e:
             print(f"添加状态消息失败: {e}")
             logger.error(f"添加状态消息失败: {e}")
@@ -1146,6 +1194,10 @@ class ForwardView(QWidget):
         # 记录停止转发消息
         self._add_status_message("正在停止转发...")
         
+        # 记录到日志显示区域
+        if hasattr(self, 'log_display'):
+            self._add_warning_log_message("用户请求停止转发...")
+        
         # 异步停止转发
         asyncio.create_task(self._async_stop_forward())
     
@@ -1156,14 +1208,27 @@ class ForwardView(QWidget):
             if hasattr(self.forwarder, 'stop_forward'):
                 await self.forwarder.stop_forward()
             self._add_status_message("转发已停止")
+            
+            # 记录到日志显示区域
+            if hasattr(self, 'log_display'):
+                self._add_warning_log_message("========== 转发已手动停止 ==========")
+                
         except Exception as e:
             logger.error(f"异步停止转发失败: {e}")
             self._add_status_message(f"停止转发失败: {e}")
+            
+            # 记录到日志显示区域
+            if hasattr(self, 'log_display'):
+                self._add_error_log_message(f"停止转发失败: {e}")
 
     def _on_forward_complete_ui_update(self):
         """转发完成后的UI更新"""
         # 记录完成状态
         logger.info("转发已完成")
+        
+        # 记录到日志显示区域
+        if hasattr(self, 'log_display'):
+            self._add_success_log_message("========== 所有转发任务已完成 ==========")
         
         # 更新转发状态
         self.forwarding_status = False
@@ -1205,6 +1270,13 @@ class ForwardView(QWidget):
         """转发出错后的UI更新"""
         # 记录错误状态
         logger.error(f"转发出错: {error_message}")
+        
+        # 记录到日志显示区域
+        if hasattr(self, 'log_display'):
+            # 检查是否为API限流错误
+            is_rate_limit = any(keyword in error_message.lower() for keyword in 
+                              ['rate', 'limit', 'flood', 'too many requests', '429'])
+            self._log_message_forward_failed("转发任务", "转发任务", error_message, is_rate_limit)
         
         # 更新转发状态
         self.forwarding_status = False
@@ -1648,14 +1720,26 @@ class ForwardView(QWidget):
             # 记录进度信息
             if message_info:
                 logger.info(f"{message_info} - {percentage}%")
+                # 添加到UI日志显示区域
+                if hasattr(self, 'log_display'):
+                    self._log_message_collected(current, total)
             else:
                 logger.info(f"正在转发... - {percentage}%")
+                # 添加到UI日志显示区域
+                if hasattr(self, 'log_display'):
+                    self._log_message_collected(current, total)
         else:
             # 不确定的进度，记录正在转发状态
             if message_info:
                 logger.info(f"正在转发: {message_info}")
+                # 添加到UI日志显示区域
+                if hasattr(self, 'log_display'):
+                    self._add_info_log_message(f"正在处理: {message_info}")
             else:
                 logger.info("正在转发...")
+                # 添加到UI日志显示区域
+                if hasattr(self, 'log_display'):
+                    self._add_info_log_message("正在处理消息...")
     
     def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
         """转发完成处理
@@ -1693,6 +1777,12 @@ class ForwardView(QWidget):
             
         # 记录错误状态
         logger.error(error_msg)
+        
+        # 添加错误日志到UI显示区域
+        if hasattr(self, 'log_display'):
+            # 检查是否为API限流错误
+            is_rate_limit = 'FloodWait' in str(error) or 'Too Many Requests' in str(error) or '429' in str(error)
+            self._log_message_forward_failed("未知", "转发任务", str(error), is_rate_limit)
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -2308,6 +2398,10 @@ class ForwardView(QWidget):
             # 不再提前提取频道名称，因为这会丢失ID信息
             self._increment_forwarded_count_for_target(target_info)
             
+            # 添加转发成功的日志记录
+            target_channel_name = self._extract_channel_name_from_info(target_info)
+            self._log_message_forward_success(message_id, "单个消息", f"→ {target_channel_name}")
+            
             logger.debug(f"处理单条消息转发信号: msg_id={message_id}, target_info={target_info}")
         except Exception as e:
             logger.error(f"处理单条消息转发信号时出错: {e}")
@@ -2326,6 +2420,24 @@ class ForwardView(QWidget):
             
             # 将字符串ID转换为整数
             target_id = int(target_id_str)
+            
+            # 添加媒体组转发成功的日志记录
+            try:
+                if isinstance(message_ids, list) and len(message_ids) > 1:
+                    # 多个消息的媒体组
+                    message_range = f"{message_ids[0]}-{message_ids[-1]}"
+                    target_channel_name = self._extract_channel_name_from_info(target_info)
+                    self._log_message_forward_success(message_range, "媒体组消息", f"→ {target_channel_name}")
+                elif isinstance(message_ids, list) and len(message_ids) == 1:
+                    # 单个消息
+                    target_channel_name = self._extract_channel_name_from_info(target_info)
+                    self._log_message_forward_success(message_ids[0], "单个消息", f"→ {target_channel_name}")
+                else:
+                    # 其他情况
+                    target_channel_name = self._extract_channel_name_from_info(target_info)
+                    self._log_message_forward_success(str(message_ids), "媒体组消息", f"→ {target_channel_name}")
+            except Exception as log_error:
+                logger.debug(f"添加媒体组转发日志失败: {log_error}")
             
             # 使用频道ID进行精确匹配
             if hasattr(self, 'channel_id_to_table_row') and target_id in self.channel_id_to_table_row:
@@ -2665,3 +2777,173 @@ class ForwardView(QWidget):
             
         except Exception as e:
             logger.error(f"更新计数和UI时发生错误: {e}")
+    
+    # ===== 日志显示相关方法 =====
+    
+    def _add_log_message(self, message, color="#333333"):
+        """添加普通日志消息
+        
+        Args:
+            message: 日志消息内容
+            color: 文字颜色，默认为深灰色
+        """
+        try:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            html_message = f'<span style="color: {color};">[{timestamp}] {message}</span>'
+            
+            # 移动到文档末尾并添加消息
+            cursor = self.log_display.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self.log_display.setTextCursor(cursor)
+            self.log_display.insertHtml(html_message + "<br>")
+            
+            # 自动滚动到底部
+            cursor = self.log_display.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self.log_display.setTextCursor(cursor)
+            
+        except Exception as e:
+            logger.error(f"添加日志消息失败: {e}")
+    
+    def _add_success_log_message(self, message):
+        """添加成功日志消息（绿色）
+        
+        Args:
+            message: 成功消息内容
+        """
+        self._add_log_message(message, color="#28a745")
+    
+    def _add_error_log_message(self, message):
+        """添加错误日志消息（红色）
+        
+        Args:
+            message: 错误消息内容
+        """
+        self._add_log_message(message, color="#dc3545")
+    
+    def _add_warning_log_message(self, message):
+        """添加警告日志消息（橙色）
+        
+        Args:
+            message: 警告消息内容
+        """
+        self._add_log_message(message, color="#fd7e14")
+    
+    def _add_filter_log_message(self, message):
+        """添加过滤日志消息（蓝色）
+        
+        Args:
+            message: 过滤消息内容
+        """
+        self._add_log_message(message, color="#007bff")
+    
+    def _add_info_log_message(self, message):
+        """添加信息日志消息（青色）
+        
+        Args:
+            message: 信息消息内容
+        """
+        self._add_log_message(message, color="#17a2b8")
+    
+    def _clear_log(self):
+        """清空日志显示区域"""
+        try:
+            self.log_display.clear()
+            self._add_log_message("日志已清空", color="#6c757d")
+        except Exception as e:
+            logger.error(f"清空日志失败: {e}")
+    
+    def _log_message_collected(self, count, total=None):
+        """记录消息收集过程
+        
+        Args:
+            count: 已收集的消息数量
+            total: 总消息数量（可选）
+        """
+        if total is not None:
+            message = f"正在收集消息... ({count}/{total})"
+        else:
+            message = f"已收集 {count} 条消息"
+        self._add_info_log_message(message)
+    
+    def _log_message_forward_success(self, message_id, message_type="单个消息", additional_info=""):
+        """记录消息转发成功
+        
+        Args:
+            message_id: 消息ID或消息ID范围
+            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            additional_info: 附加信息（如文本替换、移除媒体说明等）
+        """
+        message = f"{message_type}（{message_id}）转发成功"
+        if additional_info:
+            message += f"：{additional_info}"
+        self._add_success_log_message(message)
+    
+    def _log_message_forward_failed(self, message_id, message_type="单个消息", error_msg="", is_rate_limit=False):
+        """记录消息转发失败
+        
+        Args:
+            message_id: 消息ID或消息ID范围
+            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            error_msg: 错误消息
+            is_rate_limit: 是否为API限流错误
+        """
+        message = f"{message_type}（{message_id}）转发失败"
+        if error_msg:
+            message += f"：{error_msg}"
+        
+        if is_rate_limit:
+            # API限流错误用红色高亮显示
+            self._add_error_log_message(f"⚠️ API限流 - {message}")
+        else:
+            self._add_error_log_message(message)
+    
+    def _log_message_filtered(self, message_id, message_type="单个消息", filter_reason=""):
+        """记录消息过滤
+        
+        Args:
+            message_id: 消息ID或消息ID范围
+            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            filter_reason: 过滤原因
+        """
+        message = f"{message_type}（{message_id}）过滤"
+        if filter_reason:
+            message += f"：{filter_reason}"
+        self._add_filter_log_message(message)
+    
+    def _log_collection_start(self, source_channel):
+        """记录开始收集消息
+        
+        Args:
+            source_channel: 源频道
+        """
+        self._add_info_log_message(f"开始从 {source_channel} 收集消息...")
+    
+    def _log_collection_complete(self, source_channel, total_count):
+        """记录消息收集完成
+        
+        Args:
+            source_channel: 源频道
+            total_count: 收集到的消息总数
+        """
+        self._add_info_log_message(f"从 {source_channel} 收集完成，共 {total_count} 条消息")
+    
+    def _log_forward_start(self, source_channel, target_channels):
+        """记录开始转发
+        
+        Args:
+            source_channel: 源频道
+            target_channels: 目标频道列表
+        """
+        targets_str = ", ".join(target_channels) if isinstance(target_channels, list) else str(target_channels)
+        self._add_info_log_message(f"开始转发：{source_channel} → {targets_str}")
+    
+    def _log_forward_complete(self, source_channel, target_channels):
+        """记录转发完成
+        
+        Args:
+            source_channel: 源频道
+            target_channels: 目标频道列表
+        """
+        targets_str = ", ".join(target_channels) if isinstance(target_channels, list) else str(target_channels)
+        self._add_success_log_message(f"转发完成：{source_channel} → {targets_str}")
