@@ -36,19 +36,19 @@ class MessageIterator:
     集成pyropatch和内置FloodWait处理器，提供智能限流处理
     """
     
-    def __init__(self, client: Client, channel_resolver=None):
+    def __init__(self, client: Client, channel_resolver=None, forwarder=None):
         """
         初始化消息迭代器
         
         Args:
             client: Pyrogram客户端实例
-            channel_resolver: 频道解析器实例，用于解析频道信息和权限检查
+            channel_resolver: 频道解析器(可选)
+            forwarder: 转发器实例(可选，用于发射事件)
         """
         self.client = client
         self.channel_resolver = channel_resolver
-        
-        # 转发器引用，用于检查停止标志
-        self.forwarder = None
+        self.forwarder = forwarder
+        self.should_stop = False
         
         # 选择最佳可用的FloodWait处理器
         if PYROPATCH_AVAILABLE and is_pyropatch_available():
@@ -144,39 +144,45 @@ class MessageIterator:
         Yields:
             Message: 消息对象，按照从旧到新的顺序
         """
-        # 如果有channel_resolver，使用它获取有效的消息ID范围
-        if self.channel_resolver:
-            actual_start_id, actual_end_id = await self.channel_resolver.get_message_range(chat_id, start_id, end_id)
-        else:
-            # 使用内置的范围检查方法
-            actual_start_id, actual_end_id = await self.check_message_range(chat_id, start_id, end_id)
-        
-        # 如果无法获取有效范围，则直接返回
-        if actual_start_id is None or actual_end_id is None:
-            _logger.error(f"无法获取有效的消息ID范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+        if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
+            _logger.info("收到停止信号，终止消息范围获取")
             return
-        
-        # 计算需要获取的消息数量
-        total_messages = actual_end_id - actual_start_id + 1
-        _logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
-        
-        # 限流相关配置 - 平衡速度和稳定性
-        batch_size = 50  # 适中的批次大小，平衡速度和稳定性
-        base_delay = 2.0  # 适中的基础延迟时间
-        max_delay = 120.0  # 增加最大延迟时间到2分钟
-        retry_count = 0
-        
-        # 动态延迟调整因子
-        flood_wait_count = 0  # 记录遇到限流的次数
-        conservative_mode = False  # 极保守模式开关
-        
-        # 如果消息数量很大且预期会有限流，可以考虑启用极保守模式
-        if total_messages > 2000:  # 提高阈值，只有超过2000条消息才启用保守模式
-            _logger.info(f"消息数量很大({total_messages}条)，将采用保守的获取策略")
-            base_delay = 3.0  # 适度增加到4秒
-            batch_size = 25   # 减少到25个
-        
+            
         try:
+            # 如果有channel_resolver，使用它获取有效的消息ID范围
+            if self.channel_resolver:
+                actual_start_id, actual_end_id = await self.channel_resolver.get_message_range(chat_id, start_id, end_id)
+            else:
+                # 使用内置的范围检查方法
+                actual_start_id, actual_end_id = await self.check_message_range(chat_id, start_id, end_id)
+            
+            if actual_start_id is None or actual_end_id is None:
+                _logger.error(f"无法获取有效的消息ID范围: chat_id={chat_id}, start_id={start_id}, end_id={end_id}")
+                return
+            
+            total_messages = actual_end_id - actual_start_id + 1
+            _logger.info(f"开始获取消息: chat_id={chat_id}, 开始id={actual_start_id}, 结束id={actual_end_id}，共{total_messages}条消息")
+            
+            # 发射消息收集开始事件
+            if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                self.forwarder._emit_event("collection_started", total_messages)
+            
+            # 限流相关配置 - 平衡速度和稳定性
+            batch_size = 50  # 适中的批次大小，平衡速度和稳定性
+            base_delay = 2.0  # 适中的基础延迟时间
+            max_delay = 120.0  # 增加最大延迟时间到2分钟
+            retry_count = 0
+            
+            # 动态延迟调整因子
+            flood_wait_count = 0  # 记录遇到限流的次数
+            conservative_mode = False  # 极保守模式开关
+            
+            # 如果消息数量很大且预期会有限流，可以考虑启用极保守模式
+            if total_messages > 2000:  # 提高阈值，只有超过2000条消息才启用保守模式
+                _logger.info(f"消息数量很大({total_messages}条)，将采用保守的获取策略")
+                base_delay = 3.0  # 适度增加到4秒
+                batch_size = 25   # 减少到25个
+            
             # 分批获取消息ID
             total_batches = (total_messages + batch_size - 1) // batch_size
             _logger.info(f"开始分批获取消息，总共{total_messages}个ID，每批{batch_size}个，批次间延迟{base_delay}秒")
@@ -188,8 +194,8 @@ class MessageIterator:
             for batch_num, batch_start in enumerate(range(actual_start_id, actual_end_id + 1, batch_size), 1):
                 # 检查是否收到停止信号
                 if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
-                    _logger.info("收到停止信号，终止消息范围获取")
-                    return
+                    _logger.info("收到停止信号，终止批次重试")
+                    break
                     
                 batch_end = min(batch_start + batch_size - 1, actual_end_id)
                 batch_ids = list(range(batch_start, batch_end + 1))
@@ -201,7 +207,7 @@ class MessageIterator:
                     # 再次检查停止信号（在重试循环内）
                     if self.forwarder and hasattr(self.forwarder, 'should_stop') and self.forwarder.should_stop:
                         _logger.info("收到停止信号，终止批次重试")
-                        return
+                        break
                         
                     try:
                         # 使用FloodWait处理器包装get_messages调用
@@ -229,6 +235,10 @@ class MessageIterator:
                         if flood_wait_count > 0:
                             base_delay = max(3.0, base_delay * 0.9)  # 略微减少延迟
                             flood_wait_count = max(0, flood_wait_count - 1)
+                        
+                        # 发射进度更新事件
+                        if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                            self.forwarder._emit_event("collection_progress", valid_count, total_messages)
                         
                         break  # 成功，跳出重试循环
                         
@@ -308,6 +318,10 @@ class MessageIterator:
             # 按ID升序返回消息（从旧到新）
             for msg_id in sorted(fetched_messages_map.keys()):
                 yield fetched_messages_map[msg_id]
+            
+            # 发射消息收集完成事件
+            if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                self.forwarder._emit_event("collection_completed", fetched_count, total_messages)
         
         except FloodWait as e:
             _logger.warning(f"获取消息时遇到限制，等待 {e.x} 秒")
@@ -315,6 +329,11 @@ class MessageIterator:
         except Exception as e:
             _logger.error(f"获取消息失败: {e}")
             _logger.exception("详细错误信息：")
+            
+            # 发射收集错误事件
+            if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                self.forwarder._emit_event("collection_error", str(e))
+            raise
 
     async def iter_messages_by_ids(self, chat_id: Union[str, int], message_ids: List[int]) -> AsyncGenerator[Message, None]:
         """

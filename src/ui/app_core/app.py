@@ -45,6 +45,13 @@ class TGManagerApp(QObject):
     # 转发相关信号
     message_forwarded = Signal(int, str)  # 单条消息转发信号 (消息ID, 目标信息)
     media_group_forwarded = Signal(list, str, int, str)  # 媒体组转发信号 (消息ID列表, 目标信息, 数量, 频道ID字符串)
+    message_filtered = Signal(str, str, str)  # 消息过滤信号 (消息ID或范围, 消息类型, 过滤原因)
+    
+    # 消息收集相关信号
+    collection_started = Signal(int)  # 收集开始信号 (总消息数)
+    collection_progress = Signal(int, int)  # 收集进度信号 (当前数量, 总数量)
+    collection_completed = Signal(int, int)  # 收集完成信号 (已收集数量, 总数量)
+    collection_error = Signal(str)  # 收集错误信号 (错误信息)
     
     def __init__(self, verbose=False):
         super().__init__()

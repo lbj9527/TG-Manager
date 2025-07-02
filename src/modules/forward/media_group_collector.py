@@ -17,16 +17,22 @@ class MediaGroupCollector:
     媒体组收集器，用于从频道获取媒体组消息
     """
     
-    def __init__(self, message_iterator: MessageIterator, message_filter: MessageFilter):
+    def __init__(self, message_iterator: MessageIterator, message_filter: MessageFilter, emit=None):
         """
         初始化媒体组收集器
         
         Args:
             message_iterator: 消息迭代器实例
             message_filter: 消息过滤器实例
+            emit: 事件发射函数，用于发送事件到UI
         """
         self.message_iterator = message_iterator
         self.message_filter = message_filter
+        self.emit = emit
+        
+        # 设置过滤器的事件发射器
+        if self.emit and hasattr(self.message_filter, 'emit'):
+            self.message_filter.emit = self.emit
     
     def _filter_unforwarded_ids(self, start_id: int, end_id: int, source_channel: str, target_channels: List[str], history_manager) -> List[int]:
         """

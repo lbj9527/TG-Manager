@@ -71,13 +71,19 @@ class Forwarder():
         self.tmp_path = Path(self.forward_config.get('tmp_path', 'tmp'))
         self.tmp_path.mkdir(exist_ok=True)
         
+        # 创建消息迭代器，用于获取消息
+        self.message_iterator = MessageIterator(self.client, self.channel_resolver, self)
+        
+        # 创建消息过滤器，用于筛选需要转发的消息
+        self.message_filter = MessageFilter(self.config, self._emit_event)
+        
+        # 创建媒体组收集器，用于分组和优化消息获取
+        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter, self._emit_event)
+        
         # 初始化重构后的组件
-        self.message_filter = MessageFilter(self.config)
-        self.message_iterator = MessageIterator(client, channel_resolver)
         self.message_downloader = MessageDownloader(client)
         self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config, self._emit_event)
         self.media_uploader = MediaUploader(client, history_manager, self.general_config)
-        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
         self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config, self._emit_event)
         
         # 设置MessageIterator的转发器引用，用于停止检查
@@ -109,6 +115,41 @@ class Forwarder():
                     target_id_str = str(target_id)
                     self.app.media_group_forwarded.emit(message_ids, target_info, count, target_id_str)
                     _logger.debug(f"发射media_group_forwarded信号: {len(message_ids)}条消息 -> {target_info} (ID: {target_id_str})")
+                
+                elif event_type == "message_filtered" and len(args) >= 3:
+                    message_id, message_type, filter_reason = args[0], args[1], args[2]
+                    # 发射过滤事件到应用
+                    if hasattr(self.app, 'message_filtered'):
+                        self.app.message_filtered.emit(message_id, message_type, filter_reason)
+                        _logger.debug(f"发射message_filtered信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
+                
+                elif event_type == "collection_started" and len(args) >= 1:
+                    total_count = args[0]
+                    # 发射收集开始事件到应用
+                    if hasattr(self.app, 'collection_started'):
+                        self.app.collection_started.emit(total_count)
+                        _logger.debug(f"发射collection_started信号: 总数 {total_count}")
+                
+                elif event_type == "collection_progress" and len(args) >= 2:
+                    current_count, total_count = args[0], args[1]
+                    # 发射收集进度事件到应用
+                    if hasattr(self.app, 'collection_progress'):
+                        self.app.collection_progress.emit(current_count, total_count)
+                        _logger.debug(f"发射collection_progress信号: {current_count}/{total_count}")
+                
+                elif event_type == "collection_completed" and len(args) >= 2:
+                    collected_count, total_count = args[0], args[1]
+                    # 发射收集完成事件到应用
+                    if hasattr(self.app, 'collection_completed'):
+                        self.app.collection_completed.emit(collected_count, total_count)
+                        _logger.debug(f"发射collection_completed信号: 收集了 {collected_count}/{total_count}")
+                
+                elif event_type == "collection_error" and len(args) >= 1:
+                    error_message = args[0]
+                    # 发射收集错误事件到应用
+                    if hasattr(self.app, 'collection_error'):
+                        self.app.collection_error.emit(error_message)
+                        _logger.debug(f"发射collection_error信号: {error_message}")
                 
                 else:
                     _logger.warning(f"未知事件类型或参数不足: {event_type}, args: {args}")
@@ -147,7 +188,7 @@ class Forwarder():
         self.tmp_path.mkdir(exist_ok=True)
         
         # 重新初始化组件配置
-        self.message_filter = MessageFilter(self.config)
+        self.message_filter = MessageFilter(self.config, self._emit_event)
         self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
         self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config, self.config, self._emit_event)
         
@@ -155,7 +196,7 @@ class Forwarder():
         self.message_iterator.set_forwarder(self)
         
         # 重新创建MediaGroupCollector实例，确保基于最新配置和无状态残留
-        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
+        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter, self._emit_event)
         
         # 更新DirectForwarder使用新的MessageFilter实例
         self.direct_forwarder.message_filter = self.message_filter

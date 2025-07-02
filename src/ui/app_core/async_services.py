@@ -222,18 +222,42 @@ class AsyncServicesInitializer:
                 # 7. 初始化转发模块
                 logger.info("正在初始化转发模块...")
                 try:
+                    # 检查依赖组件
+                    logger.debug(f"检查转发器依赖组件:")
+                    logger.debug(f"  - client: {hasattr(self.app, 'client')}")
+                    logger.debug(f"  - ui_config_manager: {hasattr(self.app, 'ui_config_manager')}")
+                    logger.debug(f"  - channel_resolver: {hasattr(self.app, 'channel_resolver')}")
+                    logger.debug(f"  - history_manager: {hasattr(self.app, 'history_manager')}")
+                    logger.debug(f"  - downloader: {hasattr(self.app, 'downloader')}")
+                    logger.debug(f"  - uploader: {hasattr(self.app, 'uploader')}")
+                    
+                    # 导入转发器类
+                    logger.debug("导入Forwarder类...")
                     from src.modules.forward.forwarder import Forwarder
+                    
+                    # 创建原始转发器实例
+                    logger.debug("创建原始转发器实例...")
                     original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
                                                   self.app.channel_resolver, self.app.history_manager, 
                                                   self.app.downloader, self.app.uploader, self.app)
+                    logger.debug("原始转发器实例创建成功")
+                    
+                    # 导入事件发射器包装类
+                    logger.debug("导入EventEmitterForwarder类...")
+                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
                     
                     # 使用事件发射器包装转发器
-                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
+                    logger.debug("创建事件发射器包装转发器...")
                     self.app.forwarder = EventEmitterForwarder(original_forwarder)
+                    logger.debug("事件发射器包装转发器创建成功")
+                    
                     logger.info("已初始化转发模块并添加信号支持")
                     initialized_components.append('forwarder')
                 except Exception as e:
                     logger.error(f"初始化转发模块时出错: {e}")
+                    logger.error(f"错误类型: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"完整错误堆栈:\n{traceback.format_exc()}")
                     failed_components.append('forwarder')
                 
                 # 8. 初始化监听模块

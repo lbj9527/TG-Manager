@@ -18,14 +18,16 @@ class MessageFilter:
     支持文本替换、关键词过滤、媒体类型过滤等功能
     """
     
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: Dict[str, Any] = None, emit=None):
         """
         初始化消息过滤器
         
         Args:
             config: 配置信息，包含过滤规则
+            emit: 事件发射函数，用于发送过滤事件到UI
         """
         self.config = config or {}
+        self.emit = emit  # 添加事件发射器
     
     def apply_keyword_filter(self, messages: List[Message], keywords: List[str]) -> Tuple[List[Message], List[Message]]:
         """
@@ -150,6 +152,10 @@ class MessageFilter:
                 else:
                     group_filtered.append(message)
                     _logger.debug(f"消息 [ID: {message.id}] 媒体类型 '{message_media_type}' 不在允许列表中，被过滤")
+                    
+                    # 发射过滤事件到UI
+                    if self.emit:
+                        self.emit("message_filtered", message.id, "单个消息", f"媒体类型 '{message_media_type}' 不被允许")
             
             # 添加通过和被过滤的消息
             passed_messages.extend(group_passed)
@@ -251,6 +257,17 @@ class MessageFilter:
             if should_filter_group:
                 filtered_messages.extend(group_messages)
                 _logger.info(f"媒体组 [ID: {group_ids}] 被通用过滤规则过滤: {filter_reason}")
+                
+                # 发射过滤事件到UI
+                if self.emit:
+                    for message in group_messages:
+                        if len(group_messages) == 1:
+                            # 单个消息
+                            self.emit("message_filtered", message.id, "单个消息", filter_reason)
+                        else:
+                            # 媒体组消息
+                            self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", "媒体组消息", filter_reason)
+                            break  # 对于媒体组，只发射一次事件
             else:
                 passed_messages.extend(group_messages)
         
@@ -326,6 +343,15 @@ class MessageFilter:
                 # 整个媒体组被过滤
                 filtered_messages.extend(group_messages)
                 filtered_groups.append(group_ids)
+                
+                # 发射过滤事件到UI
+                if self.emit:
+                    if len(group_ids) == 1:
+                        # 单个消息
+                        self.emit("message_filtered", group_ids[0], "单个消息", f"不包含关键词: {keywords}")
+                    else:
+                        # 媒体组消息
+                        self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", "媒体组消息", f"不包含关键词: {keywords}")
         
         # 汇总日志显示
         if filtered_groups:

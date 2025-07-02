@@ -50,6 +50,9 @@ class ForwardView(QWidget):
         # 初始化频道对列表
         self.channel_pairs = []
         
+        # 初始化转发器实例（稍后由主窗口设置）
+        self.forwarder = None
+        
         # 状态表格相关数据跟踪
         self.status_table_data = {}  # 存储每行的状态数据
         self.forwarding_status = False  # 当前转发状态
@@ -1135,6 +1138,16 @@ class ForwardView(QWidget):
     async def _async_start_forward(self):
         """异步启动转发"""
         try:
+            # 检查转发器是否已设置
+            if not self.forwarder:
+                error_msg = "转发器未初始化，无法启动转发"
+                logger.error(error_msg)
+                self._add_status_message(error_msg)
+                # 恢复按钮状态
+                self.start_forward_button.setEnabled(True)
+                self.stop_forward_button.setEnabled(False)
+                return
+            
             self._add_status_message("正在统计历史记录...")
             
             # 在转发开始前重新计算历史记录和总消息数，确保显示最新状态
@@ -1204,6 +1217,11 @@ class ForwardView(QWidget):
     async def _async_stop_forward(self):
         """异步停止转发"""
         try:
+            # 检查转发器是否已设置
+            if not self.forwarder:
+                self._add_status_message("转发器未初始化，无法停止转发")
+                return
+                
             # 如果转发器有停止方法，调用它
             if hasattr(self.forwarder, 'stop_forward'):
                 await self.forwarder.stop_forward()
@@ -2710,12 +2728,49 @@ class ForwardView(QWidget):
                 app.media_group_forwarded.connect(self._on_media_group_forwarded)
                 logger.debug("已连接应用的media_group_forwarded信号")
                 
+            if hasattr(app, 'message_filtered'):
+                app.message_filtered.connect(self._on_message_filtered)
+                logger.debug("已连接应用的message_filtered信号")
+                
+            if hasattr(app, 'collection_started'):
+                app.collection_started.connect(self._on_collection_started)
+                logger.debug("已连接应用的collection_started信号")
+                
+            if hasattr(app, 'collection_progress'):
+                app.collection_progress.connect(self._on_collection_progress)
+                logger.debug("已连接应用的collection_progress信号")
+                
+            if hasattr(app, 'collection_completed'):
+                app.collection_completed.connect(self._on_collection_completed)
+                logger.debug("已连接应用的collection_completed信号")
+                
+            if hasattr(app, 'collection_error'):
+                app.collection_error.connect(self._on_collection_error)
+                logger.debug("已连接应用的collection_error信号")
+                
             logger.debug("应用级别信号连接成功")
             
         except Exception as e:
             logger.error(f"连接应用级别信号时出错: {e}")
             import traceback
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
+    
+    def _on_message_filtered(self, message_id, message_type, filter_reason):
+        """处理消息过滤信号
+        
+        Args:
+            message_id: 消息ID或范围（字符串）
+            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            filter_reason: 过滤原因
+        """
+        try:
+            # 添加过滤日志到UI显示区域
+            if hasattr(self, 'log_display'):
+                self._log_message_filtered(message_id, message_type, filter_reason)
+                
+            logger.debug(f"处理消息过滤信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
+        except Exception as e:
+            logger.error(f"处理消息过滤信号时出错: {e}")
 
     def _update_count_and_ui(self, source_channel, target_channel, row, increment):
         """更新计数和UI显示"""
@@ -2947,3 +3002,60 @@ class ForwardView(QWidget):
         """
         targets_str = ", ".join(target_channels) if isinstance(target_channels, list) else str(target_channels)
         self._add_success_log_message(f"转发完成：{source_channel} → {targets_str}")
+    
+    def _on_collection_started(self, total_count):
+        """处理消息收集开始信号
+        
+        Args:
+            total_count: 总消息数
+        """
+        try:
+            if hasattr(self, 'log_display'):
+                self._add_info_log_message(f"开始收集消息，预计收集 {total_count} 条消息")
+            logger.debug(f"处理消息收集开始信号: 总数 {total_count}")
+        except Exception as e:
+            logger.error(f"处理消息收集开始信号时出错: {e}")
+    
+    def _on_collection_progress(self, current_count, total_count):
+        """处理消息收集进度信号
+        
+        Args:
+            current_count: 当前已收集数量
+            total_count: 总数量
+        """
+        try:
+            if hasattr(self, 'log_display'):
+                # 每10条消息记录一次进度，避免日志过多
+                if current_count % 10 == 0 or current_count == total_count:
+                    self._log_message_collected(current_count, total_count)
+            logger.debug(f"处理消息收集进度信号: {current_count}/{total_count}")
+        except Exception as e:
+            logger.error(f"处理消息收集进度信号时出错: {e}")
+    
+    def _on_collection_completed(self, collected_count, total_count):
+        """处理消息收集完成信号
+        
+        Args:
+            collected_count: 已收集数量
+            total_count: 总数量
+        """
+        try:
+            if hasattr(self, 'log_display'):
+                success_rate = (collected_count / total_count * 100) if total_count > 0 else 0
+                self._add_success_log_message(f"消息收集完成：{collected_count}/{total_count} 条 (成功率: {success_rate:.1f}%)")
+            logger.debug(f"处理消息收集完成信号: {collected_count}/{total_count}")
+        except Exception as e:
+            logger.error(f"处理消息收集完成信号时出错: {e}")
+    
+    def _on_collection_error(self, error_message):
+        """处理消息收集错误信号
+        
+        Args:
+            error_message: 错误信息
+        """
+        try:
+            if hasattr(self, 'log_display'):
+                self._add_error_log_message(f"消息收集出错：{error_message}")
+            logger.debug(f"处理消息收集错误信号: {error_message}")
+        except Exception as e:
+            logger.error(f"处理消息收集错误信号时出错: {e}")
