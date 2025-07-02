@@ -503,7 +503,13 @@ class ForwardView(QWidget):
                 
                 # 格式化消息数显示
                 if total_count == -1:
-                    count_text = f"{forwarded_count}/--"
+                    # 检查是否有end_id为0的情况，如果有则显示"计算中..."，否则显示"--"
+                    start_id = pair.get('start_id', 0)
+                    end_id = pair.get('end_id', 0)
+                    if start_id > 0 and end_id == 0:
+                        count_text = f"{forwarded_count}/计算中..."
+                    else:
+                        count_text = f"{forwarded_count}/--"
                 else:
                     count_text = f"{forwarded_count}/{total_count}"
                 
@@ -579,29 +585,122 @@ class ForwardView(QWidget):
         else:
             # 两者都为0或都无效，无法计算
             return -1  # 返回-1表示未知
-    
+
+    async def _async_calculate_total_message_count(self, source_channel, start_id, end_id):
+        """异步计算指定范围内的消息总数，支持获取最新消息ID
+        
+        Args:
+            source_channel: 源频道
+            start_id: 起始消息ID
+            end_id: 结束消息ID
+            
+        Returns:
+            int: 估算的消息总数，如果无法确定则返回-1
+        """
+        try:
+            # 只有当start_id和end_id都是有效的正数时，才能准确计算
+            if end_id > 0 and start_id > 0:
+                return max(0, end_id - start_id + 1)
+            elif start_id == 0 and end_id > 0:
+                # start_id为0表示"最早消息"，假设从消息ID 1开始
+                return max(0, end_id - 1 + 1)  # 等同于end_id
+            elif start_id > 0 and end_id == 0:
+                # end_id为0表示"最新消息"，需要异步获取最新消息ID
+                latest_message_id = await self._get_latest_message_id(source_channel)
+                if latest_message_id and latest_message_id > 0:
+                    # 成功获取最新消息ID，计算总消息数
+                    actual_end_id = latest_message_id
+                    total_count = max(0, actual_end_id - start_id + 1)
+                    logger.debug(f"频道 {source_channel} 最新消息ID: {latest_message_id}, 计算总消息数: {total_count}")
+                    return total_count
+                else:
+                    # 无法获取最新消息ID
+                    logger.warning(f"无法获取频道 {source_channel} 的最新消息ID")
+                    return -1
+            else:
+                # 两者都为0或都无效，无法计算
+                return -1
+        except Exception as e:
+            logger.error(f"异步计算消息总数失败 {source_channel}: {e}")
+            return -1
+
+    async def _get_latest_message_id(self, source_channel):
+        """获取指定频道的最新消息ID
+        
+        Args:
+            source_channel: 源频道标识符
+            
+        Returns:
+            int: 最新消息ID，失败时返回None
+        """
+        try:
+            # 首先尝试使用forwarder的channel_resolver
+            if hasattr(self, 'forwarder') and self.forwarder and hasattr(self.forwarder, 'channel_resolver'):
+                # 使用channel_resolver的get_message_range方法来获取最新消息ID
+                actual_start_id, actual_end_id = await self.forwarder.channel_resolver.get_message_range(
+                    source_channel, 1, 0  # start_id=1, end_id=0表示获取从最早到最新的范围
+                )
+                if actual_end_id and actual_end_id > 0:
+                    logger.debug(f"通过channel_resolver获取频道 {source_channel} 最新消息ID: {actual_end_id}")
+                    return actual_end_id
+            
+            # 备用方法：直接使用客户端获取最新消息
+            if hasattr(self, 'forwarder') and self.forwarder and hasattr(self.forwarder, 'client'):
+                client = self.forwarder.client
+                
+                # 获取频道ID
+                real_channel_id = source_channel
+                if hasattr(self.forwarder, 'channel_resolver'):
+                    real_channel_id = await self.forwarder.channel_resolver.get_channel_id(source_channel)
+                
+                if real_channel_id:
+                    # 获取最新的一条消息
+                    async for message in client.get_chat_history(real_channel_id, limit=1):
+                        latest_id = message.id
+                        logger.debug(f"直接通过客户端获取频道 {source_channel} 最新消息ID: {latest_id}")
+                        return latest_id
+                        
+            logger.warning(f"无法获取频道 {source_channel} 的最新消息ID：转发器或客户端不可用")
+            return None
+            
+        except Exception as e:
+            logger.error(f"获取频道 {source_channel} 最新消息ID失败: {e}")
+            return None
+
     def _calculate_and_update_total_message_counts(self):
         """计算并更新所有频道对的总消息数"""
-        self.total_message_counts.clear()
-        
-        for pair in self.channel_pairs:
-            if not pair.get('enabled', True):
-                continue  # 跳过已禁用的频道对
+        # 异步执行真正的计算逻辑
+        asyncio.create_task(self._async_calculate_and_update_total_message_counts())
+
+    async def _async_calculate_and_update_total_message_counts(self):
+        """异步计算并更新所有频道对的总消息数"""
+        try:
+            self.total_message_counts.clear()
             
-            source_channel = pair.get('source_channel', '')
-            target_channels = pair.get('target_channels', [])
-            start_id = pair.get('start_id', 0)
-            end_id = pair.get('end_id', 0)
+            for pair in self.channel_pairs:
+                if not pair.get('enabled', True):
+                    continue  # 跳过已禁用的频道对
+                
+                source_channel = pair.get('source_channel', '')
+                target_channels = pair.get('target_channels', [])
+                start_id = pair.get('start_id', 0)
+                end_id = pair.get('end_id', 0)
+                
+                # 异步计算此频道对的总消息数
+                total_count = await self._async_calculate_total_message_count(source_channel, start_id, end_id)
+                
+                # 为每个目标频道存储总消息数
+                for target_channel in target_channels:
+                    key = (source_channel, target_channel)
+                    self.total_message_counts[key] = total_count
             
-            # 计算此频道对的总消息数
-            total_count = self._calculate_total_message_count(source_channel, start_id, end_id)
+            logger.debug(f"已更新总消息数计算，共 {len(self.total_message_counts)} 个转发目标")
             
-            # 为每个目标频道存储总消息数
-            for target_channel in target_channels:
-                key = (source_channel, target_channel)
-                self.total_message_counts[key] = total_count
-        
-        logger.debug(f"已更新总消息数计算，共 {len(self.total_message_counts)} 个转发目标")
+            # 更新状态表格显示
+            self._update_status_table()
+            
+        except Exception as e:
+            logger.error(f"异步计算总消息数失败: {e}")
     
     def _add_channel_pair(self):
         """添加频道对"""
@@ -2381,7 +2480,7 @@ class ForwardView(QWidget):
             # 获取当前计数
             key = (source_channel, target_channel)
             current_count = self.status_table_data.get(key, {}).get('forwarded', 0)
-            total_count = self.status_table_data.get(key, {}).get('total', 0)
+            total_count = self.total_message_counts.get(key, -1)  # 从total_message_counts获取总消息数
             
             # 增加计数
             new_count = current_count + increment
@@ -2389,13 +2488,40 @@ class ForwardView(QWidget):
             # 更新数据
             if key in self.status_table_data:
                 self.status_table_data[key]['forwarded'] = new_count
+            else:
+                # 如果key不存在，创建新的记录
+                self.status_table_data[key] = {
+                    'forwarded': new_count,
+                    'total': total_count,
+                    'status': "转发中"
+                }
             
-            # 更新UI显示
-            count_text = f"{new_count}/{total_count}" if total_count > 0 else f"{new_count}/--"
+            # 查找对应的频道对配置，判断是否应该显示"计算中..."
+            should_show_calculating = False
+            for pair in self.channel_pairs:
+                if (pair.get('source_channel') == source_channel and 
+                    target_channel in pair.get('target_channels', [])):
+                    start_id = pair.get('start_id', 0)
+                    end_id = pair.get('end_id', 0)
+                    if start_id > 0 and end_id == 0:
+                        should_show_calculating = True
+                    break
+            
+            # 更新UI显示，正确处理total_count为-1的情况
+            if total_count == -1:
+                if should_show_calculating:
+                    count_text = f"{new_count}/计算中..."
+                else:
+                    count_text = f"{new_count}/--"
+            elif total_count > 0:
+                count_text = f"{new_count}/{total_count}"
+            else:
+                count_text = f"{new_count}/0"
+                
             if self.status_table.item(row, 2):
                 self.status_table.item(row, 2).setText(count_text)
             
-            logger.debug(f"✅ 已更新转发计数: {target_channel} +{increment} -> {new_count}")
+            logger.debug(f"✅ 已更新转发计数: {target_channel} +{increment} -> {new_count} (总计: {total_count if total_count != -1 else ('计算中' if should_show_calculating else '--')})")
             
         except Exception as e:
             logger.error(f"更新计数和UI时发生错误: {e}")
