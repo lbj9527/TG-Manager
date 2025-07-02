@@ -30,7 +30,7 @@ class ParallelProcessor:
     实现生产者-消费者模式
     """
     
-    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None, config: Dict[str, Any] = None):
+    def __init__(self, client: Client, history_manager=None, general_config: Dict[str, Any] = None, config: Dict[str, Any] = None, emit=None):
         """
         初始化并行处理器
         
@@ -39,10 +39,12 @@ class ParallelProcessor:
             history_manager: 历史记录管理器实例
             general_config: 通用配置
             config: 完整配置，用于初始化MessageFilter
+            emit: 事件发射回调函数
         """
         self.client = client
         self.history_manager = history_manager
         self.general_config = general_config or {}
+        self.emit = emit  # 事件发射回调函数
         
         # 初始化消息过滤器
         self.message_filter = MessageFilter(config or {})
@@ -617,6 +619,27 @@ class ParallelProcessor:
                     # 媒体组上传完成后，清理媒体组的本地文件
                     if all_targets_uploaded:
                         _logger.info(f"{group_id} {message_ids} 已成功上传到所有目标频道，清理本地文件: {media_group_dir}")
+                        
+                        # 发送转发完成信号到UI
+                        if self.emit:
+                            # 为每个成功上传的目标频道发送信号
+                            for uploaded_target_info in uploaded_targets:
+                                # 从target_channels中找到对应的target_id
+                                target_id = None
+                                for target_channel, tid, target_info in target_channels:
+                                    if target_info == uploaded_target_info:
+                                        target_id = tid
+                                        break
+                                
+                                if target_id:
+                                    if is_media_group:
+                                        # 媒体组转发完成信号
+                                        self.emit("media_group_forwarded", message_ids, uploaded_target_info, len(message_ids), str(target_id))
+                                    else:
+                                        # 单条消息转发完成信号
+                                        for message_id in message_ids:
+                                            self.emit("message_forwarded", message_id, uploaded_target_info)
+                        
                         self.media_uploader.cleanup_media_group_dir(media_group_dir)
                     else:
                         _logger.warning(f"{group_id} {message_ids} 未能成功上传到所有目标频道，仍有 {remaining_targets} 未转发完成，保留本地文件: {media_group_dir}")

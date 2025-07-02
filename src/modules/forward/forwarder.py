@@ -78,7 +78,7 @@ class Forwarder():
         self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config, self._emit_event)
         self.media_uploader = MediaUploader(client, history_manager, self.general_config)
         self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
-        self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config)
+        self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config, self._emit_event)
         
         # 设置MessageIterator的转发器引用，用于停止检查
         self.message_iterator.set_forwarder(self)
@@ -149,7 +149,7 @@ class Forwarder():
         # 重新初始化组件配置
         self.message_filter = MessageFilter(self.config)
         self.media_uploader = MediaUploader(self.client, self.history_manager, self.general_config)
-        self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config, self.config)
+        self.parallel_processor = ParallelProcessor(self.client, self.history_manager, self.general_config, self.config, self._emit_event)
         
         # 重新设置MessageIterator的转发器引用，用于停止检查
         self.message_iterator.set_forwarder(self)
@@ -407,6 +407,9 @@ class Forwarder():
                                                 # 记录转发历史
                                                 if self.history_manager:
                                                     self.history_manager.add_forward_record(source_channel, message_id, target_channel, source_id)
+                                                
+                                                # 发送转发完成信号到UI
+                                                self._emit_event("message_forwarded", message_id, target_info)
                                                 
                                                 text_forward_count += 1
                                                 

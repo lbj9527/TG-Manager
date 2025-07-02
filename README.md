@@ -6,7 +6,63 @@ TG-Manager 是一个专业的Telegram消息转发和管理工具，基于Python�
 
 ## ✨ 核心特性
 
-### ✨ v2.2.14 - 转发进度自动跳转功能 (最新版本)
+### ✨ v2.2.16 - 媒体组转发计数修复 (最新版本)
+
+**媒体组转发计数完整支持**：
+- **🔧 关键修复**：修复了禁止转发频道媒体组转发时UI计数无法实时更新的问题
+- **📊 完整覆盖**：确保纯文本消息、媒体消息、媒体组转发全部支持实时计数更新
+- **🔄 回调机制**：通过函数回调让并行处理器能够向转发器发送事件通知
+- **🎯 智能识别**：自动区分媒体组和单条消息，发送对应的UI更新信号
+- **⚡ 实时同步**：每个媒体组转发成功后立即更新对应频道的转发计数
+
+**技术实现**：
+```python
+# 并行处理器构造函数添加emit回调
+def __init__(self, client, history_manager=None, general_config=None, config=None, emit=None):
+    self.emit = emit  # 事件发射回调函数
+
+# 媒体组转发完成后发送信号
+if self.emit and all_targets_uploaded:
+    for uploaded_target_info in uploaded_targets:
+        if is_media_group:
+            self.emit("media_group_forwarded", message_ids, uploaded_target_info, len(message_ids), str(target_id))
+        else:
+            for message_id in message_ids:
+                self.emit("message_forwarded", message_id, uploaded_target_info)
+```
+
+**完整解决方案**：
+- **🏗️ 架构改进**: 建立并行处理器与UI的通信桥梁，确保所有转发场景都能发送正确的信号
+- **🔄 信号统一**: 无论是直接转发、下载重传还是并行处理，都使用统一的信号机制
+- **📈 实时反馈**: 禁止转发频道的媒体组转发计数从"2/31"正确更新为"3/31"等
+- **✅ 全场景支持**: 纯文本消息(v2.2.15)+ 媒体组(v2.2.16) = 完整的转发计数支持
+
+### ✨ v2.2.15 - 禁止转发频道转发计数修复
+
+**禁止转发频道计数同步**：
+- **🔧 重要修复**：修复了禁止转发频道使用"下载后重新上传"方式转发纯文本消息时，转发计数无法实时更新的问题
+- **📊 完整信号支持**：确保所有转发方式（直接转发、下载重传）都能正确发送UI更新信号
+- **⚡ 实时计数反馈**：禁止转发频道的纯文本消息转发后，状态表格的"已转发消息数"能正确实时更新
+- **🎯 全场景覆盖**：无论源频道是否允许转发，UI都能正确显示转发进度
+
+**技术实现**：
+```python
+# 禁止转发频道纯文本消息转发完成后
+# 记录转发历史
+if self.history_manager:
+    self.history_manager.add_forward_record(source_channel, message_id, target_channel, source_id)
+
+# 发送转发完成信号到UI (新增)
+self._emit_event("message_forwarded", message_id, target_info)
+```
+
+**用户体验提升**：
+- **🎯 状态一致性**: 所有转发场景下的UI显示都与实际转发状态完全同步
+- **📈 准确计数**: 禁止转发频道的转发计数从"0/11"正确更新为"2/11"等
+- **⚡ 即时反馈**: 每条消息转发成功后立即更新状态表格显示
+- **🔧 完整覆盖**: 纯文本消息、媒体消息、媒体组转发全部支持实时计数
+
+### ✨ v2.2.14 - 转发进度自动跳转功能
 
 **智能界面切换**：
 - **🎯 自动跳转到转发进度**：点击"开始转发"按钮后自动切换到"转发进度"选项卡
