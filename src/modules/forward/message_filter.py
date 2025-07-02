@@ -622,36 +622,51 @@ class MessageFilter:
             Dict[str, str]: 媒体组ID到文本内容的映射
         """
         if not messages:
+            _logger.debug("🔍 _extract_media_group_texts: 消息列表为空，返回空映射")
             return {}
+        
+        _logger.debug(f"🔍 _extract_media_group_texts: 开始处理 {len(messages)} 条消息")
         
         # 按媒体组分组
         media_groups = self._group_messages_by_media_group(messages)
         media_group_texts = {}
         
-        for group_messages in media_groups:
+        _logger.debug(f"🔍 _extract_media_group_texts: 分组结果，共 {len(media_groups)} 个组")
+        
+        for i, group_messages in enumerate(media_groups):
             # 获取媒体组ID
             media_group_id = getattr(group_messages[0], 'media_group_id', None)
             
+            _logger.debug(f"🔍 组 {i+1}: 包含 {len(group_messages)} 条消息，媒体组ID: {media_group_id}")
+            
             # 只处理真正的媒体组（有媒体组ID的）
             if not media_group_id:
+                _logger.debug(f"🔍 组 {i+1}: 跳过，不是真正的媒体组（无媒体组ID）")
                 continue
             
             # 寻找媒体组中第一个有文本内容的消息
             group_text = ""
-            for message in group_messages:
+            for j, message in enumerate(group_messages):
                 text_content = ""
                 if message.caption:
                     text_content = message.caption
                 elif message.text:
                     text_content = message.text
                 
+                _logger.debug(f"🔍 组 {i+1} 消息 {j+1} (ID: {message.id}): caption='{message.caption[:30] if message.caption else None}', text='{message.text[:30] if message.text else None}'")
+                
                 if text_content:
                     group_text = text_content
+                    _logger.debug(f"🔍 组 {i+1}: 在消息 {j+1} (ID: {message.id}) 中找到文本内容")
                     break  # 找到第一个有文本的消息就停止
             
             # 如果找到了文本内容，记录到映射中
             if group_text:
                 media_group_texts[media_group_id] = group_text
-                _logger.debug(f"预提取媒体组 {media_group_id} 的文本: '{group_text[:50]}...'")
+                _logger.debug(f"✅ 媒体组 {media_group_id} 提取文本成功: '{group_text[:50]}...'")
+            else:
+                _logger.debug(f"❌ 媒体组 {media_group_id} 未找到文本内容")
+        
+        _logger.debug(f"🔍 _extract_media_group_texts: 完成，共提取 {len(media_group_texts)} 个媒体组的文本")
         
         return media_group_texts 

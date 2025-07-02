@@ -154,8 +154,8 @@ class Forwarder():
         # 重新设置MessageIterator的转发器引用，用于停止检查
         self.message_iterator.set_forwarder(self)
         
-        # 更新MediaGroupCollector使用新的MessageFilter实例
-        self.media_group_collector.message_filter = self.message_filter
+        # 重新创建MediaGroupCollector实例，确保基于最新配置和无状态残留
+        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
         
         # 更新DirectForwarder使用新的MessageFilter实例
         self.direct_forwarder.message_filter = self.message_filter

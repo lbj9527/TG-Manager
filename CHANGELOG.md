@@ -1,5 +1,107 @@
 # 更新日志
 
+## [v2.2.22] - 2025-07-02
+
+### 🐛 关键Bug修复 (Critical Bug Fixes)
+
+#### 修复运行时配置修改导致媒体组文本丢失的根本问题 (Fix Root Cause of Media Group Text Loss)
+
+**问题发现 (Problem Discovery)**：
+通过深入分析发现，v2.2.21的修复仍不完整。真正的根本原因是**预过滤机制导致包含文本的消息被提前过滤掉**。
+
+**根本原因 (Root Cause)**：
+1. **第一次转发（程序重启后）**：获取所有31条消息，包含完整媒体组文本
+2. **第二次转发（运行时配置修改）**：`_filter_unforwarded_ids` 预过滤掉已转发的2条消息，只获取剩余29条消息
+3. **关键问题**：被预过滤的消息可能包含了媒体组的文本信息，导致剩余消息中的媒体组失去文本
+
+**完整修复方案 (Complete Solution)**：
+```python
+# src/modules/forward/media_group_collector.py
+async def get_media_groups_info_optimized(...):
+    # 🔧 修复：先获取完整范围的消息，用于媒体组文本提取
+    complete_messages = []
+    async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
+        complete_messages.append(message)
+    
+    # 🔧 从完整消息中预提取媒体组文本（在预过滤之前）
+    if complete_messages:
+        complete_media_group_texts = self.message_filter._extract_media_group_texts(complete_messages)
+        media_group_texts.update(complete_media_group_texts)
+    
+    # 然后才进行预过滤和后续处理
+    unforwarded_ids = self._filter_unforwarded_ids(...)
+```
+
+**技术改进 (Technical Improvements)**：
+- **双重文本提取**：完整范围预提取 + 过滤后补充提取
+- **文本映射合并**：预提取的文本优先级更高，确保不丢失
+- **增强调试信息**：详细跟踪媒体组文本提取过程
+
+**修复效果 (Result)**：
+- ✅ 彻底解决运行时配置修改后媒体组文本丢失问题
+- ✅ 确保程序重启和运行时修改配置的行为完全一致
+- ✅ 媒体说明在所有场景下都能正确保留和应用文本替换
+
+---
+
+## [v2.2.21] - 2025-07-02
+
+### 🐛 Bug修复 (Bug Fixes)
+
+#### 修复运行时配置修改导致媒体组文本丢失的问题 (Fix Media Group Text Loss on Runtime Configuration Changes)
+
+**问题描述 (Issue Description)**：
+用户在程序运行过程中通过右键编辑菜单修改转发配置时，会导致媒体组文本（媒体说明）丢失。例如：
+1. 没有勾选"移除媒体说明"
+2. 先配置只转发视频，转发成功且保留媒体说明
+3. 右键编辑修改为只转发照片，转发后媒体组重组但媒体说明丢失
+4. 程序重启后转发相同配置则正常
+
+**根本原因 (Root Cause)**：
+运行时配置修改后，`MediaGroupCollector` 实例保留了之前的内部状态，导致媒体组文本预提取基于旧的状态进行，与新的过滤配置不匹配。
+
+**修复方案 (Solution)**：
+每次点击"开始转发"时，完全重新创建 `MediaGroupCollector` 实例，确保基于最新配置重新初始化，无状态残留。
+
+**修复内容 (Changes)**：
+
+```python
+# src/modules/forward/forwarder.py (第162行)
+# 修改前：
+self.media_group_collector.message_filter = self.message_filter
+
+# 修改后：
+self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
+```
+
+**效果 (Result)**：
+- ✅ 确保程序重启后转发 = 运行时修改配置后转发
+- ✅ 每次点击开始转发都执行相同的初始化流程
+- ✅ 媒体说明在所有场景下都能正确保留
+
+---
+
+## [v2.2.20] - 2025-07-02
+
+### 🐛 重要修复
+- **链接检测实体类型处理修复**：修复了pyrogram MessageEntityType枚举处理错误导致TEXT_LINK检测失败的问题
+  - 🔧 **根本原因**：之前的代码无法正确处理pyrogram的MessageEntityType枚举，导致TEXT_LINK类型的隐式链接无法被识别
+  - ✅ **解决方案**：改进实体类型处理逻辑，优先使用枚举的`name`属性，正确识别TEXT_LINK、URL、EMAIL等类型
+  - 🎯 **修复效果**：现在包含"点击此处"等隐式超链接的消息能被正确过滤，exclude_links配置完全生效
+  - 📍 **修改位置**：`src/modules/forward/message_filter.py`的`_contains_links`方法
+
+### 技术实现
+- **枚举优先处理**：优先检查`raw_type.name`属性获取枚举名称，确保准确识别pyrogram实体类型
+- **降级处理机制**：提供`value`属性和字符串转换作为备用方案，确保兼容性
+- **详细调试日志**：记录原始类型和转换后类型，便于排查问题
+- **标准化比较**：统一转换为小写字符串进行比较，避免大小写问题
+
+### 用户体验改进
+- ✅ **隐式链接识别**：包含"点击此处"等TEXT_LINK类型的消息现在能被正确过滤
+- ✅ **配置一致性**：exclude_links配置对所有链接类型（显式、隐式）都有效
+- ✅ **调试透明**：通过日志可以清楚看到实体类型的检测和转换过程
+- ✅ **兼容保证**：支持pyrogram不同版本的实体类型表示方式
+
 ## [v2.2.19] - 2025-07-02
 
 ### 🐛 重要修复
