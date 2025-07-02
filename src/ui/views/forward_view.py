@@ -1081,6 +1081,10 @@ class ForwardView(QWidget):
         self._add_status_message("开始转发...")
         self._add_status_message("正在启动转发器...")
         
+        # 自动跳转到转发进度选项卡，方便用户查看转发状态
+        # 转发进度选项卡是第3个标签页，索引为2
+        self.config_tabs.setCurrentIndex(2)
+        
         # 异步开始转发（包含历史统计）
         asyncio.create_task(self._async_start_forward())
     
