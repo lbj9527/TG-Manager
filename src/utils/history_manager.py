@@ -24,10 +24,13 @@ class HistoryManager:
             os.makedirs(history_dir)
             logger.info(f"创建历史记录文件夹：{history_dir}")
             
+        # 所有历史记录文件都按日期分文件，防止文件无限增长
+        current_date = datetime.now().strftime("%Y%m%d")
+        
         # 设置历史记录文件路径
-        self.download_history_path = os.path.join(history_dir, "download_history.json")
-        self.upload_history_path = os.path.join(history_dir, "upload_history.json")
-        self.forward_history_path = os.path.join(history_dir, "forward_history.json")
+        self.download_history_path = os.path.join(history_dir, f"download_history_{current_date}.json")
+        self.upload_history_path = os.path.join(history_dir, f"upload_history_{current_date}.json")
+        self.forward_history_path = os.path.join(history_dir, f"forward_history_{current_date}.json")
         
         # 初始化历史记录文件
         self._init_history_files()
