@@ -368,6 +368,15 @@ class Forwarder():
                                         # 这是纯文本消息，进行转发处理
                                         _logger.debug(f"发现纯文本消息 {message_id}: '{message.text[:50]}...'")
                                         
+                                        # 应用链接过滤检查
+                                        exclude_links = pair.get('exclude_links', False)
+                                        if exclude_links:
+                                            message_entities = getattr(message, 'entities', None)
+                                            if self.message_filter._contains_links(message.text, message_entities):
+                                                _logger.info(f"纯文本消息 {message_id} 包含链接，根据exclude_links配置被过滤")
+                                                processed_text_message_ids.add(message_id)
+                                                continue
+                                        
                                         # 应用文本替换
                                         text_content = message.text
                                         text_replacements = pair.get('text_replacements', {})
