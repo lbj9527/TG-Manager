@@ -405,8 +405,16 @@ class ForwardView(QWidget):
         """创建转发状态面板"""
         # 创建转发进度标签页
         self.progress_tab = QWidget()
-        status_layout = QVBoxLayout(self.progress_tab)
-        status_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout = QVBoxLayout(self.progress_tab)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+        
+        # 创建垂直分割器，用于分割状态表格和日志显示区域
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # 状态表格容器
+        status_widget = QWidget()
+        status_layout = QVBoxLayout(status_widget)
+        status_layout.setContentsMargins(0, 0, 0, 0)
         
         # 状态表格
         self.status_table = QTableWidget()
@@ -416,13 +424,18 @@ class ForwardView(QWidget):
         self.status_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.status_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
-        # 将状态表格添加到布局，设置拉伸因子为2（占2/3高度）
-        status_layout.addWidget(self.status_table, 2)
+        # 将状态表格添加到状态容器
+        status_layout.addWidget(self.status_table)
+        
+        # 日志显示区域容器
+        log_widget = QWidget()
+        log_layout = QVBoxLayout(log_widget)
+        log_layout.setContentsMargins(0, 0, 0, 0)
         
         # 创建日志显示区域标签
         log_label = QLabel("转发日志:")
-        log_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
-        status_layout.addWidget(log_label)
+        log_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
+        log_layout.addWidget(log_label)
         
         # 创建日志显示区域
         self.log_display = QTextEdit()
@@ -442,8 +455,34 @@ class ForwardView(QWidget):
             }
         """)
         
-        # 将日志显示区域添加到布局，设置拉伸因子为1（占1/3高度）
-        status_layout.addWidget(self.log_display, 1)
+        # 将日志显示区域添加到日志容器
+        log_layout.addWidget(self.log_display)
+        
+        # 将状态表格和日志显示区域添加到分割器
+        splitter.addWidget(status_widget)
+        splitter.addWidget(log_widget)
+        
+        # 设置分割器的初始大小比例（3:2，即状态表格占3/5，日志显示占2/5）
+        splitter.setSizes([300, 200])  # 可以根据需要调整具体数值
+        
+        # 设置分割器的拉伸因子，使两个区域都能够调整大小
+        splitter.setStretchFactor(0, 3)  # 状态表格区域拉伸因子为3
+        splitter.setStretchFactor(1, 2)  # 日志显示区域拉伸因子为2
+        
+        # 设置分割器的样式，使分割条更明显
+        splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #dee2e6;
+                height: 3px;
+                border-radius: 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: #dc3545;
+            }
+        """)
+        
+        # 将分割器添加到主布局
+        main_layout.addWidget(splitter)
         
         # 添加转发进度标签页到配置面板
         self.config_tabs.addTab(self.progress_tab, "转发进度")
