@@ -550,6 +550,10 @@ class ForwardView(QWidget):
     
     def _update_status_table(self):
         """更新状态表格，根据已启用的频道对填充表格"""
+        # 保存当前的转发状态，避免在转发过程中被重置
+        current_forwarding_status = getattr(self, 'forwarding_status', False)
+        current_status_text = "转发中" if current_forwarding_status else "准备中"
+        
         # 清空表格
         self.status_table.setRowCount(0)
         self.status_table_data.clear()
@@ -590,7 +594,8 @@ class ForwardView(QWidget):
                     count_text = f"{forwarded_count}/{total_count}"
                 
                 count_item = QTableWidgetItem(count_text)
-                status_item = QTableWidgetItem("准备中")
+                # 使用当前的转发状态，而不是硬编码为"准备中"
+                status_item = QTableWidgetItem(current_status_text)
                 
                 # 设置表格项
                 self.status_table.setItem(row_index, 0, source_item)
@@ -602,12 +607,12 @@ class ForwardView(QWidget):
                 self.status_table_data[key] = {
                     'forwarded': forwarded_count,
                     'total': total_count,
-                    'status': "准备中"
+                    'status': current_status_text
                 }
                 
                 row_index += 1
         
-        logger.debug(f"状态表格已更新，显示 {row_index} 个转发目标")
+        logger.debug(f"状态表格已更新，显示 {row_index} 个转发目标，当前状态: {current_status_text}")
     
     async def _build_channel_id_mapping(self):
         """建立频道ID到状态表格行的映射"""
