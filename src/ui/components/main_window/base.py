@@ -8,10 +8,10 @@ from loguru import logger
 import os.path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QStyle, QSizePolicy,
-    QStackedLayout, QLabel
+    QStackedLayout, QLabel, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QIcon, QResizeEvent, QPixmap
+from PySide6.QtGui import QIcon, QResizeEvent, QPixmap, QCloseEvent
 
 class MainWindowBase(QMainWindow):
     """主窗口基础类
@@ -55,6 +55,58 @@ class MainWindowBase(QMainWindow):
         )
         
         logger.info("主窗口基础框架初始化完成")
+    
+    def closeEvent(self, event: QCloseEvent):
+        """处理窗口关闭事件
+        
+        Args:
+            event: 关闭事件
+        """
+        try:
+            # 检查是否启用了退出确认
+            confirm_exit = False
+            if isinstance(self.config, dict) and 'UI' in self.config:
+                ui_config = self.config.get('UI', {})
+                if isinstance(ui_config, dict):
+                    confirm_exit = ui_config.get('confirm_exit', False)
+                elif hasattr(ui_config, 'confirm_exit'):
+                    # 处理ui_config是配置对象的情况
+                    confirm_exit = ui_config.confirm_exit
+            
+            logger.debug(f"窗口关闭事件，confirm_exit设置: {confirm_exit}")
+            
+            # 如果启用了退出确认，显示确认对话框
+            if confirm_exit:
+                reply = QMessageBox.question(
+                    self,
+                    "确认退出",
+                    "确定要退出 TG-Manager 吗？\n\n正在运行的任务将被停止。",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.Yes:
+                    logger.info("用户确认退出应用程序")
+                    # 接受关闭事件，继续退出
+                    event.accept()
+                    # 调用父类的closeEvent以确保正常的清理过程
+                    super().closeEvent(event)
+                else:
+                    logger.info("用户取消退出操作")
+                    # 忽略关闭事件，阻止窗口关闭
+                    event.ignore()
+                    return
+            else:
+                # 如果没有启用退出确认，直接关闭
+                logger.info("退出确认未启用，直接关闭应用程序")
+                event.accept()
+                super().closeEvent(event)
+                
+        except Exception as e:
+            logger.error(f"处理窗口关闭事件时出错: {e}")
+            # 出错时默认接受关闭事件
+            event.accept()
+            super().closeEvent(event)
     
     def _create_welcome_widget(self):
         """创建欢迎页面"""
