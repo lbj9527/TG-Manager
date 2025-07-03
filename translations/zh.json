@@ -1,0 +1,272 @@
+{
+  "app": {
+    "title": "TG-Manager - 专业Telegram消息转发管理器",
+    "description": "一个功能强大的 Telegram 消息转发管理工具，支持多频道消息批量转发、实时监听转发、媒体文件上传下载等功能。"
+  },
+  "ui": {
+    "common": {
+      "ok": "确定",
+      "cancel": "取消", 
+      "close": "关闭",
+      "save": "保存",
+      "edit": "编辑",
+      "delete": "删除",
+      "add": "添加",
+      "remove": "移除",
+      "reset": "重置",
+      "refresh": "刷新",
+      "browse": "浏览",
+      "apply": "应用",
+      "yes": "是",
+      "no": "否",
+      "warning": "警告",
+      "error": "错误",
+      "info": "信息",
+      "success": "成功",
+      "start": "开始",
+      "stop": "停止",
+      "pause": "暂停",
+      "resume": "恢复",
+      "clear": "清除",
+      "import": "导入",
+      "export": "导出"
+    },
+    "menu": {
+      "file": "文件",
+      "edit": "编辑", 
+      "view": "视图",
+      "tools": "工具",
+      "help": "帮助",
+      "settings": "设置",
+      "exit": "退出",
+      "about": "关于"
+    },
+    "sidebar": {
+      "title": "导航与任务"
+    },
+    "tabs": {
+      "download": "下载",
+      "upload": "上传",
+      "forward": "转发",
+      "monitor": "监听",
+      "history": "历史",
+      "logs": "日志",
+      "tasks": "任务"
+    },
+    "forward": {
+      "title": "消息转发",
+      "source_channel": "源频道:",
+      "target_channels": "目标频道:",
+      "source_placeholder": "频道链接或ID (例如: https://t.me/example 或 -1001234567890)",
+      "target_placeholder": "目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)",
+      "text_replacement": "文本替换:",
+      "original_text": "要替换的原始文本，多个用英文逗号分隔如：A,B",
+      "target_text": "替换后的目标文本，多个用英文逗号分隔如：C,D",
+      "filter_options": "过滤选项:",
+      "keyword_filter": "关键词过滤:",
+      "start_forward": "开始转发",
+      "stop_forward": "停止转发",
+      "add_pair": "添加频道对",
+      "remove_pair": "移除频道对",
+      "status": {
+        "ready": "就绪",
+        "running": "转发中",
+        "stopped": "已停止",
+        "completed": "已完成",
+        "error": "错误"
+      },
+      "progress": {
+        "collecting": "正在收集消息...",
+        "forwarding": "正在转发消息...",
+        "completed": "转发完成",
+        "failed": "转发失败"
+      }
+    },
+    "upload": {
+      "title": "媒体上传",
+      "select_files": "选择文件",
+      "target_channel": "目标频道:",
+      "upload_progress": "上传进度:",
+      "start_upload": "开始上传",
+      "stop_upload": "停止上传",
+      "file_list": "文件列表",
+      "status": {
+        "waiting": "等待中",
+        "uploading": "上传中",
+        "completed": "已完成",
+        "failed": "失败"
+      }
+    },
+    "download": {
+      "title": "媒体下载",
+      "source_channel": "源频道:",
+      "download_path": "下载路径:",
+      "start_download": "开始下载",
+      "stop_download": "停止下载",
+      "file_types": "文件类型:",
+      "progress": "下载进度:",
+      "status": {
+        "scanning": "扫描中",
+        "downloading": "下载中", 
+        "completed": "已完成",
+        "failed": "失败"
+      }
+    },
+    "listen": {
+      "title": "消息监听",
+      "target_channels": "监听频道:",
+      "start_listen": "开始监听",
+      "stop_listen": "停止监听",
+      "auto_forward": "自动转发",
+      "message_filter": "消息过滤:",
+      "status": {
+        "listening": "监听中",
+        "stopped": "已停止",
+        "error": "连接错误"
+      }
+    },
+    "tasks": {
+      "title": "任务管理",
+      "active_tasks": "活动任务",
+      "completed_tasks": "已完成任务",
+      "failed_tasks": "失败任务",
+      "task_details": "任务详情",
+      "clear_completed": "清空已完成",
+      "retry_failed": "重试失败任务"
+    },
+    "settings": {
+      "title": "设置",
+      "tabs": {
+        "api": "API设置",
+        "proxy": "网络代理",
+        "ui": "界面"
+      },
+      "api": {
+        "title": "Telegram API设置",
+        "api_id": "API ID:",
+        "api_hash": "API Hash:",
+        "phone_number": "手机号码:",
+        "login": "登录",
+        "logged_in": "已登录",
+        "login_tip": "请填写您的Telegram API ID、API Hash和手机号码后点击登录按钮。\n如未申请API凭据，请访问 <a href='https://my.telegram.org'>https://my.telegram.org</a> 申请。\n手机号码格式应为国际格式，例如：+86 12345678901",
+        "session": {
+          "title": "会话设置",
+          "session_name": "会话名称:",
+          "auto_restart": "连接断开后自动重连"
+        }
+      },
+      "proxy": {
+        "title": "代理设置",
+        "use_proxy": "使用代理",
+        "proxy_type": "代理类型:",
+        "proxy_host": "代理主机:",
+        "proxy_port": "代理端口:",
+        "proxy_username": "用户名(可选):",
+        "proxy_password": "密码(可选):"
+      },
+      "ui": {
+        "theme": {
+          "title": "主题设置",
+          "app_theme": "应用主题:",
+          "language": "界面语言:",
+          "theme_tooltip": "选择应用程序主题，更改后立即生效",
+          "language_tooltip": "选择应用程序界面语言，重启应用后生效"
+        },
+        "behavior": {
+          "title": "行为设置",
+          "confirm_exit": "退出前确认",
+          "minimize_to_tray": "最小化到系统托盘",
+          "start_minimized": "启动时最小化",
+          "start_minimized_tooltip": "启用后程序启动时将自动最小化到系统托盘，需要同时启用'最小化到系统托盘'选项"
+        },
+        "notifications": {
+          "title": "通知设置",
+          "enable_notifications": "启用桌面通知",
+          "notification_sound": "通知声音"
+        }
+      },
+      "buttons": {
+        "save": "保存设置",
+        "reset": "重置为默认"
+      }
+    },
+    "dialogs": {
+      "confirm_exit": {
+        "title": "确认退出",
+        "message": "确定要退出应用程序吗？",
+        "detail": "正在运行的任务将被停止。"
+      },
+      "reset_settings": {
+        "title": "重置确认",
+        "message": "确认要将所有设置重置为默认值吗？"
+      },
+      "settings_saved": {
+        "title": "设置",
+        "message": "设置已成功保存"
+      },
+      "language_changed": {
+        "title": "语言变更",
+        "message": "语言设置已更改，重启应用后生效",
+        "restart_now": "立即重启",
+        "restart_later": "稍后重启"
+      }
+    },
+    "status": {
+      "ready": "就绪",
+      "connecting": "连接中...",
+      "connected": "已连接",
+      "disconnected": "已断开",
+      "error": "错误",
+      "loading": "加载中...",
+      "saving": "保存中...",
+      "processing": "处理中..."
+    },
+    "tooltips": {
+      "minimize_to_tray": "最小化到系统托盘而不是关闭程序",
+      "auto_restart": "当连接意外断开时自动重新连接",
+      "proxy_settings": "配置网络代理以访问Telegram服务"
+    }
+  },
+  "errors": {
+    "validation": {
+      "api_id_required": "API ID必须是正整数",
+      "api_hash_required": "API Hash必须是32位十六进制字符串",
+      "proxy_addr_required": "启用代理时，代理地址不能为空。请输入有效的代理服务器地址。",
+      "proxy_port_invalid": "代理端口必须在1-65535范围内"
+    },
+    "network": {
+      "connection_failed": "连接失败",
+      "timeout": "连接超时",
+      "proxy_error": "代理连接错误"
+    },
+    "file": {
+      "not_found": "文件未找到",
+      "permission_denied": "权限被拒绝",
+      "invalid_format": "文件格式无效"
+    },
+    "config": {
+      "load_failed": "配置加载失败",
+      "save_failed": "配置保存失败",
+      "invalid_config": "配置文件无效"
+    }
+  },
+  "messages": {
+    "info": {
+      "settings_saved": "设置已成功保存",
+      "config_loaded": "配置已加载",
+      "language_changed": "语言已切换到 {language}",
+      "theme_changed": "主题已切换到 {theme}"
+    },
+    "warnings": {
+      "unsaved_changes": "有未保存的更改",
+      "invalid_settings": "设置验证失败",
+      "connection_unstable": "连接不稳定"
+    }
+  },
+  "system_tray": {
+    "show": "显示主窗口",
+    "hide": "隐藏到托盘",
+    "exit": "退出程序",
+    "about": "关于 TG-Manager"
+  }
+} 

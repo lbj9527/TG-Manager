@@ -59,6 +59,25 @@ class WindowStateMixin:
                             logger.debug("成功恢复窗口状态")
                 except Exception as e:
                     logger.warning(f"恢复窗口状态失败: {e}")
+            
+            # 恢复侧边栏几何形状
+            if 'sidebar_geometry' in ui_config:
+                try:
+                    sidebar_geo = ui_config.get('sidebar_geometry')
+                    if sidebar_geo and isinstance(sidebar_geo, dict):
+                        from PySide6.QtCore import QRect
+                        restored_geometry = QRect(
+                            sidebar_geo.get('x', 0),
+                            sidebar_geo.get('y', 0),
+                            sidebar_geo.get('width', 200),
+                            sidebar_geo.get('height', 600)
+                        )
+                        logger.debug(f"正在恢复侧边栏几何形状: {restored_geometry}")
+                        
+                        # 延迟恢复侧边栏几何形状，确保侧边栏已创建
+                        QTimer.singleShot(100, lambda: self._restore_sidebar_geometry(restored_geometry))
+                except Exception as e:
+                    logger.warning(f"恢复侧边栏几何形状失败: {e}")
         
         # 确保所有窗口元素正确显示
         self.update()
@@ -97,6 +116,17 @@ class WindowStateMixin:
                     if 'state' in state_data:
                         ui_config['window_state'] = state_data['state'].toBase64().data().decode()
                         logger.debug("保存了窗口状态，包括工具栏位置")
+                    
+                    # 保存侧边栏几何形状
+                    if 'sidebar_geometry' in state_data:
+                        sidebar_geo = state_data['sidebar_geometry']
+                        ui_config['sidebar_geometry'] = {
+                            'x': sidebar_geo.x(),
+                            'y': sidebar_geo.y(),
+                            'width': sidebar_geo.width(),
+                            'height': sidebar_geo.height()
+                        }
+                        logger.debug(f"保存了侧边栏几何形状: {ui_config['sidebar_geometry']}")
                     
                     # 更新配置
                     self.config['UI'] = ui_config
@@ -151,6 +181,12 @@ class WindowStateMixin:
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
+        
+        # 保存侧边栏几何形状
+        if hasattr(self, 'sidebar_dock'):
+            window_state['sidebar_geometry'] = self.sidebar_dock.geometry()
+            logger.debug(f"保存侧边栏几何形状: {window_state['sidebar_geometry']}")
+        
         logger.debug("保存窗口布局状态，包括窗口几何信息和工具栏位置")
         self.window_state_changed.emit(window_state)
     
@@ -198,25 +234,57 @@ class WindowStateMixin:
     
     def _handle_resize_completed(self):
         """窗口大小调整完成后的处理"""
+        logger.debug(f"=== 窗口大小调整完成处理开始 ===")
+        logger.debug(f"当前窗口尺寸: {self.width()}x{self.height()}")
+        
+        # 检查是否正在进行语言切换，如果是则跳过分割器尺寸调整
+        if hasattr(self, 'translation_manager') and hasattr(self.translation_manager, '_is_language_changing'):
+            if self.translation_manager._is_language_changing:
+                logger.debug("检测到语言切换，跳过分割器尺寸调整")
+                # 发出窗口状态变化信号但不调整分割器
+                window_state = {
+                    'geometry': self.saveGeometry(),
+                    'state': self.saveState()
+                }
+                self.window_state_changed.emit(window_state)
+                return
+        
         if hasattr(self, 'sidebar_splitter'):
+            logger.debug(f"侧边栏分割器存在，当前尺寸: {self.sidebar_splitter.sizes()}")
+            
             # 获取当前窗口高度
             current_height = self.height()
+            logger.debug(f"当前窗口高度: {current_height}")
             
             # 获取当前分割器尺寸
             current_sizes = self.sidebar_splitter.sizes()
             nav_height = current_sizes[0]  # 导航树当前高度
+            logger.debug(f"当前分割器尺寸: {current_sizes}, 导航树高度: {nav_height}")
             
             # 只有当窗口高度大于阈值时才调整，防止在极小的窗口尺寸下产生问题
             if current_height > 400:
+                logger.debug("窗口高度大于400，准备调整分割器尺寸")
                 # 调整为50%导航树，50%任务概览
-                self.sidebar_splitter.setSizes([int(current_height * 0.5), int(current_height * 0.5)])
+                new_sizes = [int(current_height * 0.5), int(current_height * 0.5)]
+                logger.debug(f"设置新的分割器尺寸: {new_sizes}")
+                self.sidebar_splitter.setSizes(new_sizes)
+                
+                # 验证设置是否成功
+                actual_sizes = self.sidebar_splitter.sizes()
+                logger.debug(f"设置后的实际分割器尺寸: {actual_sizes}")
+            else:
+                logger.debug(f"窗口高度 {current_height} 小于等于400，跳过分割器调整")
+        else:
+            logger.warning("侧边栏分割器不存在")
         
         # 发出窗口状态变化信号
         window_state = {
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
+        logger.debug("发出窗口状态变化信号")
         self.window_state_changed.emit(window_state)
+        logger.debug("=== 窗口大小调整完成处理结束 ===")
     
     def eventFilter(self, obj, event):
         """事件过滤器，用于捕获工具栏的鼠标事件
@@ -240,4 +308,27 @@ class WindowStateMixin:
             # 注意：移动事件不再单独处理，避免触发过多的保存
             
         # 继续正常事件处理
-        return super().eventFilter(obj, event) 
+        return super().eventFilter(obj, event)
+    
+    def _restore_sidebar_geometry(self, geometry):
+        """恢复侧边栏几何形状
+        
+        Args:
+            geometry: 要恢复的几何形状
+        """
+        if hasattr(self, 'sidebar_dock'):
+            try:
+                logger.debug(f"恢复侧边栏几何形状: {geometry}")
+                self.sidebar_dock.setGeometry(geometry)
+                
+                # 更新保存的几何形状
+                self._last_sidebar_geometry = geometry
+                
+                # 验证恢复是否成功
+                actual_geometry = self.sidebar_dock.geometry()
+                if actual_geometry != geometry:
+                    logger.warning(f"侧边栏几何形状恢复失败: 期望 {geometry}, 实际 {actual_geometry}")
+                else:
+                    logger.debug("侧边栏几何形状恢复成功")
+            except Exception as e:
+                logger.error(f"恢复侧边栏几何形状时出错: {e}") 

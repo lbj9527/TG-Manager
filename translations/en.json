@@ -1,0 +1,272 @@
+{
+  "app": {
+    "title": "TG-Manager - Professional<br>Telegram Message Forwarding Manager",
+    "description": "A powerful Telegram message forwarding management tool that supports multi-channel message batch forwarding, real-time monitoring and forwarding, media file upload and download, and other functions."
+  },
+  "ui": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel", 
+      "close": "Close",
+      "save": "Save",
+      "edit": "Edit",
+      "delete": "Delete",
+      "add": "Add",
+      "remove": "Remove",
+      "reset": "Reset",
+      "refresh": "Refresh",
+      "browse": "Browse",
+      "apply": "Apply",
+      "yes": "Yes",
+      "no": "No",
+      "warning": "Warning",
+      "error": "Error",
+      "info": "Info",
+      "success": "Success",
+      "start": "Start",
+      "stop": "Stop",
+      "pause": "Pause",
+      "resume": "Resume",
+      "clear": "Clear",
+      "import": "Import",
+      "export": "Export"
+    },
+    "menu": {
+      "file": "File",
+      "edit": "Edit", 
+      "view": "View",
+      "tools": "Tools",
+      "help": "Help",
+      "settings": "Settings",
+      "exit": "Exit",
+      "about": "About"
+    },
+    "sidebar": {
+      "title": "Navigation & Tasks"
+    },
+    "tabs": {
+      "download": "Download",
+      "upload": "Upload",
+      "forward": "Forward",
+      "monitor": "Monitor",
+      "history": "History",
+      "logs": "Logs",
+      "tasks": "Tasks"
+    },
+    "forward": {
+      "title": "Message Forwarding",
+      "source_channel": "Source Channel:",
+      "target_channels": "Target Channels:",
+      "source_placeholder": "Channel link or ID (e.g: https://t.me/example or -1001234567890)",
+      "target_placeholder": "Target channels, separate multiple with commas (e.g: @channel1, @channel2)",
+      "text_replacement": "Text Replacement:",
+      "original_text": "Original text to replace, separate multiple with commas like: A,B",
+      "target_text": "Target text after replacement, separate multiple with commas like: C,D",
+      "filter_options": "Filter Options:",
+      "keyword_filter": "Keyword Filter:",
+      "start_forward": "Start Forwarding",
+      "stop_forward": "Stop Forwarding",
+      "add_pair": "Add Channel Pair",
+      "remove_pair": "Remove Channel Pair",
+      "status": {
+        "ready": "Ready",
+        "running": "Forwarding",
+        "stopped": "Stopped",
+        "completed": "Completed",
+        "error": "Error"
+      },
+      "progress": {
+        "collecting": "Collecting messages...",
+        "forwarding": "Forwarding messages...",
+        "completed": "Forwarding completed",
+        "failed": "Forwarding failed"
+      }
+    },
+    "upload": {
+      "title": "Media Upload",
+      "select_files": "Select Files",
+      "target_channel": "Target Channel:",
+      "upload_progress": "Upload Progress:",
+      "start_upload": "Start Upload",
+      "stop_upload": "Stop Upload",
+      "file_list": "File List",
+      "status": {
+        "waiting": "Waiting",
+        "uploading": "Uploading",
+        "completed": "Completed",
+        "failed": "Failed"
+      }
+    },
+    "download": {
+      "title": "Media Download",
+      "source_channel": "Source Channel:",
+      "download_path": "Download Path:",
+      "start_download": "Start Download",
+      "stop_download": "Stop Download",
+      "file_types": "File Types:",
+      "progress": "Download Progress:",
+      "status": {
+        "scanning": "Scanning",
+        "downloading": "Downloading", 
+        "completed": "Completed",
+        "failed": "Failed"
+      }
+    },
+    "listen": {
+      "title": "Message Monitoring",
+      "target_channels": "Monitored Channels:",
+      "start_listen": "Start Monitoring",
+      "stop_listen": "Stop Monitoring",
+      "auto_forward": "Auto Forward",
+      "message_filter": "Message Filter:",
+      "status": {
+        "listening": "Monitoring",
+        "stopped": "Stopped",
+        "error": "Connection Error"
+      }
+    },
+    "tasks": {
+      "title": "Task Management",
+      "active_tasks": "Active Tasks",
+      "completed_tasks": "Completed Tasks",
+      "failed_tasks": "Failed Tasks",
+      "task_details": "Task Details",
+      "clear_completed": "Clear Completed",
+      "retry_failed": "Retry Failed Tasks"
+    },
+    "settings": {
+      "title": "Settings",
+      "tabs": {
+        "api": "API Settings",
+        "proxy": "Network Proxy",
+        "ui": "Interface"
+      },
+      "api": {
+        "title": "Telegram API Settings",
+        "api_id": "API ID:",
+        "api_hash": "API Hash:",
+        "phone_number": "Phone Number:",
+        "login": "Login",
+        "logged_in": "Logged In",
+        "login_tip": "Please fill in your Telegram API ID, API Hash and phone number, then click the login button.\nIf you haven't applied for API credentials, please visit <a href='https://my.telegram.org'>https://my.telegram.org</a> to apply.\nPhone number format should be international format, e.g.: +86 12345678901",
+        "session": {
+          "title": "Session Settings",
+          "session_name": "Session Name:",
+          "auto_restart": "Auto reconnect when disconnected"
+        }
+      },
+      "proxy": {
+        "title": "Proxy Settings",
+        "use_proxy": "Use Proxy",
+        "proxy_type": "Proxy Type:",
+        "proxy_host": "Proxy Host:",
+        "proxy_port": "Proxy Port:",
+        "proxy_username": "Username (Optional):",
+        "proxy_password": "Password (Optional):"
+      },
+      "ui": {
+        "theme": {
+          "title": "Theme Settings",
+          "app_theme": "Application Theme:",
+          "language": "Interface Language:",
+          "theme_tooltip": "Select application theme, changes take effect immediately",
+          "language_tooltip": "Select application interface language, takes effect after restart"
+        },
+        "behavior": {
+          "title": "Behavior Settings",
+          "confirm_exit": "Confirm before exit",
+          "minimize_to_tray": "Minimize to system tray",
+          "start_minimized": "Start minimized",
+          "start_minimized_tooltip": "When enabled, the program will automatically minimize to system tray on startup. Requires 'Minimize to system tray' option to be enabled"
+        },
+        "notifications": {
+          "title": "Notification Settings",
+          "enable_notifications": "Enable desktop notifications",
+          "notification_sound": "Notification sound"
+        }
+      },
+      "buttons": {
+        "save": "Save Settings",
+        "reset": "Reset to Default"
+      }
+    },
+    "dialogs": {
+      "confirm_exit": {
+        "title": "Confirm Exit",
+        "message": "Are you sure you want to exit the application?",
+        "detail": "Running tasks will be stopped."
+      },
+      "reset_settings": {
+        "title": "Reset Confirmation",
+        "message": "Are you sure you want to reset all settings to default values?"
+      },
+      "settings_saved": {
+        "title": "Settings",
+        "message": "Settings have been saved successfully"
+      },
+      "language_changed": {
+        "title": "Language Changed",
+        "message": "Language setting has been changed, takes effect after restart",
+        "restart_now": "Restart Now",
+        "restart_later": "Restart Later"
+      }
+    },
+    "status": {
+      "ready": "Ready",
+      "connecting": "Connecting...",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "loading": "Loading...",
+      "saving": "Saving...",
+      "processing": "Processing..."
+    },
+    "tooltips": {
+      "minimize_to_tray": "Minimize to system tray instead of closing the program",
+      "auto_restart": "Automatically reconnect when connection is unexpectedly lost",
+      "proxy_settings": "Configure network proxy to access Telegram services"
+    }
+  },
+  "errors": {
+    "validation": {
+      "api_id_required": "API ID must be a positive integer",
+      "api_hash_required": "API Hash must be a 32-character hexadecimal string",
+      "proxy_addr_required": "When proxy is enabled, proxy address cannot be empty. Please enter a valid proxy server address.",
+      "proxy_port_invalid": "Proxy port must be in the range 1-65535"
+    },
+    "network": {
+      "connection_failed": "Connection failed",
+      "timeout": "Connection timeout",
+      "proxy_error": "Proxy connection error"
+    },
+    "file": {
+      "not_found": "File not found",
+      "permission_denied": "Permission denied",
+      "invalid_format": "Invalid file format"
+    },
+    "config": {
+      "load_failed": "Failed to load configuration",
+      "save_failed": "Failed to save configuration",
+      "invalid_config": "Invalid configuration file"
+    }
+  },
+  "messages": {
+    "info": {
+      "settings_saved": "Settings have been saved successfully",
+      "config_loaded": "Configuration loaded",
+      "language_changed": "Language switched to {language}",
+      "theme_changed": "Theme switched to {theme}"
+    },
+    "warnings": {
+      "unsaved_changes": "There are unsaved changes",
+      "invalid_settings": "Settings validation failed",
+      "connection_unstable": "Connection unstable"
+    }
+  },
+  "system_tray": {
+    "show": "Show Main Window",
+    "hide": "Hide to Tray",
+    "exit": "Exit Program",
+    "about": "About TG-Manager"
+  }
+} 

@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon, QResizeEvent, QPixmap, QCloseEvent
 
+from src.utils.translation_manager import tr
+
 class MainWindowBase(QMainWindow):
     """主窗口基础类
     
@@ -33,7 +35,11 @@ class MainWindowBase(QMainWindow):
         self.config = config or {}
         
         # 初始化UI
-        self.setWindowTitle("TG-Manager")
+        # 设置窗口标题，支持HTML格式的换行
+        title_text = tr("app.title")
+        # 将HTML换行标签转换为实际的换行符
+        title_text = title_text.replace("<br>", "\n")
+        self.setWindowTitle(title_text)
         self.setWindowIcon(self._get_icon("app"))
         self.opened_views = {}  # 跟踪已打开的视图
         
@@ -79,8 +85,8 @@ class MainWindowBase(QMainWindow):
             if confirm_exit:
                 reply = QMessageBox.question(
                     self,
-                    "确认退出",
-                    "确定要退出 TG-Manager 吗？\n\n正在运行的任务将被停止。",
+                    tr("ui.dialogs.confirm_exit.title"),
+                    tr("ui.dialogs.confirm_exit.message") + "\n\n" + tr("ui.dialogs.confirm_exit.detail"),
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
@@ -114,23 +120,42 @@ class MainWindowBase(QMainWindow):
         welcome_layout = QVBoxLayout(self.welcome_widget)
         
         # 创建水印标签
-        welcome_label = QLabel("<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>欢迎使用 TG-Manager</h1>"
-                              "<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>")
-        welcome_label.setAlignment(Qt.AlignCenter)
-        welcome_label.setStyleSheet("""
+        welcome_text = (
+            f"<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>{tr('app.title')}</h1>"
+            f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>"
+        )
+        self.welcome_label = QLabel(welcome_text)
+        self.welcome_label.setAlignment(Qt.AlignCenter)
+        self.welcome_label.setStyleSheet("""
             background-color: transparent;
             color: rgba(120, 120, 120, 60%);
         """)
         # 使用更大的字号
-        font = welcome_label.font()
+        font = self.welcome_label.font()
         font.setPointSize(font.pointSize() + 6)
-        welcome_label.setFont(font)
+        self.welcome_label.setFont(font)
         
         welcome_layout.addStretch(2)  # 顶部弹性空间
-        welcome_layout.addWidget(welcome_label, 0, Qt.AlignCenter)  # 居中显示
+        welcome_layout.addWidget(self.welcome_label, 0, Qt.AlignCenter)  # 居中显示
         welcome_layout.addStretch(3)  # 底部弹性空间
         
         self.central_layout.addWidget(self.welcome_widget)
+    
+    def update_translations(self):
+        """更新翻译文本"""
+        # 更新窗口标题，支持HTML格式的换行
+        title_text = tr("app.title")
+        # 将HTML换行标签转换为实际的换行符
+        title_text = title_text.replace("<br>", "\n")
+        self.setWindowTitle(title_text)
+        
+        # 更新欢迎页面文本
+        if hasattr(self, 'welcome_label'):
+            welcome_text = (
+                f"<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>{tr('app.title')}</h1>"
+                f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>"
+            )
+            self.welcome_label.setText(welcome_text)
     
     def _get_icon(self, icon_name):
         """获取图标，如果找不到则使用默认图标
@@ -191,12 +216,12 @@ class MainWindowBase(QMainWindow):
         """
         if is_initializing:
             # 显示初始化状态
-            self.show_status_message("初始化中，请稍等...", 0)  # 0表示不自动清除
+            self.show_status_message(tr("ui.status.loading"), 0)  # 0表示不自动清除
             # 禁用界面操作
             self.set_ui_enabled(False)
         else:
             # 清除初始化状态
-            self.show_status_message("初始化完成", 3000)
+            self.show_status_message(tr("ui.status.ready"), 3000)
             # 启用界面操作
             self.set_ui_enabled(True)
             

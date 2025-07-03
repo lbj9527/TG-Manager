@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 
 from src.utils.logger import get_logger
+from src.utils.translation_manager import get_translation_manager, tr
 
 logger = get_logger()
 
@@ -32,6 +33,10 @@ class TaskOverview(QWidget):
         """
         super().__init__(parent)
         
+        # 获取翻译管理器
+        self.translation_manager = get_translation_manager()
+        self.translation_manager.language_changed.connect(self._update_translations)
+        
         # 设置尺寸策略，允许组件在较小空间中工作
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
@@ -51,7 +56,7 @@ class TaskOverview(QWidget):
     def _create_header(self):
         """创建标题部分"""
         # 创建标题标签，使用较大字体并居中
-        self.summary_label = QLabel("任务列表")
+        self.summary_label = QLabel(tr("ui.tasks.title"))
         self.summary_label.setAlignment(Qt.AlignCenter)
         
         # 设置字体和样式
@@ -100,7 +105,7 @@ class TaskOverview(QWidget):
     
     def _create_view_all_button(self):
         """创建查看所有任务按钮"""
-        self.view_all_button = QPushButton("查看所有任务")
+        self.view_all_button = QPushButton(tr("ui.tasks.active_tasks"))
         self.view_all_button.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
@@ -322,4 +327,16 @@ class TaskOverview(QWidget):
         """清除所有任务"""
         # 移除所有任务小部件
         for task_id in list(self.task_widgets.keys()):
-            self.remove_task(task_id) 
+            self.remove_task(task_id)
+    
+    def _update_translations(self):
+        """更新翻译文本"""
+        # 更新标题
+        if hasattr(self, 'summary_label'):
+            self.summary_label.setText(tr("ui.tasks.title"))
+        
+        # 更新查看所有任务按钮
+        if hasattr(self, 'view_all_button'):
+            self.view_all_button.setText(tr("ui.tasks.active_tasks"))
+        
+        logger.debug("任务概览翻译已更新") 

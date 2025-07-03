@@ -25,6 +25,7 @@ from datetime import datetime
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType, UIChannelPair, UIForwardConfig
 from src.utils.async_utils import run_async_task
+from src.utils.translation_manager import get_translation_manager, tr
 
 logger = get_logger()
 
@@ -46,6 +47,10 @@ class ForwardView(QWidget):
         """
         super().__init__(parent)
         
+        # 翻译管理器
+        self.translation_manager = get_translation_manager()
+        self.translation_manager.language_changed.connect(self._update_translations)
+        
         self.config = config or {}
         # 初始化频道对列表
         self.channel_pairs = []
@@ -59,37 +64,14 @@ class ForwardView(QWidget):
         self.total_message_counts = {}  # 存储每个频道对的总消息数 {(source, target): total_count}
         self.forwarded_message_counts = {}  # 存储每个频道对的已转发消息数 {(source, target): forwarded_count}
         
+        # 存储需要翻译的组件引用
+        self.translatable_widgets = {}
+        
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setSpacing(2)  # 减小布局间距
         self.main_layout.setContentsMargins(4, 4, 4, 4)  # 减小边距
         self.setLayout(self.main_layout)
-        
-        # 设置统一的组框样式
-        # self.setStyleSheet("""
-        #     QGroupBox { 
-        #         font-weight: bold; 
-        #         padding-top: 2px; 
-        #         margin-top: 0.4em; 
-        #     }
-        #     QTabWidget::pane {
-        #         border: 1px solid #444;
-        #         padding: 1px;
-        #     }
-        #     QTabBar::tab {
-        #         padding: 3px 8px;
-        #     }
-        #     QListWidget {
-        #         alternate-background-color: rgba(60, 60, 60, 0.2);
-        #     }
-        #     QListWidget::item {
-        #         border-bottom: 1px solid rgba(100, 100, 100, 0.1);
-        #         padding: 4px 2px;
-        #     }
-        #     QListWidget::item:selected {
-        #         background-color: rgba(0, 120, 215, 0.6);
-        #     }
-        # """)
         
         # 创建上部配置标签页
         self.config_tabs = QTabWidget()
@@ -117,6 +99,72 @@ class ForwardView(QWidget):
             self.load_config(self.config)
         
         logger.info("转发界面初始化完成")
+    
+    def _update_translations(self):
+        """语言切换时更新所有翻译文本"""
+        # 更新标签页标题
+        if hasattr(self, 'config_tabs'):
+            # 更新配置标签页的标题
+            for i in range(self.config_tabs.count()):
+                if i == 0:  # 频道配置标签页
+                    self.config_tabs.setTabText(i, tr("ui.forward.title"))
+                elif i == 1:  # 转发选项标签页
+                    self.config_tabs.setTabText(i, "转发选项")  # 可以添加翻译键
+                elif i == 2:  # 转发进度标签页
+                    self.config_tabs.setTabText(i, tr("ui.tabs.forward"))
+        
+        # 更新表单标签
+        if 'source_label' in self.translatable_widgets:
+            self.translatable_widgets['source_label'].setText(tr("ui.forward.source_channel"))
+        if 'target_label' in self.translatable_widgets:
+            self.translatable_widgets['target_label'].setText(tr("ui.forward.target_channels"))
+        if 'text_replace_label' in self.translatable_widgets:
+            self.translatable_widgets['text_replace_label'].setText(tr("ui.forward.text_replacement"))
+        if 'replace_to_label' in self.translatable_widgets:
+            self.translatable_widgets['replace_to_label'].setText("替换为:")  # 保持原样或添加翻译键
+        if 'filter_options_label' in self.translatable_widgets:
+            self.translatable_widgets['filter_options_label'].setText(tr("ui.forward.filter_options"))
+        if 'keyword_label' in self.translatable_widgets:
+            self.translatable_widgets['keyword_label'].setText(tr("ui.forward.keyword_filter"))
+        
+        # 更新按钮
+        if 'start_button' in self.translatable_widgets:
+            button = self.translatable_widgets['start_button']
+            if self.forwarding_status:
+                button.setText(tr("ui.forward.stop_forward"))
+            else:
+                button.setText(tr("ui.forward.start_forward"))
+        
+        if 'stop_button' in self.translatable_widgets:
+            self.translatable_widgets['stop_button'].setText(tr("ui.forward.stop_forward"))
+        
+        if 'save_button' in self.translatable_widgets:
+            self.translatable_widgets['save_button'].setText(tr("ui.common.save"))
+        
+        if 'add_pair_button' in self.translatable_widgets:
+            self.translatable_widgets['add_pair_button'].setText(tr("ui.forward.add_pair"))
+        
+        if 'remove_pair_button' in self.translatable_widgets:
+            self.translatable_widgets['remove_pair_button'].setText(tr("ui.forward.remove_pair"))
+        
+        # 更新状态表格表头
+        if hasattr(self, 'status_table'):
+            self.status_table.setHorizontalHeaderLabels([
+                tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
+                tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
+                "已转发消息数",  # 可以添加翻译键
+                "状态"  # 可以使用tr("ui.common.status")
+            ])
+        
+        # 更新输入框占位符
+        if hasattr(self, 'source_input'):
+            self.source_input.setPlaceholderText(tr("ui.forward.source_placeholder"))
+        if hasattr(self, 'target_input'):
+            self.target_input.setPlaceholderText(tr("ui.forward.target_placeholder"))
+        if hasattr(self, 'original_text_input'):
+            self.original_text_input.setPlaceholderText(tr("ui.forward.original_text"))
+        if hasattr(self, 'target_text_input'):
+            self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
     
     def _create_config_panel(self):
         """创建配置标签页"""
@@ -147,8 +195,10 @@ class ForwardView(QWidget):
         source_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.source_input = QLineEdit()
-        self.source_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        source_form_layout.addRow("源频道:", self.source_input)
+        self.source_input.setPlaceholderText(tr("ui.forward.source_placeholder"))
+        source_label = QLabel(tr("ui.forward.source_channel"))
+        self.translatable_widgets['source_label'] = source_label
+        source_form_layout.addRow(source_label, self.source_input)
         config_layout.addLayout(source_form_layout)
         
         # 第二行：目标频道
@@ -158,8 +208,10 @@ class ForwardView(QWidget):
         target_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.target_input = QLineEdit()
-        self.target_input.setPlaceholderText("目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)")
-        target_form_layout.addRow("目标频道:", self.target_input)
+        self.target_input.setPlaceholderText(tr("ui.forward.target_placeholder"))
+        target_label = QLabel(tr("ui.forward.target_channels"))
+        self.translatable_widgets['target_label'] = target_label
+        target_form_layout.addRow(target_label, self.target_input)
         config_layout.addLayout(target_form_layout)
         
         # 第三行：文本替换
@@ -169,8 +221,10 @@ class ForwardView(QWidget):
         text_replace_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.original_text_input = QLineEdit()
-        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔如：A,B")
-        text_replace_form_layout.addRow("文本替换:", self.original_text_input)
+        self.original_text_input.setPlaceholderText(tr("ui.forward.original_text"))
+        text_replace_label = QLabel(tr("ui.forward.text_replacement"))
+        self.translatable_widgets['text_replace_label'] = text_replace_label
+        text_replace_form_layout.addRow(text_replace_label, self.original_text_input)
         config_layout.addLayout(text_replace_form_layout)
         
         # 第四行：替换为
@@ -180,13 +234,16 @@ class ForwardView(QWidget):
         replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.target_text_input = QLineEdit()
-        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
-        replace_to_form_layout.addRow("替换为:", self.target_text_input)
+        self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+        replace_to_label = QLabel("替换为:")  # 这个可以保持原样或者添加新的翻译键
+        self.translatable_widgets['replace_to_label'] = replace_to_label
+        replace_to_form_layout.addRow(replace_to_label, self.target_text_input)
         config_layout.addLayout(replace_to_form_layout)
         
         # 第五行：过滤选项label
-        filter_options_label = QLabel("过滤选项:")
+        filter_options_label = QLabel(tr("ui.forward.filter_options"))
         filter_options_label.setStyleSheet("font-weight: bold;")
+        self.translatable_widgets['filter_options_label'] = filter_options_label
         config_layout.addWidget(filter_options_label)
         
         # 第六行：关键词过滤
@@ -200,10 +257,12 @@ class ForwardView(QWidget):
         keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发包含关键词的消息")
+        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发包含关键词的消息")  # 可以添加翻译键
         keyword_layout.addWidget(self.keyword_input)
         
-        keyword_form_layout.addRow("关键词过滤:", keyword_layout)
+        keyword_label = QLabel(tr("ui.forward.keyword_filter"))
+        self.translatable_widgets['keyword_label'] = keyword_label
+        keyword_form_layout.addRow(keyword_label, keyword_layout)
         config_layout.addLayout(keyword_form_layout)
         
         # 第七行：媒体类型
@@ -314,12 +373,14 @@ class ForwardView(QWidget):
         id_and_buttons_layout.addSpacing(20)
         
         # 添加频道对和删除按钮
-        self.add_pair_button = QPushButton("添加频道对")
+        self.add_pair_button = QPushButton(tr("ui.forward.add_pair"))
         self.add_pair_button.setMinimumHeight(28)
+        self.translatable_widgets['add_pair_button'] = self.add_pair_button
         id_and_buttons_layout.addWidget(self.add_pair_button)
         
-        self.remove_pair_button = QPushButton("删除所选")
+        self.remove_pair_button = QPushButton(tr("ui.forward.remove_pair"))
         self.remove_pair_button.setMinimumHeight(28)
+        self.translatable_widgets['remove_pair_button'] = self.remove_pair_button
         id_and_buttons_layout.addWidget(self.remove_pair_button)
         
         # 添加弹性空间，让控件靠左对齐
@@ -398,8 +459,8 @@ class ForwardView(QWidget):
         options_layout.addStretch(1)
         
         # 将标签页添加到配置面板
-        self.config_tabs.addTab(self.channel_tab, "频道配置")
-        self.config_tabs.addTab(self.options_tab, "转发选项")
+        self.config_tabs.addTab(self.channel_tab, tr("ui.forward.title"))
+        self.config_tabs.addTab(self.options_tab, "转发选项")  # 可以添加翻译键
     
     def _create_forward_panel(self):
         """创建转发状态面板"""
@@ -419,7 +480,12 @@ class ForwardView(QWidget):
         # 状态表格
         self.status_table = QTableWidget()
         self.status_table.setColumnCount(4)
-        self.status_table.setHorizontalHeaderLabels(["源频道", "目标频道", "已转发消息数", "状态"])
+        self.status_table.setHorizontalHeaderLabels([
+            tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
+            tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
+            "已转发消息数",  # 可以添加翻译键
+            tr("ui.status.status")  # 添加状态翻译
+        ])
         self.status_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.status_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.status_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -485,19 +551,22 @@ class ForwardView(QWidget):
         main_layout.addWidget(splitter)
         
         # 添加转发进度标签页到配置面板
-        self.config_tabs.addTab(self.progress_tab, "转发进度")
+        self.config_tabs.addTab(self.progress_tab, tr("ui.tabs.forward"))
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
         button_layout = QHBoxLayout()
         
-        self.start_forward_button = QPushButton("开始转发")
+        self.start_forward_button = QPushButton(tr("ui.forward.start_forward"))
         self.start_forward_button.setMinimumHeight(40)
+        self.translatable_widgets['start_button'] = self.start_forward_button
         
-        self.stop_forward_button = QPushButton("停止转发")
+        self.stop_forward_button = QPushButton(tr("ui.forward.stop_forward"))
         self.stop_forward_button.setEnabled(False)
+        self.translatable_widgets['stop_button'] = self.stop_forward_button
         
-        self.save_config_button = QPushButton("保存配置")
+        self.save_config_button = QPushButton(tr("ui.common.save"))
+        self.translatable_widgets['save_button'] = self.save_config_button
         
         button_layout.addWidget(self.start_forward_button)
         button_layout.addWidget(self.stop_forward_button)

@@ -6,7 +6,7 @@ TG-Manager 主窗口侧边栏模块
 from loguru import logger
 from PySide6.QtWidgets import (
     QDockWidget, QSplitter, QMessageBox, 
-    QWidget, QVBoxLayout
+    QWidget, QVBoxLayout, QLabel, QHBoxLayout
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -52,17 +52,28 @@ class SidebarMixin:
     
     def _create_sidebar_splitter(self):
         """创建左侧分割器，用于管理导航树和任务概览之间的比例"""
+        logger.debug("=== 开始创建侧边栏分割器 ===")
+        
         # 移除之前添加的停靠窗口
-        self.removeDockWidget(self.nav_dock)
-        self.removeDockWidget(self.task_dock)
+        if hasattr(self, 'nav_dock'):
+            logger.debug("移除旧的导航停靠窗口")
+            self.removeDockWidget(self.nav_dock)
+        if hasattr(self, 'task_dock'):
+            logger.debug("移除旧的任务停靠窗口")
+            self.removeDockWidget(self.task_dock)
         
         # 创建新的停靠窗口，包含分割器
-        self.sidebar_dock = QDockWidget("导航与任务", self)
+        from src.utils.translation_manager import tr
+        sidebar_title = tr("ui.sidebar.title") if hasattr(self, 'translation_manager') else "导航与任务"
+        logger.debug(f"创建侧边栏停靠窗口，标题: {sidebar_title}")
+        
+        self.sidebar_dock = QDockWidget("", self)  # 标题留空，使用自定义标题栏
         self.sidebar_dock.setObjectName("sidebar_dock")
         self.sidebar_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.sidebar_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         
         # 创建分割器
+        logger.debug("创建垂直分割器")
         self.sidebar_splitter = QSplitter(Qt.Vertical)
         
         # 为QSplitter设置一个固定的子控件大小策略，防止导航树在启动时改变高度
@@ -70,29 +81,162 @@ class SidebarMixin:
         self.sidebar_splitter.setOpaqueResize(True)
         
         # 添加控件到分割器
+        logger.debug("添加导航树和任务概览到分割器")
         self.sidebar_splitter.addWidget(self.nav_tree)
         self.sidebar_splitter.addWidget(self.task_overview)
         
         # 设置初始分割比例，调整为50%导航树，50%任务概览
-        self.sidebar_splitter.setSizes([500, 500])
+        initial_sizes = [500, 500]
+        logger.debug(f"设置初始分割器尺寸: {initial_sizes}")
+        self.sidebar_splitter.setSizes(initial_sizes)
+        
+        # 验证初始设置
+        actual_sizes = self.sidebar_splitter.sizes()
+        logger.debug(f"分割器实际尺寸: {actual_sizes}")
         
         # 在组件完全初始化后锁定尺寸，防止布局计算导致的高度变化
         QTimer.singleShot(0, lambda: self._init_splitter_sizes())
         
         # 将分割器添加到停靠窗口
+        logger.debug("将分割器添加到停靠窗口")
         self.sidebar_dock.setWidget(self.sidebar_splitter)
         
         # 将停靠窗口添加到左侧区域
+        logger.debug("将停靠窗口添加到左侧区域")
         self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar_dock)
         
-        logger.debug("侧边栏创建完成")
+        # 记录停靠窗口的最终状态
+        logger.debug(f"侧边栏停靠窗口尺寸: {self.sidebar_dock.size()}")
+        logger.debug(f"侧边栏停靠窗口几何形状: {self.sidebar_dock.geometry()}")
+        
+        # 保存初始几何形状用于恢复
+        self._last_sidebar_geometry = self.sidebar_dock.geometry()
+        logger.debug(f"已保存侧边栏初始几何形状: {self._last_sidebar_geometry}")
+        
+        # 设置自定义多行标题栏
+        self._set_sidebar_title(sidebar_title)
+        
+        logger.debug("=== 侧边栏创建完成 ===")
     
     def _init_splitter_sizes(self):
         """初始化分割器尺寸，确保导航树高度稳定"""
         if hasattr(self, 'sidebar_splitter'):
             # 重新设置尺寸一次，以防止初始化过程中的计算误差
             current_sizes = self.sidebar_splitter.sizes()
+            logger.debug(f"初始化分割器尺寸: {current_sizes}")
             self.sidebar_splitter.setSizes(current_sizes)
+    
+    def _set_sidebar_title(self, text: str):
+        """自定义侧边栏标题栏，支持多行显示"""
+        if not hasattr(self, '_sidebar_title_label'):
+            # 创建自定义标题栏
+            title_widget = QWidget()
+            layout = QHBoxLayout(title_widget)
+            layout.setContentsMargins(6, 0, 0, 0)
+            label = QLabel()
+            label.setWordWrap(True)
+            label.setStyleSheet("font-weight: bold;")
+            layout.addWidget(label)
+            self.sidebar_dock.setTitleBarWidget(title_widget)
+            self._sidebar_title_label = label
+        self._sidebar_title_label.setText(text)
+    
+    def _update_sidebar_translations(self):
+        """更新侧边栏的翻译文本"""
+        logger.debug("=== 更新侧边栏翻译 ===")
+        
+        if hasattr(self, 'sidebar_dock'):
+            from src.utils.translation_manager import tr
+            new_title = tr("ui.sidebar.title")
+            logger.debug(f"更新侧边栏标题: {new_title}")
+            
+            # 使用自定义多行标题栏
+            self._set_sidebar_title(new_title)
+            
+            # 保存当前停靠窗口的状态
+            current_geometry = self.sidebar_dock.geometry()
+            current_size = self.sidebar_dock.size()
+            current_sizes = self.sidebar_splitter.sizes() if hasattr(self, 'sidebar_splitter') else None
+            
+            logger.debug(f"保存当前状态 - 几何形状: {current_geometry}, 尺寸: {current_size}, 分割器尺寸: {current_sizes}")
+            
+            # 验证状态是否保持
+            new_geometry = self.sidebar_dock.geometry()
+            new_size = self.sidebar_dock.size()
+            new_sizes = self.sidebar_splitter.sizes() if hasattr(self, 'sidebar_splitter') else None
+            
+            logger.debug(f"更新后状态 - 几何形状: {new_geometry}, 尺寸: {new_size}, 分割器尺寸: {new_sizes}")
+            
+            # 如果尺寸发生变化，使用强制恢复机制
+            if current_size != new_size:
+                logger.warning(f"侧边栏尺寸发生变化: {current_size} -> {new_size}")
+                
+                # 方法1: 直接恢复尺寸
+                self.sidebar_dock.resize(current_size)
+                
+                # 方法2: 如果直接恢复失败，使用setFixedSize强制设置
+                QTimer.singleShot(10, lambda: self._force_restore_sidebar_size(current_size))
+                
+                # 方法3: 延迟验证和再次恢复
+                QTimer.singleShot(50, lambda: self._verify_and_restore_sidebar_size(current_size, current_sizes))
+            
+            if current_sizes and new_sizes and current_sizes != new_sizes:
+                logger.warning(f"分割器尺寸发生变化: {current_sizes} -> {new_sizes}")
+                self.sidebar_splitter.setSizes(current_sizes)
+        
+        # 更新导航树翻译
+        if hasattr(self, 'nav_tree') and hasattr(self.nav_tree, '_update_translations'):
+            self.nav_tree._update_translations()
+        
+        # 更新任务概览翻译
+        if hasattr(self, 'task_overview') and hasattr(self.task_overview, '_update_translations'):
+            self.task_overview._update_translations()
+        
+        logger.debug("=== 侧边栏翻译更新完成 ===")
+    
+    def _force_restore_sidebar_size(self, target_size):
+        """强制恢复侧边栏尺寸
+        
+        Args:
+            target_size: 目标尺寸
+        """
+        if hasattr(self, 'sidebar_dock'):
+            current_size = self.sidebar_dock.size()
+            if current_size != target_size:
+                logger.debug(f"强制恢复侧边栏尺寸: {current_size} -> {target_size}")
+                
+                # 临时设置固定尺寸
+                self.sidebar_dock.setFixedSize(target_size)
+                
+                # 延迟恢复为可调整尺寸
+                QTimer.singleShot(100, lambda: self.sidebar_dock.setFixedSize(0, 0))
+    
+    def _verify_and_restore_sidebar_size(self, target_size, target_sizes):
+        """验证并恢复侧边栏尺寸
+        
+        Args:
+            target_size: 目标尺寸
+            target_sizes: 目标分割器尺寸
+        """
+        if hasattr(self, 'sidebar_dock'):
+            current_size = self.sidebar_dock.size()
+            current_sizes = self.sidebar_splitter.sizes() if hasattr(self, 'sidebar_splitter') else None
+            
+            logger.debug(f"验证侧边栏尺寸 - 当前: {current_size}, 目标: {target_size}")
+            logger.debug(f"验证分割器尺寸 - 当前: {current_sizes}, 目标: {target_sizes}")
+            
+            # 如果尺寸仍然不正确，再次尝试恢复
+            if current_size != target_size:
+                logger.warning(f"侧边栏尺寸仍未恢复，再次尝试: {current_size} -> {target_size}")
+                self.sidebar_dock.resize(target_size)
+                
+                # 使用几何形状恢复作为最后手段
+                if hasattr(self, '_last_sidebar_geometry'):
+                    self.sidebar_dock.setGeometry(self._last_sidebar_geometry)
+            
+            if target_sizes and current_sizes and current_sizes != target_sizes:
+                logger.warning(f"分割器尺寸仍未恢复，再次尝试: {current_sizes} -> {target_sizes}")
+                self.sidebar_splitter.setSizes(target_sizes)
     
     def _toggle_sidebar(self, checked):
         """切换侧边栏的可见性

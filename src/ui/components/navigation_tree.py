@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
 
 from src.utils.logger import get_logger
+from src.utils.translation_manager import get_translation_manager, tr
 
 logger = get_logger()
 
@@ -15,22 +16,27 @@ logger = get_logger()
 class NavigationItem:
     """导航项目类型定义"""
     
-    def __init__(self, name, item_id, parent_id=None, item_type='category', data=None):
+    def __init__(self, name_key, item_id, parent_id=None, item_type='category', data=None):
         """初始化导航项
         
         Args:
-            name: 导航项显示名称
+            name_key: 导航项显示名称的翻译键
             item_id: 导航项唯一标识
             parent_id: 父导航项ID，如果为None则为顶级项
             item_type: 导航项类型，可以是'category'或'function'
             data: 关联的数据，用于存储额外信息
         """
-        self.name = name
+        self.name_key = name_key
         self.id = item_id
         self.parent_id = parent_id
         self.type = item_type
         self.data = data if data else {}
         self.children = []
+    
+    @property
+    def name(self):
+        """获取翻译后的名称"""
+        return tr(self.name_key)
 
 
 class NavigationTree(QWidget):
@@ -46,6 +52,10 @@ class NavigationTree(QWidget):
             parent: 父窗口部件
         """
         super().__init__(parent)
+        
+        # 获取翻译管理器
+        self.translation_manager = get_translation_manager()
+        self.translation_manager.language_changed.connect(self._update_translations)
         
         # 创建布局
         layout = QVBoxLayout(self)
@@ -70,38 +80,38 @@ class NavigationTree(QWidget):
     
     def _init_navigation(self):
         """初始化导航结构"""
-        # 定义导航项
+        # 定义导航项（使用翻译键）
         nav_items = [
             # 媒体下载分类
-            NavigationItem("媒体下载", "download_category", None, "category"),
-            NavigationItem("普通下载", "normal_download", "download_category", "function", {
+            NavigationItem("ui.tabs.download", "download_category", None, "category"),
+            NavigationItem("ui.tabs.download", "normal_download", "download_category", "function", {
                 "function": "download",
                 "description": "从频道批量下载媒体文件"
             }),
             
             # 媒体上传分类
-            NavigationItem("媒体上传", "upload_category", None, "category"),
-            NavigationItem("本地上传", "local_upload", "upload_category", "function", {
+            NavigationItem("ui.tabs.upload", "upload_category", None, "category"),
+            NavigationItem("ui.tabs.upload", "local_upload", "upload_category", "function", {
                 "function": "upload",
                 "description": "将本地媒体文件上传到频道"
             }),
             
             # 消息转发分类
-            NavigationItem("消息转发", "forward_category", None, "category"),
-            NavigationItem("历史转发", "history_forward", "forward_category", "function", {
+            NavigationItem("ui.tabs.forward", "forward_category", None, "category"),
+            NavigationItem("ui.tabs.forward", "history_forward", "forward_category", "function", {
                 "function": "forward",
                 "description": "转发频道历史消息"
             }),
             
             # 消息监听分类
-            NavigationItem("消息监听", "monitor_category", None, "category"),
-            NavigationItem("实时监听", "real_time_monitor", "monitor_category", "function", {
+            NavigationItem("ui.tabs.monitor", "monitor_category", None, "category"),
+            NavigationItem("ui.tabs.monitor", "real_time_monitor", "monitor_category", "function", {
                 "function": "monitor",
                 "description": "监听频道实时消息并转发"
             }),
             
             # 开发工具分类
-            NavigationItem("开发工具", "dev_tools_category", None, "category"),
+            NavigationItem("ui.menu.tools", "dev_tools_category", None, "category"),
         ]
         
         # 构建导航项字典和树形结构
@@ -113,6 +123,51 @@ class NavigationTree(QWidget):
         
         # 构建树控件项目
         self._build_tree_items()
+    
+    def _update_translations(self):
+        """更新翻译，保持当前的展开状态和选择状态"""
+        # 保存当前的展开状态
+        expanded_items = {}
+        current_item = self.tree.currentItem()
+        current_item_id = None
+        
+        if current_item:
+            current_item_id = current_item.data(0, Qt.UserRole)
+        
+        # 遍历所有项目保存展开状态
+        def save_expanded_state(item, item_dict):
+            if item:
+                item_id = item.data(0, Qt.UserRole)
+                if item_id:
+                    item_dict[item_id] = item.isExpanded()
+                for i in range(item.childCount()):
+                    save_expanded_state(item.child(i), item_dict)
+        
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            save_expanded_state(root.child(i), expanded_items)
+        
+        # 重新构建树项目
+        self._build_tree_items()
+        
+        # 恢复展开状态
+        def restore_expanded_state(item, item_dict):
+            if item:
+                item_id = item.data(0, Qt.UserRole)
+                if item_id and item_id in item_dict:
+                    item.setExpanded(item_dict[item_id])
+                for i in range(item.childCount()):
+                    restore_expanded_state(item.child(i), item_dict)
+        
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            restore_expanded_state(root.child(i), expanded_items)
+        
+        # 恢复选择状态
+        if current_item_id:
+            self.select_item(current_item_id)
+        
+        logger.debug("导航树翻译已更新")
     
     def _build_tree_items(self):
         """构建树控件项目"""
