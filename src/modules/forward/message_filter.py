@@ -151,11 +151,17 @@ class MessageFilter:
                     group_passed.append(message)
                 else:
                     group_filtered.append(message)
-                    _logger.debug(f"消息 [ID: {message.id}] 媒体类型 '{message_media_type}' 不在允许列表中，被过滤")
-                    
-                    # 发射过滤事件到UI
-                    if self.emit:
-                        self.emit("message_filtered", message.id, "单个消息", f"媒体类型 '{message_media_type}' 不被允许")
+                    # 根据媒体类型是否为None提供不同的日志信息
+                    if message_media_type is None:
+                        _logger.debug(f"消息 [ID: {message.id}] 无法识别媒体类型（可能是空消息、特殊消息类型），被过滤")
+                        # 发射过滤事件到UI
+                        if self.emit:
+                            self.emit("message_filtered", message.id, "单个消息", f"无法识别媒体类型（可能是空消息、特殊消息类型）")
+                    else:
+                        _logger.debug(f"消息 [ID: {message.id}] 媒体类型 '{message_media_type}' 不在允许列表中，被过滤")
+                        # 发射过滤事件到UI
+                        if self.emit:
+                            self.emit("message_filtered", message.id, "单个消息", f"媒体类型 '{message_media_type}' 不被允许")
             
             # 添加通过和被过滤的消息
             passed_messages.extend(group_passed)
