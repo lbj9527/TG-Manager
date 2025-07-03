@@ -229,13 +229,13 @@ class MediaGroupCollector:
             # 原有方法不返回文本信息，返回空的文本映射
             return info_result, {}
         
-        # 🔧 修复：先获取完整范围的消息，用于媒体组文本提取
-        _logger.debug(f"🔍 先获取完整范围消息用于文本提取: {start_id}-{end_id}")
+        # 🔧 修复：只进行一次消息收集，避免重复事件发射
+        _logger.debug(f"🔍 获取完整范围消息: {start_id}-{end_id}")
         complete_messages = []
         async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
             complete_messages.append(message)
         
-        # 🔧 从完整消息中预提取媒体组文本（在预过滤之前）
+        # 🔧 从完整消息中预提取媒体组文本
         if complete_messages:
             _logger.debug(f"🔍 从完整的 {len(complete_messages)} 条消息中预提取媒体组文本")
             complete_media_group_texts = self.message_filter._extract_media_group_texts(complete_messages)
@@ -251,27 +251,27 @@ class MediaGroupCollector:
             _logger.info("所有消息都已转发，无需获取新消息")
             return media_groups_info, media_group_texts
         
-        # 按指定ID列表获取消息
-        all_messages = []
-        async for message in self.message_iterator.iter_messages_by_ids(source_id, unforwarded_ids):
-            all_messages.append(message)
+        # 🔧 修复：从已收集的完整消息中筛选未转发的消息，避免重复收集
+        unforwarded_ids_set = set(unforwarded_ids)
+        filtered_messages = [msg for msg in complete_messages if msg.id in unforwarded_ids_set]
+        _logger.info(f"从完整消息中筛选出 {len(filtered_messages)} 条未转发消息")
         
         # 应用过滤规则（使用新的统一过滤器）
-        if pair and all_messages:
-            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+        if pair and filtered_messages:
+            final_filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(filtered_messages, pair)
             # 合并过滤产生的媒体组文本（但预提取的优先级更高）
             filter_media_group_texts = filter_stats.get('media_group_texts', {})
             for group_id, text in filter_media_group_texts.items():
                 if group_id not in media_group_texts:
                     media_group_texts[group_id] = text
-            _logger.info(f"过滤完成: 原始消息 {len(all_messages)} 条，通过过滤 {len(filtered_messages)} 条")
+            _logger.info(f"过滤完成: 未转发消息 {len(filtered_messages)} 条，通过过滤 {len(final_filtered_messages)} 条")
             if media_group_texts:
                 _logger.debug(f"🔍 MediaGroupCollector最终媒体组文本: {len(media_group_texts)} 个")
         else:
-            filtered_messages = all_messages
+            final_filtered_messages = filtered_messages
         
         # 将过滤后的消息按媒体组分组（只保存ID）
-        for message in filtered_messages:
+        for message in final_filtered_messages:
             # 获取媒体组ID
             group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
             
