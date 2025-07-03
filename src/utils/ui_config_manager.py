@@ -557,6 +557,7 @@ class UIConfigManager:
             if not ui_config:
                 ui_config = {
                     'theme': "深色主题",
+                    'language': "中文",
                     'confirm_exit': True,
                     'minimize_to_tray': True,
                     'start_minimized': False,
@@ -572,6 +573,12 @@ class UIConfigManager:
             if "theme" not in ui_config or ui_config["theme"] not in valid_themes:
                 ui_config["theme"] = "深色主题"
                 logger.warning(f"UI主题无效，重置为深色主题")
+
+            # 确保language是有效值
+            valid_languages = ["中文", "English", "Español", "Français", "Deutsch", "Русский", "日本語", "한국어"]
+            if "language" not in ui_config or ui_config["language"] not in valid_languages:
+                ui_config["language"] = "中文"
+                logger.warning(f"UI语言无效，重置为中文")
 
             # 修复window_geometry和window_state
             for field in ["window_geometry", "window_state"]:

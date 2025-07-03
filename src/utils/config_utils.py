@@ -269,7 +269,7 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             ui = ui_config.UI
             
             # 添加所有UI配置字段
-            for field in ["theme", "confirm_exit", "minimize_to_tray", "start_minimized", 
+            for field in ["theme", "language", "confirm_exit", "minimize_to_tray", "start_minimized", 
                          "enable_notifications", "notification_sound", "window_geometry", "window_state"]:
                 if hasattr(ui, field):
                     ui_dict[field] = getattr(ui, field)

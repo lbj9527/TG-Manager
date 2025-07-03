@@ -534,6 +534,7 @@ class UIMonitorConfig(BaseModel):
 class UIUIConfig(BaseModel):
     """用户界面配置模型"""
     theme: str = Field("深色主题", description="界面主题")
+    language: str = Field("中文", description="界面语言")
     confirm_exit: bool = Field(True, description="退出时是否需要确认")
     minimize_to_tray: bool = Field(True, description="最小化到系统托盘")
     start_minimized: bool = Field(False, description="启动时最小化")
@@ -645,6 +646,7 @@ def create_default_config() -> UIConfig:
         ),
         UI=UIUIConfig(
             theme="深色主题",
+            language="中文",
             confirm_exit=True,
             minimize_to_tray=True,
             start_minimized=False,

@@ -256,6 +256,17 @@ class SettingsView(QWidget):
         
         theme_layout.addRow("应用主题:", self.theme_selector)
         
+        # 语言选择部分
+        self.language_selector = QComboBox()
+        # 添加支持的语言选项
+        self.language_selector.addItems(["中文", "English", "Español", "Français", "Deutsch", "Русский", "日本語", "한국어"])
+        self.language_selector.setCurrentText("中文")  # 默认选中中文
+        self.language_selector.setToolTip("选择应用程序界面语言，重启应用后生效")
+        # 连接语言变更信号
+        self.language_selector.currentTextChanged.connect(self._on_setting_changed)
+        
+        theme_layout.addRow("界面语言:", self.language_selector)
+        
         theme_group.setLayout(theme_layout)
         ui_layout.addWidget(theme_group)
         
@@ -499,6 +510,7 @@ class SettingsView(QWidget):
         
         # 重置界面设置
         self.theme_selector.setCurrentText("深色主题")
+        self.language_selector.setCurrentText("中文")
         self.confirm_exit.setChecked(True)
         self.minimize_to_tray.setChecked(True)
         self.start_minimized.setChecked(False)
@@ -537,6 +549,7 @@ class SettingsView(QWidget):
         # 收集UI设置
         settings["UI"] = {
             "theme": self.theme_selector.currentText(),
+            "language": self.language_selector.currentText(),
             "confirm_exit": self.confirm_exit.isChecked(),
             "minimize_to_tray": self.minimize_to_tray.isChecked(),
             "start_minimized": self.start_minimized.isChecked(),
@@ -602,6 +615,10 @@ class SettingsView(QWidget):
                     # 应用临时主题
                     self.temp_theme = ui["theme"]
                     self._on_theme_changed(ui["theme"])
+            if "language" in ui:
+                index = self.language_selector.findText(ui["language"])
+                if index >= 0:
+                    self.language_selector.setCurrentIndex(index)
             if "confirm_exit" in ui:
                 self.confirm_exit.setChecked(ui["confirm_exit"])
             if "minimize_to_tray" in ui:

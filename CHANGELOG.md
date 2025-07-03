@@ -1,5 +1,118 @@
 # 更新日志
 
+## [v2.2.25] - 2025-07-03
+
+### ✨ 新功能 (New Features)
+
+#### 实现界面语言切换功能 (Implement Interface Language Switching)
+
+**功能描述 (Feature Description)**：
+在设置界面的"界面"选项卡中新增了语言切换下拉框，支持多种语言的选择。虽然多语言文本翻译功能将在后续版本实现，但配置保存和加载功能已完整实现。
+
+**核心特性 (Core Features)**：
+- **🌐 多语言支持**：支持中文、English、Español、Français、Deutsch、Русский、日本語、한국어等8种语言选择
+- **⚙️ 配置集成**：完整的配置保存和加载功能，语言设置与其他UI设置统一管理
+- **🔄 界面同步**：设置界面与配置文件的语言配置完全同步
+- **🛡️ 配置验证**：内置语言选项验证，确保配置文件中的语言设置有效
+
+**技术实现 (Technical Implementation)**：
+
+**1. UI配置模型扩展**：
+```python
+# src/utils/ui_config_models.py
+class UIUIConfig(BaseModel):
+    theme: str = Field("深色主题", description="界面主题")
+    language: str = Field("中文", description="界面语言")  # 新增语言字段
+    confirm_exit: bool = Field(True, description="退出时是否需要确认")
+    # ... 其他字段
+```
+
+**2. 设置界面UI组件**：
+```python
+# src/ui/views/settings_view.py
+# 语言选择部分
+self.language_selector = QComboBox()
+self.language_selector.addItems([
+    "中文", "English", "Español", "Français", 
+    "Deutsch", "Русский", "日本語", "한국어"
+])
+self.language_selector.setToolTip("选择应用程序界面语言，重启应用后生效")
+theme_layout.addRow("界面语言:", self.language_selector)
+```
+
+**3. 配置保存和加载**：
+```python
+# 配置收集
+settings["UI"] = {
+    "theme": self.theme_selector.currentText(),
+    "language": self.language_selector.currentText(),  # 收集语言设置
+    # ... 其他设置
+}
+
+# 配置加载
+if "language" in ui:
+    index = self.language_selector.findText(ui["language"])
+    if index >= 0:
+        self.language_selector.setCurrentIndex(index)
+```
+
+**4. 配置验证和默认值**：
+```python
+# src/utils/ui_config_manager.py
+valid_languages = ["中文", "English", "Español", "Français", "Deutsch", "Русский", "日本語", "한국어"]
+if "language" not in ui_config or ui_config["language"] not in valid_languages:
+    ui_config["language"] = "中文"  # 默认中文
+```
+
+**配置文件示例 (Configuration Example)**：
+```json
+{
+  "UI": {
+    "theme": "绿色主题",
+    "language": "中文",        // 新增语言配置
+    "confirm_exit": false,
+    "minimize_to_tray": false,
+    // ... 其他UI配置
+  }
+}
+```
+
+**支持的语言列表 (Supported Languages)**：
+- 🇨🇳 **中文** (默认)
+- 🇺🇸 **English**
+- 🇪🇸 **Español** (西班牙语)
+- 🇫🇷 **Français** (法语)
+- 🇩🇪 **Deutsch** (德语)
+- 🇷🇺 **Русский** (俄语)
+- 🇯🇵 **日本語** (日语)
+- 🇰🇷 **한국어** (韩语)
+
+**用户体验改进 (User Experience Improvements)**：
+- ✅ **设置便捷性**：用户可以在设置界面轻松切换界面语言
+- ✅ **配置持久化**：语言选择自动保存到配置文件，重启后保持设置
+- ✅ **界面提示**：提供"重启应用后生效"的友好提示
+- ✅ **配置验证**：自动验证语言设置的有效性，无效时回退到默认中文
+
+**修改文件 (Modified Files)**：
+- `src/utils/ui_config_models.py` - 添加language字段到UIUIConfig模型
+- `src/ui/views/settings_view.py` - 在界面选项卡中添加语言下拉框，实现配置保存/加载
+- `src/utils/config_utils.py` - 更新配置转换函数支持language字段
+- `src/utils/ui_config_manager.py` - 添加语言配置验证和默认值处理
+
+**后续计划 (Future Plans)**：
+- 🔄 **多语言文本翻译**：后续版本将实现实际的多语言文本翻译功能
+- 🌍 **国际化支持**：使用Qt的国际化框架实现动态语言切换
+- 📝 **语言包扩展**：支持自定义语言包和社区翻译贡献
+
+**测试验证 (Testing)**：
+- ✅ 语言选择器显示8种语言选项
+- ✅ 选择语言后配置能正确保存到config.json
+- ✅ 重启应用后语言设置能正确恢复
+- ✅ 重置设置功能能正确重置语言为默认中文
+- ✅ 无效语言配置能自动修复为默认值
+
+---
+
 ## [v2.2.24] - 2025-07-03
 
 ### ✨ 新功能 (New Features)
