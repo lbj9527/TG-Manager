@@ -158,6 +158,13 @@ class Forwarder():
                         self.app.text_replacement_applied.emit(message_desc, original_text, replaced_text)
                         _logger.debug(f"发射text_replacement_applied信号: {message_desc} 原始文本: '{original_text[:30]}...' 替换后文本: '{replaced_text[:30]}...'")
                 
+                elif event_type == "flood_wait_detected" and len(args) >= 2:
+                    wait_time, operation_desc = args[0], args[1]
+                    # 发射限流检测信号到UI
+                    if hasattr(self.app, 'flood_wait_detected'):
+                        self.app.flood_wait_detected.emit(wait_time, operation_desc)
+                        _logger.debug(f"发射flood_wait_detected信号: 等待时间 {wait_time}秒, 操作: {operation_desc}")
+                
                 else:
                     _logger.warning(f"未知事件类型或参数不足: {event_type}, args: {args}")
             else:

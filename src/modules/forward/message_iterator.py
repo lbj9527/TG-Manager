@@ -361,6 +361,10 @@ class MessageIterator:
         _logger.info(f"开始按ID列表获取消息: chat_id={chat_id}, 消息数量={total_messages}")
         _logger.debug(f"消息ID列表: {sorted_ids[:20]}{'...' if len(sorted_ids) > 20 else ''}")
         
+        # 发射消息收集开始事件
+        if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+            self.forwarder._emit_event("collection_started", total_messages)
+        
         # 分批获取消息，避免单次请求过多
         batch_size = 50  # 每次最多获取50条消息
         successful_count = 0
@@ -425,6 +429,10 @@ class MessageIterator:
                     if batch_failed > 0:
                         _logger.debug(f"批次中有 {batch_failed} 条消息获取失败（可能已删除或无权限）")
                     
+                    # 发射收集进度信号
+                    if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                        self.forwarder._emit_event("collection_progress", successful_count, total_messages)
+                    
                     # 批次间的适当延迟，避免频繁请求
                     if i + batch_size < total_messages:
                         await asyncio.sleep(0.5)
@@ -437,9 +445,18 @@ class MessageIterator:
             # 记录最终统计
             _logger.info(f"按ID获取消息完成: 成功 {successful_count} 条, 失败 {failed_count} 条, 总计 {total_messages} 条")
             
+            # 发射消息收集完成事件
+            if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                self.forwarder._emit_event("collection_completed", successful_count, total_messages)
+            
         except Exception as e:
             _logger.error(f"按ID获取消息时发生错误: {e}")
-            raise 
+            
+            # 发射收集错误事件
+            if self.forwarder and hasattr(self.forwarder, '_emit_event'):
+                self.forwarder._emit_event("collection_error", str(e))
+            
+            raise
 
     def set_forwarder(self, forwarder):
         """
