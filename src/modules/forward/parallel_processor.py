@@ -346,6 +346,9 @@ class ParallelProcessor:
                             caption, has_replacement = self.message_filter.apply_text_replacements(caption, text_replacements)
                             if has_replacement:
                                 _logger.info(f"媒体组 {group_id} 文本替换: '{original_caption[:30]}...' -> '{caption[:30]}...'")
+                                # 发射文本替换信号到UI
+                                if self.emit:
+                                    self.emit("text_replacement_applied", f"媒体组{group_id}", original_caption, caption)
                     
                     # 检查是否移除标题
                     remove_captions = False

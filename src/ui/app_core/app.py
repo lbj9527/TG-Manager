@@ -53,6 +53,9 @@ class TGManagerApp(QObject):
     collection_completed = Signal(int, int)  # 收集完成信号 (已收集数量, 总数量)
     collection_error = Signal(str)  # 收集错误信号 (错误信息)
     
+    # 文本处理相关信号
+    text_replacement_applied = Signal(str, str, str)  # 文本替换信号 (消息ID或描述, 原文本, 替换后文本)
+    
     def __init__(self, verbose=False):
         super().__init__()
         self.app = QApplication(sys.argv)

@@ -151,6 +151,13 @@ class Forwarder():
                         self.app.collection_error.emit(error_message)
                         _logger.debug(f"发射collection_error信号: {error_message}")
                 
+                elif event_type == "text_replacement_applied" and len(args) >= 3:
+                    message_desc, original_text, replaced_text = args[0], args[1], args[2]
+                    # 发射文本替换信号到UI
+                    if hasattr(self.app, 'text_replacement_applied'):
+                        self.app.text_replacement_applied.emit(message_desc, original_text, replaced_text)
+                        _logger.debug(f"发射text_replacement_applied信号: {message_desc} 原始文本: '{original_text[:30]}...' 替换后文本: '{replaced_text[:30]}...'")
+                
                 else:
                     _logger.warning(f"未知事件类型或参数不足: {event_type}, args: {args}")
             else:
@@ -422,7 +429,11 @@ class Forwarder():
                                         text_content = message.text
                                         text_replacements = pair.get('text_replacements', {})
                                         if text_replacements:
-                                            text_content, _ = self.message_filter.apply_text_replacements(text_content, text_replacements)
+                                            original_text = text_content
+                                            text_content, has_replacement = self.message_filter.apply_text_replacements(text_content, text_replacements)
+                                            # 发射文本替换信号到UI
+                                            if has_replacement:
+                                                self._emit_event("text_replacement_applied", f"消息{message_id}", original_text, text_content)
                                         
                                         # 检查是否移除标题
                                         if pair.get('remove_captions', False):

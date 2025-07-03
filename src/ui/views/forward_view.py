@@ -2748,6 +2748,10 @@ class ForwardView(QWidget):
                 app.collection_error.connect(self._on_collection_error)
                 logger.debug("已连接应用的collection_error信号")
                 
+            if hasattr(app, 'text_replacement_applied'):
+                app.text_replacement_applied.connect(self._on_text_replacement_applied)
+                logger.debug("已连接应用的text_replacement_applied信号")
+                
             logger.debug("应用级别信号连接成功")
             
         except Exception as e:
@@ -3059,3 +3063,21 @@ class ForwardView(QWidget):
             logger.debug(f"处理消息收集错误信号: {error_message}")
         except Exception as e:
             logger.error(f"处理消息收集错误信号时出错: {e}")
+    
+    def _on_text_replacement_applied(self, message_desc, original_text, replaced_text):
+        """处理文本替换信号
+        
+        Args:
+            message_desc: 消息描述（消息ID或描述信息）
+            original_text: 原始文本
+            replaced_text: 替换后文本
+        """
+        try:
+            if hasattr(self, 'log_display'):
+                # 简化文本显示，避免过长
+                original_short = original_text[:20] + "..." if len(original_text) > 20 else original_text
+                replaced_short = replaced_text[:20] + "..." if len(replaced_text) > 20 else replaced_text
+                self._add_info_log_message(f"文本替换（{message_desc}）：'{original_short}' → '{replaced_short}'")
+            logger.debug(f"处理文本替换信号: {message_desc}, '{original_text}' -> '{replaced_text}'")
+        except Exception as e:
+            logger.error(f"处理文本替换信号时出错: {e}")

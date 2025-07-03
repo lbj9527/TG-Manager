@@ -189,6 +189,7 @@ class MessageIterator:
             
             fetched_messages_map = {}
             failed_ids = []
+            total_collected = 0  # 累积已收集的消息总数
             
             # 分批获取消息ID
             for batch_num, batch_start in enumerate(range(actual_start_id, actual_end_id + 1, batch_size), 1):
@@ -220,13 +221,16 @@ class MessageIterator:
                         )
                         
                         # 处理获取到的消息
-                        valid_count = 0
+                        batch_valid_count = 0
                         for message in messages:
                             if message and message.id in set(batch_ids):
                                 fetched_messages_map[message.id] = message
-                                valid_count += 1
+                                batch_valid_count += 1
                         
-                        _logger.info(f"批次 {batch_start}-{batch_end} 完成，获取到 {valid_count} 条有效消息")
+                        # 更新累积总数
+                        total_collected += batch_valid_count
+                        
+                        _logger.info(f"批次 {batch_start}-{batch_end} 完成，获取到 {batch_valid_count} 条有效消息")
                         
                         # 重置重试计数和限流计数（批次成功）
                         retry_count = 0
@@ -236,9 +240,9 @@ class MessageIterator:
                             base_delay = max(3.0, base_delay * 0.9)  # 略微减少延迟
                             flood_wait_count = max(0, flood_wait_count - 1)
                         
-                        # 发射进度更新事件
+                        # 发射进度更新事件 - 使用累积总数
                         if self.forwarder and hasattr(self.forwarder, '_emit_event'):
-                            self.forwarder._emit_event("collection_progress", valid_count, total_messages)
+                            self.forwarder._emit_event("collection_progress", total_collected, total_messages)
                         
                         break  # 成功，跳出重试循环
                         
