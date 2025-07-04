@@ -62,24 +62,138 @@
       "text_replacement": "Text Replacement:",
       "original_text": "Original text to replace, separate multiple with commas like: A,B",
       "target_text": "Target text after replacement, separate multiple with commas like: C,D",
+      "replace_to": "Replace To:",
       "filter_options": "Filter Options:",
       "keyword_filter": "Keyword Filter:",
+      "keyword_placeholder": "Keywords, separate multiple with commas, only forward messages containing keywords",
       "start_forward": "Start Forwarding",
       "stop_forward": "Stop Forwarding",
       "add_pair": "Add Channel Pair",
       "remove_pair": "Remove Channel Pair",
+      "forward_options": "Forward Options",
+      "forward_params": "Forward Parameters:",
+      "media_types": {
+        "text": "Text",
+        "photo": "Photo", 
+        "video": "Video",
+        "document": "Document",
+        "audio": "Audio",
+        "animation": "Animation"
+      },
+      "options": {
+        "remove_captions": "Remove Media Captions",
+        "hide_author": "Hide Original Author",
+        "send_final_message": "Send Final Message After Forwarding",
+        "exclude_links": "Exclude Messages with Links",
+        "enable_web_page_preview": "Web Page Preview"
+      },
+      "final_message": {
+        "html_file": "Final Message HTML File:",
+        "html_file_placeholder": "Select final message HTML file",
+        "browse": "Browse"
+      },
+      "message_range": {
+        "start_id": "Start ID:",
+        "end_id": "End ID:",
+        "earliest_message": "Earliest Message",
+        "latest_message": "Latest Message"
+      },
+      "configured_pairs": "Configured Channel Pairs",
+      "pairs_count": "{count} pair(s)",
+      "forward_delay": "Forward Delay:",
+      "seconds": "seconds",
+      "tmp_directory": "Temporary Directory:",
+      "browse_tmp": "Browse...",
+      "forwarded_messages": "Forwarded Messages",
+      "forward_log": "Forward Log:",
+      "log_placeholder": "Forward logs will be displayed here...",
       "status": {
         "ready": "Ready",
         "running": "Forwarding",
         "stopped": "Stopped",
         "completed": "Completed",
-        "error": "Error"
+        "error": "Error",
+        "preparing": "Preparing",
+        "stopping": "Stopping",
+        "starting": "Starting forward...",
+        "initializing": "Initializing forwarder...",
+        "task_started": "Forward task started"
       },
       "progress": {
         "collecting": "Collecting messages...",
         "forwarding": "Forwarding messages...",
         "completed": "Forwarding completed",
         "failed": "Forwarding failed"
+      },
+      "messages": {
+        "add_pair_warning": "Please add channel pairs first",
+        "no_enabled_pairs": "Please enable at least one channel pair",
+        "source_required": "Please enter source channel link or ID",
+        "target_required": "Please enter target channel link or ID",
+        "invalid_target": "Invalid target channel",
+        "select_media_type": "Please select at least one media type",
+        "input_error": "Input Error",
+        "select_to_remove": "Please select channel pairs to remove first",
+        "config_saved": "Forward configuration saved",
+        "save_failed": "Failed to save configuration",
+        "status_updated": "Status Updated",
+        "pair_enabled": "Channel pair {channel} enabled, please save configuration to apply changes",
+        "pair_disabled": "Channel pair {channel} disabled, please save configuration to apply changes",
+        "update_success": "Channel pair successfully updated, please click save configuration",
+        "forward_complete": "Forward Complete",
+        "forward_error": "Forward Error",
+        "all_tasks_complete": "All forwarding tasks completed",
+        "forward_error_detail": "Error occurred during forwarding:\n{error}",
+        "init_instruction": "Please configure channel pairs and click \"Start Forwarding\" button to begin",
+        "forwarder_not_initialized_start": "Forwarder not initialized, unable to start forwarding",
+        "forwarder_not_initialized_stop": "Forwarder not initialized, unable to stop forwarding",
+        "calculating_history": "Calculating history...",
+        "building_mapping": "Building channel mapping...",
+        "starting_forwarder": "Starting forwarder...",
+        "stopping_forward": "Stopping forwarding...",
+        "forwarding_with_progress": "Forwarding... - {percentage}%",
+        "forwarding": "Forwarding...",
+        "processing_messages": "Processing messages...",
+        "collecting_messages": "Collecting messages... ({count}/{total})",
+        "forward_completed": "Forward completed",
+        "forward_error_title": "Forward Error",
+        "option_remove_captions": "Remove Captions",
+        "option_hide_author": "Hide Author", 
+        "option_send_final_message": "Send Completion Message",
+        "option_exclude_links": "Exclude Links",
+        "text_replacements": "Replacements",
+        "keywords": "Keywords",
+        "single_message": "Single Message",
+        "media_group_message": "Media Group Message",
+        "additional_info": "Additional Info"
+      },
+      "context_menu": {
+        "enable": "Enable",
+        "disable": "Disable", 
+        "edit": "Edit",
+        "delete": "Delete",
+        "enable_tooltip": "Enable this channel pair for forwarding",
+        "disable_tooltip": "Disable this channel pair, will be skipped during forwarding"
+      },
+      "edit_dialog": {
+        "title": "Edit Channel Pair",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "file_types": {
+        "html": "HTML files (*.html);;All files (*.*)"
+      },
+      "display": {
+        "id_range_both": "ID Range: {start}-{end}",
+        "id_range_start": "ID Range: {start}+",
+        "id_range_end": "ID Range: earliest-{end}",
+        "text_filter": "Replace",
+        "keywords": "Keywords",
+        "options": "Options",
+        "media": "Media: {types}",
+        "disabled": "Disabled",
+        "calculating": "Calculating...",
+        "calculating_short": "Calculating"
       }
     },
     "upload": {
@@ -278,7 +392,11 @@
         "title": "First Time Setup",
         "message": "Welcome to TG-Manager!\n\nThis appears to be your first time using this program. Please fill in your Telegram API credentials in the API settings and click the login button to complete the login.\n\nIf you don't have API ID and API Hash yet, please visit https://my.telegram.org to apply.\n\nAfter completing the configuration, please click the \"Login\" button to complete account verification."
       }
-    }
+    },
+    "option_remove_captions": "Remove Captions",
+    "option_hide_author": "Hide Author", 
+    "option_send_final_message": "Send Completion Message",
+    "option_exclude_links": "Exclude Links"
   },
   "errors": {
     "validation": {

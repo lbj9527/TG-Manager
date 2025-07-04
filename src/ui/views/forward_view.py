@@ -109,7 +109,7 @@ class ForwardView(QWidget):
                 if i == 0:  # 频道配置标签页
                     self.config_tabs.setTabText(i, tr("ui.forward.title"))
                 elif i == 1:  # 转发选项标签页
-                    self.config_tabs.setTabText(i, "转发选项")  # 可以添加翻译键
+                    self.config_tabs.setTabText(i, tr("ui.forward.forward_options"))
                 elif i == 2:  # 转发进度标签页
                     self.config_tabs.setTabText(i, tr("ui.tabs.forward"))
         
@@ -121,11 +121,51 @@ class ForwardView(QWidget):
         if 'text_replace_label' in self.translatable_widgets:
             self.translatable_widgets['text_replace_label'].setText(tr("ui.forward.text_replacement"))
         if 'replace_to_label' in self.translatable_widgets:
-            self.translatable_widgets['replace_to_label'].setText("替换为:")  # 保持原样或添加翻译键
+            self.translatable_widgets['replace_to_label'].setText(tr("ui.forward.replace_to"))
         if 'filter_options_label' in self.translatable_widgets:
             self.translatable_widgets['filter_options_label'].setText(tr("ui.forward.filter_options"))
         if 'keyword_label' in self.translatable_widgets:
             self.translatable_widgets['keyword_label'].setText(tr("ui.forward.keyword_filter"))
+        if 'forward_params_label' in self.translatable_widgets:
+            self.translatable_widgets['forward_params_label'].setText(tr("ui.forward.forward_params"))
+        if 'html_file_label' in self.translatable_widgets:
+            self.translatable_widgets['html_file_label'].setText(tr("ui.forward.final_message.html_file"))
+        if 'start_id_label' in self.translatable_widgets:
+            self.translatable_widgets['start_id_label'].setText(tr("ui.forward.message_range.start_id"))
+        if 'end_id_label' in self.translatable_widgets:
+            self.translatable_widgets['end_id_label'].setText(tr("ui.forward.message_range.end_id"))
+        if 'forward_delay_label' in self.translatable_widgets:
+            self.translatable_widgets['forward_delay_label'].setText(tr("ui.forward.forward_delay"))
+        if 'tmp_directory_label' in self.translatable_widgets:
+            self.translatable_widgets['tmp_directory_label'].setText(tr("ui.forward.tmp_directory"))
+        if 'forward_log_label' in self.translatable_widgets:
+            self.translatable_widgets['forward_log_label'].setText(tr("ui.forward.forward_log"))
+        
+        # 更新媒体类型复选框
+        if 'text_check' in self.translatable_widgets:
+            self.translatable_widgets['text_check'].setText(tr("ui.forward.media_types.text"))
+        if 'photo_check' in self.translatable_widgets:
+            self.translatable_widgets['photo_check'].setText(tr("ui.forward.media_types.photo"))
+        if 'video_check' in self.translatable_widgets:
+            self.translatable_widgets['video_check'].setText(tr("ui.forward.media_types.video"))
+        if 'document_check' in self.translatable_widgets:
+            self.translatable_widgets['document_check'].setText(tr("ui.forward.media_types.document"))
+        if 'audio_check' in self.translatable_widgets:
+            self.translatable_widgets['audio_check'].setText(tr("ui.forward.media_types.audio"))
+        if 'animation_check' in self.translatable_widgets:
+            self.translatable_widgets['animation_check'].setText(tr("ui.forward.media_types.animation"))
+        
+        # 更新转发选项复选框
+        if 'remove_captions_check' in self.translatable_widgets:
+            self.translatable_widgets['remove_captions_check'].setText(tr("ui.forward.options.remove_captions"))
+        if 'hide_author_check' in self.translatable_widgets:
+            self.translatable_widgets['hide_author_check'].setText(tr("ui.forward.options.hide_author"))
+        if 'send_final_message_check' in self.translatable_widgets:
+            self.translatable_widgets['send_final_message_check'].setText(tr("ui.forward.options.send_final_message"))
+        if 'exclude_links_check' in self.translatable_widgets:
+            self.translatable_widgets['exclude_links_check'].setText(tr("ui.forward.options.exclude_links"))
+        if 'enable_web_page_preview_check' in self.translatable_widgets:
+            self.translatable_widgets['enable_web_page_preview_check'].setText(tr("ui.forward.options.enable_web_page_preview"))
         
         # 更新按钮
         if 'start_button' in self.translatable_widgets:
@@ -147,13 +187,19 @@ class ForwardView(QWidget):
         if 'remove_pair_button' in self.translatable_widgets:
             self.translatable_widgets['remove_pair_button'].setText(tr("ui.forward.remove_pair"))
         
+        if 'browse_html_button' in self.translatable_widgets:
+            self.translatable_widgets['browse_html_button'].setText(tr("ui.forward.final_message.browse"))
+        
+        if 'browse_tmp_button' in self.translatable_widgets:
+            self.translatable_widgets['browse_tmp_button'].setText(tr("ui.forward.browse_tmp"))
+        
         # 更新状态表格表头
         if hasattr(self, 'status_table'):
             self.status_table.setHorizontalHeaderLabels([
                 tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
                 tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
-                "已转发消息数",  # 可以添加翻译键
-                "状态"  # 可以使用tr("ui.common.status")
+                tr("ui.forward.forwarded_messages"),
+                tr("ui.status.status")
             ])
         
         # 更新输入框占位符
@@ -165,6 +211,23 @@ class ForwardView(QWidget):
             self.original_text_input.setPlaceholderText(tr("ui.forward.original_text"))
         if hasattr(self, 'target_text_input'):
             self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+        if hasattr(self, 'keyword_input'):
+            self.keyword_input.setPlaceholderText(tr("ui.forward.keyword_placeholder"))
+        if hasattr(self, 'main_final_message_html_file'):
+            self.main_final_message_html_file.setPlaceholderText(tr("ui.forward.final_message.html_file_placeholder"))
+        if hasattr(self, 'log_display'):
+            self.log_display.setPlaceholderText(tr("ui.forward.log_placeholder"))
+        
+        # 更新SpinBox的特殊值文本
+        if hasattr(self, 'start_id'):
+            self.start_id.setSpecialValueText(tr("ui.forward.message_range.earliest_message"))
+        if hasattr(self, 'end_id'):
+            self.end_id.setSpecialValueText(tr("ui.forward.message_range.latest_message"))
+        if hasattr(self, 'forward_delay'):
+            self.forward_delay.setSuffix(" " + tr("ui.forward.seconds"))
+        
+        # 更新频道对列表标题
+        self._update_pairs_list_title()
     
     def _create_config_panel(self):
         """创建配置标签页"""
@@ -235,7 +298,7 @@ class ForwardView(QWidget):
         
         self.target_text_input = QLineEdit()
         self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
-        replace_to_label = QLabel("替换为:")  # 这个可以保持原样或者添加新的翻译键
+        replace_to_label = QLabel(tr("ui.forward.replace_to"))
         self.translatable_widgets['replace_to_label'] = replace_to_label
         replace_to_form_layout.addRow(replace_to_label, self.target_text_input)
         config_layout.addLayout(replace_to_form_layout)
@@ -257,7 +320,7 @@ class ForwardView(QWidget):
         keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发包含关键词的消息")  # 可以添加翻译键
+        self.keyword_input.setPlaceholderText(tr("ui.forward.keyword_placeholder"))
         keyword_layout.addWidget(self.keyword_input)
         
         keyword_label = QLabel(tr("ui.forward.keyword_filter"))
@@ -269,55 +332,66 @@ class ForwardView(QWidget):
         # 媒体类型复选框布局（移除标签）
         media_types_layout = QHBoxLayout()
         
-        self.text_check = QCheckBox("纯文本")
+        self.text_check = QCheckBox(tr("ui.forward.media_types.text"))
         self.text_check.setChecked(True)
+        self.translatable_widgets['text_check'] = self.text_check
         media_types_layout.addWidget(self.text_check)
         
-        self.photo_check = QCheckBox("照片")
+        self.photo_check = QCheckBox(tr("ui.forward.media_types.photo"))
         self.photo_check.setChecked(True)
+        self.translatable_widgets['photo_check'] = self.photo_check
         media_types_layout.addWidget(self.photo_check)
         
-        self.video_check = QCheckBox("视频")
+        self.video_check = QCheckBox(tr("ui.forward.media_types.video"))
         self.video_check.setChecked(True)
+        self.translatable_widgets['video_check'] = self.video_check
         media_types_layout.addWidget(self.video_check)
         
-        self.document_check = QCheckBox("文档")
+        self.document_check = QCheckBox(tr("ui.forward.media_types.document"))
         self.document_check.setChecked(True)
+        self.translatable_widgets['document_check'] = self.document_check
         media_types_layout.addWidget(self.document_check)
         
-        self.audio_check = QCheckBox("音频")
+        self.audio_check = QCheckBox(tr("ui.forward.media_types.audio"))
         self.audio_check.setChecked(True)
+        self.translatable_widgets['audio_check'] = self.audio_check
         media_types_layout.addWidget(self.audio_check)
         
-        self.animation_check = QCheckBox("动画")
+        self.animation_check = QCheckBox(tr("ui.forward.media_types.animation"))
         self.animation_check.setChecked(True)
+        self.translatable_widgets['animation_check'] = self.animation_check
         media_types_layout.addWidget(self.animation_check)
         
         media_types_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
         config_layout.addLayout(media_types_layout)
         
         # 第八行：转发参数
-        forward_params_label = QLabel("转发参数:")
+        forward_params_label = QLabel(tr("ui.forward.forward_params"))
         forward_params_label.setStyleSheet("font-weight: bold;")
+        self.translatable_widgets['forward_params_label'] = forward_params_label
         config_layout.addWidget(forward_params_label)
         
         # 转发参数复选框布局
         forward_params_layout = QHBoxLayout()
         
-        self.remove_captions_check = QCheckBox("移除媒体说明")
+        self.remove_captions_check = QCheckBox(tr("ui.forward.options.remove_captions"))
         self.remove_captions_check.setChecked(False)
+        self.translatable_widgets['remove_captions_check'] = self.remove_captions_check
         forward_params_layout.addWidget(self.remove_captions_check)
         
-        self.hide_author_check = QCheckBox("隐藏原作者")
+        self.hide_author_check = QCheckBox(tr("ui.forward.options.hide_author"))
         self.hide_author_check.setChecked(True)
+        self.translatable_widgets['hide_author_check'] = self.hide_author_check
         forward_params_layout.addWidget(self.hide_author_check)
         
-        self.send_final_message_check = QCheckBox("转发完成发送最后一条消息")
+        self.send_final_message_check = QCheckBox(tr("ui.forward.options.send_final_message"))
         self.send_final_message_check.setChecked(True)
+        self.translatable_widgets['send_final_message_check'] = self.send_final_message_check
         forward_params_layout.addWidget(self.send_final_message_check)
         
-        self.exclude_links_check = QCheckBox("排除含链接消息")
+        self.exclude_links_check = QCheckBox(tr("ui.forward.options.exclude_links"))
         self.exclude_links_check.setChecked(True)  # 默认勾选，方便用户使用
+        self.translatable_widgets['exclude_links_check'] = self.exclude_links_check
         forward_params_layout.addWidget(self.exclude_links_check)
         
         forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
@@ -331,41 +405,49 @@ class ForwardView(QWidget):
         
         html_file_layout = QHBoxLayout()
         self.main_final_message_html_file = QLineEdit()
-        self.main_final_message_html_file.setPlaceholderText("选择最终消息HTML文件")
+        self.main_final_message_html_file.setPlaceholderText(tr("ui.forward.final_message.html_file_placeholder"))
         self.main_final_message_html_file.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
         html_file_layout.addWidget(self.main_final_message_html_file)
         
-        self.main_browse_html_button = QPushButton("浏览")
-        self.main_browse_html_button.setMaximumWidth(60)
+        self.main_browse_html_button = QPushButton(tr("ui.forward.final_message.browse"))
+        self.main_browse_html_button.setMinimumWidth(90)
         self.main_browse_html_button.setEnabled(True)  # 初始状态启用（因为send_final_message_check默认选中）
+        self.translatable_widgets['browse_html_button'] = self.main_browse_html_button
         html_file_layout.addWidget(self.main_browse_html_button)
         
         # 添加网页预览复选框
-        self.main_enable_web_page_preview_check = QCheckBox("网页预览")
+        self.main_enable_web_page_preview_check = QCheckBox(tr("ui.forward.options.enable_web_page_preview"))
         self.main_enable_web_page_preview_check.setChecked(False)  # 默认不启用网页预览
         self.main_enable_web_page_preview_check.setEnabled(True)  # 初始状态启用
+        self.translatable_widgets['enable_web_page_preview_check'] = self.main_enable_web_page_preview_check
         html_file_layout.addWidget(self.main_enable_web_page_preview_check)
         
-        html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
+        html_file_label = QLabel(tr("ui.forward.final_message.html_file"))
+        self.translatable_widgets['html_file_label'] = html_file_label
+        html_file_form_layout.addRow(html_file_label, html_file_layout)
         config_layout.addLayout(html_file_form_layout)
         
         # 第十行：起始ID，结束ID，添加频道对按钮，删除所选按钮
         id_and_buttons_layout = QHBoxLayout()
         
         # 起始ID和结束ID
-        id_and_buttons_layout.addWidget(QLabel("起始ID:"))
+        start_id_label = QLabel(tr("ui.forward.message_range.start_id"))
+        self.translatable_widgets['start_id_label'] = start_id_label
+        id_and_buttons_layout.addWidget(start_id_label)
         self.start_id = QSpinBox()
         self.start_id.setRange(0, 999999999)
         self.start_id.setValue(0)
-        self.start_id.setSpecialValueText("最早消息")
+        self.start_id.setSpecialValueText(tr("ui.forward.message_range.earliest_message"))
         self.start_id.setFixedWidth(100)
         id_and_buttons_layout.addWidget(self.start_id)
         
-        id_and_buttons_layout.addWidget(QLabel("结束ID:"))
+        end_id_label = QLabel(tr("ui.forward.message_range.end_id"))
+        self.translatable_widgets['end_id_label'] = end_id_label
+        id_and_buttons_layout.addWidget(end_id_label)
         self.end_id = QSpinBox()
         self.end_id.setRange(0, 999999999)
         self.end_id.setValue(0)
-        self.end_id.setSpecialValueText("最新消息")
+        self.end_id.setSpecialValueText(tr("ui.forward.message_range.latest_message"))
         self.end_id.setFixedWidth(100)
         id_and_buttons_layout.addWidget(self.end_id)
         
@@ -390,8 +472,9 @@ class ForwardView(QWidget):
         
         # 第十一行到底部：已配置频道对
         # 频道列表标题
-        self.pairs_list_label = QLabel("已配置频道对:  0对")
+        self.pairs_list_label = QLabel()
         self.pairs_list_label.setStyleSheet("font-weight: bold;")
+        self.translatable_widgets['pairs_list_label'] = self.pairs_list_label
         config_layout.addWidget(self.pairs_list_label)
         
         # 创建频道对列表滚动区域
@@ -430,14 +513,16 @@ class ForwardView(QWidget):
         
         # 转发延迟
         delay_layout = QHBoxLayout()
-        delay_layout.addWidget(QLabel("转发延迟:"))
+        forward_delay_label = QLabel(tr("ui.forward.forward_delay"))
+        self.translatable_widgets['forward_delay_label'] = forward_delay_label
+        delay_layout.addWidget(forward_delay_label)
         
         self.forward_delay = QDoubleSpinBox()
         self.forward_delay.setRange(0, 60)
         self.forward_delay.setValue(0)
         self.forward_delay.setDecimals(1)
         self.forward_delay.setSingleStep(0.1)
-        self.forward_delay.setSuffix(" 秒")
+        self.forward_delay.setSuffix(" " + tr("ui.forward.seconds"))
         delay_layout.addWidget(self.forward_delay)
         delay_layout.addStretch(1)
         
@@ -445,12 +530,16 @@ class ForwardView(QWidget):
         
         # 临时文件路径
         tmp_layout = QHBoxLayout()
-        tmp_layout.addWidget(QLabel("临时目录:"))
+        tmp_directory_label = QLabel(tr("ui.forward.tmp_directory"))
+        self.translatable_widgets['tmp_directory_label'] = tmp_directory_label
+        tmp_layout.addWidget(tmp_directory_label)
         
         self.tmp_path = QLineEdit("tmp")
         tmp_layout.addWidget(self.tmp_path)
         
-        self.browse_tmp_button = QPushButton("浏览...")
+        self.browse_tmp_button = QPushButton(tr("ui.forward.browse_tmp"))
+        self.browse_tmp_button.setMinimumWidth(90)
+        self.translatable_widgets['browse_tmp_button'] = self.browse_tmp_button
         tmp_layout.addWidget(self.browse_tmp_button)
         
         options_layout.addLayout(tmp_layout)
@@ -460,7 +549,7 @@ class ForwardView(QWidget):
         
         # 将标签页添加到配置面板
         self.config_tabs.addTab(self.channel_tab, tr("ui.forward.title"))
-        self.config_tabs.addTab(self.options_tab, "转发选项")  # 可以添加翻译键
+        self.config_tabs.addTab(self.options_tab, tr("ui.forward.forward_options"))  # 可以添加翻译键
     
     def _create_forward_panel(self):
         """创建转发状态面板"""
@@ -483,7 +572,7 @@ class ForwardView(QWidget):
         self.status_table.setHorizontalHeaderLabels([
             tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
             tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
-            "已转发消息数",  # 可以添加翻译键
+            tr("ui.forward.forwarded_messages"),
             tr("ui.status.status")  # 添加状态翻译
         ])
         self.status_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -499,15 +588,16 @@ class ForwardView(QWidget):
         log_layout.setContentsMargins(0, 0, 0, 0)
         
         # 创建日志显示区域标签
-        log_label = QLabel("转发日志:")
+        log_label = QLabel(tr("ui.forward.forward_log"))
         log_label.setStyleSheet("font-weight: bold; margin-top: 4px;")
+        self.translatable_widgets['forward_log_label'] = log_label
         log_layout.addWidget(log_label)
         
         # 创建日志显示区域
         self.log_display = QTextEdit()
         self.log_display.setReadOnly(True)
         self.log_display.document().setMaximumBlockCount(1000)  # 限制最大行数，防止内存占用过多
-        self.log_display.setPlaceholderText("转发日志将在此处显示...")
+        self.log_display.setPlaceholderText(tr("ui.forward.log_placeholder"))
         
         # 设置日志显示区域的样式
         self.log_display.setStyleSheet("""
@@ -609,19 +699,21 @@ class ForwardView(QWidget):
         
         # 初始化日志显示区域
         if hasattr(self, 'log_display'):
-            self._add_log_message("TG-Manager 转发模块已就绪", color="#6c757d")
-            self._add_log_message("请配置频道对并点击\"开始转发\"按钮开始转发", color="#6c757d")
+            self._add_log_message("TG-Manager " + tr("ui.forward.status.ready"), color="#6c757d")
+            self._add_log_message(tr("ui.forward.messages.init_instruction"), color="#6c757d")
     
     def _update_pairs_list_title(self):
         """更新频道对列表标题"""
         count = self.pairs_list.count()
-        self.pairs_list_label.setText(f"已配置频道对:  {count}对")
+        pairs_count_text = tr("ui.forward.pairs_count").format(count=count)
+        title = f"{tr('ui.forward.configured_pairs')}: {pairs_count_text}"
+        self.pairs_list_label.setText(title)
     
     def _update_status_table(self):
         """更新状态表格，根据已启用的频道对填充表格"""
         # 保存当前的转发状态，避免在转发过程中被重置
         current_forwarding_status = getattr(self, 'forwarding_status', False)
-        current_status_text = "转发中" if current_forwarding_status else "准备中"
+        current_status_text = tr("ui.forward.status.running") if current_forwarding_status else tr("ui.forward.status.preparing")
         
         # 清空表格
         self.status_table.setRowCount(0)
@@ -656,7 +748,7 @@ class ForwardView(QWidget):
                     start_id = pair.get('start_id', 0)
                     end_id = pair.get('end_id', 0)
                     if start_id > 0 and end_id == 0:
-                        count_text = f"{forwarded_count}/计算中..."
+                        count_text = f"{forwarded_count}/" + tr("ui.forward.display.calculating")
                     else:
                         count_text = f"{forwarded_count}/--"
                 else:
@@ -931,18 +1023,18 @@ class ForwardView(QWidget):
         # 获取源频道和目标频道
         source = self.source_input.text().strip()
         if not source:
-            QMessageBox.warning(self, "警告", "请输入源频道链接或ID")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.source_required"))
             return
         
         target_text = self.target_input.text().strip()
         if not target_text:
-            QMessageBox.warning(self, "警告", "请输入目标频道链接或ID")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.target_required"))
             return
         
         # 分割多个目标频道
         target_channels = [t.strip() for t in target_text.split(',') if t.strip()]
         if not target_channels:
-            QMessageBox.warning(self, "警告", "无效的目标频道")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.invalid_target"))
             return
         
         # 获取消息ID范围
@@ -952,7 +1044,7 @@ class ForwardView(QWidget):
         # 获取选中的媒体类型
         media_types = self._get_media_types()
         if not media_types:
-            QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.select_media_type"))
             return
         
         # 获取文本替换规则
@@ -1001,30 +1093,34 @@ class ForwardView(QWidget):
             # 创建媒体类型显示文本
             media_types_str = []
             if self._is_media_type_in_list(MediaType.TEXT, media_types):
-                media_types_str.append("纯文本")
+                media_types_str.append(tr("ui.forward.media_types.text"))
             if self._is_media_type_in_list(MediaType.PHOTO, media_types):
-                media_types_str.append("照片")
+                media_types_str.append(tr("ui.forward.media_types.photo"))
             if self._is_media_type_in_list(MediaType.VIDEO, media_types):
-                media_types_str.append("视频")
+                media_types_str.append(tr("ui.forward.media_types.video"))
             if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
-                media_types_str.append("文档")
+                media_types_str.append(tr("ui.forward.media_types.document"))
             if self._is_media_type_in_list(MediaType.AUDIO, media_types):
-                media_types_str.append("音频")
+                media_types_str.append(tr("ui.forward.media_types.audio"))
             if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
-                media_types_str.append("动画")
+                media_types_str.append(tr("ui.forward.media_types.animation"))
             
             # 构建ID范围显示文本
+            start_id = channel_pair.get('start_id', 0)
+            end_id = channel_pair.get('end_id', 0)
             id_range_str = ""
+            
             if start_id > 0 or end_id > 0:
                 if start_id > 0 and end_id > 0:
-                    id_range_str = f"ID范围: {start_id}-{end_id}"
+                    id_range_str = tr("ui.forward.display.id_range_both").format(start=start_id, end=end_id)
                 elif start_id > 0:
-                    id_range_str = f"ID范围: {start_id}+"
+                    id_range_str = tr("ui.forward.display.id_range_start").format(start=start_id)
                 else:
-                    id_range_str = f"ID范围: 最早-{end_id}"
+                    id_range_str = tr("ui.forward.display.id_range_end").format(end=end_id)
                 id_range_str = " - " + id_range_str
             
             # 构建文本替换显示文本
+            text_filter = channel_pair.get('text_filter', [])
             text_filter_str = ""
             if text_filter and any(rule.get("original_text") or rule.get("target_text") for rule in text_filter):
                 replacements = []
@@ -1034,30 +1130,37 @@ class ForwardView(QWidget):
                     if original or target:
                         replacements.append(f"{original}->{target}")
                 if replacements:
-                    text_filter_str = f" - 替换: {', '.join(replacements)}"
+                    text_filter_str = f" - {tr('ui.forward.messages.text_replacements')}: {', '.join(replacements)}"
             
             # 构建关键词显示文本
+            keywords = channel_pair.get('keywords', [])
             keywords_str = ""
             if keywords:
-                keywords_str = f" - 关键词: {', '.join(keywords)}"
+                keywords_str = f" - {tr('ui.forward.messages.keywords')}: {', '.join(keywords)}"
             
             # 构建转发选项显示文本
             options_str = []
-            if channel_pair['remove_captions']:
-                options_str.append("移除说明")
-            if channel_pair['hide_author']:
-                options_str.append("隐藏作者")
-            if channel_pair['send_final_message']:
-                options_str.append("发送完成消息")
-            if channel_pair['exclude_links']:
-                options_str.append("排除链接")
+            if channel_pair.get('remove_captions', False):
+                options_str.append(tr("ui.forward.messages.option_remove_captions"))
+            if channel_pair.get('hide_author', False):
+                options_str.append(tr("ui.forward.messages.option_hide_author"))
+            if channel_pair.get('send_final_message', False):
+                options_str.append(tr("ui.forward.messages.option_send_final_message"))
+            if channel_pair.get('exclude_links', False):
+                options_str.append(tr("ui.forward.messages.option_exclude_links"))
             
             options_display = ""
             if options_str:
-                options_display = f" - 选项: {', '.join(options_str)}"
+                options_display = f" - {tr('ui.forward.display.options')}: {', '.join(options_str)}"
             
-            # 构建显示文本
-            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
+            # 构建基础显示文本
+            media_text = tr("ui.forward.display.media").format(types=', '.join(media_types_str))
+            display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} ({media_text}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
+            
+            # 添加启用/禁用状态标识
+            is_enabled = channel_pair.get('enabled', True)
+            if not is_enabled:
+                display_text = f"[{tr('ui.forward.display.disabled')}] {display_text}"
             
             item.setText(display_text)
             item.setData(Qt.UserRole, channel_pair)
@@ -1081,14 +1184,14 @@ class ForwardView(QWidget):
             self._update_status_table()
         
         except ValueError as e:
-            QMessageBox.warning(self, "输入错误", str(e))
+            QMessageBox.warning(self, tr("ui.forward.messages.input_error"), str(e))
     
     def _remove_channel_pairs(self):
         """删除选中的频道对"""
         selected_items = self.pairs_list.selectedItems()
         
         if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的频道对")
+            QMessageBox.information(self, tr("ui.common.info"), tr("ui.forward.messages.select_to_remove"))
             return
         
         # 获取所有选中项的数据和索引
@@ -1117,7 +1220,7 @@ class ForwardView(QWidget):
         """浏览临时目录"""
         directory = QFileDialog.getExistingDirectory(
             self, 
-            "选择临时文件目录",
+            tr("ui.forward.tmp_directory"),
             self.tmp_path.text()
         )
         
@@ -1129,9 +1232,9 @@ class ForwardView(QWidget):
         current_path = os.path.dirname(self.main_final_message_html_file.text()) or QDir.homePath()
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
-            "选择最终消息HTML文件",
+            tr("ui.forward.final_message.html_file"),
             current_path,
-            "HTML文件 (*.html);;所有文件 (*.*)"
+            tr("ui.forward.file_types.html")
         )
         
         if file_path:
@@ -1202,13 +1305,13 @@ class ForwardView(QWidget):
     def _start_forward(self):
         """开始转发"""
         if not self.channel_pairs:
-            QMessageBox.warning(self, "警告", "请先添加频道对")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.add_pair_warning"))
             return
         
         # 检查是否有启用的频道对
         enabled_pairs = [pair for pair in self.channel_pairs if pair.get('enabled', True)]
         if not enabled_pairs:
-            QMessageBox.warning(self, "警告", "请至少启用一个频道对")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.no_enabled_pairs"))
             return
         
         # 清空日志并记录开始转发
@@ -1224,7 +1327,7 @@ class ForwardView(QWidget):
         
         # 更新转发状态
         self.forwarding_status = True
-        self._update_status_table_forwarding_status("转发中")
+        self._update_status_table_forwarding_status(tr("ui.forward.status.running"))
         
         # 按钮状态
         self.start_forward_button.setEnabled(False)
@@ -1237,9 +1340,9 @@ class ForwardView(QWidget):
         self.forward_started.emit(forward_config)
         
         # 记录开始转发消息到状态消息和日志显示区域
-        self._add_status_message("开始转发...")
-        self._add_status_message("正在启动转发器...")
-        self._add_info_log_message("========== 开始转发任务 ==========")
+        self._add_status_message(tr("ui.forward.status.starting"))
+        self._add_status_message(tr("ui.forward.status.initializing"))
+        self._add_info_log_message("========== " + tr("ui.forward.status.task_started") + " ==========")
         
         # 自动跳转到转发进度选项卡，方便用户查看转发状态
         # 转发进度选项卡是第3个标签页，索引为2
@@ -1253,7 +1356,7 @@ class ForwardView(QWidget):
         try:
             # 检查转发器是否已设置
             if not self.forwarder:
-                error_msg = "转发器未初始化，无法启动转发"
+                error_msg = tr("ui.forward.messages.forwarder_not_initialized_start")
                 logger.error(error_msg)
                 self._add_status_message(error_msg)
                 # 恢复按钮状态
@@ -1261,19 +1364,19 @@ class ForwardView(QWidget):
                 self.stop_forward_button.setEnabled(False)
                 return
             
-            self._add_status_message("正在统计历史记录...")
+            self._add_status_message(tr("ui.forward.messages.calculating_history"))
             
             # 在转发开始前重新计算历史记录和总消息数，确保显示最新状态
             await self._async_calculate_and_update_total_message_counts()
             
-            self._add_status_message("正在建立频道映射...")
+            self._add_status_message(tr("ui.forward.messages.building_mapping"))
             
             # 建立频道ID到状态表格行的映射
             await self._build_channel_id_mapping()
             
-            self._add_status_message("正在启动转发器...")
+            self._add_status_message(tr("ui.forward.messages.starting_forwarder"))
             await self.forwarder.forward_messages()
-            self._add_status_message("转发完成")
+            self._add_status_message(tr("ui.forward.messages.forward_completed"))
         except Exception as e:
             logger.error(f"异步启动转发失败: {e}")
             self._add_status_message(f"启动转发失败: {e}")
@@ -1318,7 +1421,7 @@ class ForwardView(QWidget):
         self.stop_forward_button.setEnabled(False)
         
         # 记录停止转发消息
-        self._add_status_message("正在停止转发...")
+        self._add_status_message(tr("ui.forward.messages.stopping_forward"))
         
         # 记录到日志显示区域
         if hasattr(self, 'log_display'):
@@ -1332,7 +1435,7 @@ class ForwardView(QWidget):
         try:
             # 检查转发器是否已设置
             if not self.forwarder:
-                self._add_status_message("转发器未初始化，无法停止转发")
+                self._add_status_message(tr("ui.forward.messages.forwarder_not_initialized_stop"))
                 return
                 
             # 如果转发器有停止方法，调用它
@@ -1434,7 +1537,7 @@ class ForwardView(QWidget):
         logger.error(f"转发错误: {error_message}")
         
         # 使用延迟显示错误对话框
-        QTimer.singleShot(100, lambda: self._show_error_dialog_safe("转发错误", f"转发过程中发生错误:\n{error_message}"))
+        QTimer.singleShot(100, lambda: self._show_error_dialog_safe(tr("ui.forward.messages.forward_error_title"), tr("ui.forward.messages.forward_error_detail", error=error_message)))
     
     def _show_error_dialog_safe(self, title, message):
         """安全地显示错误对话框"""
@@ -1544,7 +1647,7 @@ class ForwardView(QWidget):
             self.config_saved.emit(updated_config)
             
             # 显示成功消息
-            QMessageBox.information(self, "配置保存", "转发配置已保存")
+            QMessageBox.information(self, tr("ui.common.info"), tr("ui.forward.messages.config_saved"))
             
             # 更新本地配置引用
             self.config = updated_config
@@ -1558,7 +1661,7 @@ class ForwardView(QWidget):
             self._update_status_table()
             
         except Exception as e:
-            QMessageBox.critical(self, "保存失败", f"配置保存失败: {str(e)}")
+            QMessageBox.critical(self, tr("ui.common.error"), tr("ui.forward.messages.save_failed") + f": {str(e)}")
             logger.error(f"保存配置失败: {e}")
             import traceback
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
@@ -1855,7 +1958,7 @@ class ForwardView(QWidget):
                 if hasattr(self, 'log_display'):
                     self._log_message_collected(current, total)
             else:
-                logger.info(f"正在转发... - {percentage}%")
+                logger.info(tr("ui.forward.messages.forwarding_with_progress", percentage=percentage))
                 # 添加到UI日志显示区域
                 if hasattr(self, 'log_display'):
                     self._log_message_collected(current, total)
@@ -1867,10 +1970,10 @@ class ForwardView(QWidget):
                 if hasattr(self, 'log_display'):
                     self._add_info_log_message(f"正在处理: {message_info}")
             else:
-                logger.info("正在转发...")
+                logger.info(tr("ui.forward.messages.forwarding"))
                 # 添加到UI日志显示区域
                 if hasattr(self, 'log_display'):
-                    self._add_info_log_message("正在处理消息...")
+                    self._add_info_log_message(tr("ui.forward.messages.processing_messages"))
     
     def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
         """转发完成处理
@@ -1979,17 +2082,17 @@ class ForwardView(QWidget):
         
         # 添加禁用/启用菜单项
         if is_enabled:
-            toggle_action = context_menu.addAction("禁用")
-            toggle_action.setToolTip("禁用此频道对，转发时将跳过")
+            toggle_action = context_menu.addAction(tr("ui.forward.context_menu.disable"))
+            toggle_action.setToolTip(tr("ui.forward.context_menu.disable_tooltip"))
         else:
-            toggle_action = context_menu.addAction("启用")
-            toggle_action.setToolTip("启用此频道对，转发时将包含")
+            toggle_action = context_menu.addAction(tr("ui.forward.context_menu.enable"))
+            toggle_action.setToolTip(tr("ui.forward.context_menu.enable_tooltip"))
         
         context_menu.addSeparator()  # 添加分隔线
         
         # 添加其他菜单项
-        edit_action = context_menu.addAction("编辑")
-        delete_action = context_menu.addAction("删除")
+        edit_action = context_menu.addAction(tr("ui.forward.context_menu.edit"))
+        delete_action = context_menu.addAction(tr("ui.forward.context_menu.delete"))
         
         # 显示菜单并获取用户选择的操作
         action = context_menu.exec(QCursor.pos())
@@ -2019,7 +2122,7 @@ class ForwardView(QWidget):
         
         # 创建编辑对话框
         edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle("编辑频道对")
+        edit_dialog.setWindowTitle(tr("ui.forward.edit_dialog.title"))
         edit_dialog.setMinimumWidth(650)  # 增加宽度以容纳更多字段
         edit_dialog.setMinimumHeight(650)  # 增加高度以容纳更多字段
         
@@ -2048,8 +2151,8 @@ class ForwardView(QWidget):
         source_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         source_input = QLineEdit(channel_pair.get('source_channel', ''))
-        source_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        source_form_layout.addRow("源频道:", source_input)
+        source_input.setPlaceholderText(tr("ui.forward.source_placeholder"))
+        source_form_layout.addRow(tr("ui.forward.source_channel"), source_input)
         dialog_layout.addLayout(source_form_layout)
         
         # 第二行：目标频道
@@ -2059,8 +2162,8 @@ class ForwardView(QWidget):
         target_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         target_input = QLineEdit(', '.join(channel_pair.get('target_channels', [])))
-        target_input.setPlaceholderText("目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)")
-        target_form_layout.addRow("目标频道:", target_input)
+        target_input.setPlaceholderText(tr("ui.forward.target_placeholder"))
+        target_form_layout.addRow(tr("ui.forward.target_channels"), target_input)
         dialog_layout.addLayout(target_form_layout)
         
         # 第三行：文本替换
@@ -2083,8 +2186,8 @@ class ForwardView(QWidget):
                     target_texts.append(target_text)
         
         original_text_input = QLineEdit(', '.join(original_texts))
-        original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔")
-        text_replace_form_layout.addRow("文本替换:", original_text_input)
+        original_text_input.setPlaceholderText(tr("ui.forward.original_text"))
+        text_replace_form_layout.addRow(tr("ui.forward.text_replacement"), original_text_input)
         dialog_layout.addLayout(text_replace_form_layout)
         
         # 第四行：替换为
@@ -2094,12 +2197,12 @@ class ForwardView(QWidget):
         replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         target_text_input = QLineEdit(', '.join(target_texts))
-        target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
-        replace_to_form_layout.addRow("替换为:", target_text_input)
+        target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+        replace_to_form_layout.addRow(tr("ui.forward.replace_to"), target_text_input)
         dialog_layout.addLayout(replace_to_form_layout)
         
         # 第五行：过滤选项label
-        filter_options_label = QLabel("过滤选项:")
+        filter_options_label = QLabel(tr("ui.forward.filter_options"))
         filter_options_label.setStyleSheet("font-weight: bold;")
         dialog_layout.addWidget(filter_options_label)
         
@@ -2111,8 +2214,8 @@ class ForwardView(QWidget):
         
         keywords = channel_pair.get('keywords', [])
         keyword_input = QLineEdit(', '.join(keywords))
-        keyword_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发含关键词的消息")
-        keyword_form_layout.addRow("关键词过滤:", keyword_input)
+        keyword_input.setPlaceholderText(tr("ui.forward.keyword_placeholder"))
+        keyword_form_layout.addRow(tr("ui.forward.keyword_filter"), keyword_input)
         dialog_layout.addLayout(keyword_form_layout)
         
         # 第七行：媒体类型
@@ -2121,27 +2224,27 @@ class ForwardView(QWidget):
         # 媒体类型复选框布局（移除标签）
         media_types_layout = QHBoxLayout()
         
-        text_check = QCheckBox("纯文本")
+        text_check = QCheckBox(tr("ui.forward.media_types.text"))
         text_check.setChecked(self._is_media_type_in_list(MediaType.TEXT, media_types))
         media_types_layout.addWidget(text_check)
         
-        photo_check = QCheckBox("照片")
+        photo_check = QCheckBox(tr("ui.forward.media_types.photo"))
         photo_check.setChecked(self._is_media_type_in_list(MediaType.PHOTO, media_types))
         media_types_layout.addWidget(photo_check)
         
-        video_check = QCheckBox("视频")
+        video_check = QCheckBox(tr("ui.forward.media_types.video"))
         video_check.setChecked(self._is_media_type_in_list(MediaType.VIDEO, media_types))
         media_types_layout.addWidget(video_check)
         
-        document_check = QCheckBox("文档")
+        document_check = QCheckBox(tr("ui.forward.media_types.document"))
         document_check.setChecked(self._is_media_type_in_list(MediaType.DOCUMENT, media_types))
         media_types_layout.addWidget(document_check)
         
-        audio_check = QCheckBox("音频")
+        audio_check = QCheckBox(tr("ui.forward.media_types.audio"))
         audio_check.setChecked(self._is_media_type_in_list(MediaType.AUDIO, media_types))
         media_types_layout.addWidget(audio_check)
         
-        animation_check = QCheckBox("动画")
+        animation_check = QCheckBox(tr("ui.forward.media_types.animation"))
         animation_check.setChecked(self._is_media_type_in_list(MediaType.ANIMATION, media_types))
         media_types_layout.addWidget(animation_check)
         
@@ -2149,7 +2252,7 @@ class ForwardView(QWidget):
         dialog_layout.addLayout(media_types_layout)
         
         # 第八行：转发参数
-        forward_params_label = QLabel("转发参数:")
+        forward_params_label = QLabel(tr("ui.forward.forward_params"))
         forward_params_label.setStyleSheet("font-weight: bold;")
         dialog_layout.addWidget(forward_params_label)
         
@@ -2173,19 +2276,19 @@ class ForwardView(QWidget):
         exclude_links_value = to_bool(channel_pair.get('exclude_links', False))
         enable_web_page_preview_value = to_bool(channel_pair.get('enable_web_page_preview', False))
         
-        remove_captions_check = QCheckBox("移除媒体说明")
+        remove_captions_check = QCheckBox(tr("ui.forward.options.remove_captions"))
         remove_captions_check.setChecked(remove_captions_value)
         forward_params_layout.addWidget(remove_captions_check)
         
-        hide_author_check = QCheckBox("隐藏原作者")
+        hide_author_check = QCheckBox(tr("ui.forward.options.hide_author"))
         hide_author_check.setChecked(hide_author_value)
         forward_params_layout.addWidget(hide_author_check)
         
-        send_final_message_check = QCheckBox("转发完成发送最后一条消息")
+        send_final_message_check = QCheckBox(tr("ui.forward.options.send_final_message"))
         send_final_message_check.setChecked(send_final_message_value)
         forward_params_layout.addWidget(send_final_message_check)
         
-        exclude_links_check = QCheckBox("排除含链接消息")
+        exclude_links_check = QCheckBox(tr("ui.forward.options.exclude_links"))
         exclude_links_check.setChecked(exclude_links_value)
         forward_params_layout.addWidget(exclude_links_check)
         
@@ -2200,28 +2303,28 @@ class ForwardView(QWidget):
         
         html_file_layout = QHBoxLayout()
         html_file_input = QLineEdit(channel_pair.get('final_message_html_file', ''))
-        html_file_input.setPlaceholderText("选择最终消息HTML文件")
+        html_file_input.setPlaceholderText(tr("ui.forward.final_message.html_file_placeholder"))
         html_file_layout.addWidget(html_file_input)
         
-        html_file_browse_btn = QPushButton("浏览")
-        html_file_browse_btn.setMaximumWidth(60)
+        html_file_browse_btn = QPushButton(tr("ui.forward.final_message.browse"))
+        html_file_browse_btn.setMinimumWidth(90)
         html_file_layout.addWidget(html_file_browse_btn)
         
         # 添加网页预览复选框
-        enable_web_page_preview_check = QCheckBox("网页预览")
+        enable_web_page_preview_check = QCheckBox(tr("ui.forward.options.enable_web_page_preview"))
         enable_web_page_preview_check.setChecked(enable_web_page_preview_value)  # 使用转换后的布尔值
         html_file_layout.addWidget(enable_web_page_preview_check)
         
-        html_file_form_layout.addRow("最终消息HTML文件:", html_file_layout)
+        html_file_form_layout.addRow(tr("ui.forward.final_message.html_file"), html_file_layout)
         dialog_layout.addLayout(html_file_form_layout)
         
         # 连接浏览按钮
         def browse_html_file():
             file_path, _ = QFileDialog.getOpenFileName(
                 edit_dialog,
-                "选择最终消息HTML文件",
+                tr("ui.forward.final_message.html_file"),
                 "",
-                "HTML文件 (*.html);;所有文件 (*)"
+                tr("ui.forward.file_types.html")
             )
             if file_path:
                 html_file_input.setText(file_path)
@@ -2232,20 +2335,20 @@ class ForwardView(QWidget):
         id_and_buttons_layout = QHBoxLayout()
         
         # 起始ID和结束ID
-        id_and_buttons_layout.addWidget(QLabel("起始ID:"))
+        id_and_buttons_layout.addWidget(QLabel(tr("ui.forward.message_range.start_id")))
         start_id_input = QSpinBox()
         start_id_input.setRange(0, 999999999)
         start_id_input.setValue(channel_pair.get('start_id', 0))
-        start_id_input.setSpecialValueText("最早消息")
+        start_id_input.setSpecialValueText(tr("ui.forward.message_range.earliest_message"))
         
         # 结束ID
         end_id_input = QSpinBox()
         end_id_input.setRange(0, 999999999)
         end_id_input.setValue(channel_pair.get('end_id', 0))
-        end_id_input.setSpecialValueText("最新消息")
+        end_id_input.setSpecialValueText(tr("ui.forward.message_range.latest_message"))
         
         id_and_buttons_layout.addWidget(start_id_input)
-        id_and_buttons_layout.addWidget(QLabel("结束ID:"))
+        id_and_buttons_layout.addWidget(QLabel(tr("ui.forward.message_range.end_id")))
         id_and_buttons_layout.addWidget(end_id_input)
         id_and_buttons_layout.addStretch(1)
         
@@ -2257,8 +2360,8 @@ class ForwardView(QWidget):
         
         # 按钮布局
         button_layout = QHBoxLayout()
-        save_button = QPushButton("保存")
-        cancel_button = QPushButton("取消")
+        save_button = QPushButton(tr("ui.forward.edit_dialog.save"))
+        cancel_button = QPushButton(tr("ui.forward.edit_dialog.cancel"))
         
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
@@ -2280,9 +2383,9 @@ class ForwardView(QWidget):
                 
                 # 验证输入
                 if not new_source:
-                    raise ValueError("源频道不能为空")
+                    raise ValueError(tr("ui.forward.messages.source_required"))
                 if not new_targets:
-                    raise ValueError("目标频道不能为空")
+                    raise ValueError(tr("ui.forward.messages.target_required"))
                 
                 # 收集媒体类型
                 new_media_types = []
@@ -2300,7 +2403,7 @@ class ForwardView(QWidget):
                     new_media_types.append(MediaType.ANIMATION)
                 
                 if not new_media_types:
-                    raise ValueError("至少需要选择一种媒体类型")
+                    raise ValueError(tr("ui.forward.messages.select_media_type"))
                 
                 # 获取文本替换规则
                 original_texts = [t.strip() for t in original_text_input.text().split(',') if t.strip()]
@@ -2349,7 +2452,7 @@ class ForwardView(QWidget):
                 self._update_channel_pair(row, updated_pair)
                 
             except ValueError as e:
-                QMessageBox.warning(self, "输入错误", str(e))
+                QMessageBox.warning(self, tr("ui.forward.messages.input_error"), str(e))
     
     def _update_channel_pair(self, row, updated_pair):
         """更新频道对
@@ -2375,7 +2478,7 @@ class ForwardView(QWidget):
                 logger.debug(f"频道对已更新: {updated_pair['source_channel']}")
                 
                 # 显示成功消息
-                QMessageBox.information(self, "更新成功", "频道对已成功更新，请点击保存配置")
+                QMessageBox.information(self, tr("ui.forward.messages.status_updated"), tr("ui.forward.messages.update_success"))
         else:
             logger.error(f"无法更新频道对，行索引无效: {row}")
     
@@ -2409,9 +2512,13 @@ class ForwardView(QWidget):
         self._update_channel_pair_display(item, channel_pair)
         
         # 显示状态切换消息
-        status_text = "启用" if new_enabled else "禁用"
+        status_text = tr("ui.forward.context_menu.enable") if new_enabled else tr("ui.forward.context_menu.disable")
         source_channel = channel_pair.get('source_channel', '未知频道')
-        QMessageBox.information(self, "状态更新", f"频道对 {source_channel} 已{status_text}，请保存配置使更改生效")
+        if new_enabled:
+            message = tr("ui.forward.messages.pair_enabled").format(channel=source_channel)
+        else:
+            message = tr("ui.forward.messages.pair_disabled").format(channel=source_channel)
+        QMessageBox.information(self, tr("ui.forward.messages.status_updated"), message)
         
         logger.debug(f"频道对 {source_channel} 状态切换为: {'启用' if new_enabled else '禁用'}")
         
@@ -2430,17 +2537,17 @@ class ForwardView(QWidget):
         media_types_str = []
         
         if self._is_media_type_in_list(MediaType.TEXT, media_types):
-            media_types_str.append("纯文本")
+            media_types_str.append(tr("ui.forward.media_types.text"))
         if self._is_media_type_in_list(MediaType.PHOTO, media_types):
-            media_types_str.append("照片")
+            media_types_str.append(tr("ui.forward.media_types.photo"))
         if self._is_media_type_in_list(MediaType.VIDEO, media_types):
-            media_types_str.append("视频")
+            media_types_str.append(tr("ui.forward.media_types.video"))
         if self._is_media_type_in_list(MediaType.DOCUMENT, media_types):
-            media_types_str.append("文档")
+            media_types_str.append(tr("ui.forward.media_types.document"))
         if self._is_media_type_in_list(MediaType.AUDIO, media_types):
-            media_types_str.append("音频")
+            media_types_str.append(tr("ui.forward.media_types.audio"))
         if self._is_media_type_in_list(MediaType.ANIMATION, media_types):
-            media_types_str.append("动画")
+            media_types_str.append(tr("ui.forward.media_types.animation"))
         
         # 构建ID范围显示文本
         start_id = channel_pair.get('start_id', 0)
@@ -2467,36 +2574,36 @@ class ForwardView(QWidget):
                 if original or target:
                     replacements.append(f"{original}->{target}")
             if replacements:
-                text_filter_str = f" - 替换: {', '.join(replacements)}"
+                text_filter_str = f" - {tr('ui.forward.messages.text_replacements')}: {', '.join(replacements)}"
         
         # 构建关键词显示文本
         keywords = channel_pair.get('keywords', [])
         keywords_str = ""
         if keywords:
-            keywords_str = f" - 关键词: {', '.join(keywords)}"
+            keywords_str = f" - {tr('ui.forward.messages.keywords')}: {', '.join(keywords)}"
         
         # 构建转发选项显示文本
         options_str = []
         if channel_pair.get('remove_captions', False):
-            options_str.append("移除说明")
+            options_str.append(tr("ui.forward.messages.option_remove_captions"))
         if channel_pair.get('hide_author', False):
-            options_str.append("隐藏作者")
+            options_str.append(tr("ui.forward.messages.option_hide_author"))
         if channel_pair.get('send_final_message', False):
-            options_str.append("发送完成消息")
+            options_str.append(tr("ui.forward.messages.option_send_final_message"))
         if channel_pair.get('exclude_links', False):
-            options_str.append("排除链接")
+            options_str.append(tr("ui.forward.messages.option_exclude_links"))
         
         options_display = ""
         if options_str:
-            options_display = f" - 选项: {', '.join(options_str)}"
+            options_display = f" - {tr('ui.forward.display.options')}: {', '.join(options_str)}"
         
         # 构建基础显示文本
-        display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} (媒体：{', '.join(media_types_str)}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
+        display_text = f"{channel_pair['source_channel']} → {', '.join(channel_pair['target_channels'])} ({tr('ui.forward.display.media', types=', '.join(media_types_str))}){id_range_str}{text_filter_str}{keywords_str}{options_display}"
         
         # 添加启用/禁用状态标识
         is_enabled = channel_pair.get('enabled', True)
         if not is_enabled:
-            display_text = f"[已禁用] {display_text}"
+            display_text = f"[{tr('ui.forward.display.disabled')}] {display_text}"
         
         # 更新列表项文本
         item.setText(display_text)
@@ -2531,7 +2638,7 @@ class ForwardView(QWidget):
             
             # 添加转发成功的日志记录
             target_channel_name = self._extract_channel_name_from_info(target_info)
-            self._log_message_forward_success(message_id, "单个消息", f"→ {target_channel_name}")
+            self._log_message_forward_success(message_id, tr("ui.forward.messages.single_message"), f"→ {target_channel_name}")
             
             logger.debug(f"处理单条消息转发信号: msg_id={message_id}, target_info={target_info}")
         except Exception as e:
@@ -2558,15 +2665,15 @@ class ForwardView(QWidget):
                     # 多个消息的媒体组
                     message_range = f"{message_ids[0]}-{message_ids[-1]}"
                     target_channel_name = self._extract_channel_name_from_info(target_info)
-                    self._log_message_forward_success(message_range, "媒体组消息", f"→ {target_channel_name}")
+                    self._log_message_forward_success(message_range, tr("ui.forward.messages.media_group_message"), f"→ {target_channel_name}")
                 elif isinstance(message_ids, list) and len(message_ids) == 1:
                     # 单个消息
                     target_channel_name = self._extract_channel_name_from_info(target_info)
-                    self._log_message_forward_success(message_ids[0], "单个消息", f"→ {target_channel_name}")
+                    self._log_message_forward_success(message_ids[0], tr("ui.forward.messages.single_message"), f"→ {target_channel_name}")
                 else:
                     # 其他情况
                     target_channel_name = self._extract_channel_name_from_info(target_info)
-                    self._log_message_forward_success(str(message_ids), "媒体组消息", f"→ {target_channel_name}")
+                    self._log_message_forward_success(str(message_ids), tr("ui.forward.messages.media_group_message"), f"→ {target_channel_name}")
             except Exception as log_error:
                 logger.debug(f"添加媒体组转发日志失败: {log_error}")
             
@@ -2877,7 +2984,7 @@ class ForwardView(QWidget):
         
         Args:
             message_id: 消息ID或范围（字符串）
-            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            message_type: 消息类型（tr("ui.forward.messages.single_message")或tr("ui.forward.messages.media_group_message")）
             filter_reason: 过滤原因
         """
         try:
@@ -2934,7 +3041,7 @@ class ForwardView(QWidget):
             # 更新UI显示，正确处理total_count为-1的情况
             if total_count == -1:
                 if should_show_calculating:
-                    count_text = f"{total_forwarded_count}/计算中..."
+                    count_text = f"{total_forwarded_count}/" + tr("ui.forward.display.calculating")
                 else:
                     count_text = f"{total_forwarded_count}/--"
             elif total_count > 0:
@@ -2945,7 +3052,7 @@ class ForwardView(QWidget):
             if self.status_table.item(row, 2):
                 self.status_table.item(row, 2).setText(count_text)
             
-            logger.debug(f"✅ 已更新转发计数: {target_channel} +{increment} -> {total_forwarded_count} (历史: {base_forwarded_count}, 本次: {new_session_count}, 总计: {total_count if total_count != -1 else ('计算中' if should_show_calculating else '--')})")
+            logger.debug(f"✅ 已更新转发计数: {target_channel} +{increment} -> {total_forwarded_count} (历史: {base_forwarded_count}, 本次: {new_session_count}, 总计: {total_count if total_count != -1 else (tr('ui.forward.display.calculating_short') if should_show_calculating else '--')})")
             
         except Exception as e:
             logger.error(f"更新计数和UI时发生错误: {e}")
@@ -3033,25 +3140,27 @@ class ForwardView(QWidget):
             total: 总消息数量（可选）
         """
         if total is not None:
-            message = f"正在收集消息... ({count}/{total})"
+            message = tr("ui.forward.messages.collecting_messages", count=count, total=total)
         else:
             message = f"已收集 {count} 条消息"
         self._add_info_log_message(message)
     
-    def _log_message_forward_success(self, message_id, message_type="单个消息", additional_info=""):
+    def _log_message_forward_success(self, message_id, message_type=None, additional_info=""):
         """记录消息转发成功
         
         Args:
             message_id: 消息ID或消息ID范围
-            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            message_type: 消息类型（tr("ui.forward.messages.single_message")或tr("ui.forward.messages.media_group_message")）
             additional_info: 附加信息（如文本替换、移除媒体说明等）
         """
+        if message_type is None:
+            message_type = tr("ui.forward.messages.single_message")
         message = f"{message_type}（{message_id}）转发成功"
         if additional_info:
             message += f"：{additional_info}"
         self._add_success_log_message(message)
     
-    def _log_message_forward_failed(self, message_id, message_type="单个消息", error_msg="", is_rate_limit=False):
+    def _log_message_forward_failed(self, message_id, message_type=None, error_msg="", is_rate_limit=False):
         """记录消息转发失败
         
         Args:
@@ -3060,6 +3169,8 @@ class ForwardView(QWidget):
             error_msg: 错误消息
             is_rate_limit: 是否为API限流错误
         """
+        if message_type is None:
+            message_type = tr("ui.forward.messages.single_message")
         message = f"{message_type}（{message_id}）转发失败"
         if error_msg:
             message += f"：{error_msg}"
@@ -3070,14 +3181,16 @@ class ForwardView(QWidget):
         else:
             self._add_error_log_message(message)
     
-    def _log_message_filtered(self, message_id, message_type="单个消息", filter_reason=""):
+    def _log_message_filtered(self, message_id, message_type=None, filter_reason=""):
         """记录消息过滤
         
         Args:
             message_id: 消息ID或消息ID范围
-            message_type: 消息类型（"单个消息"或"媒体组消息"）
+            message_type: 消息类型（tr("ui.forward.messages.single_message")或tr("ui.forward.messages.media_group_message")）
             filter_reason: 过滤原因
         """
+        if message_type is None:
+            message_type = tr("ui.forward.messages.single_message")
         message = f"{message_type}（{message_id}）过滤"
         if filter_reason:
             message += f"：{filter_reason}"
