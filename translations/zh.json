@@ -200,6 +200,47 @@
       "buttons": {
         "save": "保存设置",
         "reset": "重置为默认"
+      },
+      "tooltips": {
+        "login_current_user": "当前登录用户: {user}",
+        "login_logged_in": "当前已登录",
+        "login_click_to_login": "点击登录到Telegram账号"
+      }
+    },
+    "login": {
+      "dialog": {
+        "title": "登录Telegram",
+        "info": "以下是您在设置中配置的Telegram API凭据和手机号码信息。点击'确定'开始登录。",
+        "api_id": "API ID:",
+        "api_hash": "API Hash:",
+        "phone_number": "手机号码:"
+      },
+      "verification": {
+        "title": "输入验证码",
+        "info": "Telegram已向您的手机或Telegram应用发送了一个验证码，请在下方输入该验证码：",
+        "placeholder": "请输入验证码",
+        "hint": "提示: 验证码通常为5位数字，会发送到您的Telegram应用。\n如果未收到验证码，可能需要检查您绑定的Telegram是否可用。"
+      },
+      "errors": {
+        "incomplete_config_title": "配置不完整",
+        "incomplete_config_msg": "请在设置中完成API凭据和手机号码的配置。",
+        "login_failed_title": "无法登录", 
+        "login_failed_msg": "客户端管理器未初始化，无法完成登录。",
+        "login_error_title": "登录错误",
+        "login_error_msg": "登录过程中出错: {error}",
+        "module_load_failed_title": "模块加载失败",
+        "module_load_failed_msg": "无法加载设置模块。\n错误: {error}"
+      },
+      "status": {
+        "logging_in": "登录中: {phone}",
+        "cancelled": "登录已取消",
+        "logged_in": "已登录: {user}",
+        "failed": "登录失败",
+        "error": "登录错误: {error}"
+      },
+      "first_time": {
+        "title": "首次使用提示",
+        "message": "欢迎使用TG-Manager！\n\n检测到这是您首次使用本程序，请在API设置中填写您的Telegram API凭据并点击登录按钮完成登录。\n\n如果您还没有API ID和API Hash，请访问 https://my.telegram.org 申请。\n\n填写完成后，请点击登录按钮完成账号验证。"
       }
     },
     "dialogs": {

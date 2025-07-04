@@ -200,6 +200,11 @@
       "buttons": {
         "save": "Save Settings",
         "reset": "Reset to Default"
+      },
+      "tooltips": {
+        "login_current_user": "Current logged in user: {user}",
+        "login_logged_in": "Currently logged in",
+        "login_click_to_login": "Click to login to Telegram account"
       }
     },
     "dialogs": {
@@ -237,6 +242,42 @@
       "minimize_to_tray": "Minimize to system tray instead of closing the program",
       "auto_restart": "Automatically reconnect when connection is unexpectedly lost",
       "proxy_settings": "Configure network proxy to access Telegram services"
+    },
+    "login": {
+      "dialog": {
+        "title": "Login to Telegram",
+        "info": "Below are your Telegram API credentials and phone number configured in settings. Click 'OK' to start login.",
+        "api_id": "API ID:",
+        "api_hash": "API Hash:",
+        "phone_number": "Phone Number:"
+      },
+      "verification": {
+        "title": "Enter Verification Code",
+        "info": "Telegram has sent a verification code to your phone or Telegram app. Please enter the code below:",
+        "placeholder": "Enter verification code",
+        "hint": "Tip: The verification code is usually 5 digits and will be sent to your Telegram app.\nIf you don't receive the code, please check if your linked Telegram is available."
+      },
+      "errors": {
+        "incomplete_config_title": "Incomplete Configuration",
+        "incomplete_config_msg": "Please complete the API credentials and phone number configuration in settings.",
+        "login_failed_title": "Login Failed", 
+        "login_failed_msg": "Client manager not initialized, unable to complete login.",
+        "login_error_title": "Login Error",
+        "login_error_msg": "Error occurred during login: {error}",
+        "module_load_failed_title": "Module Load Failed",
+        "module_load_failed_msg": "Unable to load settings module.\nError: {error}"
+      },
+      "status": {
+        "logging_in": "Logging in: {phone}",
+        "cancelled": "Login cancelled",
+        "logged_in": "Logged in: {user}",
+        "failed": "Login failed",
+        "error": "Login error: {error}"
+      },
+      "first_time": {
+        "title": "First Time Setup",
+        "message": "Welcome to TG-Manager!\n\nThis appears to be your first time using this program. Please fill in your Telegram API credentials in the API settings and click the login button to complete the login.\n\nIf you don't have API ID and API Hash yet, please visit https://my.telegram.org to apply.\n\nAfter completing the configuration, please click the \"Login\" button to complete account verification."
+      }
     }
   },
   "errors": {

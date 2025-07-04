@@ -13,6 +13,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QRegularExpression, QTimer, Signal, Qt
 from PySide6.QtGui import QRegularExpressionValidator, QAction
 
+from src.utils.logger import get_logger
+from src.utils.translation_manager import get_translation_manager, tr
+
+logger = get_logger()
+
 class ActionsMixin:
     """功能操作混入类
     
@@ -156,14 +161,14 @@ class ActionsMixin:
         try:
             # 创建登录表单对话框
             login_dialog = QDialog(self)
-            login_dialog.setWindowTitle("登录Telegram")
+            login_dialog.setWindowTitle(tr("ui.login.dialog.title"))
             login_dialog.setMinimumWidth(400)
             
             # 创建布局
             main_layout = QVBoxLayout(login_dialog)
             
             # 添加说明标签
-            info_label = QLabel("以下是您在设置中配置的Telegram API凭据和手机号码信息。点击'确定'开始登录。")
+            info_label = QLabel(tr("ui.login.dialog.info"))
             info_label.setWordWrap(True)
             main_layout.addWidget(info_label)
             
@@ -188,9 +193,9 @@ class ActionsMixin:
                     phone_label.setText(self.config['GENERAL']['phone_number'])
             
             # 添加表单字段
-            form_layout.addRow("API ID:", api_id_label)
-            form_layout.addRow("API Hash:", api_hash_label)
-            form_layout.addRow("手机号码:", phone_label)
+            form_layout.addRow(tr("ui.login.dialog.api_id"), api_id_label)
+            form_layout.addRow(tr("ui.login.dialog.api_hash"), api_hash_label)
+            form_layout.addRow(tr("ui.login.dialog.phone_number"), phone_label)
             
             # 创建按钮
             button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -213,8 +218,8 @@ class ActionsMixin:
                    not self.config['GENERAL']['phone_number']:
                     QMessageBox.warning(
                         self,
-                        "配置不完整",
-                        "请在设置中完成API凭据和手机号码的配置。",
+                        tr("ui.login.errors.incomplete_config_title"),
+                        tr("ui.login.errors.incomplete_config_msg"),
                         QMessageBox.Ok
                     )
                     # 打开设置界面
@@ -224,14 +229,14 @@ class ActionsMixin:
                 phone = self.config['GENERAL']['phone_number']
                 
                 # 显示登录进行中的消息
-                self.statusBar().showMessage(f"登录中: {phone}")
+                self.statusBar().showMessage(tr("ui.login.status.logging_in").format(phone=phone))
                 
                 # 获取app实例和client_manager
                 if not hasattr(self, 'app') or not hasattr(self.app, 'client_manager'):
                     QMessageBox.warning(
                         self,
-                        "无法登录",
-                        "客户端管理器未初始化，无法完成登录。",
+                        tr("ui.login.errors.login_failed_title"),
+                        tr("ui.login.errors.login_failed_msg"),
                         QMessageBox.Ok
                     )
                     return
@@ -279,7 +284,7 @@ class ActionsMixin:
                         
                         code = code_result[0]
                         if not code:
-                            self.statusBar().showMessage("登录已取消")
+                            self.statusBar().showMessage(tr("ui.login.status.cancelled"))
                             return
                         
                         # 使用验证码登录
@@ -293,7 +298,7 @@ class ActionsMixin:
                             if user.username:
                                 user_info += f" (@{user.username})"
                             
-                            self.statusBar().showMessage(f"已登录: {user_info}", 5000)
+                            self.statusBar().showMessage(tr("ui.login.status.logged_in").format(user=user_info), 5000)
                             
                             # 更新设置视图中的登录按钮
                             if "settings_view" in self.opened_views:
@@ -301,21 +306,13 @@ class ActionsMixin:
                                 if hasattr(settings_view, 'update_login_button'):
                                     settings_view.update_login_button(True, user_info)
                         else:
-                            self.statusBar().showMessage("登录失败", 5000)
+                            self.statusBar().showMessage(tr("ui.login.status.failed"), 5000)
                     
                     except Exception as e:
                         logger.error(f"登录过程中出错: {e}")
                         # 在主线程中显示错误消息
                         error_msg = str(e)
-                        self.statusBar().showMessage(f"登录错误: {error_msg}", 5000)
-                        
-                        # 使用计时器在主线程中显示错误对话框
-                        def show_error_in_main_thread():
-                            self._show_login_error(error_msg)
-                        
-                        # 导入QTimer确保可用性
-                        from PySide6.QtCore import QTimer
-                        QTimer.singleShot(100, show_error_in_main_thread)
+                        self.statusBar().showMessage(tr("ui.login.status.error").format(error=error_msg), 5000)
                 
                 # 启动登录任务
                 if hasattr(self.app, 'task_manager'):
@@ -328,8 +325,8 @@ class ActionsMixin:
             logger.error(f"登录处理时出错: {e}")
             QMessageBox.critical(
                 self,
-                "登录错误",
-                f"登录过程中发生错误: {str(e)}",
+                tr("ui.login.errors.login_error_title"),
+                tr("ui.login.errors.login_error_msg").format(error=str(e)),
                 QMessageBox.Ok
             )
             
@@ -342,20 +339,20 @@ class ActionsMixin:
         try:
             # 创建验证码输入对话框
             code_dialog = QDialog(self)
-            code_dialog.setWindowTitle("输入验证码")
+            code_dialog.setWindowTitle(tr("ui.login.verification.title"))
             code_dialog.setMinimumWidth(350)
             
             # 创建布局
             layout = QVBoxLayout(code_dialog)
             
             # 添加说明标签
-            info_label = QLabel("Telegram已向您的手机或Telegram应用发送了一个验证码，请在下方输入该验证码：")
+            info_label = QLabel(tr("ui.login.verification.info"))
             info_label.setWordWrap(True)
             layout.addWidget(info_label)
             
             # 创建验证码输入框 - Telegram现在使用5位或更长的验证码
             code_input = QLineEdit()
-            code_input.setPlaceholderText("请输入验证码")
+            code_input.setPlaceholderText(tr("ui.login.verification.placeholder"))
             code_input.setMaxLength(10)  # 允许更长的验证码
             
             # 设置输入验证 - 只允许输入数字
@@ -373,7 +370,7 @@ class ActionsMixin:
             layout.addWidget(code_input)
             
             # 添加验证码提示
-            hint_label = QLabel("提示: 验证码通常为5位数字，会发送到您的Telegram应用。\n如果未收到验证码，可能需要检查您绑定的Telegram是否可用。")
+            hint_label = QLabel(tr("ui.login.verification.hint"))
             hint_label.setStyleSheet("color: gray; font-size: 10pt;")
             hint_label.setWordWrap(True)
             layout.addWidget(hint_label)
@@ -430,8 +427,8 @@ class ActionsMixin:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 self,
-                "登录错误",
-                f"登录过程中出错: {error_msg}",
+                tr("ui.login.errors.login_error_title"),
+                tr("ui.login.errors.login_error_msg").format(error=error_msg),
                 QMessageBox.Ok
             )
             logger.debug(f"已显示登录错误对话框: {error_msg}")
@@ -491,8 +488,8 @@ class ActionsMixin:
             logger.error(f"打开设置视图失败: {e}", exc_info=True)
             QMessageBox.warning(
                 self,
-                "模块加载失败",
-                f"无法加载设置模块。\n错误: {str(e)}",
+                tr("ui.login.errors.module_load_failed_title"),
+                tr("ui.login.errors.module_load_failed_msg").format(error=str(e)),
                 QMessageBox.Ok
             )
     

@@ -7,6 +7,8 @@ from PySide6.QtCore import QTimer, QMetaObject, Qt
 from PySide6.QtWidgets import QMessageBox
 from loguru import logger
 
+from src.utils.translation_manager import get_translation_manager, tr
+
 
 class FirstLoginHandler:
     """首次登录处理类"""
@@ -67,14 +69,8 @@ class FirstLoginHandler:
             
             QMessageBox.information(
                 self.app.main_window,
-                "首次使用提示",
-                """欢迎使用TG-Manager！
-
-检测到这是您首次使用本程序，请在API设置中填写您的Telegram API凭据并点击登录按钮完成登录。
-
-如果您还没有API ID和API Hash，请访问 https://my.telegram.org 申请。
-
-填写完成后，请点击"登录"按钮完成账号验证。""",
+                tr("ui.login.first_time.title"),
+                tr("ui.login.first_time.message"),
                 QMessageBox.Ok
             )
         except Exception as e:

@@ -516,6 +516,20 @@ class SettingsView(QWidget):
                 api_widgets['login_button'].setText(tr("ui.settings.api.login"))
             else:
                 api_widgets['login_button'].setText(tr("ui.settings.api.logged_in"))
+            
+            # 更新登录按钮工具提示（需要根据当前登录状态）
+            if api_widgets['login_button'].isEnabled():
+                # 未登录状态：显示"点击登录到Telegram账号"
+                api_widgets['login_button'].setToolTip(tr("ui.settings.tooltips.login_click_to_login"))
+            else:
+                # 已登录状态：显示"当前已登录"或用户信息
+                # 这里需要从按钮的当前工具提示中提取用户信息
+                current_tooltip = api_widgets['login_button'].toolTip()
+                if "当前登录用户:" in current_tooltip:
+                    # 保持现有的用户信息工具提示
+                    pass
+                else:
+                    api_widgets['login_button'].setToolTip(tr("ui.settings.tooltips.login_logged_in"))
         
         # 更新代理设置页面
         if 'proxy' in self.translatable_widgets:
@@ -864,14 +878,15 @@ class SettingsView(QWidget):
             self.login_button.setStyleSheet("background-color: #F44336; color: white; border: none; border-radius: 3px;")  # 红色背景，无边框
             self.login_button.setEnabled(False)  # 禁用按钮
             if user_info:
-                self.login_button.setToolTip(f"当前登录用户: {user_info}")
+                tooltip_text = tr("ui.settings.tooltips.login_current_user").format(user=user_info)
+                self.login_button.setToolTip(tooltip_text)
             else:
-                self.login_button.setToolTip("当前已登录")
+                self.login_button.setToolTip(tr("ui.settings.tooltips.login_logged_in"))
         else:
             self.login_button.setText(tr("ui.settings.api.login"))
             self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")  # 蓝色背景，无边框
             self.login_button.setEnabled(True)  # 启用按钮
-            self.login_button.setToolTip("点击登录到Telegram账号")
+            self.login_button.setToolTip(tr("ui.settings.tooltips.login_click_to_login"))
     
     def _handle_login(self):
         """处理登录按钮点击事件"""
