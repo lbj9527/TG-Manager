@@ -170,7 +170,19 @@
           "app_theme": "应用主题:",
           "language": "界面语言:",
           "theme_tooltip": "选择应用程序主题，更改后立即生效",
-          "language_tooltip": "选择应用程序界面语言，重启应用后生效"
+          "language_tooltip": "选择应用程序界面语言，重启应用后生效",
+          "themes": {
+            "light_theme": "浅色主题",
+            "dark_theme": "深色主题", 
+            "blue_theme": "蓝色主题",
+            "purple_theme": "紫色主题",
+            "red_theme": "红色主题",
+            "green_theme": "绿色主题",
+            "amber_theme": "琥珀色主题",
+            "pink_theme": "粉色主题",
+            "yellow_theme": "黄色主题",
+            "cyan_theme": "青色主题"
+          }
         },
         "behavior": {
           "title": "行为设置",

@@ -542,6 +542,9 @@ class UIUIConfig(BaseModel):
     notification_sound: bool = Field(True, description="启用通知声音")
     window_geometry: Optional[str] = Field(None, description="窗口几何位置")
     window_state: Optional[str] = Field(None, description="窗口状态(包含工具栏位置)")
+    # 新增侧边栏相关配置字段
+    sidebar_geometry: Optional[Dict[str, int]] = Field(None, description="侧边栏几何形状(位置和尺寸)")
+    sidebar_data: Optional[Dict[str, Any]] = Field(None, description="侧边栏完整状态(包括分割器状态、浮动状态等)")
 
     class Config:
         title = "界面配置"

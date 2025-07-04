@@ -85,6 +85,18 @@ class SidebarMixin:
         self.sidebar_splitter.addWidget(self.nav_tree)
         self.sidebar_splitter.addWidget(self.task_overview)
         
+        # 连接分割器移动信号，确保用户调整后能保存状态
+        self.sidebar_splitter.splitterMoved.connect(self._on_splitter_moved)
+        logger.debug("已连接分割器移动信号")
+        
+        # 测试信号连接是否成功
+        try:
+            # 验证信号连接
+            signal_connections = self.sidebar_splitter.splitterMoved.receivers()
+            logger.debug(f"分割器移动信号连接数: {signal_connections}")
+        except Exception as e:
+            logger.warning(f"检查分割器信号连接时出错: {e}")
+        
         # 设置初始分割比例，调整为50%导航树，50%任务概览
         initial_sizes = [500, 500]
         logger.debug(f"设置初始分割器尺寸: {initial_sizes}")
@@ -93,6 +105,10 @@ class SidebarMixin:
         # 验证初始设置
         actual_sizes = self.sidebar_splitter.sizes()
         logger.debug(f"分割器实际尺寸: {actual_sizes}")
+        
+        # 验证分割器是否可拖动
+        logger.debug(f"分割器是否可拖动: {not self.sidebar_splitter.childrenCollapsible()}")
+        logger.debug(f"分割器方向: {self.sidebar_splitter.orientation()}")
         
         # 在组件完全初始化后锁定尺寸，防止布局计算导致的高度变化
         QTimer.singleShot(0, lambda: self._init_splitter_sizes())
@@ -104,6 +120,16 @@ class SidebarMixin:
         # 将停靠窗口添加到左侧区域
         logger.debug("将停靠窗口添加到左侧区域")
         self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar_dock)
+        
+        # 连接停靠窗口状态变化信号，确保位置变化时能保存状态
+        self.sidebar_dock.dockLocationChanged.connect(self._on_sidebar_dock_changed)
+        self.sidebar_dock.topLevelChanged.connect(self._on_sidebar_dock_changed)
+        self.sidebar_dock.visibilityChanged.connect(self._on_sidebar_dock_changed)
+        logger.debug("已连接停靠窗口状态变化信号")
+        
+        # 安装事件过滤器来监听停靠窗口的调整大小事件
+        self.sidebar_dock.installEventFilter(self)
+        logger.debug("已为侧边栏停靠窗口安装事件过滤器")
         
         # 记录停靠窗口的最终状态
         logger.debug(f"侧边栏停靠窗口尺寸: {self.sidebar_dock.size()}")
@@ -125,6 +151,54 @@ class SidebarMixin:
             current_sizes = self.sidebar_splitter.sizes()
             logger.debug(f"初始化分割器尺寸: {current_sizes}")
             self.sidebar_splitter.setSizes(current_sizes)
+    
+    def _on_splitter_moved(self, pos, index):
+        """处理分割器移动事件，用户调整侧边栏内部比例时触发
+        
+        Args:
+            pos: 分割器位置
+            index: 分割器索引
+        """
+        logger.info(f"!!! 分割器移动信号触发 !!! 位置={pos}, 索引={index}")
+        
+        # 获取当前分割器状态
+        if hasattr(self, 'sidebar_splitter'):
+            current_sizes = self.sidebar_splitter.sizes()
+            logger.info(f"分割器移动后的当前尺寸: {current_sizes}")
+        
+        # 使用延迟保存机制，避免拖动过程中频繁保存
+        if not hasattr(self, '_splitter_save_timer'):
+            from PySide6.QtCore import QTimer
+            self._splitter_save_timer = QTimer(self)
+            self._splitter_save_timer.setSingleShot(True)
+            self._splitter_save_timer.timeout.connect(self._save_current_state)
+            logger.debug("创建分割器保存定时器")
+        
+        # 重新开始定时器（如果用户连续拖动，只在最后保存一次）
+        self._splitter_save_timer.stop()
+        self._splitter_save_timer.start(500)  # 500毫秒后保存
+        logger.debug("分割器保存定时器已启动，500ms后保存状态")
+    
+    def _on_sidebar_dock_changed(self, *args):
+        """处理侧边栏停靠窗口状态变化事件
+        
+        当停靠窗口位置改变、浮动状态改变或可见性改变时触发
+        
+        Args:
+            *args: 信号参数（不同信号参数不同）
+        """
+        logger.debug(f"侧边栏停靠窗口状态变化: {args}")
+        
+        # 使用延迟保存机制，避免状态变化过程中频繁保存
+        if not hasattr(self, '_dock_save_timer'):
+            from PySide6.QtCore import QTimer
+            self._dock_save_timer = QTimer(self)
+            self._dock_save_timer.setSingleShot(True)
+            self._dock_save_timer.timeout.connect(self._save_current_state)
+        
+        # 重新开始定时器
+        self._dock_save_timer.stop()
+        self._dock_save_timer.start(500)  # 500毫秒后保存
     
     def _set_sidebar_title(self, text: str):
         """自定义侧边栏标题栏，支持多行显示"""
@@ -193,6 +267,38 @@ class SidebarMixin:
             self.task_overview._update_translations()
         
         logger.debug("=== 侧边栏翻译更新完成 ===")
+    
+    def eventFilter(self, obj, event):
+        """事件过滤器，监听侧边栏停靠窗口的调整大小事件
+        
+        Args:
+            obj: 事件源对象
+            event: 事件对象
+            
+        Returns:
+            bool: 是否已处理事件
+        """
+        # 检查事件是否来自侧边栏停靠窗口
+        if hasattr(self, 'sidebar_dock') and obj == self.sidebar_dock:
+            from PySide6.QtCore import QEvent
+            if event.type() == QEvent.Resize:
+                logger.info(f"!!! 侧边栏停靠窗口调整大小事件 !!! 新尺寸: {event.size()}")
+                
+                # 使用延迟保存机制，避免调整过程中频繁保存
+                if not hasattr(self, '_dock_resize_timer'):
+                    from PySide6.QtCore import QTimer
+                    self._dock_resize_timer = QTimer(self)
+                    self._dock_resize_timer.setSingleShot(True)
+                    self._dock_resize_timer.timeout.connect(self._save_current_state)
+                    logger.debug("创建停靠窗口调整大小保存定时器")
+                
+                # 重新开始定时器
+                self._dock_resize_timer.stop()
+                self._dock_resize_timer.start(500)  # 500毫秒后保存
+                logger.debug("停靠窗口调整大小保存定时器已启动，500ms后保存状态")
+        
+        # 继续正常事件处理
+        return super().eventFilter(obj, event)
     
     def _force_restore_sidebar_size(self, target_size):
         """强制恢复侧边栏尺寸

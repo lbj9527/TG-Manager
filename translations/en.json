@@ -170,7 +170,19 @@
           "app_theme": "Application Theme:",
           "language": "Interface Language:",
           "theme_tooltip": "Select application theme, changes take effect immediately",
-          "language_tooltip": "Select application interface language, takes effect after restart"
+          "language_tooltip": "Select application interface language, takes effect after restart",
+          "themes": {
+            "light_theme": "Light Theme",
+            "dark_theme": "Dark Theme", 
+            "blue_theme": "Blue Theme",
+            "purple_theme": "Purple Theme",
+            "red_theme": "Red Theme",
+            "green_theme": "Green Theme",
+            "amber_theme": "Amber Theme",
+            "pink_theme": "Pink Theme",
+            "yellow_theme": "Yellow Theme",
+            "cyan_theme": "Cyan Theme"
+          }
         },
         "behavior": {
           "title": "Behavior Settings",

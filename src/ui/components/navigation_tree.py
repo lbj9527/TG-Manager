@@ -165,7 +165,7 @@ class NavigationTree(QWidget):
         
         # 恢复选择状态
         if current_item_id:
-            self.select_item(current_item_id)
+            self._select_item_silently(current_item_id)
         
         logger.debug("导航树翻译已更新")
     
@@ -239,6 +239,29 @@ class NavigationTree(QWidget):
         Returns:
             bool: 是否成功选择
         """
+        return self._select_item_internal(item_id, emit_signal=True)
+    
+    def _select_item_silently(self, item_id):
+        """根据ID静默选择导航项（不触发信号）
+        
+        Args:
+            item_id: 要选择的导航项ID
+            
+        Returns:
+            bool: 是否成功选择
+        """
+        return self._select_item_internal(item_id, emit_signal=False)
+    
+    def _select_item_internal(self, item_id, emit_signal=True):
+        """内部选择导航项的实现
+        
+        Args:
+            item_id: 要选择的导航项ID
+            emit_signal: 是否触发信号
+            
+        Returns:
+            bool: 是否成功选择
+        """
         # 查找并选择指定ID的导航项
         items = self.tree.findItems(
             "", 
@@ -257,8 +280,8 @@ class NavigationTree(QWidget):
                 # 选择项目
                 self.tree.setCurrentItem(item)
                 
-                # 触发点击事件
-                if item_id in self._nav_items:
+                # 根据参数决定是否触发点击事件
+                if emit_signal and item_id in self._nav_items:
                     nav_item = self._nav_items[item_id]
                     if nav_item.type == 'function':
                         self.item_selected.emit(nav_item.id, nav_item.data)

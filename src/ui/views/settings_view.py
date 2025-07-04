@@ -29,6 +29,23 @@ class SettingsView(QWidget):
     settings_cancelled = Signal()  # 设置取消信号
     login_requested = Signal()     # 添加登录请求信号
     
+    # 主题标识符到翻译键的映射
+    THEME_TRANSLATION_MAP = {
+        "浅色主题": "ui.settings.ui.theme.themes.light_theme",
+        "深色主题": "ui.settings.ui.theme.themes.dark_theme",
+        "蓝色主题": "ui.settings.ui.theme.themes.blue_theme",
+        "紫色主题": "ui.settings.ui.theme.themes.purple_theme",
+        "红色主题": "ui.settings.ui.theme.themes.red_theme",
+        "绿色主题": "ui.settings.ui.theme.themes.green_theme",
+        "琥珀色主题": "ui.settings.ui.theme.themes.amber_theme",
+        "粉色主题": "ui.settings.ui.theme.themes.pink_theme",
+        "黄色主题": "ui.settings.ui.theme.themes.yellow_theme",
+        "青色主题": "ui.settings.ui.theme.themes.cyan_theme"
+    }
+    
+    # 反向映射：从翻译后的显示文本找回原始主题标识符
+    _reverse_theme_map = {}
+    
     def __init__(self, config=None, parent=None):
         """初始化设置界面
         
@@ -102,6 +119,9 @@ class SettingsView(QWidget):
         
         # 初始化翻译
         self._update_translations()
+        
+        # 设置初始化完成标志
+        self._initialization_complete = True
         
         logger.info("设置界面初始化完成")
     
@@ -294,9 +314,8 @@ class SettingsView(QWidget):
         
         # 主题选择部分
         self.theme_selector = QComboBox()
-        # 从主题管理器获取可用主题列表
-        self.theme_selector.addItems(self.theme_manager.get_available_themes())
-        self.theme_selector.setCurrentText(self.theme_manager.get_current_theme_name())
+        # 使用翻译后的主题名称
+        self._populate_theme_selector()
         self.theme_selector.setToolTip(tr("ui.settings.ui.theme.theme_tooltip"))
         # 连接主题变更信号
         self.theme_selector.currentTextChanged.connect(self._on_theme_changed)
@@ -422,22 +441,25 @@ class SettingsView(QWidget):
         """主题变更处理
         
         Args:
-            theme_name: 新主题名称
+            theme_name: 新主题名称（可能是翻译后的）
         """
+        # 从反向映射中获取原始主题标识符
+        original_theme_name = self._reverse_theme_map.get(theme_name, theme_name)
+        
         # 获取当前临时主题
         current_theme = self.temp_theme
         
         # 只有当新主题与当前临时主题不同时才应用
-        if theme_name != current_theme:
+        if original_theme_name != current_theme:
             # 实时应用主题变更，但只作为临时预览
-            logger.debug(f"设置界面中临时预览新主题: 从 {current_theme} 到 {theme_name}")
+            logger.debug(f"设置界面中临时预览新主题: 从 {current_theme} 到 {original_theme_name} (显示: {theme_name})")
             
             # 应用主题
-            success = self.theme_manager.apply_theme(theme_name)
+            success = self.theme_manager.apply_theme(original_theme_name)
             
             if success:
                 # 更新临时主题记录
-                self.temp_theme = theme_name
+                self.temp_theme = original_theme_name
                 
                 # 标记设置已更改
                 self._on_setting_changed()
@@ -449,7 +471,7 @@ class SettingsView(QWidget):
                 if self.parent():
                     self.parent().repaint()
         else:
-            logger.debug(f"忽略主题变更请求，当前已是 {theme_name} 主题")
+            logger.debug(f"忽略主题变更请求，当前已是 {original_theme_name} 主题")
     
     def _on_language_changed(self, language_name):
         """语言变更处理
@@ -524,6 +546,10 @@ class SettingsView(QWidget):
             self.theme_selector.setToolTip(tr("ui.settings.ui.theme.theme_tooltip"))
             self.language_selector.setToolTip(tr("ui.settings.ui.theme.language_tooltip"))
             ui_widgets['start_minimized'].setToolTip(tr("ui.settings.ui.behavior.start_minimized_tooltip"))
+            
+            # 重新填充主题选择器以更新翻译（仅在不是初始化阶段时）
+            if hasattr(self, '_initialization_complete') and self._initialization_complete:
+                self._populate_theme_selector()
         
         # 更新按钮
         if 'buttons' in self.translatable_widgets:
@@ -660,7 +686,15 @@ class SettingsView(QWidget):
         self.proxy_password.setText("")
         
         # 重置界面设置
-        self.theme_selector.setCurrentText("深色主题")
+        # 获取深色主题的翻译名称
+        default_theme_translated = tr("ui.settings.ui.theme.themes.dark_theme")
+        index = self.theme_selector.findText(default_theme_translated)
+        if index >= 0:
+            self.theme_selector.setCurrentIndex(index)
+        else:
+            # 如果找不到翻译，回退到硬编码
+            self.theme_selector.setCurrentText("深色主题")
+        
         self.language_selector.setCurrentText("中文")
         self.confirm_exit.setChecked(True)
         self.minimize_to_tray.setChecked(True)
@@ -698,8 +732,12 @@ class SettingsView(QWidget):
         })
         
         # 收集UI设置
+        current_theme_text = self.theme_selector.currentText()
+        # 从反向映射中获取原始主题标识符
+        original_theme = self._reverse_theme_map.get(current_theme_text, current_theme_text)
+        
         settings["UI"] = {
-            "theme": self.theme_selector.currentText(),
+            "theme": original_theme,
             "language": self.language_selector.currentText(),
             "confirm_exit": self.confirm_exit.isChecked(),
             "minimize_to_tray": self.minimize_to_tray.isChecked(),
@@ -707,6 +745,21 @@ class SettingsView(QWidget):
             "enable_notifications": self.enable_notifications.isChecked(),
             "notification_sound": self.notification_sound.isChecked()
         }
+        
+        # 保留现有的窗口布局相关配置，避免在保存设置时丢失侧边栏等布局配置
+        if self.config and 'UI' in self.config:
+            existing_ui = self.config['UI']
+            layout_config_keys = [
+                'window_geometry',     # 窗口几何形状
+                'window_state',        # 窗口状态（工具栏位置等）
+                'sidebar_geometry',    # 侧边栏几何形状
+                'sidebar_data'         # 侧边栏完整状态（分割器状态等）
+            ]
+            
+            for key in layout_config_keys:
+                if key in existing_ui:
+                    settings["UI"][key] = existing_ui[key]
+                    logger.debug(f"保留现有窗口布局配置项: {key}")
         
         # 合并现有配置
         merged_settings = self.config.copy() if self.config else {}
@@ -760,12 +813,25 @@ class SettingsView(QWidget):
         if "UI" in config:
             ui = config["UI"]
             if "theme" in ui:
-                index = self.theme_selector.findText(ui["theme"])
-                if index >= 0:
-                    self.theme_selector.setCurrentIndex(index)
-                    # 应用临时主题
-                    self.temp_theme = ui["theme"]
-                    self._on_theme_changed(ui["theme"])
+                # 查找对应的翻译后显示文本
+                original_theme = ui["theme"]
+                if original_theme in self.THEME_TRANSLATION_MAP:
+                    translated_theme = tr(self.THEME_TRANSLATION_MAP[original_theme])
+                    index = self.theme_selector.findText(translated_theme)
+                    if index >= 0:
+                        self.theme_selector.setCurrentIndex(index)
+                        # 应用临时主题（仅在初始化完成后）
+                        self.temp_theme = original_theme
+                        if hasattr(self, '_initialization_complete') and self._initialization_complete:
+                            self._on_theme_changed(translated_theme)
+                else:
+                    # 如果找不到映射，直接使用原始名称
+                    index = self.theme_selector.findText(original_theme)
+                    if index >= 0:
+                        self.theme_selector.setCurrentIndex(index)
+                        self.temp_theme = original_theme
+                        if hasattr(self, '_initialization_complete') and self._initialization_complete:
+                            self._on_theme_changed(original_theme)
             if "language" in ui:
                 index = self.language_selector.findText(ui["language"])
                 if index >= 0:
@@ -814,3 +880,44 @@ class SettingsView(QWidget):
         
         # 发出登录请求信号
         self.login_requested.emit() 
+
+    def _populate_theme_selector(self):
+        """填充主题选择器，使用翻译后的主题名称"""
+        # 临时断开信号连接，避免在填充过程中触发主题变更
+        try:
+            self.theme_selector.currentTextChanged.disconnect()
+        except TypeError:
+            # 信号可能已经断开或不存在，忽略错误
+            pass
+        
+        # 清空现有项目
+        self.theme_selector.clear()
+        
+        # 构建反向映射
+        self._reverse_theme_map.clear()
+        
+        # 获取原始主题列表
+        original_themes = self.theme_manager.get_available_themes()
+        
+        # 添加翻译后的主题名称
+        for original_theme in original_themes:
+            if original_theme in self.THEME_TRANSLATION_MAP:
+                # 获取翻译键
+                translation_key = self.THEME_TRANSLATION_MAP[original_theme]
+                # 获取翻译后的文本
+                translated_name = tr(translation_key)
+                # 添加到选择器
+                self.theme_selector.addItem(translated_name)
+                # 构建反向映射
+                self._reverse_theme_map[translated_name] = original_theme
+        
+        # 设置当前选中的主题
+        current_theme = self.theme_manager.get_current_theme_name()
+        if current_theme in self.THEME_TRANSLATION_MAP:
+            translated_current = tr(self.THEME_TRANSLATION_MAP[current_theme])
+            index = self.theme_selector.findText(translated_current)
+            if index >= 0:
+                self.theme_selector.setCurrentIndex(index)
+        
+        # 重新连接信号
+        self.theme_selector.currentTextChanged.connect(self._on_theme_changed) 
