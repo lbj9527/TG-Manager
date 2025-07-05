@@ -478,6 +478,9 @@
         "check_update_tooltip": "Check for application updates",
         "about_tooltip": "About this application"
       }
+    },
+    "welcome": {
+      "select_function": "Please select a function from the navigation tree on the left"
     }
   },
   "errors": {

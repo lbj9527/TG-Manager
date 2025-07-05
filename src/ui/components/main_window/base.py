@@ -122,7 +122,7 @@ class MainWindowBase(QMainWindow):
         # 创建水印标签
         welcome_text = (
             f"<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>{tr('app.title')}</h1>"
-            f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>"
+            f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>{tr('ui.welcome.select_function')}</p>"
         )
         self.welcome_label = QLabel(welcome_text)
         self.welcome_label.setAlignment(Qt.AlignCenter)
@@ -153,7 +153,7 @@ class MainWindowBase(QMainWindow):
         if hasattr(self, 'welcome_label'):
             welcome_text = (
                 f"<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>{tr('app.title')}</h1>"
-                f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>"
+                f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>{tr('ui.welcome.select_function')}</p>"
             )
             self.welcome_label.setText(welcome_text)
     

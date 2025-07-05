@@ -484,6 +484,9 @@
         "check_update_tooltip": "检查应用程序更新",
         "about_tooltip": "关于本应用程序"
       }
+    },
+    "welcome": {
+      "select_function": "请从左侧导航树选择功能"
     }
   },
   "errors": {
