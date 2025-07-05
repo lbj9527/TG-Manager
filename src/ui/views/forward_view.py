@@ -2302,7 +2302,8 @@ class ForwardView(QWidget):
         dialog_layout.addWidget(forward_params_label)
         
         # 转发参数复选框布局
-        forward_params_layout = QHBoxLayout()
+        forward_params_layout = QGridLayout()
+        forward_params_layout.setSpacing(10)
         
         # 确保布尔值转换（处理JSON中的true/false或其他类型）
         def to_bool(value):
@@ -2321,23 +2322,28 @@ class ForwardView(QWidget):
         exclude_links_value = to_bool(channel_pair.get('exclude_links', False))
         enable_web_page_preview_value = to_bool(channel_pair.get('enable_web_page_preview', False))
         
+        # 第一行：移除媒体说明、隐藏原作者
         remove_captions_check = QCheckBox(tr("ui.forward.options.remove_captions"))
         remove_captions_check.setChecked(remove_captions_value)
-        forward_params_layout.addWidget(remove_captions_check)
+        forward_params_layout.addWidget(remove_captions_check, 0, 0)
         
         hide_author_check = QCheckBox(tr("ui.forward.options.hide_author"))
         hide_author_check.setChecked(hide_author_value)
-        forward_params_layout.addWidget(hide_author_check)
+        forward_params_layout.addWidget(hide_author_check, 0, 1)
         
+        # 第二行：发送最终消息、排除含链接消息
         send_final_message_check = QCheckBox(tr("ui.forward.options.send_final_message"))
         send_final_message_check.setChecked(send_final_message_value)
-        forward_params_layout.addWidget(send_final_message_check)
+        forward_params_layout.addWidget(send_final_message_check, 1, 0)
         
         exclude_links_check = QCheckBox(tr("ui.forward.options.exclude_links"))
         exclude_links_check.setChecked(exclude_links_value)
-        forward_params_layout.addWidget(exclude_links_check)
+        forward_params_layout.addWidget(exclude_links_check, 1, 1)
         
-        forward_params_layout.addStretch(1)  # 添加弹性空间，让复选框靠左对齐
+        # 设置列的拉伸因子，使两列均匀分布
+        forward_params_layout.setColumnStretch(0, 1)
+        forward_params_layout.setColumnStretch(1, 1)
+        
         dialog_layout.addLayout(forward_params_layout)
         
         # 第九行：最终消息HTML文件路径
