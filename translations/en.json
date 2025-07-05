@@ -493,6 +493,17 @@
       "resource_error": "Resource monitor error",
       "task_stats": "Tasks: {running} Running | {waiting} Waiting | {completed} Completed",
       "task_stats_error": "Tasks: Statistics error"
+    },
+    "toolbar": {
+      "main": "Main Toolbar",
+      "home": "Home",
+      "home_tip": "Return to welcome page",
+      "settings": "Settings",
+      "settings_tip": "Open settings view",
+      "task_manager": "Task Manager",
+      "task_manager_tip": "Open task manager",
+      "log_viewer": "Log Viewer",
+      "log_viewer_tip": "Open log viewer"
     }
   },
   "errors": {

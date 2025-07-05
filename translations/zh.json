@@ -499,6 +499,17 @@
       "resource_error": "资源监控错误",
       "task_stats": "任务: {running} 运行中 | {waiting} 等待中 | {completed} 已完成",
       "task_stats_error": "任务: 统计错误"
+    },
+    "toolbar": {
+      "main": "主工具栏",
+      "home": "返回主页",
+      "home_tip": "返回到欢迎页面",
+      "settings": "设置",
+      "settings_tip": "打开设置界面",
+      "task_manager": "任务管理器",
+      "task_manager_tip": "打开任务管理器",
+      "log_viewer": "日志查看器",
+      "log_viewer_tip": "打开日志查看器"
     }
   },
   "errors": {

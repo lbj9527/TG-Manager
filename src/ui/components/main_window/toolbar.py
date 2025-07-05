@@ -7,6 +7,7 @@ from loguru import logger
 from PySide6.QtWidgets import QToolBar
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
+from src.utils.translation_manager import tr
 
 class ToolBarMixin:
     """工具栏功能混入类
@@ -17,7 +18,7 @@ class ToolBarMixin:
     def _create_tool_bar(self):
         """创建工具栏"""
         # 主工具栏
-        self.toolbar = self.addToolBar("主工具栏")
+        self.toolbar = self.addToolBar(tr("ui.toolbar.main"))
         self.toolbar.setObjectName("main_toolbar")
         self.toolbar.setMovable(True)
         self.toolbar.setAllowedAreas(Qt.TopToolBarArea | Qt.LeftToolBarArea | Qt.RightToolBarArea | Qt.BottomToolBarArea)
@@ -29,30 +30,30 @@ class ToolBarMixin:
         self._toolbar_state_timer.timeout.connect(self._save_current_state)
         
         # 返回主页按钮
-        self.home_action = QAction("返回主页", self)
+        self.home_action = QAction(tr("ui.toolbar.home"), self)
         self.home_action.setIcon(self._get_icon("home"))
-        self.home_action.setStatusTip("返回到欢迎页面")
+        self.home_action.setStatusTip(tr("ui.toolbar.home_tip"))
         self.home_action.triggered.connect(self._return_to_welcome)
         self.toolbar.addAction(self.home_action)
         
         # 设置按钮
-        self.settings_action = QAction("设置", self)
+        self.settings_action = QAction(tr("ui.toolbar.settings"), self)
         self.settings_action.setIcon(self._get_icon("settings"))
-        self.settings_action.setStatusTip("打开设置界面")
+        self.settings_action.setStatusTip(tr("ui.toolbar.settings_tip"))
         self.settings_action.triggered.connect(self._open_settings)
         self.toolbar.addAction(self.settings_action)
         
         # 任务管理器按钮
-        self.task_manager_action = QAction("任务管理器", self)
+        self.task_manager_action = QAction(tr("ui.toolbar.task_manager"), self)
         self.task_manager_action.setIcon(self._get_icon("tasks"))
-        self.task_manager_action.setStatusTip("打开任务管理器")
+        self.task_manager_action.setStatusTip(tr("ui.toolbar.task_manager_tip"))
         self.task_manager_action.triggered.connect(self._open_task_manager)
         self.toolbar.addAction(self.task_manager_action)
         
         # 日志查看器按钮
-        self.log_viewer_action = QAction("日志查看器", self)
+        self.log_viewer_action = QAction(tr("ui.toolbar.log_viewer"), self)
         self.log_viewer_action.setIcon(self._get_icon("logs"))
-        self.log_viewer_action.setStatusTip("打开日志查看器")
+        self.log_viewer_action.setStatusTip(tr("ui.toolbar.log_viewer_tip"))
         self.log_viewer_action.triggered.connect(self._open_log_viewer)
         self.toolbar.addAction(self.log_viewer_action)
         
@@ -96,4 +97,16 @@ class ToolBarMixin:
         logger.debug("返回欢迎页面")
         # 如果有多个视图，切换到欢迎页面
         if hasattr(self, 'central_layout') and hasattr(self, 'welcome_widget'):
-            self.central_layout.setCurrentWidget(self.welcome_widget) 
+            self.central_layout.setCurrentWidget(self.welcome_widget)
+    
+    def _update_translations(self):
+        """刷新工具栏所有文本的翻译"""
+        self.toolbar.setWindowTitle(tr("ui.toolbar.main"))
+        self.home_action.setText(tr("ui.toolbar.home"))
+        self.home_action.setStatusTip(tr("ui.toolbar.home_tip"))
+        self.settings_action.setText(tr("ui.toolbar.settings"))
+        self.settings_action.setStatusTip(tr("ui.toolbar.settings_tip"))
+        self.task_manager_action.setText(tr("ui.toolbar.task_manager"))
+        self.task_manager_action.setStatusTip(tr("ui.toolbar.task_manager_tip"))
+        self.log_viewer_action.setText(tr("ui.toolbar.log_viewer"))
+        self.log_viewer_action.setStatusTip(tr("ui.toolbar.log_viewer_tip")) 
