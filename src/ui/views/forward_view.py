@@ -1534,7 +1534,10 @@ class ForwardView(QWidget):
         logger.info("所有消息转发完成")
         
         # 延迟显示完成消息，避免UI阻塞
-        QTimer.singleShot(100, lambda: self._show_completion_dialog("转发完成", "所有转发任务已完成"))
+        QTimer.singleShot(100, lambda: self._show_completion_dialog(
+            tr("ui.forward.messages.forward_complete"),
+            tr("ui.forward.messages.all_tasks_complete")
+        ))
     
     def _show_completion_dialog(self, title, message):
         """安全地显示完成对话框"""
