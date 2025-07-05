@@ -251,11 +251,52 @@
       "file_types": "File Types:",
       "progress": "Download Progress:",
       "status": {
-        "scanning": "Scanning",
-        "downloading": "Downloading", 
-        "completed": "Completed",
-        "failed": "Failed"
-      }
+        "current_task": "Current Download Task:",
+        "not_started": "Not started",
+        "progress": "Download Progress: {percent}%",
+        "overall_progress": "Overall Progress: {completed}/{total} ({percent}%)",
+        "completed": "All downloads completed",
+        "preparing": "Preparing",
+        "error": "Download error: {error}",
+        "error_label": "An error occurred during download"
+      },
+      "edit": "Edit",
+      "delete": "Delete",
+      "restart_note": "(Switch mode, save and restart to take effect)",
+      "max_concurrent": "Max Concurrent:",
+      "message_range": {
+        "start_id": "Start ID:",
+        "end_id": "End ID:",
+        "to": "to",
+        "latest_message": "Latest Message"
+      },
+      "keyword_filter": "Keyword Filter:",
+      "keyword_placeholder": "Enter keywords, separated by commas",
+      "add_pair": "Add Channel",
+      "remove_pair": "Remove Channel",
+      "configured_pairs": "Configured Channels ({count})",
+      "channel_tab": "Channel Config",
+      "options_tab": "Download Options",
+      "parallel_download": "Parallel Download",
+      "dir_size_limit_check": "Enable Directory Size Limit",
+      "check_dir_size": "Check Directory Size",
+      "browse": "Browse",
+      "status_tab": "Download Status",
+      "list_tab": "Download List",
+      "display": {
+        "id_range_both": "ID Range: {start}-{end}",
+        "keywords": "Keywords",
+        "media": "Media Types: {types}"
+      },
+      "dir_info_title": "Directory Info",
+      "dir_created": "Directory '{path}' does not exist and has been created.",
+      "size_kb": "{size} KB",
+      "size_mb": "{size} MB",
+      "size_gb": "{size} GB",
+      "dir_exceed_limit": "⚠️ The directory size has exceeded the set limit ({limit} MB)!",
+      "dir_near_limit": "⚠️ The directory size is close to the set limit ({limit} MB)!",
+      "dir_info": "Download directory: {path}\nCurrent size: {size}",
+      "dir_check_error": "Error checking directory size: {error}"
     },
     "listen": {
       "title": "Message Monitoring",

@@ -261,11 +261,52 @@
       "file_types": "文件类型:",
       "progress": "下载进度:",
       "status": {
-        "scanning": "扫描中",
-        "downloading": "下载中", 
-        "completed": "已完成",
-        "failed": "失败"
-      }
+        "current_task": "当前下载任务:",
+        "not_started": "未开始下载",
+        "progress": "下载进度: {percent}%",
+        "overall_progress": "总进度: {completed}/{total} ({percent}%)",
+        "completed": "所有下载已完成",
+        "preparing": "准备中",
+        "error": "下载出错: {error}",
+        "error_label": "下载过程中出现错误"
+      },
+      "edit": "编辑",
+      "delete": "删除",
+      "restart_note": "(更换下载模式，保存重启才会生效)",
+      "max_concurrent": "最大并发:",
+      "message_range": {
+        "start_id": "起始ID:",
+        "end_id": "结束ID:",
+        "to": "到",
+        "latest_message": "最新消息"
+      },
+      "keyword_filter": "关键词过滤:",
+      "keyword_placeholder": "请输入关键词，多个用英文逗号分隔",
+      "add_pair": "添加频道",
+      "remove_pair": "移除频道",
+      "configured_pairs": "已配置频道 ({count})",
+      "channel_tab": "频道配置",
+      "options_tab": "下载选项",
+      "parallel_download": "并行下载",
+      "dir_size_limit_check": "启用目录大小限制",
+      "check_dir_size": "检查目录大小",
+      "browse": "浏览",
+      "status_tab": "下载状态",
+      "list_tab": "下载列表",
+      "display": {
+        "id_range_both": "ID范围: {start}-{end}",
+        "keywords": "关键词",
+        "media": "媒体类型: {types}"
+      },
+      "dir_info_title": "目录信息",
+      "dir_created": "目录 '{path}' 不存在，已创建。",
+      "size_kb": "{size} KB",
+      "size_mb": "{size} MB",
+      "size_gb": "{size} GB",
+      "dir_exceed_limit": "⚠️ 当前目录大小已超过设定的限制({limit} MB)!",
+      "dir_near_limit": "⚠️ 当前目录大小已接近设定的限制({limit} MB)!",
+      "dir_info": "下载目录: {path}\n当前大小: {size}",
+      "dir_check_error": "检查目录大小时出错: {error}"
     },
     "listen": {
       "title": "消息监听",

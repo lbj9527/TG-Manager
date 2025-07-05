@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor, QCursor
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
+from src.utils.translation_manager import tr
 
 import os
 import time
@@ -23,6 +24,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any, Union
+import re
 
 logger = get_logger()
 
@@ -127,8 +129,9 @@ class DownloadView(QWidget):
         
         # 频道输入
         self.channel_input = QLineEdit()
-        self.channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("频道链接:", self.channel_input)
+        self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
+        self.channel_label = QLabel(tr("ui.download.source_channel"))
+        form_layout.addRow(self.channel_label, self.channel_input)
         
         # 先添加表单布局到主布局
         channel_layout.addLayout(form_layout)
@@ -138,9 +141,9 @@ class DownloadView(QWidget):
         range_layout.setContentsMargins(0, 0, 0, 2)  # 减小上下间距
         
         # 从消息ID标签
-        id_label = QLabel("从消息ID:")
-        id_label.setMinimumWidth(80)  # 设置最小宽度确保对齐
-        range_layout.addWidget(id_label)
+        self.id_label = QLabel(tr("ui.download.message_range.start_id"))
+        self.id_label.setMinimumWidth(80)  # 设置最小宽度确保对齐
+        range_layout.addWidget(self.id_label)
         
         self.start_id = QSpinBox()
         self.start_id.setRange(1, 999999999)
@@ -148,12 +151,13 @@ class DownloadView(QWidget):
         self.start_id.setMinimumWidth(90)  # 减小宽度
         range_layout.addWidget(self.start_id)
         
-        range_layout.addWidget(QLabel("到:"))
+        self.to_label = QLabel(tr("ui.download.message_range.to"))
+        range_layout.addWidget(self.to_label)
         
         self.end_id = QSpinBox()
         self.end_id.setRange(0, 999999999)
         self.end_id.setValue(0)
-        self.end_id.setSpecialValueText("最新消息")
+        self.end_id.setSpecialValueText(tr("ui.download.message_range.latest_message"))
         self.end_id.setMinimumWidth(90)  # 减小宽度
         range_layout.addWidget(self.end_id)
         
@@ -168,23 +172,23 @@ class DownloadView(QWidget):
         keywords_layout.setContentsMargins(0, 2, 0, 2)  # 减小上下间距
         
         # 添加关键词标签和输入框
-        keyword_label = QLabel("关键词:")
-        keyword_label.setMinimumWidth(70)  # 设置最小宽度确保对齐
-        keywords_layout.addWidget(keyword_label)
+        self.keyword_label = QLabel(tr("ui.download.keyword_filter"))
+        self.keyword_label.setMinimumWidth(70)  # 设置最小宽度确保对齐
+        keywords_layout.addWidget(self.keyword_label)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("输入要筛选的关键词，多个用英文逗号分隔，同义词用横杠'-'连接")
+        self.keyword_input.setPlaceholderText(tr("ui.download.keyword_placeholder"))
         self.keyword_input.setMinimumWidth(300)  # 增加最小宽度
         # 设置尺寸策略为水平方向可扩展
         self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         keywords_layout.addWidget(self.keyword_input, 3)  # 设置拉伸因子为3，使其占据更多空间
         
         # 添加频道和删除按钮
-        self.add_channel_button = QPushButton("添加频道")
+        self.add_channel_button = QPushButton(tr("ui.download.add_pair"))
         self.add_channel_button.setMinimumHeight(28)  # 设置按钮高度
         keywords_layout.addWidget(self.add_channel_button, 0)  # 不设置拉伸
         
-        self.remove_channel_button = QPushButton("删除所选")
+        self.remove_channel_button = QPushButton(tr("ui.download.remove_pair"))
         self.remove_channel_button.setMinimumHeight(28)  # 设置按钮高度
         keywords_layout.addWidget(self.remove_channel_button, 0)  # 不设置拉伸
         
@@ -199,27 +203,27 @@ class DownloadView(QWidget):
         media_layout.setSpacing(10)
         media_layout.setContentsMargins(0, 2, 0, 2)  # 减小上下间距
         
-        media_type_label = QLabel("要下载的媒体类型:")
-        media_type_label.setMinimumWidth(110)
-        media_layout.addWidget(media_type_label)
+        self.media_type_label = QLabel(tr("ui.download.file_types"))
+        self.media_type_label.setMinimumWidth(110)
+        media_layout.addWidget(self.media_type_label)
         
-        self.photo_check = QCheckBox("照片")
+        self.photo_check = QCheckBox(tr("ui.forward.media_types.photo"))
         self.photo_check.setChecked(True)
         media_layout.addWidget(self.photo_check)
         
-        self.video_check = QCheckBox("视频")
+        self.video_check = QCheckBox(tr("ui.forward.media_types.video"))
         self.video_check.setChecked(True)
         media_layout.addWidget(self.video_check)
         
-        self.document_check = QCheckBox("文档")
+        self.document_check = QCheckBox(tr("ui.forward.media_types.document"))
         self.document_check.setChecked(True)
         media_layout.addWidget(self.document_check)
         
-        self.audio_check = QCheckBox("音频")
+        self.audio_check = QCheckBox(tr("ui.forward.media_types.audio"))
         self.audio_check.setChecked(True)
         media_layout.addWidget(self.audio_check)
         
-        self.animation_check = QCheckBox("动画")
+        self.animation_check = QCheckBox(tr("ui.forward.media_types.animation"))
         self.animation_check.setChecked(True)
         media_layout.addWidget(self.animation_check)
         
@@ -233,7 +237,7 @@ class DownloadView(QWidget):
         channel_widget_layout.setSpacing(2)
         
         # 频道列表标题
-        self.channel_list_label = QLabel("已配置下载频道:  0个")
+        self.channel_list_label = QLabel(tr("ui.download.configured_pairs", count=0))
         # self.channel_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签
         channel_widget_layout.addWidget(self.channel_list_label)
         
@@ -274,26 +278,26 @@ class DownloadView(QWidget):
         parallel_layout = QHBoxLayout()
         parallel_layout.setContentsMargins(0, 8, 0, 0)  # 增加与上方媒体类型的间距
         
-        self.parallel_check = QCheckBox("启用并行下载")
+        self.parallel_check = QCheckBox(tr("ui.download.parallel_download"))
         self.parallel_check.toggled.connect(lambda checked: self.max_downloads.setEnabled(checked))
         
         self.max_downloads = QSpinBox()
         self.max_downloads.setRange(1, 20)
         self.max_downloads.setValue(5)
         self.max_downloads.setEnabled(False)
-        
+        self.max_downloads.setSuffix("")
+        self.max_concurrent_label = QLabel(tr("ui.download.max_concurrent"))
         parallel_layout.addWidget(self.parallel_check)
-        
-        # 添加提示标签
-        restart_note = QLabel("(更换下载模式，保存重启才会生效)")
-        restart_note.setStyleSheet("font-size: 12px;")
-        parallel_layout.addWidget(restart_note)
-
-        parallel_layout.addWidget(QLabel("最大并发:"))
+        parallel_layout.addWidget(self.max_concurrent_label)
         parallel_layout.addWidget(self.max_downloads)
-        
+        # 添加空白区域
+        parallel_layout.addSpacing(20)
+        # restart_note放在末尾
+        self.restart_note = QLabel(tr("ui.download.restart_note"))
+        self.restart_note.setObjectName("restart_note")
+        self.restart_note.setStyleSheet("font-size: 12px;")
+        parallel_layout.addWidget(self.restart_note)
         parallel_layout.addStretch(1)
-        
         options_layout.addLayout(parallel_layout)
         
         # 添加一些空间
@@ -301,7 +305,7 @@ class DownloadView(QWidget):
         
         # 下载目录大小限制
         dir_size_limit_layout = QHBoxLayout()
-        self.dir_size_limit_check = QCheckBox("启用下载目录大小限制")
+        self.dir_size_limit_check = QCheckBox(tr("ui.download.dir_size_limit_check"))
         self.dir_size_limit_check.toggled.connect(lambda checked: self.dir_size_limit.setEnabled(checked))
         dir_size_limit_layout.addWidget(self.dir_size_limit_check)
         
@@ -313,7 +317,7 @@ class DownloadView(QWidget):
         dir_size_limit_layout.addWidget(self.dir_size_limit)
         
         # 添加检查目录大小按钮
-        self.check_dir_size_button = QPushButton("检查目录大小")
+        self.check_dir_size_button = QPushButton(tr("ui.download.check_dir_size"))
         self.check_dir_size_button.clicked.connect(self._check_and_show_directory_size)
         dir_size_limit_layout.addWidget(self.check_dir_size_button)
         
@@ -325,12 +329,14 @@ class DownloadView(QWidget):
         
         # 下载路径 - 移到标签卡的下部
         path_layout = QHBoxLayout()
-        path_layout.addWidget(QLabel("下载路径:"))
+        self.download_path_label = QLabel(tr("ui.download.download_path"))
+        path_layout.addWidget(self.download_path_label)
         
         self.download_path = QLineEdit("downloads")
+        self.download_path.setPlaceholderText(tr("ui.download.download_path"))
         path_layout.addWidget(self.download_path)
         
-        self.browse_path_button = QPushButton("浏览...")
+        self.browse_path_button = QPushButton(tr("ui.download.browse"))
         path_layout.addWidget(self.browse_path_button)
         
         options_layout.addLayout(path_layout)
@@ -339,8 +345,8 @@ class DownloadView(QWidget):
         options_layout.addStretch(1)
         
         # 将标签页添加到配置面板
-        self.config_tabs.addTab(self.channel_tab, "频道配置")
-        self.config_tabs.addTab(self.options_tab, "下载选项")
+        self.config_tabs.addTab(self.channel_tab, tr("ui.download.channel_tab"))
+        self.config_tabs.addTab(self.options_tab, tr("ui.download.options_tab"))
     
     def _create_download_panel(self):
         """创建下载状态和列表面板"""
@@ -355,17 +361,16 @@ class DownloadView(QWidget):
         status_layout.setSpacing(5)
         
         # 当前下载任务
-        status_label = QLabel("当前下载任务:")
-        status_label.setStyleSheet("font-weight: bold;")
-        status_layout.addWidget(status_label)
+        self.status_label = QLabel(tr("ui.download.status.current_task"))
+        self.status_label.setStyleSheet("font-weight: bold;")
+        status_layout.addWidget(self.status_label)
         
-        self.current_task_label = QLabel("未开始下载")
-        # self.current_task_label.setStyleSheet("color: #0066cc;")
+        self.current_task_label = QLabel(tr("ui.download.status.not_started"))
         status_layout.addWidget(self.current_task_label)
         
         # 添加进度条和进度文本
         progress_layout = QVBoxLayout()
-        self.progress_label = QLabel("下载进度: 0%")
+        self.progress_label = QLabel(tr("ui.download.status.progress", percent=0))
         progress_layout.addWidget(self.progress_label)
         
         self.progress_bar = QProgressBar()
@@ -378,7 +383,7 @@ class DownloadView(QWidget):
         status_layout.addLayout(progress_layout)
         
         # 整体进度
-        self.overall_progress_label = QLabel("总进度: 0/0 (0%)")
+        self.overall_progress_label = QLabel(tr("ui.download.status.overall_progress", completed=0, total=0, percent=0))
         status_layout.addWidget(self.overall_progress_label)
         
         # 添加伸展因子，使内容靠上对齐
@@ -396,8 +401,8 @@ class DownloadView(QWidget):
         list_layout.addWidget(self.download_list)
         
         # 将两个标签页添加到标签页控件
-        self.download_tabs.addTab(self.status_tab, "下载状态")
-        self.download_tabs.addTab(self.list_tab, "下载列表")
+        self.download_tabs.addTab(self.status_tab, tr("ui.download.status_tab"))
+        self.download_tabs.addTab(self.list_tab, tr("ui.download.list_tab"))
         
         # 连接标签页切换信号，清除星号提示
         self.download_tabs.currentChanged.connect(self._on_tab_changed)
@@ -1111,8 +1116,8 @@ class DownloadView(QWidget):
             # 更新UI状态
             self.progress_bar.setRange(0, 1000)  # 保持高精度范围
             self.progress_bar.setValue(1000)  # 设置为完成状态
-            self.progress_label.setText("所有下载已完成")
-            self.overall_progress_label.setText("总进度: 完成")
+            self.progress_label.setText(tr("ui.download.status.completed"))
+            self.overall_progress_label.setText(tr("ui.download.status.completed"))
             
             # 恢复按钮状态
             self.start_button.setText("开始下载")
@@ -1142,24 +1147,19 @@ class DownloadView(QWidget):
         """
         try:
             # 更新UI状态
-            error_msg = f"下载出错: {error}"
+            error_msg = tr("ui.download.status.error", error=error)
             if message:
                 error_msg += f"\n{message}"
-            
-            self.progress_label.setText("下载过程中出现错误")
-            
+            self.progress_label.setText(tr("ui.download.status.error_label"))
             # 恢复进度条状态
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(0)
-            
             # 恢复按钮状态
-            self.start_button.setText("开始下载")
+            self.start_button.setText(tr("ui.download.start_download"))
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
-            
             # 显示错误对话框
-            self._show_error_dialog("下载错误", error_msg)
-            
+            self._show_error_dialog(tr("ui.common.error"), error_msg)
             logger.error(f"下载错误: {error}")
             if message:
                 logger.debug(f"错误详情: {message}")
@@ -1319,7 +1319,7 @@ class DownloadView(QWidget):
     def _update_channel_list_title(self):
         """更新频道列表标题，显示频道数量"""
         channel_count = self.channel_list.count()
-        self.channel_list_label.setText(f"已配置下载频道:  {channel_count}个") 
+        self.channel_list_label.setText(tr("ui.download.configured_pairs", count=channel_count)) 
 
     def set_downloader(self, downloader):
         """设置下载器实例
@@ -1639,7 +1639,7 @@ class DownloadView(QWidget):
             path_obj = Path(download_path)
             if not path_obj.exists():
                 path_obj.mkdir(parents=True, exist_ok=True)
-                QMessageBox.information(self, "目录信息", f"目录 '{download_path}' 不存在，已创建。")
+                QMessageBox.information(self, tr("ui.download.dir_info_title"), tr("ui.download.dir_created", path=download_path))
                 return
             
             # 计算目录大小
@@ -1647,11 +1647,11 @@ class DownloadView(QWidget):
             
             # 格式化大小显示
             if total_size_bytes < 1024 * 1024:  # 小于1MB
-                size_str = f"{total_size_bytes / 1024:.2f} KB"
+                size_str = tr("ui.download.size_kb", size=f"{total_size_bytes / 1024:.2f}")
             elif total_size_bytes < 1024 * 1024 * 1024:  # 小于1GB
-                size_str = f"{total_size_bytes / (1024 * 1024):.2f} MB"
+                size_str = tr("ui.download.size_mb", size=f"{total_size_bytes / (1024 * 1024):.2f}")
             else:  # GB或更大
-                size_str = f"{total_size_bytes / (1024 * 1024 * 1024):.2f} GB"
+                size_str = tr("ui.download.size_gb", size=f"{total_size_bytes / (1024 * 1024 * 1024):.2f}")
             
             # 检查是否接近或超过限制
             limit_message = ""
@@ -1660,20 +1660,20 @@ class DownloadView(QWidget):
                 current_mb = total_size_bytes / (1024 * 1024)
                 
                 if current_mb > limit_mb:
-                    limit_message = f"\n\n⚠️ 当前目录大小已超过设定的限制({limit_mb} MB)!"
+                    limit_message = "\n\n" + tr("ui.download.dir_exceed_limit", limit=limit_mb)
                 elif current_mb > limit_mb * 0.9:  # 接近限制（90%以上）
-                    limit_message = f"\n\n⚠️ 当前目录大小已接近设定的限制({limit_mb} MB)!"
+                    limit_message = "\n\n" + tr("ui.download.dir_near_limit", limit=limit_mb)
             
             # 显示目录大小信息
             QMessageBox.information(
                 self,
-                "目录大小信息",
-                f"下载目录: {download_path}\n当前大小: {size_str}{limit_message}"
+                tr("ui.download.dir_info_title"),
+                tr("ui.download.dir_info", path=download_path, size=size_str) + limit_message
             )
         except Exception as e:
             logger.error(f"检查目录大小时出错: {e}")
-            QMessageBox.warning(self, "错误", f"检查目录大小时出错: {str(e)}") 
-
+            QMessageBox.warning(self, tr("ui.common.error"), tr("ui.download.dir_check_error", error=str(e)))
+    
     def _show_context_menu(self, pos):
         """显示右键菜单
         
@@ -1689,8 +1689,8 @@ class DownloadView(QWidget):
         context_menu = QMenu(self)
         
         # 添加菜单项
-        edit_action = context_menu.addAction("编辑")
-        delete_action = context_menu.addAction("删除")
+        edit_action = context_menu.addAction(tr("ui.download.edit"))
+        delete_action = context_menu.addAction(tr("ui.download.delete"))
         
         # 显示菜单并获取用户选择的操作
         action = context_menu.exec(QCursor.pos())
@@ -1718,7 +1718,7 @@ class DownloadView(QWidget):
         
         # 创建编辑对话框
         edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle("编辑频道配置")
+        edit_dialog.setWindowTitle(tr("ui.download.edit_channel"))
         edit_dialog.setMinimumWidth(400)
         
         # 对话框布局
@@ -1729,7 +1729,7 @@ class DownloadView(QWidget):
         
         # 频道输入
         channel_input = QLineEdit(channel_data.get('channel', ''))
-        form_layout.addRow("频道链接:", channel_input)
+        form_layout.addRow(tr("ui.download.source_channel"), channel_input)
         
         # 添加表单布局到对话框
         dialog_layout.addLayout(form_layout)
@@ -1746,11 +1746,11 @@ class DownloadView(QWidget):
         end_id_input = QSpinBox()
         end_id_input.setRange(0, 999999999)
         end_id_input.setValue(channel_data.get('end_id', 0))
-        end_id_input.setSpecialValueText("最新消息")
+        end_id_input.setSpecialValueText(tr("ui.download.message_range.latest_message"))
         
-        id_layout.addWidget(QLabel("起始ID:"))
+        id_layout.addWidget(QLabel(tr("ui.download.message_range.start_id")))
         id_layout.addWidget(start_id_input)
-        id_layout.addWidget(QLabel("结束ID:"))
+        id_layout.addWidget(QLabel(tr("ui.download.message_range.end_id")))
         id_layout.addWidget(end_id_input)
         
         # 添加ID范围布局
@@ -1758,10 +1758,10 @@ class DownloadView(QWidget):
         
         # 关键词输入
         keywords_layout = QHBoxLayout()
-        keywords_layout.addWidget(QLabel("关键词:"))
+        keywords_layout.addWidget(QLabel(tr("ui.download.keyword_filter")))
         
         keywords_input = QLineEdit()
-        keywords_input.setPlaceholderText("多个关键词用英文逗号分隔，同义词用横杠'-'连接")
+        keywords_input.setPlaceholderText(tr("ui.download.keyword_placeholder"))
         keywords_str = ','.join(channel_data.get('keywords', []))
         keywords_input.setText(keywords_str)
         
@@ -1771,26 +1771,26 @@ class DownloadView(QWidget):
         # 媒体类型选择
         media_types = channel_data.get('media_types', [])
         
-        media_group = QGroupBox("媒体类型")
+        media_group = QGroupBox(tr("ui.download.file_types"))
         media_layout = QHBoxLayout(media_group)
         
-        photo_check = QCheckBox("照片")
+        photo_check = QCheckBox(tr("ui.forward.media_types.photo"))
         photo_check.setChecked("photo" in media_types)
         media_layout.addWidget(photo_check)
         
-        video_check = QCheckBox("视频")
+        video_check = QCheckBox(tr("ui.forward.media_types.video"))
         video_check.setChecked("video" in media_types)
         media_layout.addWidget(video_check)
         
-        document_check = QCheckBox("文档")
+        document_check = QCheckBox(tr("ui.forward.media_types.document"))
         document_check.setChecked("document" in media_types)
         media_layout.addWidget(document_check)
         
-        audio_check = QCheckBox("音频")
+        audio_check = QCheckBox(tr("ui.forward.media_types.audio"))
         audio_check.setChecked("audio" in media_types)
         media_layout.addWidget(audio_check)
         
-        animation_check = QCheckBox("动画")
+        animation_check = QCheckBox(tr("ui.forward.media_types.animation"))
         animation_check.setChecked("animation" in media_types)
         media_layout.addWidget(animation_check)
         
@@ -1799,8 +1799,8 @@ class DownloadView(QWidget):
         
         # 按钮布局
         button_layout = QHBoxLayout()
-        save_button = QPushButton("保存")
-        cancel_button = QPushButton("取消")
+        save_button = QPushButton(tr("ui.common.save"))
+        cancel_button = QPushButton(tr("ui.common.cancel"))
         
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
@@ -1820,7 +1820,7 @@ class DownloadView(QWidget):
                 
                 # 验证输入
                 if not new_channel:
-                    raise ValueError("频道链接不能为空")
+                    raise ValueError(tr("ui.download.source_required"))
                 
                 # 收集关键词
                 new_keywords = []
@@ -1842,7 +1842,7 @@ class DownloadView(QWidget):
                     new_media_types.append("animation")
                 
                 if not new_media_types:
-                    raise ValueError("至少需要选择一种媒体类型")
+                    raise ValueError(tr("ui.download.file_types"))
                 
                 # 创建更新后的频道数据
                 updated_data = {
@@ -1857,7 +1857,7 @@ class DownloadView(QWidget):
                 self._update_channel(row, updated_data)
                 
             except ValueError as e:
-                QMessageBox.warning(self, "输入错误", str(e))
+                QMessageBox.warning(self, tr("ui.common.warning"), str(e))
 
     def _update_channel(self, row, updated_data):
         """更新频道数据
@@ -1893,3 +1893,100 @@ class DownloadView(QWidget):
                 # 更新项目文本和数据
                 item.setText(display_text)
                 item.setData(Qt.UserRole, updated_data) 
+
+    def _update_translations(self):
+        self.channel_label.setText(tr("ui.download.source_channel"))
+        self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
+        self.id_label.setText(tr("ui.download.message_range.start_id"))
+        self.to_label.setText(tr("ui.download.message_range.to"))
+        self.end_id.setSpecialValueText(tr("ui.download.message_range.latest_message"))
+        self.keyword_label.setText(tr("ui.download.keyword_filter"))
+        self.keyword_input.setPlaceholderText(tr("ui.download.keyword_placeholder"))
+        self.add_channel_button.setText(tr("ui.download.add_pair"))
+        self.remove_channel_button.setText(tr("ui.download.remove_pair"))
+        self.media_type_label.setText(tr("ui.download.file_types"))
+        self.photo_check.setText(tr("ui.forward.media_types.photo"))
+        self.video_check.setText(tr("ui.forward.media_types.video"))
+        self.document_check.setText(tr("ui.forward.media_types.document"))
+        self.audio_check.setText(tr("ui.forward.media_types.audio"))
+        self.animation_check.setText(tr("ui.forward.media_types.animation"))
+        self.channel_list_label.setText(tr("ui.download.configured_pairs", count=self.channel_list.count()))
+        self.config_tabs.setTabText(0, tr("ui.download.channel_tab"))
+        self.config_tabs.setTabText(1, tr("ui.download.options_tab"))
+        self.parallel_check.setText(tr("ui.download.parallel_download"))
+        self.max_concurrent_label.setText(tr("ui.download.max_concurrent"))
+        self.restart_note.setText(tr("ui.download.restart_note"))
+        self.dir_size_limit_check.setText(tr("ui.download.dir_size_limit_check"))
+        self.check_dir_size_button.setText(tr("ui.download.check_dir_size"))
+        self.download_path_label.setText(tr("ui.download.download_path"))
+        self.download_path.setPlaceholderText(tr("ui.download.download_path"))
+        self.browse_path_button.setText(tr("ui.download.browse"))
+        # ... 其它所有用户可见文本 ...
+        self.start_button.setText(tr("ui.download.start_download"))
+        self.stop_button.setText(tr("ui.download.stop_download"))
+        self.save_config_button.setText(tr("ui.common.save"))
+        self.clear_list_button.setText(tr("ui.common.clear"))
+        self.start_button.setToolTip(tr("ui.download.start_download"))
+        self.stop_button.setToolTip(tr("ui.download.stop_download"))
+        self.save_config_button.setToolTip(tr("ui.common.save"))
+        self.clear_list_button.setToolTip(tr("ui.common.clear"))
+        self.channel_input.setToolTip(tr("ui.download.source_channel"))
+        self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
+        self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
+        self.browse_path_button.setToolTip(tr("ui.download.browse"))
+        self.keyword_input.setToolTip(tr("ui.download.keyword_placeholder"))
+        self.download_tabs.setTabText(0, tr("ui.download.status_tab"))
+        self.download_tabs.setTabText(1, tr("ui.download.list_tab"))
+        # 动态刷新频道列表项文本
+        for i in range(self.channel_list.count()):
+            item = self.channel_list.item(i)
+            data = item.data(Qt.UserRole)
+            if data:
+                display_text = f"{data['channel']} (" + tr("ui.download.display.id_range_both", start=data['start_id'], end=(data['end_id'] if data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
+                if data.get('keywords'):
+                    keywords_str = '，'.join(data['keywords'])
+                    display_text += f"（{tr('ui.download.display.keywords')}: {keywords_str}）"
+                if data.get('media_types'):
+                    media_types_display = {
+                        "photo": tr("ui.forward.media_types.photo"),
+                        "video": tr("ui.forward.media_types.video"),
+                        "document": tr("ui.forward.media_types.document"),
+                        "audio": tr("ui.forward.media_types.audio"),
+                        "animation": tr("ui.forward.media_types.animation")
+                    }
+                    media_types_str = '、'.join([media_types_display.get(t, t) for t in data['media_types']])
+                    display_text += f"（{tr('ui.download.display.media', types=media_types_str)}）"
+                item.setText(display_text)
+        # 下载状态/进度等标签国际化（如有）
+        self.status_label.setText(tr("ui.download.status.current_task"))
+        # 当前任务
+        if self.current_task_label.text() in ["未开始下载", tr("ui.download.status.not_started")]:
+            self.current_task_label.setText(tr("ui.download.status.not_started"))
+        elif self.current_task_label.text().startswith("当前下载:") or self.current_task_label.text().startswith("Current Download:"):
+            # 动态内容，保留文件名
+            filename = self.current_task_label.text().split(":", 1)[-1].strip()
+            self.current_task_label.setText(tr("ui.download.status.current_task") + f" {filename}")
+        # 进度
+        progress_match = re.match(r".*?(\d+)%", self.progress_label.text())
+        percent = int(progress_match.group(1)) if progress_match else 0
+        if "速度" in self.progress_label.text() or "Speed" in self.progress_label.text():
+            # 保留速度信息
+            speed_info = self.progress_label.text().split("-", 1)[-1].strip() if "-" in self.progress_label.text() else ""
+            self.progress_label.setText(tr("ui.download.status.progress", percent=percent) + (f" - {speed_info}" if speed_info else ""))
+        elif "错误" in self.progress_label.text() or "error" in self.progress_label.text().lower():
+            self.progress_label.setText(tr("ui.download.status.error_label"))
+        elif "完成" in self.progress_label.text() or "completed" in self.progress_label.text().lower():
+            self.progress_label.setText(tr("ui.download.status.completed"))
+        else:
+            self.progress_label.setText(tr("ui.download.status.progress", percent=percent))
+        # 总进度
+        overall_match = re.match(r".*?(\d+)/(\d+).*?\((\d+)%\)", self.overall_progress_label.text())
+        if overall_match:
+            completed = int(overall_match.group(1))
+            total = int(overall_match.group(2))
+            percent = int(overall_match.group(3))
+            self.overall_progress_label.setText(tr("ui.download.status.overall_progress", completed=completed, total=total, percent=percent))
+        elif "完成" in self.overall_progress_label.text() or "Completed" in self.overall_progress_label.text():
+            self.overall_progress_label.setText(tr("ui.download.status.completed"))
+        elif "准备中" in self.overall_progress_label.text() or "Preparing" in self.overall_progress_label.text():
+            self.overall_progress_label.setText(tr("ui.download.status.preparing"))
