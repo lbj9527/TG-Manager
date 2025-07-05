@@ -1,6 +1,6 @@
 """
-TG-Manager 日志查看器
-显示应用程序日志，支持筛选、搜索和导出日志。
+TG-Manager 当日日志查看器
+严格只显示当日日志文件，支持筛选、搜索功能，最多显示2000行记录。
 """
 
 from PySide6.QtWidgets import (
@@ -29,7 +29,7 @@ logger = get_logger()
 
 
 class LogViewerView(QWidget):
-    """日志查看器视图，提供日志显示、过滤和搜索功能"""
+    """当日日志查看器视图，严格只显示当日日志文件的最新2000行记录，提供过滤和搜索功能"""
     
     # 定义信号
     logs_loaded_signal = Signal(list)  # 日志加载完成信号
@@ -83,13 +83,13 @@ class LogViewerView(QWidget):
         self.refresh_timer = AsyncTimer(2.0, self._async_refresh_logs)
         self.refresh_timer.start()
         
-        logger.info("日志查看器视图初始化完成")
+        logger.info("当日日志查看器视图初始化完成")
     
     def _get_log_file_path(self):
-        """获取日志文件路径
+        """获取当前日志文件路径（严格只加载当日日志）
         
         Returns:
-            str: 日志文件路径
+            str: 当前日志文件路径
         """
         # 首先从配置中获取
         if isinstance(self.config, dict) and 'LOGGING' in self.config:
@@ -98,52 +98,36 @@ class LogViewerView(QWidget):
             if log_file and os.path.exists(log_file):
                 return log_file
         
-        # 使用当前日期获取日志文件
-        today = datetime.datetime.now().strftime('%Y-%m-%d')
-        today_simple = datetime.datetime.now().strftime('%Y%m%d')
+        # 获取当前日期（支持两种格式）
+        today_dash = datetime.datetime.now().strftime('%Y-%m-%d')  # 2025-07-05
+        today_simple = datetime.datetime.now().strftime('%Y%m%d')  # 20250705
         
-        # 检查不同格式的日志文件
-        log_paths = [
-            f"logs/app_{today}.log",  # UI应用日志
-            f"logs/tg_forwarder_{today_simple}.log",  # 转发器日志
-            "logs/tg_manager.log",  # 默认名称
-            "./tg_manager.log",
-            "../logs/tg_manager.log"
+        # 严格按优先级检查当日日志文件（只加载当日日志）
+        today_log_paths = [
+            f"logs/app_{today_dash}.log",              # 当日UI应用日志（优先）
+            f"logs/tg_forwarder_{today_simple}.log",   # 当日转发器日志
         ]
         
-        # 尝试查找logs目录下的所有日志文件
-        logs_dir = Path("logs")
-        if logs_dir.exists() and logs_dir.is_dir():
-            # 列出logs目录下的所有日志文件并按修改时间排序
-            log_files = sorted(
-                [f for f in logs_dir.glob("*.log") if f.is_file()],
-                key=lambda x: os.path.getmtime(x),
-                reverse=True  # 最新的文件排在前面
-            )
-            
-            if log_files:
-                # 如果找到日志文件，返回最新的一个
-                logger.debug(f"找到最新的日志文件: {log_files[0]}")
-                return str(log_files[0])
-        
-        # 检查指定路径
-        for path in log_paths:
+        # 检查当日日志文件
+        for path in today_log_paths:
             if os.path.exists(path):
-                logger.debug(f"找到日志文件: {path}")
+                logger.debug(f"使用当日日志文件: {path}")
                 return path
         
-        # 如果找不到，返回默认路径并记录警告
-        logger.warning(f"未找到有效的日志文件，将使用默认路径: logs/app_{today}.log")
-        return f"logs/app_{today}.log"
+        # 如果当日日志文件都不存在，返回默认的当日日志文件路径（UI应用日志优先）
+        # 不再使用固定名称的后备文件，严格只使用当日日志
+        default_path = f"logs/app_{today_dash}.log"
+        logger.debug(f"使用默认当日日志文件路径: {default_path}")
+        return default_path
     
     def _create_control_panel(self):
         """创建控制面板"""
         # 创建控制面板分组框
-        control_group = QGroupBox("日志控制")
+        control_group = QGroupBox("当日日志控制")
         control_layout = QVBoxLayout(control_group)
         
-        # 文件路径状态标签 - 仅显示当前日志文件路径，移除文件选择相关控件
-        self.file_path_label = QLabel(f"当前日志文件: {self.log_file_path}")
+        # 文件路径状态标签 - 仅显示当日日志文件路径
+        self.file_path_label = QLabel(f"当日日志文件: {self.log_file_path}")
         control_layout.addWidget(self.file_path_label)
         
         # 筛选面板
@@ -207,7 +191,7 @@ class LogViewerView(QWidget):
         self.main_layout.addWidget(self.log_table, 1)  # 1为拉伸系数
     
     async def _async_load_logs(self):
-        """异步加载日志文件内容"""
+        """异步加载日志文件内容（限制最多2000行）"""
         try:
             if self.is_loading:
                 logger.debug("日志已在加载中，跳过此次加载")
@@ -216,20 +200,20 @@ class LogViewerView(QWidget):
             self.is_loading = True
             # 在首次加载时显示加载消息
             if not hasattr(self, '_initial_load_done'):
-                self.status_update_signal.emit("正在加载日志...")
+                self.status_update_signal.emit("正在加载当日日志...")
             
             # 检查日志文件是否存在
             if not os.path.exists(self.log_file_path):
-                logger.warning(f"日志文件不存在: {self.log_file_path}")
-                self.status_update_signal.emit(f"日志文件不存在: {self.log_file_path}")
+                logger.warning(f"当日日志文件不存在: {self.log_file_path}")
+                self.status_update_signal.emit(f"当日日志文件不存在: {self.log_file_path}")
                 self.logs_loaded_signal.emit([])
                 self.is_loading = False
                 return
             
             # 检查日志文件大小
             if os.path.getsize(self.log_file_path) == 0:
-                logger.warning(f"日志文件为空: {self.log_file_path}")
-                self.status_update_signal.emit(f"日志文件为空: {self.log_file_path}")
+                logger.warning(f"当日日志文件为空: {self.log_file_path}")
+                self.status_update_signal.emit(f"当日日志文件为空: {self.log_file_path}")
                 self.logs_loaded_signal.emit([])
                 self.is_loading = False
                 return
@@ -237,10 +221,26 @@ class LogViewerView(QWidget):
             # 在事件循环中运行IO操作
             loop = get_event_loop()
             
+            # 读取文件的最后2000行
+            def read_last_lines(file_path, max_lines=2000):
+                """读取文件的最后N行"""
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        # 只保留最后2000行
+                        if len(lines) > max_lines:
+                            lines = lines[-max_lines:]
+                        return ''.join(lines)
+                except Exception as e:
+                    logger.error(f"读取日志文件失败: {e}")
+                    return ""
+            
             # 使用协程执行文件读取操作
             log_text = await loop.run_in_executor(
                 None, 
-                lambda: open(self.log_file_path, 'r', encoding='utf-8').read()
+                read_last_lines,
+                self.log_file_path,
+                2000
             )
             
             # 解析日志条目
@@ -348,6 +348,10 @@ class LogViewerView(QWidget):
                                 }
                                 log_entries.append(entry)
             
+            # 确保日志条目数量不超过2000条
+            if len(log_entries) > 2000:
+                log_entries = log_entries[-2000:]
+            
             # 发送解析完成的信号
             self.logs_loaded_signal.emit(log_entries)
             
@@ -368,7 +372,7 @@ class LogViewerView(QWidget):
         self.log_entries = log_entries
         # 更新文件路径标签
         if hasattr(self, 'file_path_label'):
-            self.file_path_label.setText(f"当前日志文件: {self.log_file_path}")
+            self.file_path_label.setText(f"当日日志文件: {self.log_file_path}")
         
         # 根据过滤条件显示日志
         self._apply_filters()
@@ -379,10 +383,14 @@ class LogViewerView(QWidget):
             self._initial_load_done = True
             if log_entries:
                 # 只在状态栏显示，不写入日志文件
-                self.status_update_signal.emit(f"加载了 {len(log_entries)} 条日志记录")
+                total_entries = len(log_entries)
+                if total_entries >= 2000:
+                    self.status_update_signal.emit(f"已加载当日日志的最新 {total_entries} 条记录（限制2000条）")
+                else:
+                    self.status_update_signal.emit(f"加载了 {total_entries} 条当日日志记录")
             else:
                 # 只在状态栏显示，不写入日志文件
-                self.status_update_signal.emit("未找到日志记录")
+                self.status_update_signal.emit("未找到当日日志记录")
     
     @Slot(str)
     def _on_status_update(self, message):
