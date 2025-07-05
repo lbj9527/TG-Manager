@@ -119,6 +119,10 @@ class MainWindow(
         if hasattr(self, '_update_menu_bar_translations'):
             self._update_menu_bar_translations()
         
+        # 显式更新工具栏和状态栏翻译
+        ToolBarMixin._update_translations(self)
+        StatusBarMixin._update_translations(self)
+        
         # 更新侧边栏翻译
         if hasattr(self, '_update_sidebar_translations'):
             self._update_sidebar_translations()
