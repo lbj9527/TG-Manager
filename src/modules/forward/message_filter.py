@@ -5,12 +5,14 @@
 
 from typing import List, Dict, Any, Tuple, Optional
 import re
+import logging
 
 from pyrogram.types import Message
 
 from src.utils.logger import get_logger
+from src.utils.translation_manager import tr
 
-_logger = get_logger()
+_logger = logging.getLogger(__name__)
 
 class MessageFilter:
     """
@@ -156,12 +158,12 @@ class MessageFilter:
                         _logger.debug(f"消息 [ID: {message.id}] 无法识别媒体类型（可能是空消息、特殊消息类型），被过滤")
                         # 发射过滤事件到UI
                         if self.emit:
-                            self.emit("message_filtered", message.id, "单个消息", f"无法识别媒体类型（可能是空消息、特殊消息类型）")
+                            self.emit("message_filtered", message.id, tr("ui.forward.log.single_message"), tr("ui.forward.log.unrecognized_media_type"))
                     else:
                         _logger.debug(f"消息 [ID: {message.id}] 媒体类型 '{message_media_type}' 不在允许列表中，被过滤")
                         # 发射过滤事件到UI
                         if self.emit:
-                            self.emit("message_filtered", message.id, "单个消息", f"媒体类型 '{message_media_type}' 不被允许")
+                            self.emit("message_filtered", message.id, tr("ui.forward.log.single_message"), tr("ui.forward.log.media_type_not_allowed", media_type=message_media_type))
             
             # 添加通过和被过滤的消息
             passed_messages.extend(group_passed)
@@ -269,10 +271,10 @@ class MessageFilter:
                     for message in group_messages:
                         if len(group_messages) == 1:
                             # 单个消息
-                            self.emit("message_filtered", message.id, "单个消息", filter_reason)
+                            self.emit("message_filtered", message.id, tr("ui.forward.log.single_message"), filter_reason)
                         else:
                             # 媒体组消息
-                            self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", "媒体组消息", filter_reason)
+                            self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", tr("ui.forward.log.media_group_message"), filter_reason)
                             break  # 对于媒体组，只发射一次事件
             else:
                 passed_messages.extend(group_messages)
@@ -352,12 +354,14 @@ class MessageFilter:
                 
                 # 发射过滤事件到UI
                 if self.emit:
-                    if len(group_ids) == 1:
-                        # 单个消息
-                        self.emit("message_filtered", group_ids[0], "单个消息", f"不包含关键词: {keywords}")
-                    else:
-                        # 媒体组消息
-                        self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", "媒体组消息", f"不包含关键词: {keywords}")
+                    for message in group_messages:
+                        if len(group_messages) == 1:
+                            # 单个消息
+                            self.emit("message_filtered", group_ids[0], tr("ui.forward.log.single_message"), tr("ui.forward.log.not_contain_keywords", keywords=keywords))
+                        else:
+                            # 媒体组消息
+                            self.emit("message_filtered", f"{group_ids[0]}-{group_ids[-1]}", tr("ui.forward.log.media_group_message"), tr("ui.forward.log.not_contain_keywords", keywords=keywords))
+                            break  # 对于媒体组，只发射一次事件
         
         # 汇总日志显示
         if filtered_groups:

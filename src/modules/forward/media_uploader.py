@@ -7,6 +7,8 @@ import shutil
 from pathlib import Path
 from typing import List, Tuple, Dict, Union, Optional, Any
 import time
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 from pyrogram import Client
 from pyrogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAudio
@@ -15,6 +17,8 @@ from pyrogram.errors import FloodWait
 from src.modules.forward.media_group_download import MediaGroupDownload
 from src.utils.video_processor import VideoProcessor
 from src.utils.logger import get_logger
+from src.utils.translation_manager import tr
+from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
 
 # 导入pyropatch FloodWait处理器
 try:
@@ -113,7 +117,7 @@ class MediaUploader:
             Union[List[Message], bool]: 上传成功时返回消息对象列表，失败时返回False
         """
         message_ids = [m.id for m in media_group_download.messages]
-        group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
+        group_id = tr("ui.forward.log.single_message") if len(message_ids) == 1 else tr("ui.forward.log.media_group_count", count=len(message_ids))
         
         # 检查媒体组是否为空
         if not media_group:

@@ -165,7 +165,17 @@
         "keywords": "关键词",
         "single_message": "单个消息",
         "media_group_message": "媒体组消息",
-        "additional_info": "附加信息"
+        "additional_info": "附加信息",
+        "unrecognized_media_type": "无法识别媒体类型（可能是空消息、特殊消息类型）",
+        "media_type_not_allowed": "媒体类型 '{media_type}' 不被允许",
+        "not_contain_keywords": "不包含关键词: {keywords}",
+        "media_group_id": "媒体组{group_id}",
+        "media_group_count": "媒体组(共{count}条)",
+        "media_group_files": "媒体组({count}个文件)",
+        "download_auto_stopped": "下载已自动停止",
+        "filtered": "过滤",
+        "forward_success": "转发成功",
+        "forward_failed": "转发失败"
       },
       "context_menu": {
         "enable": "启用",
@@ -195,7 +205,37 @@
         "calculating": "计算中...",
         "calculating_short": "计算中"
       },
-      "status_column": "状态"
+      "status_column": "状态",
+      "log": {
+        "user_stop_request": "用户请求停止转发...",
+        "forward_manually_stopped": "========== 转发已手动停止 ==========",
+        "stop_forward_failed": "停止转发失败: {error}",
+        "all_tasks_completed": "========== 所有转发任务已完成 ==========",
+        "processing_message": "正在处理: {message_info}",
+        "api_flood_limit": "⚠️ API限流 - {message}",
+        "start_collecting_from": "开始从 {source_channel} 收集消息...",
+        "collect_completed": "从 {source_channel} 收集完成，共 {total_count} 条消息",
+        "start_forwarding": "开始转发：{source_channel} → {targets_str}",
+        "forward_completed": "转发完成：{source_channel} → {targets_str}",
+        "start_collecting_messages": "开始收集消息，预计收集 {total_count} 条消息",
+        "collect_finished": "消息收集完成：{collected_count}/{total_count} 条 (成功率: {success_rate:.1f}%)",
+        "collect_error": "消息收集出错：{error_message}",
+        "text_replace": "文本替换（{message_desc}）：'{original_short}' → '{replaced_short}'",
+        "log_cleared": "日志已清空",
+        "collected_count": "已收集 {count} 条消息",
+        "single_message": "单个消息",
+        "media_group_message": "媒体组消息",
+        "unrecognized_media_type": "无法识别媒体类型（可能是空消息、特殊消息类型）",
+        "media_type_not_allowed": "媒体类型 '{media_type}' 不被允许",
+        "not_contain_keywords": "不包含关键词: {keywords}",
+        "media_group_id": "媒体组{group_id}",
+        "media_group_count": "媒体组(共{count}条)",
+        "media_group_files": "媒体组({count}个文件)",
+        "download_auto_stopped": "下载已自动停止",
+        "filtered": "过滤",
+        "forward_success": "转发成功",
+        "forward_failed": "转发失败"
+      }
     },
     "upload": {
       "title": "媒体上传",

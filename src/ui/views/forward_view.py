@@ -1470,7 +1470,7 @@ class ForwardView(QWidget):
         
         # 记录到日志显示区域
         if hasattr(self, 'log_display'):
-            self._add_warning_log_message("用户请求停止转发...")
+            self._add_warning_log_message(tr("ui.forward.log.user_stop_request"))
         
         # 异步停止转发
         asyncio.create_task(self._async_stop_forward())
@@ -1490,7 +1490,7 @@ class ForwardView(QWidget):
             
             # 记录到日志显示区域
             if hasattr(self, 'log_display'):
-                self._add_warning_log_message("========== 转发已手动停止 ==========")
+                self._add_warning_log_message(tr("ui.forward.log.forward_manually_stopped"))
                 
         except Exception as e:
             logger.error(f"异步停止转发失败: {e}")
@@ -1498,7 +1498,7 @@ class ForwardView(QWidget):
             
             # 记录到日志显示区域
             if hasattr(self, 'log_display'):
-                self._add_error_log_message(f"停止转发失败: {e}")
+                self._add_error_log_message(tr("ui.forward.log.stop_forward_failed", error=str(e)))
 
     def _on_forward_complete_ui_update(self):
         """转发完成后的UI更新"""
@@ -1507,7 +1507,7 @@ class ForwardView(QWidget):
         
         # 记录到日志显示区域
         if hasattr(self, 'log_display'):
-            self._add_success_log_message("========== 所有转发任务已完成 ==========")
+            self._add_success_log_message(tr("ui.forward.log.all_tasks_completed"))
         
         # 更新转发状态
         self.forwarding_status = False
@@ -2013,7 +2013,7 @@ class ForwardView(QWidget):
                 logger.info(f"正在转发: {message_info}")
                 # 添加到UI日志显示区域
                 if hasattr(self, 'log_display'):
-                    self._add_info_log_message(f"正在处理: {message_info}")
+                    self._add_info_log_message(tr("ui.forward.log.processing_message", message_info=message_info))
             else:
                 logger.info(tr("ui.forward.messages.forwarding"))
                 # 添加到UI日志显示区域
@@ -3179,7 +3179,7 @@ class ForwardView(QWidget):
         """清空日志显示区域"""
         try:
             self.log_display.clear()
-            self._add_log_message("日志已清空", color="#6c757d")
+            self._add_log_message(tr("ui.forward.log.log_cleared"), color="#6c757d")
         except Exception as e:
             logger.error(f"清空日志失败: {e}")
     
@@ -3193,7 +3193,7 @@ class ForwardView(QWidget):
         if total is not None:
             message = tr("ui.forward.messages.collecting_messages", count=count, total=total)
         else:
-            message = f"已收集 {count} 条消息"
+            message = tr("ui.forward.log.collected_count", count=count)
         self._add_info_log_message(message)
     
     def _log_message_forward_success(self, message_id, message_type=None, additional_info=""):
@@ -3206,7 +3206,7 @@ class ForwardView(QWidget):
         """
         if message_type is None:
             message_type = tr("ui.forward.messages.single_message")
-        message = f"{message_type}（{message_id}）转发成功"
+        message = f"{message_type}（{message_id}）{tr('ui.forward.log.forward_success')}"
         if additional_info:
             message += f"：{additional_info}"
         self._add_success_log_message(message)
@@ -3222,13 +3222,13 @@ class ForwardView(QWidget):
         """
         if message_type is None:
             message_type = tr("ui.forward.messages.single_message")
-        message = f"{message_type}（{message_id}）转发失败"
+        message = f"{message_type}（{message_id}）{tr('ui.forward.log.forward_failed')}"
         if error_msg:
             message += f"：{error_msg}"
         
         if is_rate_limit:
             # API限流错误用红色高亮显示
-            self._add_error_log_message(f"⚠️ API限流 - {message}")
+            self._add_error_log_message(tr("ui.forward.log.api_flood_limit", message=message))
         else:
             self._add_error_log_message(message)
     
@@ -3242,7 +3242,7 @@ class ForwardView(QWidget):
         """
         if message_type is None:
             message_type = tr("ui.forward.messages.single_message")
-        message = f"{message_type}（{message_id}）过滤"
+        message = f"{message_type}（{message_id}）{tr('ui.forward.log.filtered')}"
         if filter_reason:
             message += f"：{filter_reason}"
         self._add_filter_log_message(message)
@@ -3253,7 +3253,7 @@ class ForwardView(QWidget):
         Args:
             source_channel: 源频道
         """
-        self._add_info_log_message(f"开始从 {source_channel} 收集消息...")
+        self._add_info_log_message(tr("ui.forward.log.start_collecting_from", source_channel=source_channel))
     
     def _log_collection_complete(self, source_channel, total_count):
         """记录消息收集完成
@@ -3262,7 +3262,7 @@ class ForwardView(QWidget):
             source_channel: 源频道
             total_count: 收集到的消息总数
         """
-        self._add_info_log_message(f"从 {source_channel} 收集完成，共 {total_count} 条消息")
+        self._add_info_log_message(tr("ui.forward.log.collect_completed", source_channel=source_channel, total_count=total_count))
     
     def _log_forward_start(self, source_channel, target_channels):
         """记录开始转发
@@ -3272,7 +3272,7 @@ class ForwardView(QWidget):
             target_channels: 目标频道列表
         """
         targets_str = ", ".join(target_channels) if isinstance(target_channels, list) else str(target_channels)
-        self._add_info_log_message(f"开始转发：{source_channel} → {targets_str}")
+        self._add_info_log_message(tr("ui.forward.log.start_forwarding", source_channel=source_channel, targets_str=targets_str))
     
     def _log_forward_complete(self, source_channel, target_channels):
         """记录转发完成
@@ -3282,7 +3282,7 @@ class ForwardView(QWidget):
             target_channels: 目标频道列表
         """
         targets_str = ", ".join(target_channels) if isinstance(target_channels, list) else str(target_channels)
-        self._add_success_log_message(f"转发完成：{source_channel} → {targets_str}")
+        self._add_success_log_message(tr("ui.forward.log.forward_completed", source_channel=source_channel, targets_str=targets_str))
     
     def _on_collection_started(self, total_count):
         """处理消息收集开始信号
@@ -3292,7 +3292,7 @@ class ForwardView(QWidget):
         """
         try:
             if hasattr(self, 'log_display'):
-                self._add_info_log_message(f"开始收集消息，预计收集 {total_count} 条消息")
+                self._add_info_log_message(tr("ui.forward.log.start_collecting_messages", total_count=total_count))
             logger.debug(f"处理消息收集开始信号: 总数 {total_count}")
         except Exception as e:
             logger.error(f"处理消息收集开始信号时出错: {e}")
@@ -3323,7 +3323,7 @@ class ForwardView(QWidget):
         try:
             if hasattr(self, 'log_display'):
                 success_rate = (collected_count / total_count * 100) if total_count > 0 else 0
-                self._add_success_log_message(f"消息收集完成：{collected_count}/{total_count} 条 (成功率: {success_rate:.1f}%)")
+                self._add_success_log_message(tr("ui.forward.log.collect_finished", collected_count=collected_count, total_count=total_count, success_rate=success_rate))
             logger.debug(f"处理消息收集完成信号: {collected_count}/{total_count}")
         except Exception as e:
             logger.error(f"处理消息收集完成信号时出错: {e}")
@@ -3336,7 +3336,7 @@ class ForwardView(QWidget):
         """
         try:
             if hasattr(self, 'log_display'):
-                self._add_error_log_message(f"消息收集出错：{error_message}")
+                self._add_error_log_message(tr("ui.forward.log.collect_error", error_message=error_message))
             logger.debug(f"处理消息收集错误信号: {error_message}")
         except Exception as e:
             logger.error(f"处理消息收集错误信号时出错: {e}")
@@ -3354,7 +3354,7 @@ class ForwardView(QWidget):
                 # 简化文本显示，避免过长
                 original_short = original_text[:20] + "..." if len(original_text) > 20 else original_text
                 replaced_short = replaced_text[:20] + "..." if len(replaced_text) > 20 else replaced_text
-                self._add_info_log_message(f"文本替换（{message_desc}）：'{original_short}' → '{replaced_short}'")
+                self._add_info_log_message(tr("ui.forward.log.text_replace", message_desc=message_desc, original_short=original_short, replaced_short=replaced_short))
             logger.debug(f"处理文本替换信号: {message_desc}, '{original_text}' -> '{replaced_text}'")
         except Exception as e:
             logger.error(f"处理文本替换信号时出错: {e}")

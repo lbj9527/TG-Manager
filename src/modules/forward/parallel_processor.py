@@ -20,6 +20,7 @@ from src.modules.forward.media_uploader import MediaUploader
 from src.modules.forward.media_group_collector import MediaGroupCollector
 from src.modules.forward.message_filter import MessageFilter
 from src.utils.logger import get_logger
+from src.utils.translation_manager import tr
 from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
 
 _logger = get_logger()
@@ -348,7 +349,7 @@ class ParallelProcessor:
                                 _logger.info(f"媒体组 {group_id} 文本替换: '{original_caption[:30]}...' -> '{caption[:30]}...'")
                                 # 发射文本替换信号到UI
                                 if self.emit:
-                                    self.emit("text_replacement_applied", f"媒体组{group_id}", original_caption, caption)
+                                    self.emit("text_replacement_applied", tr("ui.forward.log.media_group_id", group_id=group_id), original_caption, caption)
                     
                     # 检查是否移除标题
                     remove_captions = False
@@ -445,7 +446,7 @@ class ParallelProcessor:
                     source_channel = media_group_download.source_channel
                     
                     # 记录媒体组信息
-                    group_id = "单条消息" if len(message_ids) == 1 else f"媒体组(共{len(message_ids)}条)"
+                    group_id = tr("ui.forward.log.single_message") if len(message_ids) == 1 else tr("ui.forward.log.media_group_count", count=len(message_ids))
                     # _logger.info(f"开始处理{group_id}: 消息IDs={message_ids}, 来源={source_channel}")
                     
                     # 提前检查哪些频道已经转发过

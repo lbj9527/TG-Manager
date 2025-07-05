@@ -1,1315 +1,197 @@
 # TG-Manager 更新日志
 
-## [v2.2.36] - 2025-07-05
-
-### 🔒 严格当日模式实现
-- **日志查看器严格当日限制**: 完全移除历史日志文件的加载逻辑，严格只加载当日的日志文件
-  - 移除固定名称的后备文件(`logs/tg_manager.log`)检查，避免可能的历史日志显示
-  - 确保用户在日志查看器中看到的只是当天的程序运行日志
-  - 提供更精确的当日日志查看体验
-
-### 📁 文件选择逻辑优化
-- **精确的当日文件检查**: 
-  ```python
-  # 修改前：包含固定名称后备文件
-  current_log_paths = [
-      f"logs/app_{today_dash}.log",
-      f"logs/tg_forwarder_{today_simple}.log",
-      "logs/tg_manager.log",  # 可能包含历史日志
-  ]
-  
-  # 修改后：严格只检查当日日志
-  today_log_paths = [
-      f"logs/app_{today_dash}.log",              # 当日UI应用日志（优先）
-      f"logs/tg_forwarder_{today_simple}.log",   # 当日转发器日志
-      # 移除固定名称后备文件
-  ]
-  ```
-
-### 🎨 界面和文档更新
-- **控制面板标题**: 从"当前日志控制"改为"当日日志控制"
-- **提示信息**: 更新为"严格只显示当日日志文件的最新2000行记录"
-- **状态消息**: 统一使用"当日日志"术语，确保用户理解
-- **文档字符串**: 更新模块和类的说明，明确"严格当日"的特性
-- **日志消息**: 所有相关日志消息统一使用"当日日志"描述
-
-### 🔍 技术改进
-- **函数重命名**: `current_log_paths` → `today_log_paths`，名称更准确
-- **注释更新**: 所有相关注释更新为"当日日志"术语
-- **错误处理**: 优化了当日日志文件不存在时的错误提示
-
-### 📊 用户体验
-- **明确期望**: 用户现在清楚知道只会看到当天的日志记录
-- **避免混淆**: 不再有历史日志和当日日志混合显示的可能性
-- **性能保证**: 继续维持2000行限制，确保界面响应速度
-
-## [v2.2.35] - 2025-07-05
-
-### 🐛 关键修复
-- **日志查看器显示修复**: 解决了日志查看器只显示一条日志的关键问题
-  - 修复日志文件路径获取逻辑，优先加载UI应用日志文件(`logs/app_YYYY-MM-DD.log`)
-  - 原先只加载转发器日志文件(`logs/tg_forwarder_YYYYMMDD.log`)，内容有限
-  - 现在能正确显示包含UI初始化、客户端连接、模块加载等完整程序运行日志
-  - 从只显示1-2条记录提升到显示数百条完整运行日志
-
-### 📁 文件选择优化
-- **智能日志文件检测**: 
-  ```python
-  # 优化前：只检查转发器日志
-  current_log_paths = [
-      f"logs/tg_forwarder_{today}.log",  # 内容有限
-      "logs/tg_manager.log",
-  ]
-  
-  # 优化后：优先UI应用日志
-  current_log_paths = [
-      f"logs/app_{today_dash}.log",              # UI应用日志（优先）
-      f"logs/tg_forwarder_{today_simple}.log",   # 转发器日志
-      "logs/tg_manager.log",                     # 固定名称日志
-  ]
-  ```
-
-### 🔍 用户体验改进
-- **完整的日志可见性**: 用户现在能在日志查看器中看到完整的程序运行状态
-- **更好的问题诊断**: 支持查看UI组件初始化、网络连接、错误信息等完整日志
-- **实时日志更新**: 2秒自动刷新机制正常工作，显示最新的程序活动
-
-### 📊 技术影响
-- 日志查看器从"几乎空白"状态恢复到完全可用
-- 提供了v2.2.31性能优化（2000行限制）与完整日志显示的完美平衡
-- 支持同时显示多种日志源的内容（UI、转发器、管理器）
-
-## [v2.2.34] - 2025-01-05
-
-### 修复
-- 修复转发模块中浏览按钮在英文界面下显示不全的问题，将最大宽度限制改为最小宽度设置
-- 优化浏览按钮布局，确保文本完整显示且按钮能自适应内容宽度
-- 完善转发模块编辑对话框的多语言支持，替换所有硬编码中文文本为翻译键
-- 修复编辑对话框中文件选择器、SpinBox特殊值文本、标签等组件的硬编码问题
-- 修复转发状态表格中"计算中"文本的硬编码问题，实现完整的国际化支持
-- 修复转发器未初始化错误消息的硬编码问题，替换为翻译键调用
-- 修复转发进度相关状态消息的硬编码问题，包括"正在转发"、"正在处理消息"等
-- 修复消息收集进度显示的硬编码问题，统一使用翻译键进行多语言显示
-- 扩展翻译文件，添加转发流程中所有状态消息的完整翻译支持
-- 修复错误对话框标题和内容的硬编码问题，实现完整的多语言错误提示
-- 修复频道对显示文本中"替换"、"关键词"、"选项"等标签的硬编码问题
-- 完善转发选项描述文本的翻译支持，包括"移除说明"、"隐藏作者"等选项
-- 统一所有频道对显示格式的多语言支持，确保界面元素完全国际化
-
-### 改进
-- 统一所有浏览按钮的最小宽度为90像素，确保在不同语言下都能完整显示
-- 提升转发模块编辑功能的用户体验，支持完整的中英文切换
-
-## [v2.2.33] - 2025-01-05
-
-### Added
-- 转发模块界面完整的多语言支持
-  - 为转发配置面板、转发选项、媒体类型选择器添加翻译支持
-  - 实现右键菜单和编辑对话框的多语言切换
-  - 支持转发状态、进度信息和错误消息的国际化
-  - 添加频道对显示文本的动态翻译
-
-### Enhanced
-- 优化转发界面用户体验
-  - 标准化所有用户界面文本的翻译机制
-  - 改进错误提示和状态消息的多语言显示
-  - 统一转发选项和媒体类型的命名规范
-  - 调整"浏览"按钮宽度，确保英文状态下文本完整显示
-
-### Technical
-- 扩展翻译文件结构
-  - 添加`ui.forward`命名空间的完整翻译键
-  - 实现组件级别的翻译管理
-  - 支持动态文本格式化和参数替换
-
-## [v2.2.32] - 2025-07-04
-
-### 🔧 修复
-- **主界面标题多行显示**: 修复了英文界面时主界面标题过长的问题
-  - 将英文标题"TG-Manager - Professional Telegram Message Forwarding Manager"分成两行显示
-  - 使用HTML换行标签`<br>`实现标题的多行显示
-  - 在窗口标题栏和欢迎页面都支持多行标题显示
-  - 确保语言切换时标题正确更新并保持多行格式
-
-### 📝 技术改进
-- **标题显示优化**: 
-  - 在翻译文件中使用HTML格式的换行标签
-  - 在代码中将HTML换行标签转换为实际的换行符
-  - 支持窗口标题栏的多行显示
-- **翻译系统增强**: 
-  - 扩展了翻译系统对HTML格式的支持
-  - 确保多语言切换时标题格式保持一致
-
-### 🔄 向后兼容性
-- 保持与之前版本的完全兼容性
-- 中文标题保持单行显示，不影响现有体验
-
----
-
-## [v2.2.31] - 2025-07-04
-
-### 🔧 修复
-- **侧边栏尺寸保持问题**: 修复了语言切换时侧边栏宽度缩小且无法拖拽的问题
-  - 增强了侧边栏翻译更新时的状态保存和恢复机制
-  - 添加了多层恢复策略：直接恢复、强制固定尺寸、延迟验证恢复
-  - 实现了侧边栏几何形状的持久化保存和恢复
-  - 添加了详细的调试日志来跟踪侧边栏状态变化
-  - 确保侧边栏在语言切换时保持稳定的宽度和拖拽功能
-
-### 📝 技术改进
-- **状态管理增强**: 
-  - 在窗口状态管理中集成侧边栏几何形状的保存和恢复
-  - 使用延迟恢复机制确保侧边栏完全初始化后再恢复状态
-  - 添加了状态验证机制，确保恢复操作的成功执行
-- **调试支持**: 
-  - 增加了详细的侧边栏状态变化日志
-  - 添加了恢复操作的验证和错误处理
-
-### 🔄 向后兼容性
-- 保持与之前版本的完全兼容性
-- 新增的侧边栏几何形状保存功能对现有配置无影响
-
----
-
-## [v2.2.30] - 2025-07-04
-
-### 🐛 问题修复 (Bug Fix)
-
-#### 侧边栏宽度变窄和拖动问题彻底修复 (Sidebar Width and Dragging Issue Complete Fix)
-
-**问题描述 (Issue Description)**：
-在v2.2.29的修复中，虽然添加了语言切换状态标记，但侧边栏在语言切换时仍然会变窄且无法拖动，严重影响用户体验。
-
-**根本原因 (Root Cause)**：
-1. **QDockWidget标题硬编码**：侧边栏的QDockWidget标题使用硬编码中文"导航与任务"，语言切换时不会更新
-2. **标题更新触发布局重计算**：当QDockWidget标题发生变化时，Qt会重新计算整个停靠窗口的布局
-3. **分割器尺寸丢失**：布局重新计算导致QSplitter的尺寸设置丢失，侧边栏变窄
-4. **拖动功能失效**：布局重建后，QDockWidget的拖动功能可能失效
-
-**修复方案 (Fix Solution)**：
-
-**1. 侧边栏翻译支持**：
-```python
-# src/ui/components/main_window/sidebar.py
-def _create_sidebar_splitter(self):
-    """创建左侧分割器，用于管理导航树和任务概览之间的比例"""
-    from src.utils.translation_manager import tr
-    sidebar_title = tr("ui.sidebar.title") if hasattr(self, 'translation_manager') else "导航与任务"
-    self.sidebar_dock = QDockWidget(sidebar_title, self)
-```
-
-**2. 翻译文件更新**：
-```json
-// translations/zh.json
-"ui": {
-  "sidebar": {
-    "title": "导航与任务"
-  }
-}
-
-// translations/en.json  
-"ui": {
-  "sidebar": {
-    "title": "Navigation & Tasks"
-  }
-}
-```
-
-**3. 智能翻译更新机制**：
-```python
-def _update_sidebar_translations(self):
-    """更新侧边栏的翻译文本"""
-    # 保存当前停靠窗口的状态
-    current_geometry = self.sidebar_dock.geometry()
-    current_size = self.sidebar_dock.size()
-    current_sizes = self.sidebar_splitter.sizes()
-    
-    # 只更新标题，不触发布局重新计算
-    self.sidebar_dock.setWindowTitle(new_title)
-    
-    # 如果尺寸发生变化，尝试恢复
-    if current_size != new_size:
-        self.sidebar_dock.resize(current_size)
-    
-    if current_sizes != new_sizes:
-        self.sidebar_splitter.setSizes(current_sizes)
-```
-
-**4. 详细日志诊断**：
-```python
-def _handle_resize_completed(self):
-    """窗口大小调整完成后的处理"""
-    logger.debug(f"=== 窗口大小调整完成处理开始 ===")
-    logger.debug(f"当前窗口尺寸: {self.width()}x{self.height()}")
-    logger.debug(f"侧边栏分割器存在，当前尺寸: {self.sidebar_splitter.sizes()}")
-    # ... 详细的状态记录和验证
-```
-
-**5. 主窗口翻译更新集成**：
-```python
-def _update_all_translations(self):
-    """更新所有组件的翻译"""
-    # 更新基础窗口的翻译
-    self.update_translations()
-    
-    # 更新侧边栏翻译
-    if hasattr(self, '_update_sidebar_translations'):
-        self._update_sidebar_translations()
-```
-
-### 🎯 修复效果
-
-- ✅ **侧边栏宽度稳定**：语言切换后侧边栏宽度完全保持不变
-- ✅ **拖动功能正常**：侧边栏QDockWidget可以正常拖动调整大小
-- ✅ **标题正确翻译**：侧边栏标题根据语言设置正确显示
-- ✅ **布局完全稳定**：语言切换时不会触发布局重新计算
-- ✅ **状态保持机制**：智能保存和恢复侧边栏的尺寸和位置状态
-- ✅ **详细日志支持**：添加了完整的诊断日志，便于问题排查
-
-### 🔧 技术改进
-
-- **智能状态保存**：在翻译更新前保存侧边栏的完整状态
-- **状态恢复机制**：检测到状态变化时自动恢复原始设置
-- **翻译键标准化**：为侧边栏添加了标准的翻译键支持
-- **日志诊断增强**：添加了详细的状态记录和验证日志
-- **模块化翻译更新**：侧边栏翻译更新独立于其他组件
-
-### 📝 版本信息
-
-- **版本号**: v2.2.30
-- **发布日期**: 2025-07-04
-- **兼容性**: 向后兼容v2.2.29
-- **依赖更新**: 无新增依赖
-
-## [v2.2.29] - 2025-07-04
-
-### 🐛 问题修复 (Bug Fix)
-
-#### 语言切换侧边栏宽度变窄问题彻底修复 (Language Switch Sidebar Width Issue Complete Fix)
-
-**问题描述 (Issue Description)**：
-在v2.2.28的修复中，虽然移除了有风险的动态方法调用，但侧边栏在语言切换时仍然会变窄且无法拖动，影响用户体验。
-
-**根本原因 (Root Cause)**：
-1. **窗口标题更新触发布局重计算**：主窗口的`update_translations`方法会重新设置窗口标题`setWindowTitle(tr("app.title"))`，导致Qt重新计算整个窗口布局
-2. **窗口resize事件触发分割器调整**：语言切换时UI元素大小变化会触发窗口的resize事件，进而调用`_handle_resize_completed`方法重新调整分割器尺寸
-3. **布局重新计算导致侧边栏宽度丢失**：Qt的布局管理器在重新计算时会重置侧边栏的宽度设置
-
-**修复方案 (Fix Solution)**：
-
-**1. 主窗口翻译更新优化**：
-```python
-# src/ui/components/main_window/base.py
-def update_translations(self):
-    """更新翻译文本"""
-    # 注意：不更新窗口标题，避免触发布局重新计算
-    # self.setWindowTitle(tr("app.title"))
-    
-    # 更新欢迎页面文本
-    if hasattr(self, 'welcome_label'):
-        welcome_text = (
-            f"<h1 style='color: rgba(120, 120, 120, 60%); margin: 20px;'>{tr('app.title')}</h1>"
-            f"<p style='color: rgba(120, 120, 120, 60%); font-size: 16px;'>请从左侧导航树选择功能</p>"
-        )
-        self.welcome_label.setText(welcome_text)
-```
-
-**2. 翻译管理器语言切换状态标记**：
-```python
-# src/utils/translation_manager.py
-def __init__(self, translations_dir: str = "translations"):
-    # ... 其他初始化代码 ...
-    
-    # 语言切换状态标志
-    self._is_language_changing = False
-
-def set_language(self, language: Union[str, None]) -> bool:
-    # ... 语言切换逻辑 ...
-    
-    # 设置语言切换标志
-    self._is_language_changing = True
-    
-    # 发出语言变更信号
-    self.language_changed.emit(lang_code)
-    
-    # 延迟清除语言切换标志，确保所有UI更新完成
-    QTimer.singleShot(100, lambda: setattr(self, '_is_language_changing', False))
-```
-
-**3. 窗口状态管理优化**：
-```python
-# src/ui/components/main_window/window_state.py
-def _handle_resize_completed(self):
-    """窗口大小调整完成后的处理"""
-    # 检查是否正在进行语言切换，如果是则跳过分割器尺寸调整
-    if hasattr(self, 'translation_manager') and hasattr(self.translation_manager, '_is_language_changing'):
-        if self.translation_manager._is_language_changing:
-            logger.debug("检测到语言切换，跳过分割器尺寸调整")
-            # 发出窗口状态变化信号但不调整分割器
-            window_state = {
-                'geometry': self.saveGeometry(),
-                'state': self.saveState()
-            }
-            self.window_state_changed.emit(window_state)
-            return
-    
-    # ... 正常的分割器尺寸调整逻辑 ...
-```
-
-**技术改进 (Technical Improvements)**：
-- **布局稳定性保护**：通过状态标志防止语言切换时的布局重新计算
-- **窗口标题更新优化**：避免不必要的窗口标题更新，减少布局触发
-- **分割器尺寸保护**：在语言切换期间跳过分割器的自动尺寸调整
-- **延迟状态清除**：确保所有UI更新完成后再清除语言切换标志
-
-**修复效果 (Fix Results)**：
-- ✅ **侧边栏宽度稳定**：语言切换后侧边栏宽度完全保持不变
-- ✅ **拖动功能正常**：侧边栏分割器可以正常拖动调整大小
-- ✅ **布局完全稳定**：语言切换时不会触发任何布局重新计算
-- ✅ **用户体验优化**：语言切换过程更加流畅，无布局跳动
-
-## [v2.2.28] - 2025-07-04
-
-### 🐛 问题修复 (Bug Fix)
-
-#### 多语言切换侧边栏布局修复 (Language Switch Sidebar Layout Fix)
-
-**问题描述 (Issue Description)**：
-在v2.2.27的多语言系统实现中，语言切换时侧边栏宽度会意外变窄且无法拖动，影响用户体验。
-
-**根本原因 (Root Cause)**：
-- 主窗口的`_update_all_translations`方法中，尝试动态调用各个混入类的翻译更新方法
-- 动态方法调用可能意外触发布局重建或其他UI重置操作
-- 导航树和任务概览组件缺乏适当的翻译更新机制
-
-**修复方案 (Fix Solution)**：
-
-**1. 主窗口翻译更新优化**：
-```python
-# src/ui/components/main_window/__init__.py
-def _update_all_translations(self):
-    """更新所有组件的翻译"""
-    # 更新基础窗口的翻译
-    self.update_translations()
-    
-    # 移除有问题的动态方法调用，避免意外触发布局重建
-    # 各个混入类应该自己监听翻译管理器的语言变更信号
-    
-    # 更新当前打开的视图的翻译
-    for view_name, view_widget in self.opened_views.items():
-        if hasattr(view_widget, '_update_translations'):
-            view_widget._update_translations()
-```
-
-**2. 导航树翻译支持**：
-```python
-# src/ui/components/navigation_tree.py
-class NavigationTree(QWidget):
-    def __init__(self, parent=None):
-        # 添加翻译管理器支持
-        self.translation_manager = get_translation_manager()
-        self.translation_manager.language_changed.connect(self._update_translations)
-    
-    def _update_translations(self):
-        """更新翻译，保持当前的展开状态和选择状态"""
-        # 保存展开状态和选择状态
-        # 重新构建树项目
-        # 恢复展开状态和选择状态
-```
-
-**3. 任务概览翻译支持**：
-```python
-# src/ui/components/task_overview.py
-class TaskOverview(QWidget):
-    def __init__(self, parent=None):
-        # 添加翻译管理器支持
-        self.translation_manager = get_translation_manager()
-        self.translation_manager.language_changed.connect(self._update_translations)
-    
-    def _update_translations(self):
-        """更新翻译文本"""
-        # 更新标题和按钮文本
-```
-
-**4. 翻译键更新**：
-- 导航树使用翻译键：`ui.tabs.download`、`ui.tabs.upload`、`ui.tabs.forward`、`ui.tabs.monitor`
-- 任务概览使用翻译键：`ui.tasks.title`、`ui.tasks.active_tasks`
-
-**修复效果 (Fix Results)**：
-- ✅ **侧边栏稳定**：语言切换后侧边栏宽度保持不变
-- ✅ **拖动正常**：侧边栏分割器可以正常拖动调整大小
-- ✅ **状态保持**：语言切换时保持展开状态和选择状态
-- ✅ **翻译完整**：导航树和任务概览正确显示对应语言文本
-- ✅ **布局稳定**：避免意外的布局重建和UI重置
-
-**技术改进 (Technical Improvements)**：
-- **安全翻译更新**：移除有风险的动态方法调用，采用直接信号监听
-- **状态保持机制**：翻译更新时智能保存和恢复UI状态
-- **模块化翻译**：各组件独立处理自己的翻译更新，降低耦合度
-- **防御性编程**：添加属性存在检查，避免访问不存在的组件
-
-**修改文件 (Modified Files)**：
-- `src/ui/components/main_window/__init__.py` - 修复主窗口翻译更新逻辑
-- `src/ui/components/navigation_tree.py` - 添加完整翻译支持
-- `src/ui/components/task_overview.py` - 添加翻译更新功能
-
-**测试验证 (Test Verification)**：
-- ✅ 中英文语言切换：侧边栏保持稳定
-- ✅ 分割器拖动：功能正常，尺寸调整生效
-- ✅ 展开状态：语言切换后保持原有展开状态
-- ✅ 选择状态：当前选中项在语言切换后依然选中
-
----
-
-## [v2.2.27] - 2025-07-03
-
-### 🌐 功能扩展 (Feature Enhancement)
-
-#### 业务功能翻译系统集成 (Business Module Translation Integration)
-
-**功能描述 (Feature Description)**：
-基于v2.2.26的多语言切换系统，将翻译支持扩展到主要业务功能模块，实现了转发功能的完整翻译集成，并为其他业务模块奠定了翻译扩展基础。
-
-**核心扩展 (Core Extensions)**：
-- **📋 翻译内容扩展**：在现有翻译文件中添加了转发、上传、下载、监听、任务管理等业务功能的完整翻译键
-- **🔗 转发模块集成**：为转发视图(`forward_view.py`)完整集成翻译系统，包括所有UI组件的实时翻译更新
-- **🛠️ 集成模式演示**：提供了业务模块翻译集成的标准模式，便于其他模块参考实现
-- **✅ 测试验证**：创建专门的测试脚本验证转发模块的翻译功能
-
-**翻译内容扩展 (Translation Content Extension)**：
-
-**1. 新增翻译键结构**：
-```json
-// 中文翻译扩展 (zh.json)
-{
-  "ui": {
-    "forward": {
-      "title": "消息转发",
-      "source_channel": "源频道:",
-      "target_channels": "目标频道:",
-      "start_forward": "开始转发",
-      "stop_forward": "停止转发",
-      "add_pair": "添加频道对",
-      "remove_pair": "移除频道对",
-      "status": {
-        "ready": "就绪", "running": "转发中",
-        "stopped": "已停止", "completed": "已完成"
-      }
-    },
-    "upload": { "title": "媒体上传", /* ... */ },
-    "download": { "title": "媒体下载", /* ... */ },
-    "listen": { "title": "消息监听", /* ... */ },
-    "tasks": { "title": "任务管理", /* ... */ }
-  }
-}
-
-// 英文翻译扩展 (en.json)
-{
-  "ui": {
-    "forward": {
-      "title": "Message Forwarding",
-      "source_channel": "Source Channel:",
-      "target_channels": "Target Channels:",
-      "start_forward": "Start Forwarding",
-      "stop_forward": "Stop Forwarding",
-      /* ... 完整对应翻译 */
-    }
-  }
-}
-```
-
-**转发模块翻译集成 (Forward Module Translation Integration)**：
-
-**1. 翻译管理器集成**：
-```python
-# src/ui/views/forward_view.py
-from src.utils.translation_manager import get_translation_manager, tr
-
-class ForwardView(QWidget):
-    def __init__(self):
-        # 翻译管理器集成
-        self.translation_manager = get_translation_manager()
-        self.translation_manager.language_changed.connect(self._update_translations)
-        
-        # 存储需要翻译的组件引用
-        self.translatable_widgets = {}
-```
-
-**2. UI组件翻译化**：
-```python
-# 使用翻译键创建UI组件
-self.source_input = QLineEdit()
-self.source_input.setPlaceholderText(tr("ui.forward.source_placeholder"))
-
-source_label = QLabel(tr("ui.forward.source_channel"))
-self.translatable_widgets['source_label'] = source_label
-
-self.start_forward_button = QPushButton(tr("ui.forward.start_forward"))
-self.translatable_widgets['start_button'] = self.start_forward_button
-```
-
-**3. 实时翻译更新**：
-```python
-def _update_translations(self):
-    """语言切换时更新所有翻译文本"""
-    # 更新标签页标题
-    self.config_tabs.setTabText(0, tr("ui.forward.title"))
-    
-    # 更新表单标签
-    if 'source_label' in self.translatable_widgets:
-        self.translatable_widgets['source_label'].setText(tr("ui.forward.source_channel"))
-    
-    # 更新按钮文本
-    if 'start_button' in self.translatable_widgets:
-        button = self.translatable_widgets['start_button']
-        if self.forwarding_status:
-            button.setText(tr("ui.forward.stop_forward"))
-        else:
-            button.setText(tr("ui.forward.start_forward"))
-    
-    # 更新输入框占位符
-    if hasattr(self, 'source_input'):
-        self.source_input.setPlaceholderText(tr("ui.forward.source_placeholder"))
-```
-
-**集成模式标准 (Integration Pattern Standard)**：
-
-**1. 必需步骤**：
-- ✅ 导入翻译管理器：`from src.utils.translation_manager import get_translation_manager, tr`
-- ✅ 初始化翻译系统：`self.translation_manager = get_translation_manager()`
-- ✅ 连接语言变更信号：`self.translation_manager.language_changed.connect(self._update_translations)`
-- ✅ 存储翻译组件：`self.translatable_widgets = {}`
-- ✅ 实现更新方法：`def _update_translations(self):`
-
-**2. 组件处理**：
-- **静态文本**：使用`tr("翻译键")`替换硬编码文本
-- **动态组件**：存储到`translatable_widgets`字典中
-- **占位符**：在`_update_translations`中更新
-- **表格表头**：在语言切换时重新设置
-
-**测试验证 (Test Verification)**：
-
-**1. 功能测试脚本**：
-```python
-# test_forward_translations.py
-def test_forward_translations():
-    # 测试翻译键正确性
-    test_keys = [
-        "ui.forward.title", "ui.forward.source_channel",
-        "ui.forward.start_forward", "ui.forward.add_pair"
-    ]
-    
-    # 测试中英文切换
-    set_language("中文")
-    set_language("English")
-    
-    # 创建转发视图并测试实时切换
-    forward_view = ForwardView()
-    forward_view.show()
-```
-
-**2. 验证结果**：
-- ✅ **翻译键正确**：所有新增翻译键都能正确返回对应语言的文本
-- ✅ **UI组件更新**：语言切换后界面立即更新为对应语言
-- ✅ **占位符同步**：输入框占位符文本正确切换
-- ✅ **按钮状态**：动态按钮文本根据状态和语言正确显示
-- ✅ **表格表头**：状态表格表头正确翻译
-
-**后续规划 (Future Plans)**：
-- 🔄 **其他模块集成**：按照相同模式为上传、下载、监听、任务管理模块集成翻译
-- 📝 **翻译键补充**：完善业务功能的所有文本翻译
-- 🌍 **多语言扩展**：为其他6种支持语言创建完整翻译文件
-- 🎯 **用户体验**：优化翻译文本的准确性和自然度
-
-**修改文件 (Modified Files)**：
-- `translations/zh.json` - 扩展中文翻译内容
-- `translations/en.json` - 扩展英文翻译内容  
-- `src/ui/views/forward_view.py` - 集成翻译系统
-- `test_forward_translations.py` - 新增测试脚本
-
----
-
-## [v2.2.26] - 2025-07-03
-
-### 🌐 重大功能 (Major Features)
-
-#### 多语言切换系统完整实现 (Complete Multi-language Switching System)
-
-**功能描述 (Feature Description)**：
-实现了完整的多语言切换系统，支持中英文界面切换，并提供了可扩展的翻译框架，方便后续集成其他语言。这是在v2.2.25界面语言配置基础上的功能实现版本。
-
-**核心特性 (Core Features)**：
-- **🔄 实时语言切换**：在设置界面切换语言后，所有UI组件立即更新翻译文本
-- **📁 独立翻译文件**：使用JSON格式的翻译文件（`translations/zh.json`、`translations/en.json`），便于维护和扩展
-- **🔗 信号驱动更新**：基于Qt信号槽机制，确保界面组件同步更新
-- **🛡️ 回退机制**：当某个翻译键缺失时，自动回退到中文翻译或显示键名
-- **🎯 占位符支持**：支持动态占位符替换，如"语言已切换到 {language}"
-
-**技术实现 (Technical Implementation)**：
-
-**1. 翻译管理器核心**：
-```python
-# src/utils/translation_manager.py
-class TranslationManager(QObject):
-    language_changed = Signal(str)  # 语言变更信号
-    
-    def tr(self, key: str, **kwargs) -> str:
-        """翻译指定的键，支持嵌套键和占位符"""
-        translation = self._get_translation(key, self.current_language)
-        if translation is None:
-            translation = self._get_translation(key, self.fallback_language)
-        if kwargs and isinstance(translation, str):
-            translation = translation.format(**kwargs)
-        return str(translation)
-    
-    def set_language(self, language: str) -> bool:
-        """设置当前语言并发出变更信号"""
-        old_language = self.current_language
-        self.current_language = lang_code
-        self.language_changed.emit(lang_code)
-        return True
-```
-
-**2. 翻译文件结构**：
-```json
-// translations/zh.json (中文翻译)
-{
-  "app": {
-    "title": "TG-Manager - 专业Telegram消息转发管理器"
-  },
-  "ui": {
-    "common": {
-      "ok": "确定", "cancel": "取消", "save": "保存", "reset": "重置"
-    },
-    "settings": {
-      "title": "设置",
-      "tabs": { "api": "API设置", "proxy": "网络代理", "ui": "界面" },
-      "buttons": { "save": "保存设置", "reset": "重置为默认" }
-    },
-    "dialogs": {
-      "confirm_exit": {
-        "title": "确认退出",
-        "message": "确定要退出应用程序吗？",
-        "detail": "正在运行的任务将被停止。"
-      }
-    }
-  }
-}
-
-// translations/en.json (英文翻译)
-{
-  "app": {
-    "title": "TG-Manager - Professional Telegram Message Forwarding Manager"
-  },
-  "ui": {
-    "common": {
-      "ok": "OK", "cancel": "Cancel", "save": "Save", "reset": "Reset"
-    },
-    "settings": {
-      "title": "Settings",
-      "tabs": { "api": "API Settings", "proxy": "Network Proxy", "ui": "Interface" },
-      "buttons": { "save": "Save Settings", "reset": "Reset to Default" }
-    },
-    "dialogs": {
-      "confirm_exit": {
-        "title": "Confirm Exit",
-        "message": "Are you sure you want to exit the application?",
-        "detail": "Running tasks will be stopped."
-      }
-    }
-  }
-}
-```
-
-**3. UI组件翻译集成**：
-```python
-# src/ui/views/settings_view.py
-from src.utils.translation_manager import tr, get_translation_manager
-
-class SettingsView(QWidget):
-    def __init__(self):
-        self.translation_manager = get_translation_manager()
-        self.translation_manager.language_changed.connect(self._update_translations)
-        self.translatable_widgets = {}  # 存储需要翻译的组件
-        
-    def _create_ui_components(self):
-        # 使用翻译键创建组件
-        self.save_button = QPushButton(tr("ui.settings.buttons.save"))
-        self.api_group = QGroupBox(tr("ui.settings.api.title"))
-        
-    def _update_translations(self):
-        """语言切换时更新所有文本"""
-        self.save_button.setText(tr("ui.settings.buttons.save"))
-        self.api_group.setTitle(tr("ui.settings.api.title"))
-        # ... 更新所有翻译组件
-```
-
-**4. 主窗口语言同步**：
-```python
-# src/ui/components/main_window/__init__.py
-class MainWindow(MainWindowBase):
-    def __init__(self):
-        self.translation_manager = get_translation_manager()
-        self.translation_manager.language_changed.connect(self._on_language_changed)
-        self._initialize_language()  # 从配置加载语言
-        
-    def _on_language_changed(self, new_language_code):
-        """语言变更时更新所有界面组件"""
-        self._update_all_translations()
-        
-    def _update_all_translations(self):
-        """递归更新所有组件的翻译"""
-        self.update_translations()  # 基础窗口
-        # 更新所有打开的视图
-        for view_widget in self.opened_views.values():
-            if hasattr(view_widget, '_update_translations'):
-                view_widget._update_translations()
-```
-
-**5. 全局翻译函数**：
-```python
-# 便捷的全局翻译函数
-from src.utils.translation_manager import tr
-
-# 在任何地方使用翻译
-window_title = tr("app.title")
-save_button_text = tr("ui.common.save")
-confirm_message = tr("ui.dialogs.confirm_exit.message")
-
-# 支持占位符
-status_message = tr("messages.info.language_changed", language="English")
-```
-
-**完整支持的语言 (Fully Supported Languages)**：
-- 🇨🇳 **中文** (完整翻译) - `zh` ✅
-- 🇺🇸 **English** (完整翻译) - `en` ✅
-- 🇪🇸 **Español** (框架就绪) - `es` 📋
-- 🇫�� **Français** (框架就绪) - `fr` 📋
-- 🇩🇪 **Deutsch** (框架就绪) - `de` 📋
-- 🇷🇺 **Русский** (框架就绪) - `ru` 📋
-- 🇯🇵 **日本語** (框架就绪) - `ja` 📋
-- 🇰🇷 **한국어** (框架就绪) - `ko` 📋
-
-**界面翻译覆盖 (UI Translation Coverage)**：
-- ✅ **设置界面**：所有标签、按钮、选项卡标题、工具提示
-- ✅ **主窗口**：窗口标题、退出确认对话框、状态栏消息
-- ✅ **对话框**：确认对话框、错误提示、警告信息
-- ✅ **按钮文本**：保存、取消、重置、确定等常用按钮
-- ✅ **错误消息**：验证错误、网络错误、文件操作错误
-
-**使用方式 (How to Use)**：
-1. **界面切换**：设置 → 界面 → 界面语言 → 选择"English"
-2. **实时生效**：界面立即切换为英文，无需重启
-3. **配置保存**：语言设置自动保存到 `config.json`
-4. **重启保持**：重新启动应用后保持所选语言
-
-**开发者扩展指南 (Developer Extension Guide)**：
-```python
-# 1. 添加新翻译键
-# 在 translations/zh.json 和 translations/en.json 中添加：
-{
-  "new_feature": {
-    "title": "新功能标题",
-    "description": "功能描述"
-  }
-}
-
-# 2. 在代码中使用
-title = tr("new_feature.title")
-description = tr("new_feature.description")
-
-# 3. 动态翻译更新
-def _update_translations(self):
-    self.title_label.setText(tr("new_feature.title"))
-    self.desc_label.setText(tr("new_feature.description"))
-
-# 4. 添加新语言支持
-# 创建 translations/fr.json 并复制所有翻译键
-# 翻译管理器自动识别并加载新语言
-```
-
-**技术优势 (Technical Advantages)**：
-- **🚀 零重启切换**：语言切换后界面立即更新，用户体验流畅
-- **🔧 开发友好**：简单的 `tr("key")` 调用，易于使用和维护
-- **📦 模块化**：翻译系统独立，不依赖特定UI框架
-- **🛡️ 健壮性**：完善的错误处理，缺失翻译自动回退
-- **⚡ 高性能**：翻译文件预加载，运行时快速查询
-- **🔄 可扩展**：添加新语言只需创建翻译文件
-
-**修改文件 (Modified Files)**：
-- `src/utils/translation_manager.py` - 新增翻译管理器核心模块
-- `translations/zh.json` - 新增中文翻译文件
-- `translations/en.json` - 新增英文翻译文件
-- `src/ui/views/settings_view.py` - 集成翻译系统，实现动态更新
-- `src/ui/components/main_window/base.py` - 主窗口翻译集成
-- `src/ui/components/main_window/__init__.py` - 语言变更信号处理
-
-**测试验证 (Testing Results)**：
-- ✅ 翻译文件正确加载，支持中英文切换
-- ✅ 设置界面语言切换实时生效
-- ✅ 占位符功能正常："语言已切换到 English"
-- ✅ 缺失翻译键自动回退到中文或显示键名
-- ✅ 语言设置保存到配置文件并持久化
-- ✅ 主窗口标题和对话框正确翻译
-
----
-
-## [v2.2.25] - 2025-07-03
-
-### ✨ 新功能 (New Features)
-
-#### 实现界面语言切换功能 (Implement Interface Language Switching)
-
-**功能描述 (Feature Description)**：
-在设置界面的"界面"选项卡中新增了语言切换下拉框，支持多种语言的选择。虽然多语言文本翻译功能将在后续版本实现，但配置保存和加载功能已完整实现。
-
-**核心特性 (Core Features)**：
-- **🌐 多语言支持**：支持中文、English、Español、Français、Deutsch、Русский、日本語、한국어等8种语言选择
-- **⚙️ 配置集成**：完整的配置保存和加载功能，语言设置与其他UI设置统一管理
-- **🔄 界面同步**：设置界面与配置文件的语言配置完全同步
-- **🛡️ 配置验证**：内置语言选项验证，确保配置文件中的语言设置有效
-
-**技术实现 (Technical Implementation)**：
-
-**1. UI配置模型扩展**：
-```python
-# src/utils/ui_config_models.py
-class UIUIConfig(BaseModel):
-    theme: str = Field("深色主题", description="界面主题")
-    language: str = Field("中文", description="界面语言")  # 新增语言字段
-    confirm_exit: bool = Field(True, description="退出时是否需要确认")
-    # ... 其他字段
-```
-
-**2. 设置界面UI组件**：
-```python
-# src/ui/views/settings_view.py
-# 语言选择部分
-self.language_selector = QComboBox()
-self.language_selector.addItems([
-    "中文", "English", "Español", "Français", 
-    "Deutsch", "Русский", "日本語", "한국어"
-])
-self.language_selector.setToolTip("选择应用程序界面语言，重启应用后生效")
-theme_layout.addRow("界面语言:", self.language_selector)
-```
-
-**3. 配置保存和加载**：
-```python
-# 配置收集
-settings["UI"] = {
-    "theme": self.theme_selector.currentText(),
-    "language": self.language_selector.currentText(),  # 收集语言设置
-    # ... 其他设置
-}
-
-# 配置加载
-if "language" in ui:
-    index = self.language_selector.findText(ui["language"])
-    if index >= 0:
-        self.language_selector.setCurrentIndex(index)
-```
-
-**4. 配置验证和默认值**：
-```python
-# src/utils/ui_config_manager.py
-valid_languages = ["中文", "English", "Español", "Français", "Deutsch", "Русский", "日本語", "한국어"]
-if "language" not in ui_config or ui_config["language"] not in valid_languages:
-    ui_config["language"] = "中文"  # 默认中文
-```
-
-**配置文件示例 (Configuration Example)**：
-```json
-{
-  "UI": {
-    "theme": "绿色主题",
-    "language": "中文",        // 新增语言配置
-    "confirm_exit": false,
-    "minimize_to_tray": false,
-    // ... 其他UI配置
-  }
-}
-```
-
-**支持的语言列表 (Supported Languages)**：
-- 🇨🇳 **中文** (默认)
-- 🇺🇸 **English**
-- 🇪🇸 **Español** (西班牙语)
-- 🇫🇷 **Français** (法语)
-- 🇩🇪 **Deutsch** (德语)
-- 🇷🇺 **Русский** (俄语)
-- 🇯🇵 **日本語** (日语)
-- 🇰🇷 **한국어** (韩语)
-
-**用户体验改进 (User Experience Improvements)**：
-- ✅ **设置便捷性**：用户可以在设置界面轻松切换界面语言
-- ✅ **配置持久化**：语言选择自动保存到配置文件，重启后保持设置
-- ✅ **界面提示**：提供"重启应用后生效"的友好提示
-- ✅ **配置验证**：自动验证语言设置的有效性，无效时回退到默认中文
-
-**修改文件 (Modified Files)**：
-- `src/utils/ui_config_models.py` - 添加language字段到UIUIConfig模型
-- `src/ui/views/settings_view.py` - 在界面选项卡中添加语言下拉框，实现配置保存/加载
-- `src/utils/config_utils.py` - 更新配置转换函数支持language字段
-- `src/utils/ui_config_manager.py` - 添加语言配置验证和默认值处理
-
-**后续计划 (Future Plans)**：
-- 🔄 **多语言文本翻译**：后续版本将实现实际的多语言文本翻译功能
-- 🌍 **国际化支持**：使用Qt的国际化框架实现动态语言切换
-- 📝 **语言包扩展**：支持自定义语言包和社区翻译贡献
-
-**测试验证 (Testing)**：
-- ✅ 语言选择器显示8种语言选项
-- ✅ 选择语言后配置能正确保存到config.json
-- ✅ 重启应用后语言设置能正确恢复
-- ✅ 重置设置功能能正确重置语言为默认中文
-- ✅ 无效语言配置能自动修复为默认值
-
----
-
-## [v2.2.24] - 2025-07-03
-
-### ✨ 新功能 (New Features)
-
-#### 实现退出确认对话框功能 (Implement Exit Confirmation Dialog)
-
-**功能描述 (Feature Description)**：
-实现了`confirm_exit`配置项的完整功能，当用户点击窗口关闭按钮或菜单栏的退出选项时，会根据配置显示退出确认对话框。
-
-**核心特性 (Core Features)**：
-- **🔒 智能确认**：当`confirm_exit`设置为`true`时，关闭窗口前会显示确认对话框
-- **⚙️ 配置驱动**：完全基于配置文件的`UI.confirm_exit`设置，用户可以自由开启或关闭
-- **💡 用户友好**：对话框提示清晰，告知用户正在运行的任务将被停止
-- **🛡️ 误操作防护**：防止用户意外关闭应用导致任务中断
-
-**技术实现 (Technical Implementation)**：
-```python
-# src/ui/components/main_window/base.py
-def closeEvent(self, event: QCloseEvent):
-    """处理窗口关闭事件"""
-    # 检查是否启用了退出确认
-    confirm_exit = False
-    if isinstance(self.config, dict) and 'UI' in self.config:
-        ui_config = self.config.get('UI', {})
-        if isinstance(ui_config, dict):
-            confirm_exit = ui_config.get('confirm_exit', False)
-        elif hasattr(ui_config, 'confirm_exit'):
-            confirm_exit = ui_config.confirm_exit
-    
-    # 如果启用了退出确认，显示确认对话框
-    if confirm_exit:
-        reply = QMessageBox.question(
-            self,
-            "确认退出",
-            "确定要退出 TG-Manager 吗？\n\n正在运行的任务将被停止。",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            event.accept()  # 确认退出
-        else:
-            event.ignore()  # 取消退出
-    else:
-        event.accept()  # 直接退出
-```
-
-**配置说明 (Configuration)**：
-```json
-{
-  "UI": {
-    "confirm_exit": true    // 设置为true启用退出确认，false禁用
-  }
-}
-```
-
-**用户体验改进 (User Experience Improvements)**：
-- ✅ **误操作防护**：防止用户意外点击关闭按钮导致正在进行的转发、下载任务中断
-- ✅ **配置灵活性**：用户可以在设置界面中自由开启或关闭退出确认功能
-- ✅ **操作明确性**：对话框清楚说明退出的后果，帮助用户做出明智决定
-- ✅ **向后兼容**：不影响现有配置，默认行为保持不变
-
-**修改文件 (Modified Files)**：
-- `src/ui/components/main_window/base.py` - 添加closeEvent方法处理窗口关闭事件
-- 导入 `QMessageBox` 和 `QCloseEvent` 支持对话框和事件处理
-
-**测试验证 (Testing)**：
-- ✅ `confirm_exit: true` - 关闭窗口时显示确认对话框
-- ✅ `confirm_exit: false` - 关闭窗口时直接退出
-- ✅ 点击"是"确认退出，应用程序正常关闭
-- ✅ 点击"否"取消退出，窗口保持打开状态
-
----
-
-## [v2.2.23] - 2025-06-12
-
-### 🐛 关键Bug修复 (Critical Bug Fixes)
-
-#### 修复转发进度界面日志重复显示的问题 (Fix Duplicate Log Messages in Forward Progress UI)
-
-**问题描述 (Issue Description)**：
-在转发进度界面的日志显示区域中，收集消息相关的日志会重复出现，用户会看到类似以下的重复日志：
-```
-[21:27:02] 开始收集消息，预计收集 13 条消息
-[21:27:02] 正在收集消息... (13/13)
-[21:27:02] 消息收集完成：13/13 条 (成功率: 100.0%)
-[21:27:02] 开始收集消息，预计收集 13 条消息
-[21:27:02] 正在收集消息... (13/13)
-[21:27:02] 消息收集完成：13/13 条 (成功率: 100.0%)
-```
-
-**根本原因 (Root Cause)**：
-在`MediaGroupCollector.get_media_groups_info_optimized`方法中存在重复的消息收集调用：
-1. **第一次调用**：`iter_messages(source_id, start_id, end_id)` - 获取完整消息用于文本提取
-2. **第二次调用**：`iter_messages_by_ids(source_id, unforwarded_ids)` - 获取未转发消息
-
-两次调用都会发射相同的收集事件（`collection_started`、`collection_progress`、`collection_completed`），导致UI日志重复显示。
-
-**修复方案 (Solution)**：
-重构`get_media_groups_info_optimized`方法，避免重复的消息收集：
-- **单次收集**：只调用一次`iter_messages`获取完整消息范围
-- **内存筛选**：从完整消息中在内存中筛选出未转发的消息，避免第二次API调用
-- **事件统一**：确保只发射一次收集事件，消除重复日志
-
-**修复内容 (Changes)**：
-
-```python
-# src/modules/forward/media_group_collector.py
-async def get_media_groups_info_optimized(...):
-    # 🔧 修复：只进行一次消息收集，避免重复事件发射
-    complete_messages = []
-    async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
-        complete_messages.append(message)
-    
-    # 🔧 修复：从已收集的完整消息中筛选未转发的消息，避免重复收集
-    unforwarded_ids_set = set(unforwarded_ids)
-    filtered_messages = [msg for msg in complete_messages if msg.id in unforwarded_ids_set]
-    
-    # 移除了原来的第二次 iter_messages_by_ids 调用
-```
-
-**修复效果 (Result)**：
-- ✅ 彻底消除转发进度界面中收集消息日志的重复显示
-- ✅ 减少不必要的API调用，提升转发性能
-- ✅ 保持功能完整性，不影响消息收集和文本提取的准确性
-- ✅ 日志显示更清晰，用户体验显著改善
-
----
-
-## [v2.2.22] - 2025-07-02
-
-### 🐛 关键Bug修复 (Critical Bug Fixes)
-
-#### 修复运行时配置修改导致媒体组文本丢失的根本问题 (Fix Root Cause of Media Group Text Loss)
-
-**问题发现 (Problem Discovery)**：
-通过深入分析发现，v2.2.21的修复仍不完整。真正的根本原因是**预过滤机制导致包含文本的消息被提前过滤掉**。
-
-**根本原因 (Root Cause)**：
-1. **第一次转发（程序重启后）**：获取所有31条消息，包含完整媒体组文本
-2. **第二次转发（运行时配置修改）**：`_filter_unforwarded_ids` 预过滤掉已转发的2条消息，只获取剩余29条消息
-3. **关键问题**：被预过滤的消息可能包含了媒体组的文本信息，导致剩余消息中的媒体组失去文本
-
-**完整修复方案 (Complete Solution)**：
-```python
-# src/modules/forward/media_group_collector.py
-async def get_media_groups_info_optimized(...):
-    # 🔧 修复：先获取完整范围的消息，用于媒体组文本提取
-    complete_messages = []
-    async for message in self.message_iterator.iter_messages(source_id, start_id, end_id):
-        complete_messages.append(message)
-    
-    # 🔧 从完整消息中预提取媒体组文本（在预过滤之前）
-    if complete_messages:
-        complete_media_group_texts = self.message_filter._extract_media_group_texts(complete_messages)
-        media_group_texts.update(complete_media_group_texts)
-    
-    # 然后才进行预过滤和后续处理
-    unforwarded_ids = self._filter_unforwarded_ids(...)
-```
-
-**技术改进 (Technical Improvements)**：
-- **双重文本提取**：完整范围预提取 + 过滤后补充提取
-- **文本映射合并**：预提取的文本优先级更高，确保不丢失
-- **增强调试信息**：详细跟踪媒体组文本提取过程
-
-**修复效果 (Result)**：
-- ✅ 彻底解决运行时配置修改后媒体组文本丢失问题
-- ✅ 确保程序重启和运行时修改配置的行为完全一致
-- ✅ 媒体说明在所有场景下都能正确保留和应用文本替换
-
----
-
-## [v2.2.21] - 2025-07-02
-
-### 🐛 Bug修复 (Bug Fixes)
-
-#### 修复运行时配置修改导致媒体组文本丢失的问题 (Fix Media Group Text Loss on Runtime Configuration Changes)
-
-**问题描述 (Issue Description)**：
-用户在程序运行过程中通过右键编辑菜单修改转发配置时，会导致媒体组文本（媒体说明）丢失。例如：
-1. 没有勾选"移除媒体说明"
-2. 先配置只转发视频，转发成功且保留媒体说明
-3. 右键编辑修改为只转发照片，转发后媒体组重组但媒体说明丢失
-4. 程序重启后转发相同配置则正常
-
-**根本原因 (Root Cause)**：
-运行时配置修改后，`MediaGroupCollector` 实例保留了之前的内部状态，导致媒体组文本预提取基于旧的状态进行，与新的过滤配置不匹配。
-
-**修复方案 (Solution)**：
-每次点击"开始转发"时，完全重新创建 `MediaGroupCollector` 实例，确保基于最新配置重新初始化，无状态残留。
-
-**修复内容 (Changes)**：
-
-```python
-# src/modules/forward/forwarder.py (第162行)
-# 修改前：
-self.media_group_collector.message_filter = self.message_filter
-
-# 修改后：
-self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter)
-```
-
-**效果 (Result)**：
-- ✅ 确保程序重启后转发 = 运行时修改配置后转发
-- ✅ 每次点击开始转发都执行相同的初始化流程
-- ✅ 媒体说明在所有场景下都能正确保留
-
----
-
-## [v2.2.20] - 2025-07-02
-
-### 🐛 重要修复
-- **链接检测实体类型处理修复**：修复了pyrogram MessageEntityType枚举处理错误导致TEXT_LINK检测失败的问题
-  - 🔧 **根本原因**：之前的代码无法正确处理pyrogram的MessageEntityType枚举，导致TEXT_LINK类型的隐式链接无法被识别
-  - ✅ **解决方案**：改进实体类型处理逻辑，优先使用枚举的`name`属性，正确识别TEXT_LINK、URL、EMAIL等类型
-  - 🎯 **修复效果**：现在包含"点击此处"等隐式超链接的消息能被正确过滤，exclude_links配置完全生效
-  - 📍 **修改位置**：`src/modules/forward/message_filter.py`的`_contains_links`方法
-
-### 技术实现
-- **枚举优先处理**：优先检查`raw_type.name`属性获取枚举名称，确保准确识别pyrogram实体类型
-- **降级处理机制**：提供`value`属性和字符串转换作为备用方案，确保兼容性
-- **详细调试日志**：记录原始类型和转换后类型，便于排查问题
-- **标准化比较**：统一转换为小写字符串进行比较，避免大小写问题
-
-### 用户体验改进
-- ✅ **隐式链接识别**：包含"点击此处"等TEXT_LINK类型的消息现在能被正确过滤
-- ✅ **配置一致性**：exclude_links配置对所有链接类型（显式、隐式）都有效
-- ✅ **调试透明**：通过日志可以清楚看到实体类型的检测和转换过程
-- ✅ **兼容保证**：支持pyrogram不同版本的实体类型表示方式
-
-## [v2.2.19] - 2025-07-02
-
-### 🐛 重要修复
-- **链接检测实体类型处理修复**：修复了pyrogram MessageEntityType枚举处理错误导致TEXT_LINK检测失败的问题
-  - 🔧 **根本原因**：之前的代码无法正确处理pyrogram的MessageEntityType枚举，导致TEXT_LINK类型的隐式链接无法被识别
-  - ✅ **解决方案**：改进实体类型处理逻辑，优先使用枚举的`name`属性，正确识别TEXT_LINK、URL、EMAIL等类型
-  - 🎯 **修复效果**：现在包含"点击此处"等隐式超链接的消息能被正确过滤，exclude_links配置完全生效
-  - 📍 **修改位置**：`src/modules/forward/message_filter.py`的`_contains_links`方法
-
-### 技术实现
-- **枚举优先处理**：优先检查`raw_type.name`属性获取枚举名称，确保准确识别pyrogram实体类型
-- **降级处理机制**：提供`value`属性和字符串转换作为备用方案，确保兼容性
-- **详细调试日志**：记录原始类型和转换后类型，便于排查问题
-- **标准化比较**：统一转换为小写字符串进行比较，避免大小写问题
-
-### 用户体验改进
-- ✅ **隐式链接识别**：包含"点击此处"等TEXT_LINK类型的消息现在能被正确过滤
-- ✅ **配置一致性**：exclude_links配置对所有链接类型（显式、隐式）都有效
-- ✅ **调试透明**：通过日志可以清楚看到实体类型的检测和转换过程
-- ✅ **兼容保证**：支持pyrogram不同版本的实体类型表示方式
-
-## [v2.2.18] - 2025-07-02
-
-### 🔧 链接检测增强与调试
-- **链接检测逻辑增强**：改进pyrogram实体类型处理，确保正确检测所有类型的链接
-  - 🔧 **实体类型处理**：支持枚举类型、字符串类型等多种pyrogram实体类型格式，兼容性更强
-  - 🔍 **调试信息增强**：添加详细的调试日志，记录检测到的实体类型和链接模式
-  - 🎯 **全面覆盖**：确保检测`url`（显式链接）、`text_link`（隐式超链接）、`email`（邮箱）、`phone_number`（电话）等所有链接类型
-  - ✅ **双重保障**：实体检测 + 正则表达式检测，确保不遗漏任何链接
-  - 📍 **修改位置**：`src/modules/forward/message_filter.py`的`_contains_links`方法
-
-### 技术实现
-- **智能类型识别**：自动处理pyrogram实体的不同表示方式（枚举值、字符串、对象等）
-- **调试友好**：添加详细日志，便于排查链接检测问题，提升调试效率
-- **错误容错**：健壮的实体类型获取，防止因类型格式差异导致的检测失败
-- **性能优化**：优先使用精确的实体检测，备用正则表达式检测
-
-### 用户体验改进
-- ✅ **检测准确性**：无论是显式链接还是Telegram的隐式超链接都能准确识别
-- ✅ **配置一致性**：exclude_links配置对所有消息类型和链接类型都有效
-- ✅ **调试透明度**：通过日志可以清楚看到链接检测的详细过程
-- ✅ **兼容性保证**：支持不同版本pyrogram的实体类型表示方式
-
-## [v2.2.17] - 2025-07-02
-
-### 🐛 重要修复
-- **链接过滤功能完善**：修复了exclude_links配置对纯文本消息无效的关键问题
-  - 🔧 **根本原因1**：纯文本消息处理绕过了整个过滤系统，直接进行转发，导致exclude_links配置对纯文本消息完全无效
-  - 🔧 **根本原因2**：链接检测只能识别显式URL（如http://），无法检测Telegram中的隐式超链接（如"点击此处"这样的文本链接）
-  - ✅ **解决方案1**：在转发器的纯文本消息处理流程中添加链接过滤检查，确保exclude_links配置对所有消息类型生效
-  - ✅ **解决方案2**：改进链接检测方法，优先检查Telegram消息实体中的链接信息（entities），能准确识别隐式超链接
-  - 🎯 **修复效果**：现在包含任何类型链接的纯文本消息都能被正确过滤，无论是显式URL还是隐式超链接
-  - 📍 **修改位置**：
-    - `src/modules/forward/forwarder.py`：纯文本消息处理前添加链接过滤逻辑
-    - `src/modules/forward/message_filter.py`：改进_contains_links方法支持Telegram实体检测
-
-### 技术实现
-- **完整覆盖**：确保所有消息类型（纯文本、媒体消息、媒体组）都遵循exclude_links配置
-- **智能检测**：通过Telegram消息实体检测隐式链接，支持url、text_link、email、phone_number等类型
-- **双重保障**：实体检测+正则表达式检测，确保不遗漏任何链接类型
-- **精确过滤**：包含链接的消息会被记录并跳过，不会影响其他正常消息的转发
-
-### 用户体验改进
-- ✅ **配置一致性**：exclude_links配置现在对所有消息类型都有效，行为完全一致
-- ✅ **智能识别**：能够识别各种形式的链接，包括Telegram特有的隐式超链接
-- ✅ **准确过滤**：有效阻止包含推广链接、邀请链接等不需要的消息被转发
-- ✅ **日志明确**：被过滤的含链接消息会有清晰的日志记录，便于用户了解过滤情况
-- ✅ **向后兼容**：修复不影响任何现有转发功能，纯增量改进
-
-## [v2.2.16] - 2025-07-02
-
-### 🐛 重要修复
-- **媒体组转发计数修复**：修复了禁止转发频道媒体组转发时UI计数无法实时更新的问题
-  - 🔧 **根本原因**：并行处理器（ParallelProcessor）在媒体组转发完成后没有发送UI更新信号，导致媒体组转发计数始终显示为历史记录值
-  - ✅ **解决方案1**：为ParallelProcessor构造函数添加`emit`回调参数，并在转发器创建时传递`self._emit_event`
-  - ✅ **解决方案2**：在媒体组成功上传到所有目标频道后发送对应的转发完成信号（`media_group_forwarded`或`message_forwarded`）
-  - 🎯 **修复效果**：现在无论是纯文本消息还是媒体组转发，状态表格的"已转发消息数"都能正确实时更新
-  - 📍 **修改位置**：
-    - `src/modules/forward/parallel_processor.py`：构造函数添加emit参数，上传完成后发送信号
-    - `src/modules/forward/forwarder.py`：创建ParallelProcessor时传递_emit_event回调
-
-### 技术实现
-- **回调机制**：通过函数回调的方式让并行处理器能够向转发器发送事件通知
-- **信号统一性**：确保所有转发方式（直接转发、下载重传、并行处理）都能发送一致的UI更新信号
-- **智能识别**：自动区分媒体组和单条消息，发送对应的信号类型
-- **完整覆盖**：支持成功上传和复制转发两种场景的信号发送
-
-### 用户体验改进
-- ✅ **完整计数支持**：纯文本消息、媒体消息、媒体组转发全部支持实时计数更新
-- ✅ **禁止转发频道完全支持**：无论源频道转发权限如何，UI都能正确显示转发进度
-- ✅ **状态一致性**：UI显示的转发状态与实际转发操作完全同步，无遗漏
-- ✅ **实时反馈**：每个媒体组转发成功后立即更新对应频道的转发计数
-
-## [v2.2.15] - 2025-07-02
-
-### 🐛 重要修复
-- **禁止转发频道的转发计数修复**：修复了禁止转发频道时转发计数无法实时更新的问题
-  - 🔧 **根本原因**：在禁止转发频道使用"下载后重新上传"方式处理纯文本消息时，转发成功后只记录了历史，但没有发送UI更新信号
-  - ✅ **解决方案**：在 `forwarder.py` 的纯文本消息转发成功后添加 `self._emit_event("message_forwarded", message_id, target_info)` 信号发送
-  - 🎯 **修复效果**：禁止转发频道的纯文本消息转发后，状态表格的"已转发消息数"能正确从"0/11"更新为"2/11"等
-  - 📍 **修改位置**：`src/modules/forward/forwarder.py` 第409行，在历史记录保存后添加信号发送
-
-### 技术实现
-- **信号完整性保证**：确保所有转发方式（直接转发、下载重传）都能正确发送UI更新信号
-- **历史记录一致性**：保持历史记录保存与UI更新信号的同步发送
-- **向后兼容性**：修复不影响任何现有转发功能，纯增量改进
-
-### 用户体验改进
-- ✅ **禁止转发频道支持**：无论源频道是否允许转发，UI都能正确显示实时进度
-- ✅ **计数准确性**：所有转发场景下的转发计数都能准确实时更新
-- ✅ **状态一致性**：UI显示与实际转发状态完全同步，无延迟或丢失
-- ✅ **完整覆盖**：纯文本消息、媒体消息、媒体组转发全部支持实时计数
+## [v2.2.40] - 2024-12-22
+
+### �� 多语言支持完善
+- 修复转发日志中"转发成功"和"转发失败"文本的硬编码问题
+- 添加翻译键`ui.forward.log.forward_success`和`ui.forward.log.forward_failed`
+- 完善转发日志的多语言支持，确保所有状态信息都支持中英文切换
+- 进一步优化用户界面的国际化体验
+
+## [v2.2.39] - 2024-12-22
+
+### 🔧 修复和改进
+- 修复转发日志中"过滤"文本的硬编码问题
+- 添加翻译键`ui.forward.log.filtered`支持"过滤"文本的多语言显示
+- 确保所有用户界面元素都支持完整的多语言切换
+- 优化日志显示的一致性和可读性
+
+## [v2.2.38] - 2024-12-22
+
+### 🌐 系统级多语言支持完善
+- 完成TG-Manager项目的系统级多语言支持
+- 修复所有模块中的硬编码中文消息：
+  - 消息过滤模块：单个消息、媒体组消息、媒体类型过滤等
+  - 并行处理模块：媒体组描述和格式化
+  - 媒体上传模块：媒体组文件描述
+  - 文件上传模块：媒体组上传事件
+  - 下载模块：下载停止提示
+- 新增9个翻译键，支持参数化翻译
+- 修复各模块的错误导入语句
+- 所有UI显示消息现在都支持中英文切换
+- 为国际用户提供完全本地化的使用体验
+
+## [v2.2.37] - 2024-12-21
+
+### 🔧 系统优化和错误修复
+- 修复转发模块中的硬编码中文消息问题
+- 新增翻译键支持媒体组转发的多语言显示
+- 改进转发日志的用户体验
+- 优化转发状态显示的一致性
+
+## [v2.2.36] - 2024-12-21
+
+### 🎨 界面优化
+- 改进转发界面的布局和用户体验
+- 优化媒体组转发的显示效果
+- 增强转发日志的可读性
+
+## [v2.2.35] - 2024-12-20
+
+### 🔧 稳定性改进
+- 优化API限流处理机制
+- 改进媒体文件处理流程
+- 增强错误恢复能力
+
+## [v2.2.34] - 2024-12-19
+
+### 🌐 多语言支持
+- 实现完整的UI多语言支持
+- 支持中文和英文界面切换
+- 优化翻译系统架构
+
+## [v2.2.33] - 2024-12-18
+
+### 🔧 核心功能优化
+- 改进消息转发算法
+- 优化媒体组处理逻辑
+- 增强系统稳定性
+
+## [v2.2.32] - 2024-12-17
+
+### 🎨 用户界面改进
+- 优化主界面布局
+- 改进任务管理界面
+- 增强用户交互体验
+
+## [v2.2.31] - 2024-12-16
+
+### 🔧 性能优化
+- 优化媒体文件处理性能
+- 改进内存使用效率
+- 增强并发处理能力
+
+## [v2.2.30] - 2024-12-15
+
+### 🌐 国际化支持
+- 添加多语言支持框架
+- 实现界面元素的本地化
+- 为国际用户提供更好的体验
+
+## [v2.2.29] - 2024-12-14
+
+### 🔧 系统稳定性
+- 改进错误处理机制
+- 优化网络连接稳定性
+- 增强异常恢复能力
+
+## [v2.2.28] - 2024-12-13
+
+### 📱 媒体处理优化
+- 改进媒体文件下载逻辑
+- 优化视频处理性能
+- 增强媒体组处理能力
+
+## [v2.2.27] - 2024-12-12
+
+### 🎯 转发功能增强
+- 优化消息转发算法
+- 改进媒体组转发逻辑
+- 增强转发成功率
+
+## [v2.2.26] - 2024-12-11
+
+### 🛠️ 系统架构优化
+- 重构核心模块架构
+- 优化模块间通信
+- 提升系统整体性能
+
+## [v2.2.25] - 2024-12-10
+
+### 🔍 监听功能完善
+- 改进实时监听机制
+- 优化消息过滤逻辑
+- 增强自动转发稳定性
+
+## [v2.2.24] - 2024-12-09
+
+### 💾 数据管理优化
+- 优化历史记录存储
+- 改进数据库性能
+- 增强数据一致性
+
+## [v2.2.23] - 2024-12-08
+
+### 🎨 用户体验提升
+- 改进界面响应速度
+- 优化操作流程
+- 增强用户交互反馈
+
+## [v2.2.22] - 2024-12-07
+
+### 🔧 核心功能修复
+- 修复转发过程中的边界条件
+- 改进错误处理逻辑
+- 优化系统稳定性
+
+## [v2.2.21] - 2024-12-06
+
+### 📊 性能监控
+- 添加性能监控功能
+- 优化资源使用效率
+- 增强系统可观察性
+
+## [v2.2.20] - 2024-12-05
+
+### 🌐 网络优化
+- 改进网络连接处理
+- 优化API调用频率
+- 增强网络异常恢复
+
+## [v2.2.19] - 2024-12-04
+
+### 🔒 安全性增强
+- 改进数据加密机制
+- 优化权限控制
+- 增强系统安全性
+
+## [v2.2.18] - 2024-12-03
+
+### 📱 媒体处理改进
+- 优化媒体文件处理
+- 改进缩略图生成
+- 增强媒体格式支持
+
+## [v2.2.17] - 2024-12-02
+
+### 🎯 任务管理优化
+- 改进任务调度机制
+- 优化任务状态跟踪
+- 增强任务管理界面
+
+## [v2.2.16] - 2024-12-01
+
+### 🔍 日志系统完善
+- 改进日志记录机制
+- 优化日志查看界面
+- 增强调试信息输出
+
+## [v2.2.15] - 2024-11-30
+
+### 🛠️ 系统维护
+- 修复已知问题
+- 优化代码结构
+- 提升系统稳定性
 
 ## [v2.2.14] - 2025-07-02
 
@@ -2373,105 +1255,4 @@ disable_web_page_preview=not pair.get('enable_web_page_preview', False)
   - **根本原因**：转发界面的配置加载和显示逻辑存在多处遗漏
   - **修复内容**：
     - ✅ 修复`load_config`方法，正确加载`exclude_links`配置到主界面复选框
-    - ✅ 修复`_update_channel_pair_display`方法，正确显示`exclude_links`状态
-    - ✅ 修复`_add_channel_pair`方法，确保新添加的频道对正确显示`exclude_links`选项
-    - ✅ 将主界面的"排除含链接消息"复选框默认设置为勾选状态，方便用户使用
-
-### 🔧 技术改进 (Technical Improvements)
-- **配置加载逻辑优化**：
-  - 在`load_config`方法中添加了`first_pair_exclude_links`变量跟踪第一个频道对的`exclude_links`设置
-  - 使用第一个频道对的`exclude_links`状态设置主界面复选框的默认值
-  - 确保配置文件中的`exclude_links`设置能正确反映在界面上
-- **显示文本完善**：
-  - 在`_update_channel_pair_display`方法中添加了"排除链接"选项的显示
-  - 在`_add_channel_pair`方法中添加了"排除链接"选项的显示
-  - 确保频道对列表中能完整显示所有转发选项
-- **用户体验提升**：
-  - 主界面的"排除含链接消息"复选框默认勾选，符合大多数用户的使用习惯
-  - 配置加载后界面状态与配置文件保持完全一致
-
-### 📊 修复验证 (Fix Verification)
-- **修复前症状**：
-  ```
-  - 配置文件: "exclude_links": true
-  - 界面显示: 复选框未勾选
-  - 频道对列表: 无"排除链接"选项显示
-  ```
-- **修复后效果**：
-  ```
-  - 配置文件: "exclude_links": true
-  - 界面显示: 复选框正确勾选
-  - 频道对列表: 正确显示"排除链接"选项
-  ```
-
-### 🎯 用户影响 (User Impact)
-- **配置一致性**：界面显示与配置文件完全同步，避免用户困惑
-- **操作便利性**：默认勾选"排除含链接消息"，减少用户配置步骤
-- **功能可见性**：频道对列表中清晰显示所有转发选项，便于用户检查配置
-
----
-
-## [v2.1.9.19] - 2024-12-22
-
-### 修复
-- **转发模块隐藏作者功能修复**
-  - 修复了频道对的`hide_author`配置不生效的问题
-  - 修复了代码从全局配置读取`hide_author`而不是从频道对配置读取的bug
-  - 现在每个频道对可以独立控制是否隐藏作者
-  - 添加了调试日志显示每个频道对的`hide_author`配置状态
-
-### 技术改进
-- 将`hide_author`参数从`self.forward_config.get('hide_author', False)`改为`pair.get('hide_author', False)`
-- 为每个频道对添加了详细的调试日志，便于排查配置问题
-- 确保频道对级别的配置优先级高于全局配置
-
-## [v2.1.9.18] - 2024-12-22
-
-### 修复
-- **转发模块最终消息发送逻辑修复**
-  - 修复了禁用频道对仍然发送最终消息的问题
-  - 修复了没有实际转发消息的频道对也发送最终消息的问题
-  - 现在只有启用且实际转发了消息的频道对才会发送最终消息
-  - 添加了频道对转发状态跟踪机制
-  - 优化了最终消息发送的日志记录，更清晰地显示发送原因
-
-### 技术改进
-- 在`forward_messages`方法中添加了`forwarded_pairs`跟踪列表
-- 为每个频道对单独计算转发计数（`pair_forward_count`）
-- 修改了`_send_final_messages_by_pairs`方法的参数和逻辑
-- 添加了双重检查机制确保频道对启用状态
-- 改进了日志记录，明确显示哪些频道对实际转发了消息
-
-## [v2.1.9.17] - 2024-12-22
-
-### 修复
-- **转发模块频道对启用/禁用功能修复**
-  - 修复了点击禁用后保存配置时`enabled`字段没有正确保存的问题
-  - 修复了保存配置后"已禁用"标识消失的问题
-  - 移除了编辑对话框中的启用/禁用复选框，简化操作流程
-  - 现在启用/禁用功能只能通过右键菜单操作，避免混淆
-
-### 技术改进
-- 优化了配置保存逻辑，避免不必要的UI状态重新加载
-- 确保在保存配置时正确处理所有频道对的`enabled`字段
-- 保持了向后兼容性，旧配置文件自动迁移
-
-## [v2.1.9.16] - 2025-01-22
-
-### ✨ 新功能 (New Features)
-- **频道对禁用/启用功能**：为转发模块添加频道对管理功能
-  - **右键菜单增强**：在频道对列表的右键菜单中添加"禁用"/"启用"选项
-  - **智能状态切换**：根据当前状态显示对应的菜单项（禁用↔启用）
-  - **视觉状态标识**：禁用的频道对在列表中显示`[已禁用]`前缀
-  - **转发逻辑优化**：转发时自动跳过被禁用的频道对，并记录跳过日志
-  - **配置持久化**：禁用/启用状态会保存到配置文件中
-
-### 🔧 技术实现 (Technical Implementation)
-- **UI配置模型更新**：
-  - 在 `UIChannelPair` 模型中添加 `enabled: bool` 字段（默认 `True`）
-  - 在编辑对话框中添加"启用此频道对"复选框
-- **配置转换增强**：
-  - 在 `config_utils.py` 的 `filter_field` 列表中添加 `"enabled"` 字段
-  - 确保UI配置正确转换为内部配置格式
-- **转发器逻辑优化**：
-  - 在 `forwarder.py` 中添加 `enabled`
+    - ✅ 修复`_update_channel_pair_display`方法，正确显示`exclude_links`

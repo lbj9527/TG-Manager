@@ -95,11 +95,11 @@
       "message_range": {
         "start_id": "Start ID:",
         "end_id": "End ID:",
-        "earliest_message": "Earliest Message",
-        "latest_message": "Latest Message"
+        "earliest_message": "Earliest",
+        "latest_message": "Latest"
       },
       "configured_pairs": "Configured Channel Pairs",
-      "pairs_count": "{count} pair(s)",
+      "pairs_count": "{count} pairs",
       "forward_delay": "Forward Delay:",
       "seconds": "seconds",
       "tmp_directory": "Temporary Directory:",
@@ -195,7 +195,37 @@
         "calculating": "Calculating...",
         "calculating_short": "Calculating"
       },
-      "status_column": "Status"
+      "status_column": "Status",
+      "log": {
+        "user_stop_request": "User requested to stop forwarding...",
+        "forward_manually_stopped": "========== Forwarding Manually Stopped ==========",
+        "stop_forward_failed": "Failed to stop forwarding: {error}",
+        "all_tasks_completed": "========== All Forwarding Tasks Completed ==========",
+        "processing_message": "Processing: {message_info}",
+        "api_flood_limit": "⚠️ API Rate Limit - {message}",
+        "start_collecting_from": "Starting to collect messages from {source_channel}...",
+        "collect_completed": "Collection completed from {source_channel}, total {total_count} messages",
+        "start_forwarding": "Starting forwarding: {source_channel} → {targets_str}",
+        "forward_completed": "Forwarding completed: {source_channel} → {targets_str}",
+        "start_collecting_messages": "Starting to collect messages, expected to collect {total_count} messages",
+        "collect_finished": "Message collection completed: {collected_count}/{total_count} messages (Success rate: {success_rate:.1f}%)",
+        "collect_error": "Message collection error: {error_message}",
+        "text_replace": "Text replacement ({message_desc}): '{original_short}' → '{replaced_short}'",
+        "log_cleared": "Log cleared",
+        "collected_count": "Collected {count} messages",
+        "single_message": "Single Message",
+        "media_group_message": "Media Group Message",
+        "unrecognized_media_type": "Unrecognized media type (possibly empty message or special message type)",
+        "media_type_not_allowed": "Media type '{media_type}' is not allowed",
+        "not_contain_keywords": "Does not contain keywords: {keywords}",
+        "media_group_id": "Media Group {group_id}",
+        "media_group_count": "Media Group ({count} messages)",
+        "media_group_files": "Media Group ({count} files)",
+        "download_auto_stopped": "Download automatically stopped",
+        "filtered": "filtered",
+        "forward_success": "forward successful",
+        "forward_failed": "forward failed"
+      }
     },
     "upload": {
       "title": "Media Upload",
