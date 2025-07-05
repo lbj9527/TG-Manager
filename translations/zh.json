@@ -194,7 +194,8 @@
         "disabled": "已禁用",
         "calculating": "计算中...",
         "calculating_short": "计算中"
-      }
+      },
+      "status_column": "状态"
     },
     "upload": {
       "title": "媒体上传",

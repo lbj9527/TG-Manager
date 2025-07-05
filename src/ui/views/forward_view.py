@@ -199,7 +199,7 @@ class ForwardView(QWidget):
                 tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
                 tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
                 tr("ui.forward.forwarded_messages"),
-                tr("ui.status.status")
+                tr("ui.forward.status_column")
             ])
         
         # 更新输入框占位符
@@ -228,6 +228,51 @@ class ForwardView(QWidget):
         
         # 更新频道对列表标题
         self._update_pairs_list_title()
+        
+        # 更新动态内容的翻译
+        self._update_dynamic_translations()
+    
+    def _update_dynamic_translations(self):
+        """更新动态内容的翻译（状态表格数据、频道对显示文字、日志等）"""
+        # 1. 更新状态表格中的状态值
+        if hasattr(self, 'status_table') and self.status_table.rowCount() > 0:
+            for row in range(self.status_table.rowCount()):
+                status_item = self.status_table.item(row, 3)  # 状态列是第4列（索引3）
+                if status_item:
+                    current_status = status_item.text()
+                    # 根据当前状态更新为对应的翻译
+                    if current_status in ["转发中", "Forwarding"]:
+                        status_item.setText(tr("ui.forward.status.running"))
+                    elif current_status in ["准备中", "Preparing"]:
+                        status_item.setText(tr("ui.forward.status.preparing"))
+                    elif current_status in ["已完成", "Completed"]:
+                        status_item.setText(tr("ui.forward.status.completed"))
+                    elif current_status in ["已停止", "Stopped"]:
+                        status_item.setText(tr("ui.forward.status.stopped"))
+                    elif current_status in ["错误", "Error"]:
+                        status_item.setText(tr("ui.forward.status.error"))
+                    elif current_status in ["停止中", "Stopping"]:
+                        status_item.setText(tr("ui.forward.status.stopping"))
+                    elif current_status in ["就绪", "Ready"]:
+                        status_item.setText(tr("ui.forward.status.ready"))
+        
+        # 2. 更新频道对列表中的显示文字
+        if hasattr(self, 'pairs_list') and self.pairs_list.count() > 0:
+            for i in range(self.pairs_list.count()):
+                item = self.pairs_list.item(i)
+                if item:
+                    channel_pair = item.data(Qt.UserRole)
+                    if channel_pair:
+                        # 重新生成显示文字
+                        self._update_channel_pair_display(item, channel_pair)
+        
+        # 3. 清空并重新初始化日志显示区域（保留重要的初始化消息）
+        if hasattr(self, 'log_display'):
+            # 清空现有日志
+            self.log_display.clear()
+            # 重新添加初始化消息
+            self._add_log_message("TG-Manager " + tr("ui.forward.status.ready"), color="#6c757d")
+            self._add_log_message(tr("ui.forward.messages.init_instruction"), color="#6c757d")
     
     def _create_config_panel(self):
         """创建配置标签页"""
@@ -573,7 +618,7 @@ class ForwardView(QWidget):
             tr("ui.forward.source_channel").replace(":", ""),  # 移除冒号
             tr("ui.forward.target_channels").replace(":", ""),  # 移除冒号
             tr("ui.forward.forwarded_messages"),
-            tr("ui.status.status")  # 添加状态翻译
+            tr("ui.forward.status_column")  # 添加状态翻译
         ])
         self.status_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.status_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -1414,7 +1459,7 @@ class ForwardView(QWidget):
         """停止转发"""
         # 更新转发状态
         self.forwarding_status = False
-        self._update_status_table_forwarding_status("停止中")
+        self._update_status_table_forwarding_status(tr("ui.forward.status.stopping"))
         
         # 按钮状态
         self.start_forward_button.setEnabled(True)
@@ -1466,7 +1511,7 @@ class ForwardView(QWidget):
         
         # 更新转发状态
         self.forwarding_status = False
-        self._update_status_table_forwarding_status("已完成")
+        self._update_status_table_forwarding_status(tr("ui.forward.status.completed"))
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -1514,7 +1559,7 @@ class ForwardView(QWidget):
         
         # 更新转发状态
         self.forwarding_status = False
-        self._update_status_table_forwarding_status("出错")
+        self._update_status_table_forwarding_status(tr("ui.forward.status.error"))
         
         # 恢复按钮状态
         self.start_forward_button.setEnabled(True)
@@ -3024,7 +3069,7 @@ class ForwardView(QWidget):
                 self.status_table_data[key] = {
                     'forwarded': total_forwarded_count,
                     'total': total_count,
-                    'status': "转发中"
+                    'status': tr("ui.forward.status.running")
                 }
             
             # 查找对应的频道对配置，判断是否应该显示"计算中..."

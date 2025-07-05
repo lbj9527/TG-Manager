@@ -194,7 +194,8 @@
         "disabled": "Disabled",
         "calculating": "Calculating...",
         "calculating_short": "Calculating"
-      }
+      },
+      "status_column": "Status"
     },
     "upload": {
       "title": "Media Upload",
