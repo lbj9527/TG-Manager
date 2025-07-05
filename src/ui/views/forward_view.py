@@ -2601,11 +2601,11 @@ class ForwardView(QWidget):
         
         if start_id > 0 or end_id > 0:
             if start_id > 0 and end_id > 0:
-                id_range_str = f"ID范围: {start_id}-{end_id}"
+                id_range_str = tr("ui.forward.display.id_range_both").format(start=start_id, end=end_id)
             elif start_id > 0:
-                id_range_str = f"ID范围: {start_id}+"
+                id_range_str = tr("ui.forward.display.id_range_start").format(start=start_id)
             else:
-                id_range_str = f"ID范围: 最早-{end_id}"
+                id_range_str = tr("ui.forward.display.id_range_end").format(end=end_id)
             id_range_str = " - " + id_range_str
         
         # 构建文本替换显示文本
