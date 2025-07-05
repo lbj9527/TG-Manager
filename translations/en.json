@@ -427,7 +427,58 @@
     "option_remove_captions": "Remove Captions",
     "option_hide_author": "Hide Author", 
     "option_send_final_message": "Send Completion Message",
-    "option_exclude_links": "Exclude Links"
+    "option_exclude_links": "Exclude Links",
+    "menu_bar": {
+      "file": "File",
+      "function": "Function",
+      "tools": "Tools",
+      "view": "View",
+      "help": "Help",
+      "file_menu": {
+        "settings": "Settings",
+        "exit": "Exit",
+        "settings_tooltip": "Open system settings",
+        "exit_tooltip": "Exit application"
+      },
+      "function_menu": {
+        "home": "Back to Home",
+        "download": "Download",
+        "upload": "Upload",
+        "forward": "Forward",
+        "monitor": "Monitor",
+        "home_tooltip": "Return to welcome page",
+        "download_tooltip": "Batch download media files from channels",
+        "upload_tooltip": "Upload local media files to channels",
+        "forward_tooltip": "Forward channel historical messages",
+        "monitor_tooltip": "Monitor channel real-time messages and forward"
+      },
+      "tools_menu": {
+        "task_manager": "Task Manager",
+        "log_viewer": "Log Viewer",
+        "pause_all": "Pause All Tasks",
+        "resume_all": "Resume All Tasks",
+        "task_manager_tooltip": "Open task manager",
+        "log_viewer_tooltip": "Open log viewer",
+        "pause_all_tooltip": "Pause all running tasks",
+        "resume_all_tooltip": "Resume all paused tasks"
+      },
+      "view_menu": {
+        "sidebar": "Sidebar",
+        "toolbar": "Toolbar",
+        "statusbar": "Status Bar",
+        "sidebar_tooltip": "Show or hide sidebar",
+        "toolbar_tooltip": "Show or hide toolbar",
+        "statusbar_tooltip": "Show or hide status bar"
+      },
+      "help_menu": {
+        "help_doc": "Help Documentation",
+        "check_update": "Check for Updates",
+        "about": "About",
+        "help_doc_tooltip": "View help documentation",
+        "check_update_tooltip": "Check for application updates",
+        "about_tooltip": "About this application"
+      }
+    }
   },
   "errors": {
     "validation": {

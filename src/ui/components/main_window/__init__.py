@@ -115,6 +115,10 @@ class MainWindow(
         # 更新基础窗口的翻译
         self.update_translations()
         
+        # 更新菜单栏翻译
+        if hasattr(self, '_update_menu_bar_translations'):
+            self._update_menu_bar_translations()
+        
         # 更新侧边栏翻译
         if hasattr(self, '_update_sidebar_translations'):
             self._update_sidebar_translations()
