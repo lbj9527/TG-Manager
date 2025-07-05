@@ -7,6 +7,7 @@ from loguru import logger
 import psutil
 from PySide6.QtWidgets import QLabel, QStatusBar
 from PySide6.QtCore import QTimer
+from src.utils.translation_manager import tr, get_translation_manager
 
 class StatusBarMixin:
     """状态栏功能混入类
@@ -14,29 +15,38 @@ class StatusBarMixin:
     为MainWindow提供状态栏相关功能
     """
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._client_connected = False
+        self._client_info = None
+        
     def _create_status_bar(self):
         """创建状态栏"""
         # 获取状态栏对象
         status_bar = self.statusBar()
         
+        # 监听语言切换信号
+        self.translation_manager = get_translation_manager()
+        self.translation_manager.language_changed.connect(self._update_translations)
+        
         # 创建状态栏各部分组件
         # 1. 功能提示区域 - 使用默认的临时消息区域
-        status_bar.showMessage("就绪")
+        status_bar.showMessage(tr("ui.status_bar.ready"))
         
         # 2. 客户端状态
-        self.client_status_label = QLabel("客户端: 未连接")
+        self.client_status_label = QLabel()
         self.client_status_label.setMinimumWidth(150)
         self.client_status_label.setStyleSheet("padding: 0 8px; color: #757575;")
         self.statusBar().addPermanentWidget(self.client_status_label)
         
         # 3. CPU/内存使用率
-        self.resource_usage_label = QLabel("CPU: -- | 内存: --")
+        self.resource_usage_label = QLabel()
         self.resource_usage_label.setMinimumWidth(200)
         self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
         self.statusBar().addPermanentWidget(self.resource_usage_label)
         
         # 添加任务统计标签
-        self.task_stats_label = QLabel("任务: 0 运行中 | 0 等待中 | 0 已完成")
+        self.task_stats_label = QLabel()
         self.task_stats_label.setMinimumWidth(250)
         self.task_stats_label.setStyleSheet("padding: 0 8px; color: #2196F3;")
         self.statusBar().addPermanentWidget(self.task_stats_label)
@@ -48,6 +58,7 @@ class StatusBarMixin:
         
         # 立即更新一次状态
         self._update_resource_usage()
+        self._update_translations()
         
         logger.debug("状态栏创建完成")
     
@@ -79,7 +90,7 @@ class StatusBarMixin:
                 memory_text = f"{memory_usage:.0f}MB/{memory_total / 1024:.1f}GB ({memory_percent}%)"
             
             # 更新资源使用标签
-            self.resource_usage_label.setText(f"CPU: {cpu_usage}% | 内存: {memory_text}")
+            self.resource_usage_label.setText(tr("ui.status_bar.resource_usage", cpu=cpu_usage, memory=memory_text))
             
             # 根据使用率设置不同的颜色
             if cpu_usage > 90 or memory_percent > 90:
@@ -91,12 +102,12 @@ class StatusBarMixin:
                 
         except ImportError:
             # 如果没有psutil库，使用占位符数据
-            self.resource_usage_label.setText("CPU: -- | 内存: --")
+            self.resource_usage_label.setText(tr("ui.status_bar.resource_usage_placeholder"))
             logger.warning("未找到psutil库，无法获取系统资源使用情况")
             
         except Exception as e:
             # 其他错误情况
-            self.resource_usage_label.setText("资源监控错误")
+            self.resource_usage_label.setText(tr("ui.status_bar.resource_error"))
             logger.error(f"资源监控错误: {e}")
     
     def _update_client_status(self, connected=False, client_info=None):
@@ -106,33 +117,30 @@ class StatusBarMixin:
             connected: 是否已连接
             client_info: 客户端信息，如用户ID、名称等
         """
+        # 保存状态
+        self._client_connected = connected
+        self._client_info = client_info
         try:
             # 确保在UI线程中执行状态更新
             if connected and client_info:
                 # 如果已连接且有客户端信息，显示详细信息
-                text = f"客户端: 已连接 ({client_info})"
+                text = tr("ui.status_bar.client_connected_with_info", info=client_info)
                 self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #4CAF50;")  # 绿色加粗
             elif connected:
                 # 如果已连接但没有详细信息
-                text = "客户端: 已连接"
+                text = tr("ui.status_bar.client_connected")
                 self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #4CAF50;")  # 绿色加粗
             else:
                 # 未连接状态
-                text = "客户端: 未连接"
+                text = tr("ui.status_bar.client_disconnected")
                 self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #F44336;")  # 红色加粗
-            
             self.client_status_label.setText(text)
-            
-            # 立即更新界面
             self.client_status_label.repaint()
-            
-            # 记录状态更新日志
             logger.debug(f"状态栏客户端状态已更新: {text}")
         except Exception as e:
             logger.error(f"更新客户端状态标签时出错: {e}")
-            # 尝试恢复显示
             try:
-                self.client_status_label.setText("客户端: 状态更新错误")
+                self.client_status_label.setText(tr("ui.status_bar.client_status_error"))
                 self.client_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
             except:
                 pass
@@ -147,7 +155,7 @@ class StatusBarMixin:
         """
         try:
             # 更新任务统计文本
-            self.task_stats_label.setText(f"任务: {running} 运行中 | {waiting} 等待中 | {completed} 已完成")
+            self.task_stats_label.setText(tr("ui.status_bar.task_stats", running=running, waiting=waiting, completed=completed))
             
             # 根据任务状态设置颜色
             if running > 0:
@@ -166,7 +174,7 @@ class StatusBarMixin:
                 
         except Exception as e:
             logger.error(f"更新任务统计信息失败: {e}")
-            self.task_stats_label.setText("任务: 统计错误")
+            self.task_stats_label.setText(tr("ui.status_bar.task_stats_error"))
             self.task_stats_label.setStyleSheet("padding: 0 8px; color: #F44336;")
     
     def _refresh_task_statistics(self):
@@ -205,3 +213,10 @@ class StatusBarMixin:
         """检查网络连接状态"""
         # 该方法已移除，网络延时显示功能已禁用
         pass 
+
+    def _update_translations(self):
+        """刷新状态栏所有文本的翻译"""
+        self.statusBar().showMessage(tr("ui.status_bar.ready"))
+        self._update_client_status(self._client_connected, self._client_info)
+        self._update_resource_usage()
+        self._refresh_task_statistics() 

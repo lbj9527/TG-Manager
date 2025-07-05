@@ -487,6 +487,18 @@
     },
     "welcome": {
       "select_function": "请从左侧导航树选择功能"
+    },
+    "status_bar": {
+      "ready": "就绪",
+      "client_disconnected": "客户端: 未连接",
+      "client_connected": "客户端: 已连接",
+      "client_connected_with_info": "客户端: 已连接 ({info})",
+      "client_status_error": "客户端: 状态更新错误",
+      "resource_usage": "CPU: {cpu}% | 内存: {memory}",
+      "resource_usage_placeholder": "CPU: -- | 内存: --",
+      "resource_error": "资源监控错误",
+      "task_stats": "任务: {running} 运行中 | {waiting} 等待中 | {completed} 已完成",
+      "task_stats_error": "任务: 统计错误"
     }
   },
   "errors": {

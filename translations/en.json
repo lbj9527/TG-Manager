@@ -481,6 +481,18 @@
     },
     "welcome": {
       "select_function": "Please select a function from the navigation tree on the left"
+    },
+    "status_bar": {
+      "ready": "Ready",
+      "client_disconnected": "Client: Disconnected",
+      "client_connected": "Client: Connected",
+      "client_connected_with_info": "Client: Connected ({info})",
+      "client_status_error": "Client: Status update error",
+      "resource_usage": "CPU: {cpu}% | Memory: {memory}",
+      "resource_usage_placeholder": "CPU: -- | Memory: --",
+      "resource_error": "Resource monitor error",
+      "task_stats": "Tasks: {running} Running | {waiting} Waiting | {completed} Completed",
+      "task_stats_error": "Tasks: Statistics error"
     }
   },
   "errors": {
