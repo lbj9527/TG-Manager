@@ -19,6 +19,7 @@ import os
 from src.utils.logger import get_logger
 from src.utils.translation_manager import get_translation_manager, tr
 import asyncio
+import re
 
 logger = get_logger()
 
@@ -104,13 +105,13 @@ class UploadView(QWidget):
         self.channel_tab.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         # 频道输入
-        form_layout = QFormLayout()
+        self.channel_form_layout = QFormLayout()
         
         self.channel_input = QLineEdit()
         self.channel_input.setPlaceholderText(tr("ui.upload.channels.input_placeholder"))
-        form_layout.addRow(tr("ui.upload.channels.input_label"), self.channel_input)
+        self.channel_form_layout.addRow(tr("ui.upload.channels.input_label"), self.channel_input)
         
-        channel_layout.addLayout(form_layout)
+        channel_layout.addLayout(self.channel_form_layout)
         
         # 添加频道按钮
         button_layout = QHBoxLayout()
@@ -1165,6 +1166,11 @@ class UploadView(QWidget):
             self.add_channel_button.setText(tr("ui.upload.channels.add_button"))
             self.remove_channel_button.setText(tr("ui.upload.channels.remove_button"))
             self.channel_list_label.setText(tr("ui.upload.channels.configured_title"))
+            # 刷新目标频道输入框左侧label
+            if hasattr(self, 'channel_form_layout'):
+                label_item = self.channel_form_layout.itemAt(0, QFormLayout.LabelRole)
+                if label_item and label_item.widget():
+                    label_item.widget().setText(tr("ui.upload.channels.input_label"))
             
             # 更新选项标签页
             self.use_folder_name_check.setText(tr("ui.upload.options.use_folder_name"))
@@ -1196,10 +1202,28 @@ class UploadView(QWidget):
             self._update_queue_status()
             
             # 更新当前状态显示
-            if hasattr(self, 'current_file_label') and self.current_file_label.text() == "当前文件: -":
-                self.current_file_label.setText(tr("ui.upload.queue.current_file_none"))
-            if hasattr(self, 'upload_speed_label') and self.upload_speed_label.text() == "速度: - | 剩余时间: -":
-                self.upload_speed_label.setText(tr("ui.upload.queue.speed_info_none"))
+            if hasattr(self, 'current_file_label'):
+                # "所有文件上传完成"状态刷新
+                if self.current_file_label.text() == tr("ui.upload.status.all_completed", language="zh") or self.current_file_label.text() == tr("ui.upload.status.all_completed", language="en"):
+                    self.current_file_label.setText(tr("ui.upload.status.all_completed"))
+                # "无文件"状态刷新
+                elif self.current_file_label.text() == "当前文件: -" or self.current_file_label.text() == tr("ui.upload.queue.current_file_none", language="zh") or self.current_file_label.text() == tr("ui.upload.queue.current_file_none", language="en"):
+                    self.current_file_label.setText(tr("ui.upload.queue.current_file_none"))
+            if hasattr(self, 'upload_speed_label'):
+                # 速度/剩余时间动态内容刷新
+                speed_info_en = re.compile(r"^Speed: (.+) \| Remaining Time: (.+)$")
+                speed_info_zh = re.compile(r"^速度: (.+) \| 剩余时间: (.+)$")
+                text = self.upload_speed_label.text()
+                m_en = speed_info_en.match(text)
+                m_zh = speed_info_zh.match(text)
+                if m_en:
+                    speed, time = m_en.group(1), m_en.group(2)
+                    self.upload_speed_label.setText(tr("ui.upload.queue.speed_info", speed=speed, time=time))
+                elif m_zh:
+                    speed, time = m_zh.group(1), m_zh.group(2)
+                    self.upload_speed_label.setText(tr("ui.upload.queue.speed_info", speed=speed, time=time))
+                elif text == "速度: - | 剩余时间: -" or text == tr("ui.upload.queue.speed_info_none", language="zh") or text == tr("ui.upload.queue.speed_info_none", language="en"):
+                    self.upload_speed_label.setText(tr("ui.upload.queue.speed_info_none"))
             
             logger.debug("上传界面翻译已更新")
             
