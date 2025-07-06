@@ -61,7 +61,8 @@
       "target_placeholder": "目标频道，多个用英文逗号分隔 (例如: @channel1, @channel2)",
       "text_replacement": "文本替换:",
       "original_text": "要替换的原始文本，多个用英文逗号分隔如：A,B",
-      "target_text": "替换后的目标文本，多个用英文逗号分隔如：C,D",
+      "target_text": "替换为",
+      "target_text_placeholder": "替换后的目标文本，多个用英文逗号分隔如：C,D",
       "replace_to": "替换为:",
       "filter_options": "过滤选项:",
       "keyword_filter": "关键词过滤:",
@@ -239,17 +240,108 @@
     },
     "upload": {
       "title": "媒体上传",
-      "select_files": "选择文件",
-      "target_channel": "目标频道:",
-      "upload_progress": "上传进度:",
-      "start_upload": "开始上传",
-      "stop_upload": "停止上传",
-      "file_list": "文件列表",
+      "tabs": {
+        "channels": "目标频道",
+        "options": "上传选项",
+        "files": "上传目录"
+      },
+      "channels": {
+        "title": "目标频道配置",
+        "input_label": "目标频道:",
+        "input_placeholder": "频道链接或ID (例如: https://t.me/example 或 -1001234567890)",
+        "add_button": "添加频道",
+        "remove_button": "删除所选",
+        "configured_title": "已配置目标频道:"
+      },
+      "options": {
+        "title": "上传选项配置",
+        "caption_options": "说明文字选项",
+        "use_folder_name": "使用文件夹名称作为说明文字",
+        "read_title_txt": "读取title.txt文件作为说明文字",
+        "send_final_message": "上传完成后发送最后一条消息",
+        "auto_thumbnail": "自动生成视频缩略图",
+        "upload_delay": "上传延迟:",
+        "upload_delay_unit": "秒",
+        "final_message_file": "最终消息HTML文件:",
+        "final_message_placeholder": "选择HTML文件",
+        "browse_html": "浏览...",
+        "enable_web_preview": "网页预览",
+        "info_title": "说明:",
+        "info_text": "1. 「使用文件夹名称作为说明文字」将使用文件夹名称作为上传文件的说明文字\n2. 「读取title.txt文件作为说明文字」将读取文件夹中的title.txt文件内容作为说明文字\n3. 「上传完成后发送最后一条消息」将在上传所有文件后，发送一条HTML格式的消息\n    HTML消息支持表情和超链接，可用于发送活动总结或购买链接等信息"
+      },
+      "files": {
+        "title": "上传目录选择",
+        "directory_label": "上传目录:",
+        "directory_placeholder": "请选择上传文件所在目录",
+        "browse_button": "浏览...",
+        "help_text": "提示: 上传目录中的每个子文件夹将作为一个媒体组上传。\n如果子文件夹中有多个文件，则作为媒体组发送；如果只有一个文件，则单独发送。\n每个子文件夹中可以放置名为title.txt的文件作为上传说明文本。"
+      },
+      "queue": {
+        "title": "上传队列",
+        "status_waiting": "待上传: {count}个文件，共{size}",
+        "current_file": "当前文件: {filename}",
+        "current_file_none": "当前文件: -",
+        "speed_info": "速度: {speed} | 剩余时间: {time}",
+        "speed_info_none": "速度: - | 剩余时间: -"
+      },
+      "buttons": {
+        "start_upload": "开始上传",
+        "stop_upload": "停止上传",
+        "save_config": "保存配置"
+      },
       "status": {
         "waiting": "等待中",
         "uploading": "上传中",
         "completed": "已完成",
-        "failed": "失败"
+        "failed": "失败",
+        "success": "✓ 成功",
+        "error": "✗ 失败",
+        "exists": "✓ 已存在",
+        "preparing": "准备上传...",
+        "initializing": "初始化上传...",
+        "stopped": "上传已停止",
+        "all_completed": "所有文件上传完成",
+        "upload_success": "上传成功",
+        "upload_error": "上传完成但有错误"
+      },
+      "messages": {
+        "no_channels": "请至少添加一个目标频道",
+        "invalid_directory": "请选择有效的上传目录",
+        "uploader_not_initialized": "上传器未初始化，请重新启动应用",
+        "channel_exists": "此频道已在列表中",
+        "select_channels_to_remove": "请先选择要删除的频道",
+        "config_saved": "上传配置已保存",
+        "upload_completed": "上传完成",
+        "upload_error": "上传错误",
+        "upload_error_detail": "上传过程中发生错误: {error}",
+        "warning": "警告",
+        "info": "提示",
+        "error": "错误"
+      },
+      "context_menu": {
+        "edit": "编辑",
+        "delete": "删除"
+      },
+      "edit_dialog": {
+        "title": "编辑目标频道",
+        "channel_label": "目标频道:",
+        "save": "保存",
+        "cancel": "取消",
+        "empty_channel": "频道链接不能为空",
+        "channel_exists": "此频道已在列表中",
+        "input_error": "输入错误"
+      },
+      "file_types": {
+        "html": "HTML文件 (*.html);;所有文件 (*.*)"
+      },
+      "directory_dialog": {
+        "title": "选择上传目录"
+      },
+      "progress": {
+        "files_uploaded": "共上传 {count} 个文件，耗时 {time:.1f} 秒，平均 {avg:.1f} 秒/个",
+        "upload_complete": "上传完成",
+        "media_group": "媒体组({count}个文件)",
+        "unknown_file": "未知文件"
       }
     },
     "download": {
@@ -325,15 +417,149 @@
     },
     "listen": {
       "title": "消息监听",
-      "target_channels": "监听频道:",
-      "start_listen": "开始监听",
-      "stop_listen": "停止监听",
-      "auto_forward": "自动转发",
-      "message_filter": "消息过滤:",
+      "tabs": {
+        "channel_config": "频道配置",
+        "general_config": "通用配置", 
+        "monitor_log": "监听日志",
+        "performance": "性能监控"
+      },
+      "channel_config": {
+        "title": "监听频道配置",
+        "source_channel": "源频道:",
+        "source_placeholder": "频道链接或ID (例如: https://t.me/example 或 -1001234567890)",
+        "target_channels": "目标频道:",
+        "target_placeholder": "目标频道链接或ID (多个频道用英文逗号分隔)",
+        "text_replacement": "文本替换:",
+        "original_text": "要替换的原始文本，多个用英文逗号分隔如：A,B",
+        "target_text": "替换为",
+        "target_text_placeholder": "替换后的目标文本，多个用英文逗号分隔如：C,D",
+        "filter_options": "过滤选项:",
+        "exclude_forwards": "排除转发消息",
+        "exclude_replies": "排除回复消息",
+        "exclude_text": "排除纯文本消息",
+        "exclude_links": "排除包含链接的消息",
+        "keywords": "关键词:",
+        "keywords_placeholder": "输入关键词，多个关键词用英文逗号分隔，只转发含关键词的消息",
+        "media_types": "媒体类型:",
+        "media_types_photo": "照片",
+        "media_types_video": "视频",
+        "media_types_document": "文件",
+        "media_types_audio": "音频",
+        "media_types_animation": "动画",
+        "media_types_sticker": "贴纸",
+        "media_types_voice": "语音",
+        "media_types_video_note": "视频笔记",
+        "monitor_params": "监听参数:",
+        "remove_captions": "移除媒体说明",
+        "add_channel_pair": "添加频道对",
+        "remove_selected": "删除所选",
+        "configured_pairs": "已配置监听频道对: {count}个"
+      },
+      "general_config": {
+        "title": "通用配置:",
+        "enable_duration": "启用监听截止日期",
+        "duration_label": "截止日期:"
+      },
+      "monitor_log": {
+        "title": "监听日志",
+        "all_messages": "所有消息"
+      },
+      "buttons": {
+        "start_listen": "开始监听",
+        "stop_listen": "停止监听",
+        "save_config": "保存配置",
+        "clear_messages": "清空消息"
+      },
       "status": {
-        "listening": "监听中",
-        "stopped": "已停止",
-        "error": "连接错误"
+        "listening": "监听中...",
+        "stopped": "监听已停止",
+        "preparing": "准备监听...",
+        "ready": "准备就绪",
+        "error": "监听错误"
+      },
+      "messages": {
+        "no_pairs": "请先添加至少一个监听频道对",
+        "monitor_not_initialized": "监听器未初始化，无法启动监听",
+        "start_listening": "开始监听...",
+        "stop_listening": "停止监听...",
+        "config_saved": "监听配置已保存到文件，监听器将读取最新配置进行监听",
+        "save_failed": "保存配置时出错: {error}",
+        "input_error": "输入错误",
+        "source_required": "请输入源频道链接或ID",
+        "target_required": "请输入至少一个目标频道",
+        "channel_exists": "已存在相同源频道的监听配置",
+        "select_to_remove": "请先选择要删除的频道对",
+        "original_text_error": "原始文本错误",
+        "original_text_empty": "原始文本不能为空。请为每个替换规则指定一个原始文本。",
+        "text_replacement_mismatch": "原始文本和替换文本数量不匹配。原始文本有{original_count}项，替换文本有{target_count}项。每个原始文本应对应一个替换文本。",
+        "original_text_empty_position": "原始文本不能为空。第 {positions} 个替换规则的原始文本为空，请修正。",
+        "warning": "警告",
+        "info": "提示",
+        "error": "错误",
+        "success": "成功",
+        "system": "系统",
+        "new_message": "新消息",
+        "message_received": "接收到消息",
+        "forward_success": "转发成功",
+        "forward_failed": "转发失败",
+        "filtered": "过滤",
+        "forward": "转发",
+        "listening_status": "正在监听中...",
+        "listening_channels": "正在监听: {channels}",
+        "listening_started": "监听已开始",
+        "listening_stopped": "监听已停止",
+        "monitor_error": "监听出错: {error}",
+        "monitor_error_title": "监听错误"
+      },
+      "context_menu": {
+        "edit": "编辑",
+        "delete": "删除"
+      },
+      "edit_dialog": {
+        "title": "编辑监听频道对",
+        "source_channel": "源频道:",
+        "target_channels": "目标频道:",
+        "text_replacement_rules": "文本替换规则",
+        "replace": "替换:",
+        "replace_to": "替换为:",
+        "media_types": "媒体类型",
+        "filter_options": "过滤选项",
+        "keywords": "关键词:",
+        "keywords_placeholder": "关键词，多个用英文逗号分隔，只转发含关键词的消息",
+        "other_options": "其他选项",
+        "remove_captions": "移除媒体说明",
+        "save": "保存",
+        "cancel": "取消",
+        "source_empty": "源频道不能为空",
+        "target_empty": "目标频道不能为空",
+        "media_type_required": "至少需要选择一种媒体类型",
+        "update_success": "频道对已成功更新，请点击保存配置",
+        "update_failed": "更新频道对时出错: {error}"
+      },
+      "display": {
+        "replacement_rules": "替换规则：{rules}",
+        "media_types": "媒体类型：{types}",
+        "media_types_all": "全部",
+        "filter_keywords": "关键词({keywords})",
+        "filter_exclude": "排除({options})",
+        "filter_forwards": "转发",
+        "filter_replies": "回复", 
+        "filter_text": "纯文本",
+        "filter_links": "链接",
+        "filter_options": "过滤：{options}",
+        "remove_captions_suffix": " (移除媒体说明)",
+        "unknown_channel": "未知频道",
+        "channel_prefix": "频道{id}"
+      },
+      "log": {
+        "received_message": "收到新消息 [ID: {message_id}]",
+        "message_received": "接收到消息 [ID: {message_id}]",
+        "forward_success": "消息[{message_id}] 从 {source} 转发到 {target} - 成功{modified}",
+        "forward_failed": "消息[{message_id}] 从 {source} 转发到 {target} - 失败{modified}",
+        "media_group_forward": "{media_group} 从 {source} 转发到 {target} - {status}{modified}",
+        "title_modified": " (标题已修改)",
+        "message_filtered": "消息 [ID: {message_id}] 被过滤 - 原因：{reason}",
+        "separator": "################################################## "
       }
     },
     "tasks": {
@@ -566,6 +792,44 @@
       "task_manager_tip": "打开任务管理器",
       "log_viewer": "日志查看器",
       "log_viewer_tip": "打开日志查看器"
+    },
+    "performance_monitor": {
+      "overview": "概览统计",
+      "performance": "性能指标",
+      "system": "系统状态",
+      "error": "错误统计",
+      "time_window": "时间窗口统计",
+      "details": "详细统计",
+      "reset_metrics": "重置统计",
+      "refresh_now": "立即刷新",
+      "total_processed": "已处理消息",
+      "total_forwarded": "已转发消息",
+      "total_filtered": "已过滤消息",
+      "success_rate": "成功率",
+      "avg_processing_time": "平均处理时间",
+      "avg_forward_time": "平均转发时间",
+      "throughput": "处理速率",
+      "p95_processing_time": "P95处理时间",
+      "cache_hit_rate": "缓存命中率",
+      "queue_size": "队列大小",
+      "memory_usage": "内存使用",
+      "unit_count": "条",
+      "unit_sec": "秒",
+      "unit_per_min": "条/分钟",
+      "network_errors": "网络错误",
+      "api_errors": "API错误",
+      "other_errors": "其他错误",
+      "unit_times": "次",
+      "last_1min": "最近1分钟",
+      "last_5min": "最近5分钟",
+      "last_1hour": "最近1小时",
+      "last_update": "最后更新: {time}",
+      "last_update_never": "最后更新: 从未更新",
+      "total_failed": "总失败数",
+      "min_processing_time": "最小处理时间",
+      "max_processing_time": "最大处理时间",
+      "detail_metric": "指标",
+      "detail_value": "值"
     }
   },
   "errors": {

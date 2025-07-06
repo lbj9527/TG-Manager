@@ -61,7 +61,8 @@
       "target_placeholder": "Target channels, separate multiple with commas (e.g: @channel1, @channel2)",
       "text_replacement": "Text Replacement:",
       "original_text": "Original text to replace, separate multiple with commas like: A,B",
-      "target_text": "Target text after replacement, separate multiple with commas like: C,D",
+      "target_text": "Replace to",
+      "target_text_placeholder": "Target text after replacement, separate multiple with commas like: C,D",
       "replace_to": "Replace To:",
       "filter_options": "Filter Options:",
       "keyword_filter": "Keyword Filter:",
@@ -229,17 +230,108 @@
     },
     "upload": {
       "title": "Media Upload",
-      "select_files": "Select Files",
-      "target_channel": "Target Channel:",
-      "upload_progress": "Upload Progress:",
-      "start_upload": "Start Upload",
-      "stop_upload": "Stop Upload",
-      "file_list": "File List",
+      "tabs": {
+        "channels": "Target Channels",
+        "options": "Upload Options",
+        "files": "Upload Directory"
+      },
+      "channels": {
+        "title": "Target Channel Configuration",
+        "input_label": "Target Channel:",
+        "input_placeholder": "Channel link or ID (e.g: https://t.me/example or -1001234567890)",
+        "add_button": "Add Channel",
+        "remove_button": "Remove Selected",
+        "configured_title": "Configured Target Channels:"
+      },
+      "options": {
+        "title": "Upload Options Configuration",
+        "caption_options": "Caption Options",
+        "use_folder_name": "Use folder name as caption",
+        "read_title_txt": "Read title.txt file as caption",
+        "send_final_message": "Send final message after upload completion",
+        "auto_thumbnail": "Auto generate video thumbnails",
+        "upload_delay": "Upload Delay:",
+        "upload_delay_unit": "seconds",
+        "final_message_file": "Final Message HTML File:",
+        "final_message_placeholder": "Select HTML file",
+        "browse_html": "Browse...",
+        "enable_web_preview": "Web Page Preview",
+        "info_title": "Instructions:",
+        "info_text": "1. 'Use folder name as caption' will use the folder name as the caption for uploaded files\n2. 'Read title.txt file as caption' will read the title.txt file content in the folder as the caption\n3. 'Send final message after upload completion' will send an HTML formatted message after all files are uploaded\n    HTML messages support emojis and hyperlinks, which can be used for activity summaries or purchase links"
+      },
+      "files": {
+        "title": "Upload Directory Selection",
+        "directory_label": "Upload Directory:",
+        "directory_placeholder": "Please select the directory containing files to upload",
+        "browse_button": "Browse...",
+        "help_text": "Tip: Each subfolder in the upload directory will be uploaded as a media group.\nIf a subfolder contains multiple files, they will be sent as a media group; if only one file, it will be sent individually.\nYou can place a file named title.txt in each subfolder to serve as the upload caption text."
+      },
+      "queue": {
+        "title": "Upload Queue",
+        "status_waiting": "Pending: {count} files, {size} total",
+        "current_file": "Current File: {filename}",
+        "current_file_none": "Current File: -",
+        "speed_info": "Speed: {speed} | Remaining Time: {time}",
+        "speed_info_none": "Speed: - | Remaining Time: -"
+      },
+      "buttons": {
+        "start_upload": "Start Upload",
+        "stop_upload": "Stop Upload",
+        "save_config": "Save Configuration"
+      },
       "status": {
         "waiting": "Waiting",
         "uploading": "Uploading",
         "completed": "Completed",
-        "failed": "Failed"
+        "failed": "Failed",
+        "success": "✓ Success",
+        "error": "✗ Failed",
+        "exists": "✓ Already Exists",
+        "preparing": "Preparing upload...",
+        "initializing": "Initializing upload...",
+        "stopped": "Upload stopped",
+        "all_completed": "All files uploaded successfully",
+        "upload_success": "Upload successful",
+        "upload_error": "Upload completed with errors"
+      },
+      "messages": {
+        "no_channels": "Please add at least one target channel",
+        "invalid_directory": "Please select a valid upload directory",
+        "uploader_not_initialized": "Uploader not initialized, please restart the application",
+        "channel_exists": "This channel is already in the list",
+        "select_channels_to_remove": "Please select channels to remove first",
+        "config_saved": "Upload configuration saved",
+        "upload_completed": "Upload Completed",
+        "upload_error": "Upload Error",
+        "upload_error_detail": "Error occurred during upload: {error}",
+        "warning": "Warning",
+        "info": "Information",
+        "error": "Error"
+      },
+      "context_menu": {
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "edit_dialog": {
+        "title": "Edit Target Channel",
+        "channel_label": "Target Channel:",
+        "save": "Save",
+        "cancel": "Cancel",
+        "empty_channel": "Channel link cannot be empty",
+        "channel_exists": "This channel is already in the list",
+        "input_error": "Input Error"
+      },
+      "file_types": {
+        "html": "HTML files (*.html);;All files (*.*)"
+      },
+      "directory_dialog": {
+        "title": "Select Upload Directory"
+      },
+      "progress": {
+        "files_uploaded": "Uploaded {count} files in {time:.1f} seconds, average {avg:.1f} seconds per file",
+        "upload_complete": "Upload Complete",
+        "media_group": "Media Group ({count} files)",
+        "unknown_file": "Unknown File"
       }
     },
     "download": {
@@ -314,16 +406,150 @@
       "file_already_downloaded": "Message [{message_id}] already downloaded, skipped: {filename}"
     },
     "listen": {
-      "title": "Message Monitoring",
-      "target_channels": "Monitored Channels:",
-      "start_listen": "Start Monitoring",
-      "stop_listen": "Stop Monitoring",
-      "auto_forward": "Auto Forward",
-      "message_filter": "Message Filter:",
+      "title": "Message Monitor",
+      "tabs": {
+        "channel_config": "Channel Config",
+        "general_config": "General Config",
+        "monitor_log": "Monitor Log",
+        "performance": "Performance Monitor"
+      },
+      "channel_config": {
+        "title": "Monitor Channel Config",
+        "source_channel": "Source Channel:",
+        "source_placeholder": "Channel link or ID (e.g: https://t.me/example or -1001234567890)",
+        "target_channels": "Target Channels:",
+        "target_placeholder": "Target channel links or IDs (separate multiple with commas)",
+        "text_replacement": "Text Replacement:",
+        "original_text": "Original text to replace, separate multiple with commas like: A,B",
+        "target_text": "Replace to",
+        "target_text_placeholder": "Target text after replacement, separate multiple with commas like: C,D",
+        "filter_options": "Filter Options:",
+        "exclude_forwards": "Exclude forwarded messages",
+        "exclude_replies": "Exclude reply messages",
+        "exclude_text": "Exclude text-only messages",
+        "exclude_links": "Exclude messages with links",
+        "keywords": "Keywords:",
+        "keywords_placeholder": "Enter keywords, separate multiple with commas, only forward messages containing keywords",
+        "media_types": "Media Types:",
+        "media_types_photo": "Photo",
+        "media_types_video": "Video",
+        "media_types_document": "Document",
+        "media_types_audio": "Audio",
+        "media_types_animation": "Animation",
+        "media_types_sticker": "Sticker",
+        "media_types_voice": "Voice",
+        "media_types_video_note": "Video Note",
+        "monitor_params": "Monitor Parameters:",
+        "remove_captions": "Remove Media Captions",
+        "add_channel_pair": "Add Channel Pair",
+        "remove_selected": "Remove Selected",
+        "configured_pairs": "Configured Monitor Channel Pairs: {count}"
+      },
+      "general_config": {
+        "title": "General Configuration:",
+        "enable_duration": "Enable Monitor End Date",
+        "duration_label": "End Date:"
+      },
+      "monitor_log": {
+        "title": "Monitor Log",
+        "all_messages": "All Messages"
+      },
+      "buttons": {
+        "start_listen": "Start Monitoring",
+        "stop_listen": "Stop Monitoring",
+        "save_config": "Save Configuration",
+        "clear_messages": "Clear Messages"
+      },
       "status": {
-        "listening": "Monitoring",
-        "stopped": "Stopped",
-        "error": "Connection Error"
+        "listening": "Monitoring...",
+        "stopped": "Monitoring Stopped",
+        "preparing": "Preparing Monitor...",
+        "ready": "Ready",
+        "error": "Monitor Error"
+      },
+      "messages": {
+        "no_pairs": "Please add at least one monitor channel pair first",
+        "monitor_not_initialized": "Monitor not initialized, unable to start monitoring",
+        "start_listening": "Starting monitor...",
+        "stop_listening": "Stopping monitor...",
+        "config_saved": "Monitor configuration saved to file, monitor will read the latest configuration for monitoring",
+        "save_failed": "Error saving configuration: {error}",
+        "input_error": "Input Error",
+        "source_required": "Please enter source channel link or ID",
+        "target_required": "Please enter at least one target channel",
+        "channel_exists": "Monitor configuration for the same source channel already exists",
+        "select_to_remove": "Please select channel pairs to remove first",
+        "original_text_error": "Original Text Error",
+        "original_text_empty": "Original text cannot be empty. Please specify an original text for each replacement rule.",
+        "text_replacement_mismatch": "Original text and replacement text count mismatch. Original text has {original_count} items, replacement text has {target_count} items. Each original text should correspond to one replacement text.",
+        "original_text_empty_position": "Original text cannot be empty. The {positions} replacement rule has empty original text, please correct.",
+        "warning": "Warning",
+        "info": "Information",
+        "error": "Error",
+        "success": "Success",
+        "system": "System",
+        "new_message": "New Message",
+        "message_received": "Message Received",
+        "forward_success": "Forward Success",
+        "forward_failed": "Forward Failed",
+        "filtered": "Filtered",
+        "forward": "Forward",
+        "listening_status": "Monitoring...",
+        "listening_channels": "Monitoring: {channels}",
+        "listening_started": "Monitoring started",
+        "listening_stopped": "Monitoring stopped",
+        "monitor_error": "Monitor error: {error}",
+        "monitor_error_title": "Monitor Error"
+      },
+      "context_menu": {
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "edit_dialog": {
+        "title": "Edit Monitor Channel Pair",
+        "source_channel": "Source Channel:",
+        "target_channels": "Target Channels:",
+        "text_replacement_rules": "Text Replacement Rules",
+        "replace": "Replace:",
+        "replace_to": "Replace To:",
+        "media_types": "Media Types",
+        "filter_options": "Filter Options",
+        "keywords": "Keywords:",
+        "keywords_placeholder": "Keywords, separate multiple with commas, only forward messages containing keywords",
+        "other_options": "Other Options",
+        "remove_captions": "Remove Media Captions",
+        "save": "Save",
+        "cancel": "Cancel",
+        "source_empty": "Source channel cannot be empty",
+        "target_empty": "Target channels cannot be empty",
+        "media_type_required": "At least one media type must be selected",
+        "update_success": "Channel pair updated successfully, please click save configuration",
+        "update_failed": "Error updating channel pair: {error}"
+      },
+      "display": {
+        "replacement_rules": "Replacement Rules: {rules}",
+        "media_types": "Media Types: {types}",
+        "media_types_all": "All",
+        "filter_keywords": "Keywords({keywords})",
+        "filter_exclude": "Exclude({options})",
+        "filter_forwards": "Forwards",
+        "filter_replies": "Replies",
+        "filter_text": "Text-only",
+        "filter_links": "Links",
+        "filter_options": "Filter: {options}",
+        "remove_captions_suffix": " (Remove Media Captions)",
+        "unknown_channel": "Unknown Channel",
+        "channel_prefix": "Channel{id}"
+      },
+      "log": {
+        "received_message": "Received new message [ID: {message_id}]",
+        "message_received": "Message received [ID: {message_id}]",
+        "forward_success": "Message[{message_id}] forwarded from {source} to {target} - Success{modified}",
+        "forward_failed": "Message[{message_id}] forwarded from {source} to {target} - Failed{modified}",
+        "media_group_forward": "{media_group} forwarded from {source} to {target} - {status}{modified}",
+        "title_modified": " (Title Modified)",
+        "message_filtered": "Message [ID: {message_id}] filtered - Reason: {reason}",
+        "separator": "################################################## "
       }
     },
     "tasks": {
@@ -560,6 +786,44 @@
       "task_manager_tip": "Open task manager",
       "log_viewer": "Log Viewer",
       "log_viewer_tip": "Open log viewer"
+    },
+    "performance_monitor": {
+      "overview": "Overview Statistics",
+      "performance": "Performance Metrics",
+      "system": "System Status",
+      "error": "Error Statistics",
+      "network_errors": "Network Errors",
+      "api_errors": "API Errors",
+      "other_errors": "Other Errors",
+      "time_window": "Time Window Statistics",
+      "details": "Detailed Statistics",
+      "reset_metrics": "Reset Metrics",
+      "refresh_now": "Refresh Now",
+      "total_processed": "Total Processed",
+      "total_forwarded": "Total Forwarded",
+      "total_filtered": "Total Filtered",
+      "success_rate": "Success Rate",
+      "avg_processing_time": "Avg Processing Time",
+      "avg_forward_time": "Avg Forward Time",
+      "throughput": "Throughput",
+      "p95_processing_time": "P95 Processing Time",
+      "cache_hit_rate": "Cache Hit Rate",
+      "queue_size": "Queue Size",
+      "memory_usage": "Memory Usage",
+      "unit_count": "Count",
+      "unit_sec": "sec",
+      "unit_per_min": "count/min",
+      "unit_times": "times",
+      "last_1min": "Last 1 min",
+      "last_5min": "Last 5 min",
+      "last_1hour": "Last 1 hour",
+      "detail_metric": "Metric",
+      "detail_value": "Value",
+      "last_update": "Last Update: {time}",
+      "last_update_never": "Last Update: Never",
+      "total_failed": "Total Failed",
+      "min_processing_time": "Min Processing Time",
+      "max_processing_time": "Max Processing Time"
     }
   },
   "errors": {

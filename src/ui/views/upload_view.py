@@ -17,6 +17,7 @@ from PySide6.QtGui import QIcon, QCursor
 from pathlib import Path
 import os
 from src.utils.logger import get_logger
+from src.utils.translation_manager import get_translation_manager, tr
 import asyncio
 
 logger = get_logger()
@@ -39,6 +40,12 @@ class UploadView(QWidget):
         super().__init__(parent)
         
         self.config = config or {}
+        
+        # 获取翻译管理器
+        self.translation_manager = get_translation_manager()
+        
+        # 存储所有需要翻译的组件
+        self.translatable_widgets = {}
         
         # 设置布局
         self.main_layout = QVBoxLayout(self)
@@ -65,6 +72,9 @@ class UploadView(QWidget):
         # 连接信号
         self._connect_signals()
         
+        # 连接翻译管理器信号
+        self.translation_manager.language_changed.connect(self._update_translations)
+        
         # 如果父窗口有config_saved信号，连接配置保存信号
         if parent and hasattr(parent, 'config_saved'):
             logger.debug("将上传视图的config_saved信号连接到父窗口")
@@ -76,6 +86,9 @@ class UploadView(QWidget):
         # 加载配置
         if self.config:
             self.load_config(self.config)
+        
+        # 初始化翻译
+        self._update_translations()
         
         logger.info("上传界面初始化完成")
     
@@ -94,15 +107,15 @@ class UploadView(QWidget):
         form_layout = QFormLayout()
         
         self.channel_input = QLineEdit()
-        self.channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        form_layout.addRow("目标频道:", self.channel_input)
+        self.channel_input.setPlaceholderText(tr("ui.upload.channels.input_placeholder"))
+        form_layout.addRow(tr("ui.upload.channels.input_label"), self.channel_input)
         
         channel_layout.addLayout(form_layout)
         
         # 添加频道按钮
         button_layout = QHBoxLayout()
-        self.add_channel_button = QPushButton("添加频道")
-        self.remove_channel_button = QPushButton("删除所选")
+        self.add_channel_button = QPushButton(tr("ui.upload.channels.add_button"))
+        self.remove_channel_button = QPushButton(tr("ui.upload.channels.remove_button"))
         
         button_layout.addWidget(self.add_channel_button)
         button_layout.addWidget(self.remove_channel_button)
@@ -111,7 +124,7 @@ class UploadView(QWidget):
         channel_layout.addLayout(button_layout)
         
         # 频道列表
-        channel_list_label = QLabel("已配置目标频道:")
+        self.channel_list_label = QLabel(tr("ui.upload.channels.configured_title"))
         
         self.channel_list = QListWidget()
         self.channel_list.setSelectionMode(QListWidget.ExtendedSelection)
@@ -119,7 +132,7 @@ class UploadView(QWidget):
         self.channel_list.setContextMenuPolicy(Qt.CustomContextMenu)  # 设置自定义右键菜单
         self.channel_list.customContextMenuRequested.connect(self._show_context_menu)  # 连接右键菜单事件
         
-        channel_layout.addWidget(channel_list_label)
+        channel_layout.addWidget(self.channel_list_label)
         channel_layout.addWidget(self.channel_list, 1)  # 使列表占据所有剩余空间
         
         # 上传选项标签页
@@ -138,15 +151,15 @@ class UploadView(QWidget):
         caption_options_layout.setContentsMargins(0, 5, 0, 5)  # 增加上下边距
         
         # 创建互斥的单选选项
-        self.use_folder_name_check = QCheckBox("使用文件夹名称作为说明文字")
+        self.use_folder_name_check = QCheckBox(tr("ui.upload.options.use_folder_name"))
         self.use_folder_name_check.setChecked(True)  # 默认选中
         self.use_folder_name_check.setMinimumHeight(25)
         
-        self.read_title_txt_check = QCheckBox("读取title.txt文件作为说明文字")
+        self.read_title_txt_check = QCheckBox(tr("ui.upload.options.read_title_txt"))
         self.read_title_txt_check.setChecked(False)
         self.read_title_txt_check.setMinimumHeight(25)
         
-        self.send_final_message_check = QCheckBox("上传完成后发送最后一条消息")
+        self.send_final_message_check = QCheckBox(tr("ui.upload.options.send_final_message"))
         self.send_final_message_check.setChecked(False)
         self.send_final_message_check.setMinimumHeight(25)
         
@@ -156,7 +169,7 @@ class UploadView(QWidget):
         caption_options_layout.addWidget(self.send_final_message_check, 2, 0)
         
         # 自动生成缩略图选项
-        self.auto_thumbnail_check = QCheckBox("自动生成视频缩略图")
+        self.auto_thumbnail_check = QCheckBox(tr("ui.upload.options.auto_thumbnail"))
         self.auto_thumbnail_check.setChecked(True)
         self.auto_thumbnail_check.setMinimumHeight(30)
         caption_options_layout.addWidget(self.auto_thumbnail_check, 0, 1)
@@ -166,16 +179,16 @@ class UploadView(QWidget):
         delay_layout = QHBoxLayout(delay_widget)
         delay_layout.setContentsMargins(0, 0, 0, 0)
         
-        delay_label = QLabel("上传延迟:")
-        delay_label.setMinimumWidth(60)
-        delay_layout.addWidget(delay_label)
+        self.delay_label = QLabel(tr("ui.upload.options.upload_delay"))
+        self.delay_label.setMinimumWidth(60)
+        delay_layout.addWidget(self.delay_label)
         
         self.upload_delay = QDoubleSpinBox()
         self.upload_delay.setRange(0, 60)
         self.upload_delay.setValue(0.5)
         self.upload_delay.setDecimals(1)
         self.upload_delay.setSingleStep(0.1)
-        self.upload_delay.setSuffix(" 秒")
+        self.upload_delay.setSuffix(f" {tr('ui.upload.options.upload_delay_unit')}")
         self.upload_delay.setMinimumWidth(70)
         delay_layout.addWidget(self.upload_delay)
         delay_layout.addStretch()
@@ -190,14 +203,14 @@ class UploadView(QWidget):
         
         self.final_message_html_file = QLineEdit()
         self.final_message_html_file.setReadOnly(True)
-        self.final_message_html_file.setPlaceholderText("选择HTML文件")
+        self.final_message_html_file.setPlaceholderText(tr("ui.upload.options.final_message_placeholder"))
         self.final_message_html_file.setEnabled(False)  # 初始状态禁用
         
-        self.browse_html_button = QPushButton("浏览...")
+        self.browse_html_button = QPushButton(tr("ui.upload.options.browse_html"))
         self.browse_html_button.setEnabled(False)  # 初始状态禁用
         
         # 添加网页预览复选框
-        self.enable_web_page_preview_check = QCheckBox("网页预览")
+        self.enable_web_page_preview_check = QCheckBox(tr("ui.upload.options.enable_web_preview"))
         self.enable_web_page_preview_check.setChecked(False)  # 默认不启用
         self.enable_web_page_preview_check.setEnabled(False)  # 初始状态禁用
         
@@ -214,29 +227,18 @@ class UploadView(QWidget):
         caption_info_layout = QVBoxLayout()
         caption_info_layout.setContentsMargins(0, 0, 0, 0)  # 增加顶部间距
         
-        # caption_info_label = QLabel("说明:")
-        # caption_info_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
-        # caption_info_label.setMinimumHeight(25)  # 设置标签高度
-        # caption_info_layout.addWidget(caption_info_label)
+        self.info_text = QLabel(tr("ui.upload.options.info_text"))
+        self.info_text.setWordWrap(True)
+        self.info_text.setStyleSheet("font-size: 12px;")
+        self.info_text.setMinimumHeight(85)
+        self.info_text.setMaximumHeight(110)
         
-        info_text = QLabel(
-            "说明:\n"
-            "1. 「使用文件夹名称作为说明文字」将使用文件夹名称作为上传文件的说明文字\n"
-            "2. 「读取title.txt文件作为说明文字」将读取文件夹中的title.txt文件内容作为说明文字\n"
-            "3. 「上传完成后发送最后一条消息」将在上传所有文件后，发送一条HTML格式的消息\n"
-            "    HTML消息支持表情和超链接，可用于发送活动总结或购买链接等信息"
-        )
-        info_text.setWordWrap(True)
-        info_text.setStyleSheet("font-size: 12px;")
-        info_text.setMinimumHeight(85)
-        info_text.setMaximumHeight(110)
-        
-        caption_info_layout.addWidget(info_text)
+        caption_info_layout.addWidget(self.info_text)
         options_layout.addLayout(caption_info_layout)
         
         # 将标签页添加到配置面板
-        self.config_tabs.addTab(self.channel_tab, "目标频道")
-        self.config_tabs.addTab(self.options_tab, "上传选项")
+        self.config_tabs.addTab(self.channel_tab, tr("ui.upload.tabs.channels"))
+        self.config_tabs.addTab(self.options_tab, tr("ui.upload.tabs.options"))
         
         # 修改文件选择器标签页为简单的目录选择
         self.file_selector_tab = QWidget()
@@ -250,29 +252,25 @@ class UploadView(QWidget):
         # 添加上传目录选择
         dir_layout = QHBoxLayout()
         
-        dir_label = QLabel("上传目录:")
-        dir_layout.addWidget(dir_label)
+        self.dir_label = QLabel(tr("ui.upload.files.directory_label"))
+        dir_layout.addWidget(self.dir_label)
         
         self.path_input = QLineEdit()
         self.path_input.setReadOnly(True)
-        self.path_input.setPlaceholderText("请选择上传文件所在目录")
+        self.path_input.setPlaceholderText(tr("ui.upload.files.directory_placeholder"))
         dir_layout.addWidget(self.path_input, 1)
         
-        self.browse_button = QPushButton("浏览...")
+        self.browse_button = QPushButton(tr("ui.upload.files.browse_button"))
         dir_layout.addWidget(self.browse_button)
         
         file_selector_layout.addLayout(dir_layout)
         
         # 添加目录结构说明
-        help_label = QLabel(
-            "提示: 上传目录中的每个子文件夹将作为一个媒体组上传。\n"
-            "如果子文件夹中有多个文件，则作为媒体组发送；如果只有一个文件，则单独发送。\n"
-            "每个子文件夹中可以放置名为title.txt的文件作为上传说明文本。\n"
-        )
-        help_label.setWordWrap(True)
-        help_label.setStyleSheet("font-size: 13px; padding: 10px;")
+        self.help_label = QLabel(tr("ui.upload.files.help_text"))
+        self.help_label.setWordWrap(True)
+        self.help_label.setStyleSheet("font-size: 13px; padding: 10px;")
         
-        file_selector_layout.addWidget(help_label)
+        file_selector_layout.addWidget(self.help_label)
         
         # 添加一个隐藏的填充部件，确保与其他标签页高度一致
         spacer_widget = QWidget()
@@ -285,7 +283,7 @@ class UploadView(QWidget):
         file_selector_layout.addStretch(1)
         
         # 将文件选择标签页添加到配置面板
-        self.config_tabs.addTab(self.file_selector_tab, "上传目录")
+        self.config_tabs.addTab(self.file_selector_tab, tr("ui.upload.tabs.files"))
     
     def _create_upload_panel(self):
         """创建上传状态面板"""
@@ -303,11 +301,11 @@ class UploadView(QWidget):
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
         
-        queue_title = QLabel("<b>上传队列</b>")
-        queue_title.setStyleSheet("font-size: 12px;")
-        header_layout.addWidget(queue_title)
+        self.queue_title = QLabel(f"<b>{tr('ui.upload.queue.title')}</b>")
+        self.queue_title.setStyleSheet("font-size: 12px;")
+        header_layout.addWidget(self.queue_title)
         
-        self.queue_status_label = QLabel("待上传: 0个文件，共0MB")
+        self.queue_status_label = QLabel(tr("ui.upload.queue.status_waiting", count=0, size="0MB"))
         header_layout.addWidget(self.queue_status_label)
         header_layout.addStretch(1)
         
@@ -325,8 +323,8 @@ class UploadView(QWidget):
         progress_info_layout = QVBoxLayout()
         progress_info_layout.setSpacing(1)
         
-        self.current_file_label = QLabel("当前文件: -")
-        self.upload_speed_label = QLabel("速度: - | 剩余时间: -")
+        self.current_file_label = QLabel(tr("ui.upload.queue.current_file_none"))
+        self.upload_speed_label = QLabel(tr("ui.upload.queue.speed_info_none"))
         
         progress_info_layout.addWidget(self.current_file_label)
         progress_info_layout.addWidget(self.upload_speed_label)
@@ -344,14 +342,14 @@ class UploadView(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 4, 0, 0)  # 增加与上方组件的间距
         
-        self.start_button = QPushButton("开始上传")
+        self.start_button = QPushButton(tr("ui.upload.buttons.start_upload"))
         self.start_button.setMinimumHeight(36)  # 减小按钮高度
         
-        self.stop_button = QPushButton("停止上传")
+        self.stop_button = QPushButton(tr("ui.upload.buttons.stop_upload"))
         self.stop_button.setMinimumHeight(36)
         self.stop_button.setEnabled(False)  # 初始状态下禁用
         
-        self.save_config_button = QPushButton("保存配置")
+        self.save_config_button = QPushButton(tr("ui.upload.buttons.save_config"))
         
         button_layout.addWidget(self.start_button)
         button_layout.addWidget(self.stop_button)
@@ -416,7 +414,7 @@ class UploadView(QWidget):
         current_path = self.path_input.text() or QDir.homePath()
         directory = QFileDialog.getExistingDirectory(
             self, 
-            "选择上传目录",
+            tr("ui.upload.directory_dialog.title"),
             current_path
         )
         
@@ -432,9 +430,9 @@ class UploadView(QWidget):
         current_path = os.path.dirname(self.final_message_html_file.text()) or QDir.homePath()
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
-            "选择HTML文件",
+            tr("ui.upload.options.final_message_file"),
             current_path,
-            "HTML文件 (*.html);;所有文件 (*.*)"
+            tr("ui.upload.file_types.html")
         )
         
         if file_path:
@@ -451,13 +449,15 @@ class UploadView(QWidget):
         channel = self.channel_input.text().strip()
         
         if not channel:
-            QMessageBox.warning(self, "警告", "请输入频道链接或ID")
+            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
+                              tr("ui.upload.messages.no_channels"))
             return
         
         # 检查是否已存在相同频道
         for i in range(self.channel_list.count()):
             if self.channel_list.item(i).text() == channel:
-                QMessageBox.information(self, "提示", "此频道已在列表中")
+                QMessageBox.information(self, tr("ui.upload.messages.info"), 
+                                      tr("ui.upload.messages.channel_exists"))
                 return
         
         # 添加到列表
@@ -471,7 +471,8 @@ class UploadView(QWidget):
         selected_items = self.channel_list.selectedItems()
         
         if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的频道")
+            QMessageBox.information(self, tr("ui.upload.messages.info"), 
+                                  tr("ui.upload.messages.select_channels_to_remove"))
             return
         
         # 删除选中的频道
@@ -483,23 +484,26 @@ class UploadView(QWidget):
         """开始上传操作"""
         # 检查是否有目标频道
         if self.channel_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请至少添加一个目标频道")
+            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
+                              tr("ui.upload.messages.no_channels"))
             return
         
         # 检查上传目录
         upload_dir = self.path_input.text()
         if not upload_dir or not os.path.exists(upload_dir) or not os.path.isdir(upload_dir):
-            QMessageBox.warning(self, "警告", "请选择有效的上传目录")
+            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
+                              tr("ui.upload.messages.invalid_directory"))
             return
         
         # 检查是否设置了uploader实例
         if not hasattr(self, 'uploader') or self.uploader is None:
-            QMessageBox.warning(self, "警告", "上传器未初始化，请重新启动应用")
+            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
+                              tr("ui.upload.messages.uploader_not_initialized"))
             return
         
         # 更新UI状态
-        self.current_file_label.setText("准备上传...")
-        self.upload_speed_label.setText("初始化上传...")
+        self.current_file_label.setText(tr("ui.upload.status.preparing"))
+        self.upload_speed_label.setText(tr("ui.upload.status.initializing"))
         
         # 更新按钮状态
         self.start_button.setEnabled(False)
@@ -525,8 +529,8 @@ class UploadView(QWidget):
                 logger.info("上传操作已取消")
         
         # 更新UI状态
-        self.current_file_label.setText("上传已停止")
-        self.upload_speed_label.setText("速度: - | 剩余时间: -")
+        self.current_file_label.setText(tr("ui.upload.status.stopped"))
+        self.upload_speed_label.setText(tr("ui.upload.queue.speed_info_none"))
         
         # 恢复按钮状态
         self.start_button.setEnabled(True)
@@ -536,7 +540,8 @@ class UploadView(QWidget):
         """保存当前配置"""
         # 检查是否有目标频道
         if self.channel_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请至少添加一个目标频道")
+            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
+                              tr("ui.upload.messages.no_channels"))
             return
         
         # 检查上传目录
@@ -598,7 +603,8 @@ class UploadView(QWidget):
         self.config_saved.emit(updated_config)
         
         # 显示成功消息
-        QMessageBox.information(self, "配置保存", "上传配置已保存")
+        QMessageBox.information(self, tr("ui.upload.messages.info"), 
+                              tr("ui.upload.messages.config_saved"))
         
         # 更新本地配置引用
         self.config = updated_config
@@ -608,7 +614,9 @@ class UploadView(QWidget):
         total_files = len(self.upload_queue)
         total_size = sum(item['size'] for item in self.upload_queue)
         
-        self.queue_status_label.setText(f"待上传: {total_files}个文件，共{self._format_size(total_size)}")
+        self.queue_status_label.setText(tr("ui.upload.queue.status_waiting", 
+                                          count=total_files, 
+                                          size=self._format_size(total_size)))
     
     def _format_size(self, size_bytes):
         """格式化文件大小
@@ -659,19 +667,15 @@ class UploadView(QWidget):
             remaining_time: 剩余时间 (秒)
         """
         # 更新当前文件标签
-        self.current_file_label.setText(f"当前文件: {os.path.basename(file_path)}")
+        self.current_file_label.setText(tr("ui.upload.queue.current_file", 
+                                          filename=os.path.basename(file_path)))
         
         # 更新速度和剩余时间
         speed_str = self._format_size(speed) + "/s"
+        time_str = self._format_time(remaining_time)
         
-        if remaining_time < 60:
-            time_str = f"{remaining_time}秒"
-        else:
-            minutes = remaining_time // 60
-            seconds = remaining_time % 60
-            time_str = f"{minutes}分{seconds}秒"
-        
-        self.upload_speed_label.setText(f"速度: {speed_str} | 剩余时间: {time_str}")
+        self.upload_speed_label.setText(tr("ui.upload.queue.speed_info", 
+                                         speed=speed_str, time=time_str))
         
         # 更新列表项进度
         for i in range(self.upload_list.count()):
@@ -701,15 +705,16 @@ class UploadView(QWidget):
     def all_uploads_completed(self):
         """所有上传任务完成"""
         # 重置状态
-        self.current_file_label.setText("所有文件上传完成")
-        self.upload_speed_label.setText("速度: - | 剩余时间: -")
+        self.current_file_label.setText(tr("ui.upload.status.all_completed"))
+        self.upload_speed_label.setText(tr("ui.upload.queue.speed_info_none"))
         
         # 恢复按钮状态
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         
         # 显示完成消息
-        QMessageBox.information(self, "上传完成", "所有文件上传任务已完成")
+        QMessageBox.information(self, tr("ui.upload.messages.upload_completed"), 
+                              tr("ui.upload.status.all_completed"))
     
     def load_config(self, config):
         """从配置加载UI状态
@@ -900,9 +905,9 @@ class UploadView(QWidget):
                 else:
                     # 尝试从字典中其他可能的键获取文件名
                     if 'chat_id' in file_path and 'media_count' in file_path:
-                        file_name = f"媒体组({file_path['media_count']}个文件)"
+                        file_name = tr("ui.upload.progress.media_group", count=file_path['media_count'])
                     else:
-                        file_name = "未知文件"
+                        file_name = tr("ui.upload.progress.unknown_file")
                 
                 # 记录更详细的日志，帮助调试
                 logger.debug(f"从字典中提取文件名: {file_name}, 字典内容: {file_path}")
@@ -912,7 +917,7 @@ class UploadView(QWidget):
             
             # 添加到上传列表
             item = QListWidgetItem()
-            status = "✓ 成功" if success else "✗ 失败"
+            status = tr("ui.upload.status.success") if success else tr("ui.upload.status.error")
             item.setText(f"{file_name} - {status}")
             item.setData(Qt.UserRole, file_path)
             self.upload_list.addItem(item)
@@ -934,7 +939,7 @@ class UploadView(QWidget):
             **kwargs: 其他参数，可能包含total_files, total_time等
         """
         # 更新UI状态
-        status_text = "上传成功" if success else "上传完成但有错误"
+        status_text = tr("ui.upload.status.upload_success") if success else tr("ui.upload.status.upload_error")
         self.current_file_label.setText(status_text)
         
         # 提取上传统计信息
@@ -943,9 +948,10 @@ class UploadView(QWidget):
         
         if total_files > 0 and total_time > 0:
             avg_time = total_time / total_files
-            self.upload_speed_label.setText(f"共上传 {total_files} 个文件，耗时 {total_time:.1f} 秒，平均 {avg_time:.1f} 秒/个")
+            self.upload_speed_label.setText(tr("ui.upload.progress.files_uploaded", 
+                                             count=total_files, time=total_time, avg=avg_time))
         else:
-            self.upload_speed_label.setText("上传完成")
+            self.upload_speed_label.setText(tr("ui.upload.progress.upload_complete"))
         
         # 恢复按钮状态 - 在异步方法中已经处理，这里不重复处理
         # self.start_button.setEnabled(True)
@@ -960,10 +966,10 @@ class UploadView(QWidget):
             error: 错误信息
             **kwargs: 其他参数
         """
-        error_message = f"上传错误: {error}"
+        error_message = tr("ui.upload.messages.upload_error_detail", error=str(error))
         
         # 更新UI状态
-        self.current_file_label.setText("上传出错")
+        self.current_file_label.setText(tr("ui.upload.status.upload_error"))
         self.upload_speed_label.setText(error_message)
         
         # 恢复按钮状态 - 在异步方法中已经处理，这里不重复处理
@@ -981,7 +987,7 @@ class UploadView(QWidget):
         try:
             # 提取文件信息
             if isinstance(file_data, dict):
-                file_name = file_data.get('file_name', '未知文件')
+                file_name = file_data.get('file_name', tr("ui.upload.progress.unknown_file"))
                 file_hash = file_data.get('file_hash', '')
                 
                 # 格式化文件哈希显示
@@ -989,7 +995,7 @@ class UploadView(QWidget):
                 
                 # 添加到上传列表，标记为已存在
                 item = QListWidgetItem()
-                item.setText(f"{file_name} {hash_display} - ✓ 已存在")
+                item.setText(f"{file_name} {hash_display} - {tr('ui.upload.status.exists')}")
                 if 'file_path' in file_data:
                     item.setData(Qt.UserRole, file_data['file_path'])
                 self.upload_list.addItem(item)
@@ -1022,7 +1028,7 @@ class UploadView(QWidget):
             
         except Exception as e:
             # 捕获并处理可能的异常
-            error_message = f"上传过程中发生错误: {str(e)}"
+            error_message = tr("ui.upload.messages.upload_error_detail", error=str(e))
             logger.error(error_message)
             
             # 使用Qt信号在主线程中更新UI
@@ -1042,7 +1048,7 @@ class UploadView(QWidget):
             error_message: 错误信息
         """
         # 更新UI状态
-        self.current_file_label.setText("上传出错")
+        self.current_file_label.setText(tr("ui.upload.status.upload_error"))
         self.upload_speed_label.setText("请检查日志获取详细信息")
         
         # 恢复按钮状态
@@ -1050,7 +1056,7 @@ class UploadView(QWidget):
         self.stop_button.setEnabled(False)
         
         # 显示错误对话框
-        QMessageBox.critical(self, "上传错误", error_message)
+        QMessageBox.critical(self, tr("ui.upload.messages.upload_error"), error_message)
 
     def _show_context_menu(self, pos):
         """显示右键菜单
@@ -1067,8 +1073,8 @@ class UploadView(QWidget):
         context_menu = QMenu(self)
         
         # 添加菜单项
-        edit_action = context_menu.addAction("编辑")
-        delete_action = context_menu.addAction("删除")
+        edit_action = context_menu.addAction(tr("ui.upload.context_menu.edit"))
+        delete_action = context_menu.addAction(tr("ui.upload.context_menu.delete"))
         
         # 显示菜单并获取用户选择的操作
         action = context_menu.exec(QCursor.pos())
@@ -1094,7 +1100,7 @@ class UploadView(QWidget):
         
         # 创建编辑对话框
         edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle("编辑目标频道")
+        edit_dialog.setWindowTitle(tr("ui.upload.edit_dialog.title"))
         edit_dialog.setMinimumWidth(400)
         
         # 对话框布局
@@ -1105,15 +1111,15 @@ class UploadView(QWidget):
         
         # 频道输入
         channel_input = QLineEdit(channel_text)
-        form_layout.addRow("目标频道:", channel_input)
+        form_layout.addRow(tr("ui.upload.edit_dialog.channel_label"), channel_input)
         
         # 添加表单布局到对话框
         dialog_layout.addLayout(form_layout)
         
         # 按钮布局
         button_layout = QHBoxLayout()
-        save_button = QPushButton("保存")
-        cancel_button = QPushButton("取消")
+        save_button = QPushButton(tr("ui.upload.edit_dialog.save"))
+        cancel_button = QPushButton(tr("ui.upload.edit_dialog.cancel"))
         
         button_layout.addStretch(1)
         button_layout.addWidget(save_button)
@@ -1133,15 +1139,71 @@ class UploadView(QWidget):
                 
                 # 验证输入
                 if not new_channel:
-                    raise ValueError("频道链接不能为空")
+                    raise ValueError(tr("ui.upload.edit_dialog.empty_channel"))
                 
                 # 检查是否已存在相同频道（排除当前项）
                 for i in range(self.channel_list.count()):
                     if i != row and self.channel_list.item(i).text() == new_channel:
-                        raise ValueError("此频道已在列表中")
+                        raise ValueError(tr("ui.upload.edit_dialog.channel_exists"))
                 
                 # 更新列表项
                 item.setText(new_channel)
                 
             except ValueError as e:
-                QMessageBox.warning(self, "输入错误", str(e)) 
+                QMessageBox.warning(self, tr("ui.upload.edit_dialog.input_error"), str(e))
+
+    def _update_translations(self):
+        """更新界面翻译"""
+        try:
+            # 更新标签页标题
+            self.config_tabs.setTabText(0, tr("ui.upload.tabs.channels"))
+            self.config_tabs.setTabText(1, tr("ui.upload.tabs.options"))
+            self.config_tabs.setTabText(2, tr("ui.upload.tabs.files"))
+            
+            # 更新频道标签页
+            self.channel_input.setPlaceholderText(tr("ui.upload.channels.input_placeholder"))
+            self.add_channel_button.setText(tr("ui.upload.channels.add_button"))
+            self.remove_channel_button.setText(tr("ui.upload.channels.remove_button"))
+            self.channel_list_label.setText(tr("ui.upload.channels.configured_title"))
+            
+            # 更新选项标签页
+            self.use_folder_name_check.setText(tr("ui.upload.options.use_folder_name"))
+            self.read_title_txt_check.setText(tr("ui.upload.options.read_title_txt"))
+            self.send_final_message_check.setText(tr("ui.upload.options.send_final_message"))
+            self.auto_thumbnail_check.setText(tr("ui.upload.options.auto_thumbnail"))
+            self.delay_label.setText(tr("ui.upload.options.upload_delay"))
+            self.upload_delay.setSuffix(f" {tr('ui.upload.options.upload_delay_unit')}")
+            self.final_message_html_file.setPlaceholderText(tr("ui.upload.options.final_message_placeholder"))
+            self.browse_html_button.setText(tr("ui.upload.options.browse_html"))
+            self.enable_web_page_preview_check.setText(tr("ui.upload.options.enable_web_preview"))
+            self.info_text.setText(tr("ui.upload.options.info_text"))
+            
+            # 更新文件标签页
+            self.dir_label.setText(tr("ui.upload.files.directory_label"))
+            self.path_input.setPlaceholderText(tr("ui.upload.files.directory_placeholder"))
+            self.browse_button.setText(tr("ui.upload.files.browse_button"))
+            self.help_label.setText(tr("ui.upload.files.help_text"))
+            
+            # 更新上传队列标题
+            self.queue_title.setText(f"<b>{tr('ui.upload.queue.title')}</b>")
+            
+            # 更新按钮
+            self.start_button.setText(tr("ui.upload.buttons.start_upload"))
+            self.stop_button.setText(tr("ui.upload.buttons.stop_upload"))
+            self.save_config_button.setText(tr("ui.upload.buttons.save_config"))
+            
+            # 更新队列状态
+            self._update_queue_status()
+            
+            # 更新当前状态显示
+            if hasattr(self, 'current_file_label') and self.current_file_label.text() == "当前文件: -":
+                self.current_file_label.setText(tr("ui.upload.queue.current_file_none"))
+            if hasattr(self, 'upload_speed_label') and self.upload_speed_label.text() == "速度: - | 剩余时间: -":
+                self.upload_speed_label.setText(tr("ui.upload.queue.speed_info_none"))
+            
+            logger.debug("上传界面翻译已更新")
+            
+        except Exception as e:
+            logger.error(f"更新上传界面翻译时出错: {e}")
+            import traceback
+            logger.debug(f"错误详情:\n{traceback.format_exc()}") 

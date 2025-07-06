@@ -17,6 +17,7 @@ from datetime import datetime
 
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import UIMonitorConfig, UIMonitorChannelPair, MediaType
+from src.utils.translation_manager import get_translation_manager, tr
 
 # 添加性能监控视图导入
 from src.ui.views.performance_monitor_view import PerformanceMonitorView
@@ -43,6 +44,19 @@ class ListenView(QWidget):
         
         self.config = config or {}
         
+        # 初始化翻译管理器
+        self.translation_manager = get_translation_manager()
+        
+        # 存储需要翻译的UI组件
+        self.translatable_widgets = {
+            'labels': {},
+            'buttons': {},
+            'checkboxes': {},
+            'inputs': {},
+            'tabs': {},
+            'groups': {}
+        }
+        
         # 设置布局
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setSpacing(8)  # 增加主布局的垂直间距
@@ -67,9 +81,15 @@ class ListenView(QWidget):
         # 监听配置列表
         self.listen_configs = []
         
+        # 连接语言变更信号
+        self.translation_manager.language_changed.connect(self._update_translations)
+        
         # 界面组件创建完成后再加载配置
         if self.config:
             self.load_config(self.config)
+        
+        # 初始化翻译更新
+        self._update_translations()
         
         logger.info("监听界面初始化完成")
     
@@ -103,13 +123,19 @@ class ListenView(QWidget):
         
         # 源频道
         self.source_channel_input = QLineEdit()
-        self.source_channel_input.setPlaceholderText("频道链接或ID (例如: https://t.me/example 或 -1001234567890)")
-        basic_form_layout.addRow("源频道:", self.source_channel_input)
+        self.source_channel_input.setPlaceholderText(tr("ui.listen.channel_config.source_placeholder"))
+        self.source_channel_label = QLabel(tr("ui.listen.channel_config.source_channel"))
+        self.translatable_widgets['labels']['source_channel'] = self.source_channel_label
+        self.translatable_widgets['inputs']['source_channel'] = self.source_channel_input
+        basic_form_layout.addRow(self.source_channel_label, self.source_channel_input)
         
         # 目标频道
         self.target_channel_input = QLineEdit()
-        self.target_channel_input.setPlaceholderText("目标频道链接或ID (多个频道用英文逗号分隔)")
-        basic_form_layout.addRow("目标频道:", self.target_channel_input)
+        self.target_channel_input.setPlaceholderText(tr("ui.listen.channel_config.target_placeholder"))
+        self.target_channel_label = QLabel(tr("ui.listen.channel_config.target_channels"))
+        self.translatable_widgets['labels']['target_channels'] = self.target_channel_label
+        self.translatable_widgets['inputs']['target_channels'] = self.target_channel_input
+        basic_form_layout.addRow(self.target_channel_label, self.target_channel_input)
         
         # 将基本表单添加到配置布局
         config_layout.addLayout(basic_form_layout)
@@ -122,12 +148,18 @@ class ListenView(QWidget):
         
         # 文本替换规则
         self.original_text_input = QLineEdit()
-        self.original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔如：A,B")
-        form_layout.addRow("文本替换:", self.original_text_input)
+        self.original_text_input.setPlaceholderText(tr("ui.listen.channel_config.original_text"))
+        self.original_text_label = QLabel(tr("ui.listen.channel_config.text_replacement"))
+        self.translatable_widgets['labels']['text_replacement'] = self.original_text_label
+        self.translatable_widgets['inputs']['original_text'] = self.original_text_input
+        form_layout.addRow(self.original_text_label, self.original_text_input)
         
         self.target_text_input = QLineEdit()
-        self.target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔如：C,D")
-        form_layout.addRow("替换为:", self.target_text_input)
+        self.target_text_input.setPlaceholderText(tr("ui.listen.channel_config.target_text_placeholder"))
+        self.target_text_label = QLabel(tr("ui.listen.channel_config.target_text"))
+        self.translatable_widgets['labels']['target_text'] = self.target_text_label
+        self.translatable_widgets['inputs']['target_text'] = self.target_text_input
+        form_layout.addRow(self.target_text_label, self.target_text_input)
         
         # 将表单直接添加到配置布局
         config_layout.addLayout(form_layout)
@@ -136,17 +168,24 @@ class ListenView(QWidget):
         config_layout.addSpacing(6)
         
         # 过滤选项
-        filter_options_label = QLabel("过滤选项:")
+        filter_options_label = QLabel(tr("ui.listen.channel_config.filter_options"))
         filter_options_label.setStyleSheet("font-weight: bold;")
+        self.translatable_widgets['labels']['filter_options'] = filter_options_label
         config_layout.addWidget(filter_options_label)
         
         # 过滤复选框 - 将四个复选框放在同一行，移动到过滤选项标签下方
         filter_checkboxes_layout = QHBoxLayout()
         
-        self.exclude_forwards_check = QCheckBox("排除转发消息")
-        self.exclude_replies_check = QCheckBox("排除回复消息")
-        self.exclude_text_check = QCheckBox("排除纯文本消息")
-        self.exclude_links_check = QCheckBox("排除包含链接的消息")
+        self.exclude_forwards_check = QCheckBox(tr("ui.listen.channel_config.exclude_forwards"))
+        self.exclude_replies_check = QCheckBox(tr("ui.listen.channel_config.exclude_replies"))
+        self.exclude_text_check = QCheckBox(tr("ui.listen.channel_config.exclude_text"))
+        self.exclude_links_check = QCheckBox(tr("ui.listen.channel_config.exclude_links"))
+        
+        # 存储复选框以便翻译
+        self.translatable_widgets['checkboxes']['exclude_forwards'] = self.exclude_forwards_check
+        self.translatable_widgets['checkboxes']['exclude_replies'] = self.exclude_replies_check
+        self.translatable_widgets['checkboxes']['exclude_text'] = self.exclude_text_check
+        self.translatable_widgets['checkboxes']['exclude_links'] = self.exclude_links_check
         
         filter_checkboxes_layout.addWidget(self.exclude_forwards_check)
         filter_checkboxes_layout.addWidget(self.exclude_replies_check)
@@ -170,25 +209,38 @@ class ListenView(QWidget):
         keyword_layout.setSpacing(8)
         
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("输入关键词，多个关键词用英文逗号分隔，只转发含关键词的消息")
+        self.keyword_input.setPlaceholderText(tr("ui.listen.channel_config.keywords_placeholder"))
         self.keyword_input.setMinimumWidth(540)  # 设置最小宽度为540像素
         self.keyword_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # 设置水平可扩展，垂直固定
+        self.translatable_widgets['inputs']['keywords'] = self.keyword_input
         keyword_layout.addWidget(self.keyword_input)
         
-        filter_layout.addRow("关键词:", keyword_layout)
+        self.keywords_label = QLabel(tr("ui.listen.channel_config.keywords"))
+        self.translatable_widgets['labels']['keywords'] = self.keywords_label
+        filter_layout.addRow(self.keywords_label, keyword_layout)
         
         # 媒体类型选择 - 移动到过滤选项中
         self.media_types_checkboxes = {}
         
         # 所有媒体类型在同一行
-        self.media_types_checkboxes["photo"] = QCheckBox("照片")
-        self.media_types_checkboxes["video"] = QCheckBox("视频")
-        self.media_types_checkboxes["document"] = QCheckBox("文件")
-        self.media_types_checkboxes["audio"] = QCheckBox("音频")
-        self.media_types_checkboxes["animation"] = QCheckBox("动画")
-        self.media_types_checkboxes["sticker"] = QCheckBox("贴纸")
-        self.media_types_checkboxes["voice"] = QCheckBox("语音")
-        self.media_types_checkboxes["video_note"] = QCheckBox("视频笔记")
+        self.media_types_checkboxes["photo"] = QCheckBox(tr("ui.listen.channel_config.media_types_photo"))
+        self.media_types_checkboxes["video"] = QCheckBox(tr("ui.listen.channel_config.media_types_video"))
+        self.media_types_checkboxes["document"] = QCheckBox(tr("ui.listen.channel_config.media_types_document"))
+        self.media_types_checkboxes["audio"] = QCheckBox(tr("ui.listen.channel_config.media_types_audio"))
+        self.media_types_checkboxes["animation"] = QCheckBox(tr("ui.listen.channel_config.media_types_animation"))
+        self.media_types_checkboxes["sticker"] = QCheckBox(tr("ui.listen.channel_config.media_types_sticker"))
+        self.media_types_checkboxes["voice"] = QCheckBox(tr("ui.listen.channel_config.media_types_voice"))
+        self.media_types_checkboxes["video_note"] = QCheckBox(tr("ui.listen.channel_config.media_types_video_note"))
+        
+        # 存储媒体类型复选框以便翻译
+        self.translatable_widgets['checkboxes']['media_photo'] = self.media_types_checkboxes["photo"]
+        self.translatable_widgets['checkboxes']['media_video'] = self.media_types_checkboxes["video"]
+        self.translatable_widgets['checkboxes']['media_document'] = self.media_types_checkboxes["document"]
+        self.translatable_widgets['checkboxes']['media_audio'] = self.media_types_checkboxes["audio"]
+        self.translatable_widgets['checkboxes']['media_animation'] = self.media_types_checkboxes["animation"]
+        self.translatable_widgets['checkboxes']['media_sticker'] = self.media_types_checkboxes["sticker"]
+        self.translatable_widgets['checkboxes']['media_voice'] = self.media_types_checkboxes["voice"]
+        self.translatable_widgets['checkboxes']['media_video_note'] = self.media_types_checkboxes["video_note"]
         
         # 媒体类型复选框布局 - 将所有8个类型放在同一行
         media_types_layout = QHBoxLayout()
@@ -207,7 +259,9 @@ class ListenView(QWidget):
             checkbox.setChecked(True)
         
         # 添加媒体类型行到表单布局
-        filter_layout.addRow("媒体类型:", media_types_layout)
+        self.media_types_label = QLabel(tr("ui.listen.channel_config.media_types"))
+        self.translatable_widgets['labels']['media_types'] = self.media_types_label
+        filter_layout.addRow(self.media_types_label, media_types_layout)
         
         config_layout.addLayout(filter_layout)
         
@@ -219,13 +273,15 @@ class ListenView(QWidget):
         monitor_options_layout.setSpacing(10)  # 设置合适的间距
         
         # 监听参数标签
-        monitor_options_label = QLabel("监听参数:")
+        monitor_options_label = QLabel(tr("ui.listen.channel_config.monitor_params"))
         monitor_options_label.setStyleSheet("font-weight: bold;")
+        self.translatable_widgets['labels']['monitor_params'] = monitor_options_label
         monitor_options_layout.addWidget(monitor_options_label)
         
         # 移除媒体说明复选框
-        self.remove_captions_check = QCheckBox("移除媒体说明")
+        self.remove_captions_check = QCheckBox(tr("ui.listen.channel_config.remove_captions"))
         self.remove_captions_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        self.translatable_widgets['checkboxes']['remove_captions'] = self.remove_captions_check
         monitor_options_layout.addWidget(self.remove_captions_check)
         
         # 添加弹性空间，让控件靠左对齐
@@ -242,13 +298,15 @@ class ListenView(QWidget):
         channel_action_layout.setSpacing(8)  # 增加按钮间距
         
         # 添加频道对按钮
-        self.add_channel_pair_button = QPushButton("添加频道对")
+        self.add_channel_pair_button = QPushButton(tr("ui.listen.channel_config.add_channel_pair"))
         self.add_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        self.translatable_widgets['buttons']['add_channel_pair'] = self.add_channel_pair_button
         channel_action_layout.addWidget(self.add_channel_pair_button)
         
         # 删除频道对按钮
-        self.remove_channel_pair_button = QPushButton("删除所选")
+        self.remove_channel_pair_button = QPushButton(tr("ui.listen.channel_config.remove_selected"))
         self.remove_channel_pair_button.setMinimumHeight(28)  # 增加按钮高度
+        self.translatable_widgets['buttons']['remove_selected'] = self.remove_channel_pair_button
         channel_action_layout.addWidget(self.remove_channel_pair_button)
         
         # 添加弹性空间，让按钮靠左对齐
@@ -267,8 +325,9 @@ class ListenView(QWidget):
         channel_widget_layout.setSpacing(2)
         
         # 已配置监听频道对标签 - 使用与下载界面一致的样式
-        self.pairs_list_label = QLabel("已配置监听频道对: 0个")
+        self.pairs_list_label = QLabel(tr("ui.listen.channel_config.configured_pairs", count=0))
         self.pairs_list_label.setStyleSheet("font-weight: bold;")  # 加粗标签文字
+        self.translatable_widgets['labels']['configured_pairs'] = self.pairs_list_label
         channel_widget_layout.addWidget(self.pairs_list_label)
         
         # 创建滚动区域
@@ -312,8 +371,9 @@ class ListenView(QWidget):
         general_config_layout.setSpacing(15)  # 增加间距
         
         # 通用配置标题
-        general_config_label = QLabel("通用配置:")
+        general_config_label = QLabel(tr("ui.listen.general_config.title"))
         general_config_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.translatable_widgets['labels']['general_config_title'] = general_config_label
         general_config_layout.addWidget(general_config_label)
         
         # 使用表单布局
@@ -324,8 +384,9 @@ class ListenView(QWidget):
         # 监听截止日期 - 从监听参数移动到这里
         duration_layout = QHBoxLayout()
         
-        self.duration_check = QCheckBox("启用监听截止日期")
+        self.duration_check = QCheckBox(tr("ui.listen.general_config.enable_duration"))
         self.duration_check.setStyleSheet("padding: 4px;")  # 添加内边距
+        self.translatable_widgets['checkboxes']['enable_duration'] = self.duration_check
         duration_layout.addWidget(self.duration_check)
         
         self.duration_date = QDateTimeEdit(QDateTime.currentDateTime().addDays(365))
@@ -338,7 +399,9 @@ class ListenView(QWidget):
         # 添加弹性空间，让控件靠左对齐
         duration_layout.addStretch(1)
         
-        general_form_layout.addRow("截止日期:", duration_layout)
+        self.duration_label = QLabel(tr("ui.listen.general_config.duration_label"))
+        self.translatable_widgets['labels']['duration'] = self.duration_label
+        general_form_layout.addRow(self.duration_label, duration_layout)
         
         # 连接时间过滤复选框和日期选择器的启用状态
         self.duration_check.toggled.connect(self.duration_date.setEnabled)
@@ -391,7 +454,7 @@ class ListenView(QWidget):
         self.channel_message_views = {}
         
         # 添加主消息面板
-        self.message_tabs.addTab(self.main_message_view, "所有消息")
+        self.message_tabs.addTab(self.main_message_view, tr("ui.listen.monitor_log.all_messages"))
         
         # 为"所有消息"标签卡隐藏关闭按钮
         # 通过设置标签栏按钮为None来隐藏关闭按钮
@@ -411,10 +474,16 @@ class ListenView(QWidget):
         self.performance_tab = PerformanceMonitorView(self)
         
         # 将四个标签页添加到配置标签页部件
-        self.config_tabs.addTab(self.config_tab, "频道配置")
-        self.config_tabs.addTab(self.general_config_tab, "通用配置")
-        self.config_tabs.addTab(self.log_tab, "监听日志")
-        self.config_tabs.addTab(self.performance_tab, "性能监控")
+        self.config_tabs.addTab(self.config_tab, tr("ui.listen.tabs.channel_config"))
+        self.config_tabs.addTab(self.general_config_tab, tr("ui.listen.tabs.general_config"))
+        self.config_tabs.addTab(self.log_tab, tr("ui.listen.tabs.monitor_log"))
+        self.config_tabs.addTab(self.performance_tab, tr("ui.listen.tabs.performance"))
+        
+        # 存储标签页以便翻译
+        self.translatable_widgets['tabs']['channel_config'] = 0
+        self.translatable_widgets['tabs']['general_config'] = 1
+        self.translatable_widgets['tabs']['monitor_log'] = 2
+        self.translatable_widgets['tabs']['performance'] = 3
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -425,22 +494,26 @@ class ListenView(QWidget):
         button_layout.setSpacing(12)  # 增加按钮间距
         button_layout.setContentsMargins(8, 8, 8, 8)  # 添加按钮区域边距
         
-        self.start_listen_button = QPushButton("开始监听")
+        self.start_listen_button = QPushButton(tr("ui.listen.buttons.start_listen"))
         self.start_listen_button.setMinimumHeight(40)
         self.start_listen_button.setMinimumWidth(100)  # 设置最小宽度
+        self.translatable_widgets['buttons']['start_listen'] = self.start_listen_button
         
-        self.stop_listen_button = QPushButton("停止监听")
+        self.stop_listen_button = QPushButton(tr("ui.listen.buttons.stop_listen"))
         self.stop_listen_button.setEnabled(False)
         self.stop_listen_button.setMinimumHeight(40)
         self.stop_listen_button.setMinimumWidth(100)
+        self.translatable_widgets['buttons']['stop_listen'] = self.stop_listen_button
         
-        self.save_config_button = QPushButton("保存配置")
+        self.save_config_button = QPushButton(tr("ui.listen.buttons.save_config"))
         self.save_config_button.setMinimumHeight(35)  # 稍微增加高度
         self.save_config_button.setMinimumWidth(80)
+        self.translatable_widgets['buttons']['save_config'] = self.save_config_button
         
-        self.clear_messages_button = QPushButton("清空消息")
+        self.clear_messages_button = QPushButton(tr("ui.listen.buttons.clear_messages"))
         self.clear_messages_button.setMinimumHeight(35)
         self.clear_messages_button.setMinimumWidth(80)
+        self.translatable_widgets['buttons']['clear_messages'] = self.clear_messages_button
         
         # 确保按钮大小合理
         for button in [self.start_listen_button, self.stop_listen_button, 
@@ -496,7 +569,7 @@ class ListenView(QWidget):
                 replacements.append(f"{original}->{target}")
         
         if replacements:
-            return f" - 替换规则：{', '.join(replacements)}"
+            return tr("ui.listen.display.replacement_rules", rules=', '.join(replacements))
         else:
             return ""
     
@@ -514,26 +587,26 @@ class ListenView(QWidget):
         
         # 媒体类型中文名映射
         media_type_names = {
-            MediaType.PHOTO: "照片",
-            MediaType.VIDEO: "视频", 
-            MediaType.DOCUMENT: "文件",
-            MediaType.AUDIO: "音频",
-            MediaType.ANIMATION: "动画",
-            MediaType.STICKER: "贴纸",
-            MediaType.VOICE: "语音",
-            MediaType.VIDEO_NOTE: "视频笔记"
+            MediaType.PHOTO: tr("ui.listen.channel_config.media_types_photo"),
+            MediaType.VIDEO: tr("ui.listen.channel_config.media_types_video"), 
+            MediaType.DOCUMENT: tr("ui.listen.channel_config.media_types_document"),
+            MediaType.AUDIO: tr("ui.listen.channel_config.media_types_audio"),
+            MediaType.ANIMATION: tr("ui.listen.channel_config.media_types_animation"),
+            MediaType.STICKER: tr("ui.listen.channel_config.media_types_sticker"),
+            MediaType.VOICE: tr("ui.listen.channel_config.media_types_voice"),
+            MediaType.VIDEO_NOTE: tr("ui.listen.channel_config.media_types_video_note")
         }
         
         # 对于字符串类型的媒体类型（从配置文件加载的）
         string_media_type_names = {
-            "photo": "照片",
-            "video": "视频", 
-            "document": "文件",
-            "audio": "音频",
-            "animation": "动画",
-            "sticker": "贴纸",
-            "voice": "语音",
-            "video_note": "视频笔记"
+            "photo": tr("ui.listen.channel_config.media_types_photo"),
+            "video": tr("ui.listen.channel_config.media_types_video"), 
+            "document": tr("ui.listen.channel_config.media_types_document"),
+            "audio": tr("ui.listen.channel_config.media_types_audio"),
+            "animation": tr("ui.listen.channel_config.media_types_animation"),
+            "sticker": tr("ui.listen.channel_config.media_types_sticker"),
+            "voice": tr("ui.listen.channel_config.media_types_voice"),
+            "video_note": tr("ui.listen.channel_config.media_types_video_note")
         }
         
         # 转换媒体类型为中文名称
@@ -563,9 +636,9 @@ class ListenView(QWidget):
                     pass
         
         if current_types == all_types:
-            return " - 媒体类型：全部"
+            return tr("ui.listen.display.media_types", types=tr("ui.listen.display.media_types_all"))
         else:
-            return f" - 媒体类型：{', '.join(type_names)}"
+            return tr("ui.listen.display.media_types", types=', '.join(type_names))
     
     def _format_filter_options_display(self, keywords, exclude_forwards, exclude_replies, exclude_text, exclude_links):
         """格式化过滤选项的显示
@@ -585,24 +658,24 @@ class ListenView(QWidget):
         # 关键词过滤
         if keywords:
             keywords_str = ", ".join(keywords)
-            filter_options.append(f"关键词({keywords_str})")
+            filter_options.append(tr("ui.listen.display.filter_keywords", keywords=keywords_str))
         
         # 排除选项
         exclude_options = []
         if exclude_forwards:
-            exclude_options.append("转发")
+            exclude_options.append(tr("ui.listen.display.filter_forwards"))
         if exclude_replies:
-            exclude_options.append("回复")
+            exclude_options.append(tr("ui.listen.display.filter_replies"))
         if exclude_text:
-            exclude_options.append("纯文本")
+            exclude_options.append(tr("ui.listen.display.filter_text"))
         if exclude_links:
-            exclude_options.append("链接")
+            exclude_options.append(tr("ui.listen.display.filter_links"))
         
         if exclude_options:
-            filter_options.append(f"排除({', '.join(exclude_options)})")
+            filter_options.append(tr("ui.listen.display.filter_exclude", options=', '.join(exclude_options)))
         
         if filter_options:
-            return f" - 过滤：{', '.join(filter_options)}"
+            return tr("ui.listen.display.filter_options", options=', '.join(filter_options))
         else:
             return ""
     
@@ -612,18 +685,18 @@ class ListenView(QWidget):
         target_channels = [ch.strip() for ch in self.target_channel_input.text().split(',') if ch.strip()]
         
         if not source_channel:
-            QMessageBox.warning(self, "警告", "请输入源频道链接或ID")
+            QMessageBox.warning(self, tr("ui.listen.messages.warning"), tr("ui.listen.messages.source_required"))
             return
         
         if not target_channels:
-            QMessageBox.warning(self, "警告", "请输入至少一个目标频道")
+            QMessageBox.warning(self, tr("ui.listen.messages.warning"), tr("ui.listen.messages.target_required"))
             return
         
         # 检查是否已存在相同源频道
         for i in range(self.pairs_list.count()):
             item_text = self.pairs_list.item(i).text()
             if item_text.split(" -> ")[0].strip() == source_channel:
-                QMessageBox.information(self, "提示", "已存在相同源频道的监听配置")
+                QMessageBox.information(self, tr("ui.listen.messages.info"), tr("ui.listen.messages.channel_exists"))
                 return
         
         # 文本替换规则处理
@@ -635,8 +708,8 @@ class ListenView(QWidget):
         if any(target_texts) and not any(original_texts):
             QMessageBox.warning(
                 self, 
-                "原始文本错误", 
-                "原始文本不能为空。请为每个替换规则指定一个原始文本。"
+                tr("ui.listen.messages.original_text_error"), 
+                tr("ui.listen.messages.original_text_empty")
             )
             return
             
@@ -653,8 +726,10 @@ class ListenView(QWidget):
                 # 显示警告对话框
                 QMessageBox.warning(
                     self, 
-                    "文本替换规则错误", 
-                    f"原始文本和替换文本数量不匹配。原始文本有{len(original_texts)}项，替换文本有{len(target_texts)}项。每个原始文本应对应一个替换文本。"
+                    tr("ui.listen.messages.original_text_error"), 
+                    tr("ui.listen.messages.text_replacement_mismatch", 
+                       original_count=len(original_texts), 
+                       target_count=len(target_texts))
                 )
                 return
                 
@@ -664,8 +739,8 @@ class ListenView(QWidget):
                 positions = ", ".join(map(str, empty_indexes))
                 QMessageBox.warning(
                     self, 
-                    "原始文本错误", 
-                    f"原始文本不能为空。第 {positions} 个替换规则的原始文本为空，请修正。"
+                    tr("ui.listen.messages.original_text_error"), 
+                    tr("ui.listen.messages.original_text_empty_position", positions=positions)
                 )
                 return
             
@@ -748,7 +823,7 @@ class ListenView(QWidget):
         
         display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
         if self.remove_captions_check.isChecked():
-            display_text += " (移除媒体说明)"
+            display_text += tr("ui.listen.display.remove_captions_suffix")
         
         logger.debug(f"频道对 {source_channel} - 完整显示文本: '{display_text}'")
         
@@ -757,7 +832,7 @@ class ListenView(QWidget):
         self.pairs_list.addItem(item)
         
         # 更新频道数量标签
-        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
+        self.pairs_list_label.setText(tr("ui.listen.channel_config.configured_pairs", count=self.pairs_list.count()))
         
         # 清空输入
         self.source_channel_input.clear()
@@ -782,7 +857,7 @@ class ListenView(QWidget):
         selected_items = self.pairs_list.selectedItems()
         
         if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的频道对")
+            QMessageBox.information(self, tr("ui.listen.messages.info"), tr("ui.listen.messages.select_to_remove"))
             return
         
         # 删除选中的频道对
@@ -797,7 +872,7 @@ class ListenView(QWidget):
             logger.debug(f"已删除频道对: {source_channel}，保留对应的消息标签页")
         
         # 更新频道数量标签
-        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
+        self.pairs_list_label.setText(tr("ui.listen.channel_config.configured_pairs", count=self.pairs_list.count()))
     
     def _clear_messages(self):
         """清空所有消息"""
@@ -824,7 +899,8 @@ class ListenView(QWidget):
             tab_text = self.message_tabs.tabText(index)
             
             # 不允许关闭"所有消息"标签卡（索引0）
-            if index == 0 or tab_text == "所有消息":
+            all_messages_text = tr("ui.listen.monitor_log.all_messages")
+            if index == 0 or tab_text == all_messages_text:
                 logger.info("无法关闭'所有消息'标签卡")
                 return
             
@@ -858,7 +934,7 @@ class ListenView(QWidget):
             
         except Exception as e:
             logger.error(f"关闭标签卡时发生错误: {e}")
-            self._show_error_dialog("关闭标签卡失败", f"关闭标签卡时发生错误：{str(e)}")
+            self._show_error_dialog(tr("ui.listen.messages.error"), f"关闭标签卡时发生错误：{str(e)}")
     
     def _disable_close_button_for_all_messages_tab(self):
         """为'所有消息'标签卡禁用关闭按钮
@@ -873,16 +949,16 @@ class ListenView(QWidget):
         """开始监听"""
         # 检查是否有监听频道对
         if self.pairs_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道对")
+            QMessageBox.warning(self, tr("ui.listen.messages.warning"), tr("ui.listen.messages.no_pairs"))
             return
         
         # 检查是否有监听器实例
         if not hasattr(self, 'monitor') or self.monitor is None:
-            QMessageBox.warning(self, "错误", "监听器未初始化，无法启动监听")
+            QMessageBox.warning(self, tr("ui.listen.messages.error"), tr("ui.listen.messages.monitor_not_initialized"))
             return
         
         # 添加状态消息
-        self._add_status_message("开始监听...")
+        self._add_status_message(tr("ui.listen.messages.start_listening"))
         
         # 自动切换到监听日志选项卡
         self.config_tabs.setCurrentIndex(2)  # 监听日志选项卡是第3个（索引为2）
@@ -899,7 +975,7 @@ class ListenView(QWidget):
             loop.create_task(self._async_start_monitoring())
         except Exception as e:
             logger.error(f"启动监听时出错: {e}")
-            self._add_status_message(f"启动监听失败: {e}")
+            self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
             # 恢复按钮状态
             self.start_listen_button.setEnabled(True)
             self.stop_listen_button.setEnabled(False)
@@ -908,11 +984,11 @@ class ListenView(QWidget):
         """停止监听"""
         # 检查是否有监听器实例
         if not hasattr(self, 'monitor') or self.monitor is None:
-            self._add_status_message("监听器未初始化")
+            self._add_status_message(tr("ui.listen.messages.monitor_not_initialized"))
             return
         
         # 添加状态消息
-        self._add_status_message("停止监听...")
+        self._add_status_message(tr("ui.listen.messages.stop_listening"))
         
         # 更新按钮状态
         self.start_listen_button.setEnabled(True)
@@ -926,17 +1002,17 @@ class ListenView(QWidget):
             loop.create_task(self._async_stop_monitoring())
         except Exception as e:
             logger.error(f"停止监听时出错: {e}")
-            self._add_status_message(f"停止监听失败: {e}")
+            self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
     
     async def _async_start_monitoring(self):
         """异步启动监听"""
         try:
-            self._add_status_message("正在启动监听器...")
+            self._add_status_message(tr("ui.listen.status.preparing"))
             await self.monitor.start_monitoring()
-            self._add_status_message("监听器启动成功")
+            self._add_status_message(tr("ui.listen.messages.listening_started"))
         except Exception as e:
             logger.error(f"异步启动监听失败: {e}")
-            self._add_status_message(f"启动监听失败: {e}")
+            self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
             # 恢复按钮状态
             self.start_listen_button.setEnabled(True)
             self.stop_listen_button.setEnabled(False)
@@ -945,10 +1021,10 @@ class ListenView(QWidget):
         """异步停止监听"""
         try:
             await self.monitor.stop_monitoring()
-            self._add_status_message("监听器已停止")
+            self._add_status_message(tr("ui.listen.messages.listening_stopped"))
         except Exception as e:
             logger.error(f"异步停止监听失败: {e}")
-            self._add_status_message(f"停止监听失败: {e}")
+            self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
     
     def _get_monitor_config(self):
         """获取当前监听配置
@@ -1048,7 +1124,7 @@ class ListenView(QWidget):
         """保存当前配置"""
         # 检查是否有监听频道对
         if self.pairs_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请先添加至少一个监听频道对")
+            QMessageBox.warning(self, tr("ui.listen.messages.warning"), tr("ui.listen.messages.no_pairs"))
             return
         
         # 获取监听配置
@@ -1134,14 +1210,14 @@ class ListenView(QWidget):
             self.config_saved.emit(updated_config)
             
             # 显示成功消息
-            QMessageBox.information(self, "配置保存", "监听配置已保存到文件，监听器将读取最新配置进行监听")
+            QMessageBox.information(self, tr("ui.listen.messages.success"), tr("ui.listen.messages.config_saved"))
             
             # 更新本地配置引用
             self.config = updated_config
             
         except Exception as e:
             logger.error(f"保存监听配置失败: {e}")
-            QMessageBox.warning(self, "配置保存失败", f"保存配置时出错: {e}")
+            QMessageBox.warning(self, tr("ui.listen.messages.error"), tr("ui.listen.messages.save_failed", error=str(e)))
     
     def _add_status_message(self, message):
         """添加状态消息到消息面板
@@ -1150,7 +1226,7 @@ class ListenView(QWidget):
             message: 状态消息
         """
         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        status_msg = f"[{time_str}] [系统] {message}"
+        status_msg = f"[{time_str}] [{tr('ui.listen.messages.system')}] {message}"
         
         # 添加到主消息面板
         self.main_message_view.append(status_msg)
@@ -1326,7 +1402,7 @@ class ListenView(QWidget):
             
             display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
             if remove_captions:
-                display_text += " (移除媒体说明)"
+                display_text += tr("ui.listen.display.remove_captions_suffix")
             
             logger.debug(f"频道对 {source_channel} - 完整显示文本: '{display_text}'")
             
@@ -1351,7 +1427,7 @@ class ListenView(QWidget):
             logger.debug(f"已加载频道对: {source_channel}，标签页将在收到消息时自动创建")
         
         # 更新频道数量标签
-        self.pairs_list_label.setText(f"已配置监听频道对: {self.pairs_list.count()}个")
+        self.pairs_list_label.setText(tr("ui.listen.channel_config.configured_pairs", count=self.pairs_list.count()))
         
         # 将媒体类型复选框设置为全选状态作为默认
         for checkbox in self.media_types_checkboxes.values():
@@ -1454,7 +1530,7 @@ class ListenView(QWidget):
         """
         try:
             # 构建消息显示内容
-            content = f"收到新消息 [ID: {message_id}]"
+            content = tr("ui.listen.log.received_message", message_id=message_id)
             
             # 添加到主消息面板（所有消息）
             self._add_message_item(source_info, content)
@@ -1465,7 +1541,7 @@ class ListenView(QWidget):
                 # 使用改进的匹配逻辑
                 if self._is_channel_match(source_channel, source_info):
                     time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                    formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
+                    formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.new_message')}] {source_info}: {content}"
                     view.append(formatted_msg)
                     view.moveCursor(QTextCursor.End)
                     
@@ -1514,7 +1590,7 @@ class ListenView(QWidget):
                         if display_id and display_id in self.channel_message_views:
                             view = self.channel_message_views[display_id]
                             time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                            formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
+                            formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.new_message')}] {source_info}: {content}"
                             view.append(formatted_msg)
                             view.moveCursor(QTextCursor.End)
                             
@@ -1550,7 +1626,7 @@ class ListenView(QWidget):
                         # 添加消息到标签页
                         view = self.channel_message_views[source_info]
                         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                        formatted_msg = f"[{time_str}] [新消息] {source_info}: {content}"
+                        formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.new_message')}] {source_info}: {content}"
                         view.append(formatted_msg)
                         view.moveCursor(QTextCursor.End)
                         
@@ -1573,7 +1649,7 @@ class ListenView(QWidget):
         """
         try:
             # 构建消息显示内容
-            content = f"接收到消息 [ID: {message_id}]"
+            content = tr("ui.listen.log.message_received", message_id=message_id)
             
             # 添加到消息列表
             self._add_message_item(source_info, content)
@@ -1594,16 +1670,32 @@ class ListenView(QWidget):
         """
         try:
             # 构建转发信息
-            status = "成功" if success else "失败"
-            mod_info = " (标题已修改)" if modified else ""
+            status = tr("ui.listen.messages.forward_success") if success else tr("ui.listen.messages.forward_failed")
+            mod_info = tr("ui.listen.log.title_modified") if modified else ""
             
             # 检查是否是媒体组格式的ID
             if isinstance(source_message_id, str) and source_message_id.startswith("媒体组"):
                 # 媒体组格式：显示"媒体组发送成功"
-                forward_info = f"{source_message_id} 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
+                forward_info = tr("ui.listen.log.media_group_forward", 
+                                media_group=source_message_id,
+                                source=source_display_name,
+                                target=target_display_name,
+                                status=status,
+                                modified=mod_info)
             else:
                 # 单条消息格式：使用传统的"消息[ID]"格式
-                forward_info = f"消息[{source_message_id}] 从 {source_display_name} 转发到 {target_display_name} - {status}{mod_info}"
+                if success:
+                    forward_info = tr("ui.listen.log.forward_success",
+                                    message_id=source_message_id,
+                                    source=source_display_name,
+                                    target=target_display_name,
+                                    modified=mod_info)
+                else:
+                    forward_info = tr("ui.listen.log.forward_failed",
+                                    message_id=source_message_id,
+                                    source=source_display_name,
+                                    target=target_display_name,
+                                    modified=mod_info)
             
             # 添加到主消息面板（所有消息）
             self._add_forward_item(forward_info, success)
@@ -1625,12 +1717,13 @@ class ListenView(QWidget):
                 if self._is_channel_match(source_channel, source_display_name):
                     matched_channel = source_channel
                     time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                    formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                    status_text = tr("ui.listen.messages.forward_success") if success else tr("ui.listen.messages.forward_failed")
+                    formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.forward')}{status_text}] {forward_info}"
                     view.append(formatted_msg)
                     
                     # 如果转发成功，添加分割线
                     if success:
-                        separator = "#" * 50
+                        separator = tr("ui.listen.log.separator")
                         view.append(separator)
                     
                     view.moveCursor(QTextCursor.End)
@@ -1681,12 +1774,13 @@ class ListenView(QWidget):
                         if display_id and display_id in self.channel_message_views:
                             view = self.channel_message_views[display_id]
                             time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                            formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                            status_text = tr("ui.listen.messages.forward_success") if success else tr("ui.listen.messages.forward_failed")
+                            formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.forward')}{status_text}] {forward_info}"
                             view.append(formatted_msg)
                             
                             # 如果转发成功，添加分割线
                             if success:
-                                separator = "#" * 50
+                                separator = tr("ui.listen.log.separator")
                                 view.append(separator)
                             
                             view.moveCursor(QTextCursor.End)
@@ -1725,12 +1819,13 @@ class ListenView(QWidget):
                         # 添加消息到标签页
                         view = self.channel_message_views[source_display_name]
                         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-                        formatted_msg = f"[{time_str}] [转发{status}] {forward_info}"
+                        status_text = tr("ui.listen.messages.forward_success") if success else tr("ui.listen.messages.forward_failed")
+                        formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.forward')}{status_text}] {forward_info}"
                         view.append(formatted_msg)
                         
                         # 如果转发成功，添加分割线
                         if success:
-                            separator = "#" * 50
+                            separator = tr("ui.listen.log.separator")
                             view.append(separator)
                         
                         view.moveCursor(QTextCursor.End)
@@ -1754,14 +1849,14 @@ class ListenView(QWidget):
         """
         # 使用现有的消息显示机制
         time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        formatted_msg = f"[{time_str}] [转发] {forward_info}"
+        formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.forward')}] {forward_info}"
         
         # 添加到主消息面板
         self.main_message_view.append(formatted_msg)
         
         # 如果转发成功，添加分割线
         if success:
-            separator = "#" * 50
+            separator = tr("ui.listen.log.separator")
             self.main_message_view.append(separator)
         
         # 自动滚动到底部
@@ -1915,7 +2010,7 @@ class ListenView(QWidget):
             channel_ids: 监听的频道ID列表(可选)
         """
         # 更新UI状态
-        self.main_message_view.append("正在监听中...")
+        self.main_message_view.append(tr("ui.listen.status.listening"))
         
         # 禁用开始按钮，启用停止按钮
         self.start_listen_button.setEnabled(False)
@@ -1924,20 +2019,20 @@ class ListenView(QWidget):
         # 显示正在监听的频道
         if channel_ids:
             channels_str = ", ".join(str(c) for c in channel_ids)
-            self.main_message_view.append(f"正在监听: {channels_str}")
+            self.main_message_view.append(tr("ui.listen.messages.listening_channels", channels=channels_str))
         
-        logger.info("监听已开始")
+        logger.info(tr("ui.listen.messages.listening_started"))
     
     def _on_monitoring_stopped(self):
         """监听停止处理"""
         # 更新UI状态
-        self.main_message_view.append("监听已停止")
+        self.main_message_view.append(tr("ui.listen.status.stopped"))
         
         # 启用开始按钮，禁用停止按钮
         self.start_listen_button.setEnabled(True)
         self.stop_listen_button.setEnabled(False)
         
-        logger.info("监听已停止")
+        logger.info(tr("ui.listen.messages.listening_stopped"))
     
     def _on_forward_complete(self, msg_id, source_channel=None, target_channel=None):
         """转发完成处理
@@ -1969,7 +2064,7 @@ class ListenView(QWidget):
             message: 额外的消息(可选)
         """
         # 更新UI状态
-        error_msg = f"监听出错: {error}"
+        error_msg = tr("ui.listen.messages.monitor_error", error=str(error))
         if message:
             error_msg += f"\n{message}"
             
@@ -1980,7 +2075,7 @@ class ListenView(QWidget):
         self.stop_listen_button.setEnabled(False)
         
         # 显示错误对话框
-        self._show_error_dialog("监听错误", error_msg)
+        self._show_error_dialog(tr("ui.listen.messages.monitor_error_title"), error_msg)
         
         logger.error(f"监听错误: {error}")
         if message:
@@ -1996,11 +2091,11 @@ class ListenView(QWidget):
         """
         try:
             # 构建过滤消息显示内容
-            filter_content = f"消息 [ID: {message_id}] 被过滤 - 原因：{filter_reason}"
+            filter_content = tr("ui.listen.log.message_filtered", message_id=message_id, reason=filter_reason)
             
             # 添加到主消息面板
             time_str = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-            formatted_msg = f"[{time_str}] [过滤] {source_info}: {filter_content}"
+            formatted_msg = f"[{time_str}] [{tr('ui.listen.messages.filtered')}] {source_info}: {filter_content}"
             
             self.main_message_view.append(formatted_msg)
             
@@ -2187,8 +2282,8 @@ class ListenView(QWidget):
         context_menu = QMenu(self)
         
         # 添加菜单项
-        edit_action = context_menu.addAction("编辑")
-        delete_action = context_menu.addAction("删除")
+        edit_action = context_menu.addAction(tr("ui.listen.context_menu.edit"))
+        delete_action = context_menu.addAction(tr("ui.listen.context_menu.delete"))
         
         # 显示菜单并获取用户选择的操作
         action = context_menu.exec(QCursor.pos())
@@ -2216,7 +2311,7 @@ class ListenView(QWidget):
         
         # 创建编辑对话框
         edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle("编辑监听频道对")
+        edit_dialog.setWindowTitle(tr("ui.listen.edit_dialog.title"))
         edit_dialog.setMinimumWidth(600)
         edit_dialog.setMinimumHeight(400)  # 降低最小高度，允许更小的窗口
         edit_dialog.resize(650, 700)  # 设置默认大小
@@ -2246,19 +2341,19 @@ class ListenView(QWidget):
         
         # 源频道输入
         source_input = QLineEdit(channel_pair.get('source_channel', ''))
-        source_input.setPlaceholderText("频道链接或ID")
-        basic_form.addRow("源频道:", source_input)
+        source_input.setPlaceholderText(tr("ui.listen.channel_config.source_placeholder"))
+        basic_form.addRow(tr("ui.listen.edit_dialog.source_channel"), source_input)
         
         # 目标频道输入
         target_channels = channel_pair.get('target_channels', [])
         target_input = QLineEdit(', '.join(target_channels))
-        target_input.setPlaceholderText("多个频道用英文逗号分隔")
-        basic_form.addRow("目标频道:", target_input)
+        target_input.setPlaceholderText(tr("ui.listen.channel_config.target_placeholder"))
+        basic_form.addRow(tr("ui.listen.edit_dialog.target_channels"), target_input)
         
         scroll_layout.addLayout(basic_form)
         
         # 文本替换规则组
-        text_filter_group = QGroupBox("文本替换规则")
+        text_filter_group = QGroupBox(tr("ui.listen.edit_dialog.text_replacement_rules"))
         text_filter_layout = QFormLayout(text_filter_group)
         text_filter_layout.setSpacing(8)
         
@@ -2276,25 +2371,25 @@ class ListenView(QWidget):
                     target_texts.append(target_text)
         
         original_text_input = QLineEdit(', '.join(original_texts))
-        original_text_input.setPlaceholderText("要替换的原始文本，多个用英文逗号分隔")
-        text_filter_layout.addRow("替换:", original_text_input)
+        original_text_input.setPlaceholderText(tr("ui.listen.channel_config.original_text"))
+        text_filter_layout.addRow(tr("ui.listen.edit_dialog.replace"), original_text_input)
         
         target_text_input = QLineEdit(', '.join(target_texts))
-        target_text_input.setPlaceholderText("替换后的目标文本，多个用英文逗号分隔")
-        text_filter_layout.addRow("替换为:", target_text_input)
+        target_text_input.setPlaceholderText(tr("ui.listen.channel_config.target_text"))
+        text_filter_layout.addRow(tr("ui.listen.edit_dialog.replace_to"), target_text_input)
         
         scroll_layout.addWidget(text_filter_group)
         
         # 媒体类型选择组
-        media_group = QGroupBox("媒体类型")
+        media_group = QGroupBox(tr("ui.listen.edit_dialog.media_types"))
         media_layout = QVBoxLayout(media_group)
         
         # 第一行媒体类型
         media_row1 = QHBoxLayout()
-        photo_check = QCheckBox("照片")
-        video_check = QCheckBox("视频")
-        document_check = QCheckBox("文档")
-        audio_check = QCheckBox("音频")
+        photo_check = QCheckBox(tr("ui.listen.channel_config.media_types_photo"))
+        video_check = QCheckBox(tr("ui.listen.channel_config.media_types_video"))
+        document_check = QCheckBox(tr("ui.listen.channel_config.media_types_document"))
+        audio_check = QCheckBox(tr("ui.listen.channel_config.media_types_audio"))
         
         media_row1.addWidget(photo_check)
         media_row1.addWidget(video_check)
@@ -2304,10 +2399,10 @@ class ListenView(QWidget):
         
         # 第二行媒体类型
         media_row2 = QHBoxLayout()
-        animation_check = QCheckBox("动画")
-        sticker_check = QCheckBox("贴纸")
-        voice_check = QCheckBox("语音")
-        video_note_check = QCheckBox("视频笔记")
+        animation_check = QCheckBox(tr("ui.listen.channel_config.media_types_animation"))
+        sticker_check = QCheckBox(tr("ui.listen.channel_config.media_types_sticker"))
+        voice_check = QCheckBox(tr("ui.listen.channel_config.media_types_voice"))
+        video_note_check = QCheckBox(tr("ui.listen.channel_config.media_types_video_note"))
         
         media_row2.addWidget(animation_check)
         media_row2.addWidget(sticker_check)
@@ -2334,7 +2429,7 @@ class ListenView(QWidget):
         scroll_layout.addWidget(media_group)
         
         # 过滤选项组
-        filter_group = QGroupBox("过滤选项")
+        filter_group = QGroupBox(tr("ui.listen.edit_dialog.filter_options"))
         filter_layout = QVBoxLayout(filter_group)
         
         # 关键词输入
@@ -2346,34 +2441,34 @@ class ListenView(QWidget):
         keywords_input_layout.setSpacing(8)
         
         keywords_input = QLineEdit(', '.join(keywords))
-        keywords_input.setPlaceholderText("关键词，多个用英文逗号分隔，只转发含关键词的消息")
+        keywords_input.setPlaceholderText(tr("ui.listen.edit_dialog.keywords_placeholder"))
         keywords_input.setMinimumWidth(400)  # 设置最小宽度为400像素
         keywords_input_layout.addWidget(keywords_input)
         
         # 添加弹性空间，让备注文字靠近输入框
         keywords_input_layout.addStretch(1)
         
-        keywords_layout.addRow("关键词:", keywords_input_layout)
+        keywords_layout.addRow(tr("ui.listen.edit_dialog.keywords"), keywords_input_layout)
         filter_layout.addLayout(keywords_layout)
         
         # 排除选项
         exclude_layout = QHBoxLayout()
         
-        exclude_forwards_check = QCheckBox("排除转发消息")
+        exclude_forwards_check = QCheckBox(tr("ui.listen.channel_config.exclude_forwards"))
         exclude_forwards_check.setChecked(channel_pair.get('exclude_forwards', False))
         exclude_layout.addWidget(exclude_forwards_check)
         
-        exclude_replies_check = QCheckBox("排除回复消息")
+        exclude_replies_check = QCheckBox(tr("ui.listen.channel_config.exclude_replies"))
         exclude_replies_check.setChecked(channel_pair.get('exclude_replies', False))
         exclude_layout.addWidget(exclude_replies_check)
         
-        exclude_text_check = QCheckBox("排除纯文本消息")
+        exclude_text_check = QCheckBox(tr("ui.listen.channel_config.exclude_text"))
         # 兼容性处理：先尝试读取exclude_text，如果没有则从exclude_media转换
         exclude_text_value = channel_pair.get('exclude_text', channel_pair.get('exclude_media', False))
         exclude_text_check.setChecked(exclude_text_value)
         exclude_layout.addWidget(exclude_text_check)
         
-        exclude_links_check = QCheckBox("排除包含链接的消息")
+        exclude_links_check = QCheckBox(tr("ui.listen.channel_config.exclude_links"))
         exclude_links_check.setChecked(channel_pair.get('exclude_links', False))
         exclude_layout.addWidget(exclude_links_check)
         
@@ -2383,10 +2478,10 @@ class ListenView(QWidget):
         scroll_layout.addWidget(filter_group)
         
         # 其他选项组
-        other_group = QGroupBox("其他选项")
+        other_group = QGroupBox(tr("ui.listen.edit_dialog.other_options"))
         other_layout = QVBoxLayout(other_group)
         
-        remove_captions_check = QCheckBox("移除媒体说明")
+        remove_captions_check = QCheckBox(tr("ui.listen.edit_dialog.remove_captions"))
         remove_captions_check.setChecked(channel_pair.get('remove_captions', False))
         other_layout.addWidget(remove_captions_check)
         
@@ -2403,8 +2498,8 @@ class ListenView(QWidget):
         
         # 按钮布局 - 固定在底部，不在滚动区域内
         button_layout = QHBoxLayout()
-        save_button = QPushButton("保存")
-        cancel_button = QPushButton("取消")
+        save_button = QPushButton(tr("ui.listen.edit_dialog.save"))
+        cancel_button = QPushButton(tr("ui.listen.edit_dialog.cancel"))
         
         save_button.setMinimumHeight(35)
         cancel_button.setMinimumHeight(35)
@@ -2433,9 +2528,9 @@ class ListenView(QWidget):
                 
                 # 验证输入
                 if not new_source:
-                    raise ValueError("源频道不能为空")
+                    raise ValueError(tr("ui.listen.edit_dialog.source_empty"))
                 if not new_targets:
-                    raise ValueError("目标频道不能为空")
+                    raise ValueError(tr("ui.listen.edit_dialog.target_empty"))
                 
                 # 收集媒体类型
                 new_media_types = []
@@ -2457,7 +2552,7 @@ class ListenView(QWidget):
                     new_media_types.append(MediaType.VIDEO_NOTE)
                 
                 if not new_media_types:
-                    raise ValueError("至少需要选择一种媒体类型")
+                    raise ValueError(tr("ui.listen.edit_dialog.media_type_required"))
                 
                 # 收集文本替换规则
                 original_texts = [t.strip() for t in original_text_input.text().split(',') if t.strip()]
@@ -2509,7 +2604,7 @@ class ListenView(QWidget):
                 self._update_channel_pair(row, updated_pair)
                 
             except ValueError as e:
-                QMessageBox.warning(self, "输入错误", str(e))
+                QMessageBox.warning(self, tr("ui.listen.messages.input_error"), str(e))
     
     def _update_channel_pair(self, row, updated_pair):
         """更新频道对
@@ -2548,7 +2643,7 @@ class ListenView(QWidget):
             # 构建完整显示文本
             display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
             if updated_pair.get('remove_captions', False):
-                display_text += " (移除媒体说明)"
+                display_text += tr("ui.listen.display.remove_captions_suffix")
             
             # 更新列表项
             item.setText(display_text)
@@ -2558,11 +2653,11 @@ class ListenView(QWidget):
             logger.debug(f"频道对已更新: {display_text}")
             
             # 显示成功消息
-            QMessageBox.information(self, "更新成功", "频道对已成功更新，请点击保存配置")
+            QMessageBox.information(self, tr("ui.listen.messages.success"), tr("ui.listen.edit_dialog.update_success"))
             
         except Exception as e:
             logger.error(f"更新频道对时出错: {e}")
-            QMessageBox.warning(self, "更新失败", f"更新频道对时出错: {e}") 
+            QMessageBox.warning(self, tr("ui.listen.messages.error"), tr("ui.listen.edit_dialog.update_failed", error=str(e)))
     
     def _extract_channel_title_from_source_info(self, source_info: str) -> str:
         """从源信息中智能提取频道名称作为标签页标题
@@ -2579,7 +2674,7 @@ class ListenView(QWidget):
             str: 提取的频道名称，适合作为标签页标题
         """
         if not source_info:
-            return "未知频道"
+            return tr("ui.listen.display.unknown_channel")
             
         # 去除首尾空格
         source_info = source_info.strip()
@@ -2595,7 +2690,7 @@ class ListenView(QWidget):
         
         # 情况2: 纯数字ID "-1001234567890"
         if source_info.isdigit() or (source_info.startswith('-') and source_info[1:].isdigit()):
-            return f"频道{source_info}"
+            return tr("ui.listen.display.channel_prefix", id=source_info)
         
         # 情况3: @username格式
         if source_info.startswith('@'):
@@ -2619,3 +2714,170 @@ class ListenView(QWidget):
             return source_info[:20] + "..."
         
         return source_info
+    
+    def _update_translations(self):
+        """更新所有翻译文本，支持动态语言切换"""
+        try:
+            # 正确刷新四个主Tab标题
+            if hasattr(self, 'config_tabs') and self.config_tabs:
+                self.config_tabs.setTabText(0, tr("ui.listen.tabs.channel_config"))
+                self.config_tabs.setTabText(1, tr("ui.listen.tabs.general_config"))
+                self.config_tabs.setTabText(2, tr("ui.listen.tabs.monitor_log"))
+                if self.config_tabs.count() > 3:
+                    self.config_tabs.setTabText(3, tr("ui.listen.tabs.performance"))
+            # 通用配置选项卡标题和表单label
+            if hasattr(self, 'translatable_widgets') and 'labels' in self.translatable_widgets:
+                if 'general_config_title' in self.translatable_widgets['labels']:
+                    self.translatable_widgets['labels']['general_config_title'].setText(tr("ui.listen.general_config.title"))
+                if 'duration' in self.translatable_widgets['labels']:
+                    self.translatable_widgets['labels']['duration'].setText(tr("ui.listen.general_config.duration_label"))
+            # 监听日志 ALL messages 标签
+            if hasattr(self, 'message_tabs') and self.message_tabs:
+                if self.message_tabs.count() > 0:
+                    self.message_tabs.setTabText(0, tr("ui.listen.monitor_log.all_messages"))
+            # 性能监控子标题刷新
+            if hasattr(self, 'performance_tab') and hasattr(self.performance_tab, '_update_translations'):
+                self.performance_tab._update_translations()
+            # 更新标签文本
+            if hasattr(self, 'translatable_widgets'):
+                # 更新按钮
+                for button_name, button in self.translatable_widgets.get('buttons', {}).items():
+                    if button_name == 'add_channel_pair':
+                        button.setText(tr("ui.listen.channel_config.add_channel_pair"))
+                    elif button_name == 'remove_selected':
+                        button.setText(tr("ui.listen.channel_config.remove_selected"))
+                    elif button_name == 'start_listen':
+                        button.setText(tr("ui.listen.buttons.start_listen"))
+                    elif button_name == 'stop_listen':
+                        button.setText(tr("ui.listen.buttons.stop_listen"))
+                    elif button_name == 'save_config':
+                        button.setText(tr("ui.listen.buttons.save_config"))
+                    elif button_name == 'clear_messages':
+                        button.setText(tr("ui.listen.buttons.clear_messages"))
+                
+                # 更新标签文本
+                for label_name, label in self.translatable_widgets.get('labels', {}).items():
+                    if label_name == 'source_channel':
+                        label.setText(tr("ui.listen.channel_config.source_channel"))
+                    elif label_name == 'target_channels':
+                        label.setText(tr("ui.listen.channel_config.target_channels"))
+                    elif label_name == 'original_text':
+                        label.setText(tr("ui.listen.channel_config.original_text"))
+                    elif label_name == 'target_text':
+                        label.setText(tr("ui.listen.channel_config.target_text"))
+                    elif label_name == 'filter_options':
+                        label.setText(tr("ui.listen.channel_config.filter_options"))
+                    elif label_name == 'keywords':
+                        label.setText(tr("ui.listen.channel_config.keywords"))
+                    elif label_name == 'media_types':
+                        label.setText(tr("ui.listen.channel_config.media_types"))
+                    elif label_name == 'monitor_params':
+                        label.setText(tr("ui.listen.channel_config.monitor_params"))
+                    elif label_name == 'configured_pairs':
+                        label.setText(tr("ui.listen.channel_config.configured_pairs", count=self.pairs_list.count()))
+                    elif label_name == 'general_config':
+                        label.setText(tr("ui.listen.general_config.title"))
+                    elif label_name == 'enable_duration':
+                        label.setText(tr("ui.listen.general_config.enable_duration"))
+                    elif label_name == 'duration_label':
+                        label.setText(tr("ui.listen.general_config.duration_label"))
+                    elif label_name == 'monitor_log':
+                        label.setText(tr("ui.listen.monitor_log.title"))
+                
+                # 更新输入框占位符
+                for input_name, input_widget in self.translatable_widgets.get('inputs', {}).items():
+                    if input_name == 'source_channel':
+                        input_widget.setPlaceholderText(tr("ui.listen.channel_config.source_placeholder"))
+                    elif input_name == 'target_channels':
+                        input_widget.setPlaceholderText(tr("ui.listen.channel_config.target_placeholder"))
+                    elif input_name == 'original_text':
+                        input_widget.setPlaceholderText(tr("ui.listen.channel_config.original_text"))
+                    elif input_name == 'target_text':
+                        input_widget.setPlaceholderText(tr("ui.listen.channel_config.target_text_placeholder"))
+                    elif input_name == 'keywords':
+                        input_widget.setPlaceholderText(tr("ui.listen.channel_config.keywords_placeholder"))
+                
+                # 更新复选框文本
+                for checkbox_name, checkbox in self.translatable_widgets.get('checkboxes', {}).items():
+                    if checkbox_name == 'exclude_forwards':
+                        checkbox.setText(tr("ui.listen.channel_config.exclude_forwards"))
+                    elif checkbox_name == 'exclude_replies':
+                        checkbox.setText(tr("ui.listen.channel_config.exclude_replies"))
+                    elif checkbox_name == 'exclude_text':
+                        checkbox.setText(tr("ui.listen.channel_config.exclude_text"))
+                    elif checkbox_name == 'exclude_links':
+                        checkbox.setText(tr("ui.listen.channel_config.exclude_links"))
+                    elif checkbox_name == 'remove_captions':
+                        checkbox.setText(tr("ui.listen.channel_config.remove_captions"))
+                    elif checkbox_name == 'enable_duration':
+                        checkbox.setText(tr("ui.listen.general_config.enable_duration"))
+                    elif checkbox_name.startswith('media_'):
+                        media_type = checkbox_name.replace('media_', '')
+                        checkbox.setText(tr(f"ui.listen.channel_config.media_types_{media_type}"))
+                
+                # 更新标签页容器文本
+                for tab_name, tab_widget in self.translatable_widgets.get('tabs', {}).items():
+                    if hasattr(tab_widget, 'setTitle'):
+                        if tab_name == 'all_messages':
+                            tab_widget.setTitle(tr("ui.listen.monitor_log.all_messages"))
+            
+            # 更新状态显示
+            if hasattr(self, 'status_label') and self.status_label:
+                current_text = self.status_label.text()
+                if "监听中" in current_text or "Monitoring" in current_text:
+                    self.status_label.setText(tr("ui.listen.status.listening"))
+                elif "已停止" in current_text or "Stopped" in current_text:
+                    self.status_label.setText(tr("ui.listen.status.stopped"))
+                elif "准备中" in current_text or "Preparing" in current_text:
+                    self.status_label.setText(tr("ui.listen.status.preparing"))
+                elif "就绪" in current_text or "Ready" in current_text:
+                    self.status_label.setText(tr("ui.listen.status.ready"))
+                elif "错误" in current_text or "Error" in current_text:
+                    self.status_label.setText(tr("ui.listen.status.error"))
+            
+            logger.debug("监听界面翻译已更新")
+            
+            # 新增：刷新已配置频道对列表内容
+            for i in range(self.pairs_list.count()):
+                item = self.pairs_list.item(i)
+                data = item.data(Qt.UserRole)
+                source_channel = data.get('source_channel', '')
+                target_channels = data.get('target_channels', [])
+                target_channels_str = ', '.join(target_channels)
+                text_filter_str = self._format_text_filter_display(data.get('text_filter', []))
+                media_types_str = self._format_media_types_display(data.get('media_types', []))
+                filter_options_str = self._format_filter_options_display(
+                    data.get('keywords', []),
+                    data.get('exclude_forwards', False),
+                    data.get('exclude_replies', False),
+                    data.get('exclude_text', False),
+                    data.get('exclude_links', False)
+                )
+                display_text = f"{source_channel} -> {target_channels_str}{text_filter_str}{media_types_str}{filter_options_str}"
+                if data.get('remove_captions', False):
+                    display_text += tr("ui.listen.display.remove_captions_suffix")
+                item.setText(display_text)
+            
+            # 修正"文本替换"label
+            if hasattr(self, 'original_text_label'):
+                self.original_text_label.setText(tr("ui.listen.channel_config.text_replacement"))
+            # 性能监控主标题和分组刷新
+            if hasattr(self, 'performance_tab') and hasattr(self.performance_tab, '_update_translations'):
+                self.performance_tab._update_translations()
+            # 性能监控Tab标签栏
+            if hasattr(self, 'config_tabs') and self.config_tabs.count() > 3:
+                self.config_tabs.setTabText(3, tr("ui.listen.tabs.performance"))
+            # 性能监控内容区主标题
+            if hasattr(self, 'performance_tab') and hasattr(self.performance_tab, 'title_label'):
+                self.performance_tab.title_label.setText(tr("ui.listen.tabs.performance"))
+            # 详细统计分组QGroupBox
+            if hasattr(self, 'performance_tab') and hasattr(self.performance_tab, 'main_layout'):
+                item = self.performance_tab.main_layout.itemAt(5)
+                if item and item.widget():
+                    item.widget().setTitle(tr("ui.performance_monitor.details"))
+            # 详细统计分组内QLabel
+            if hasattr(self, 'performance_tab') and hasattr(self.performance_tab, 'details_title_label'):
+                self.performance_tab.details_title_label.setText(tr("ui.performance_monitor.details"))
+        except Exception as e:
+            logger.error(f"更新监听界面翻译时出错: {e}")
+            logger.debug(f"翻译更新异常详情: {e}", exc_info=True)
