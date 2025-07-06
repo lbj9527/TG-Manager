@@ -128,11 +128,17 @@ class MainWindow(
             self._update_sidebar_translations()
         
         # 更新当前打开的视图的翻译
+        logger.debug(f"当前打开的视图: {list(self.opened_views.keys())}")
         for view_name, view_widget in self.opened_views.items():
+            logger.debug(f"更新视图翻译: {view_name}, 类型: {type(view_widget).__name__}")
             if hasattr(view_widget, '_update_translations'):
+                logger.debug(f"调用 {view_name} 的 _update_translations 方法")
                 view_widget._update_translations()
             elif hasattr(view_widget, 'update_translations'):
+                logger.debug(f"调用 {view_name} 的 update_translations 方法")
                 view_widget.update_translations()
+            else:
+                logger.debug(f"视图 {view_name} 没有翻译更新方法")
         
         logger.debug("=== 所有组件翻译更新完成 ===")
     

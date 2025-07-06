@@ -582,6 +582,9 @@ class DownloaderSerial():
         logger.info(f"所有下载任务完成，共下载 {completed_count} 个文件")
         self._is_downloading = False
         self._current_file = None
+        
+        # 发送所有下载完成信号
+        self.emit("all_downloads_complete")
     
     def _download_progress_callback(self, client, message_id, filename):
         """下载进度回调函数

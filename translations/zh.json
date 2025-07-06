@@ -261,14 +261,13 @@
       "file_types": "文件类型:",
       "progress": "下载进度:",
       "status": {
-        "current_task": "当前下载任务:",
         "not_started": "未开始下载",
+        "preparing": "下载准备中...",
+        "current_task": "当前下载:",
         "progress": "下载进度: {percent}%",
-        "overall_progress": "总进度: {completed}/{total} ({percent}%)",
+        "error_label": "下载过程中出现错误",
         "completed": "所有下载已完成",
-        "preparing": "准备中",
-        "error": "下载出错: {error}",
-        "error_label": "下载过程中出现错误"
+        "overall_progress": "总进度: {completed}/{total} ({percent}%)"
       },
       "edit": "编辑",
       "delete": "删除",
@@ -306,7 +305,23 @@
       "dir_exceed_limit": "⚠️ 当前目录大小已超过设定的限制({limit} MB)!",
       "dir_near_limit": "⚠️ 当前目录大小已接近设定的限制({limit} MB)!",
       "dir_info": "下载目录: {path}\n当前大小: {size}",
-      "dir_check_error": "检查目录大小时出错: {error}"
+      "dir_check_error": "检查目录大小时出错: {error}",
+      "messages": {
+        "input_error": "请输入频道链接或ID",
+        "already_in_list": "此频道已在列表中",
+        "select_to_remove": "请先选择要删除的频道",
+        "config_saved": "下载配置已保存"
+      },
+      "speed": "速度: {speed} {unit}",
+      "error_downloader_not_init": "下载器未初始化，请稍后再试",
+      "error_start_failed": "启动下载任务失败: {error}",
+      "dir_exceed_title": "下载目录大小超出限制",
+      "dir_exceed_text": "下载目录大小已超出设置的限制!\n\n当前大小: {current} MB\n限制大小: {limit} MB\n\n下载任务已自动停止。",
+      "dir_exceed_countdown": "此对话框将在 {seconds} 秒后自动关闭",
+      "browse_title": "选择下载文件保存位置",
+      "save": "保存",
+      "clear": "清空列表",
+      "file_already_downloaded": "消息[{message_id}]已下载，跳过：{filename}"
     },
     "listen": {
       "title": "消息监听",

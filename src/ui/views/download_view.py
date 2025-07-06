@@ -50,6 +50,13 @@ class DownloadView(QWidget):
         self.config = config or {}
         self.use_keywords = use_keywords
         
+        # 注释掉直接的翻译信号连接，依赖主窗口的翻译更新机制
+        # # 获取翻译管理器并连接语言变更信号
+        # from src.utils.translation_manager import get_translation_manager
+        # self.translation_manager = get_translation_manager()
+        # self.translation_manager.language_changed.connect(self._update_translations)
+        # logger.debug("下载视图已连接语言变更信号")
+        
         # 初始化下载计数器
         self.completed_downloads = 0
         self.total_downloads = 0
@@ -415,20 +422,20 @@ class DownloadView(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 5, 0, 0)  # 增加上边距
         
-        self.start_button = QPushButton("开始下载")
+        self.start_button = QPushButton(tr("ui.download.start_download"))
         self.start_button.setMinimumHeight(40)
         self.start_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
-        self.stop_button = QPushButton("停止下载")
+        self.stop_button = QPushButton(tr("ui.download.stop_download"))
         self.stop_button.setMinimumHeight(40)
         self.stop_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.stop_button.setEnabled(False)  # 初始状态为禁用
         
-        self.save_config_button = QPushButton("保存配置")
+        self.save_config_button = QPushButton(tr("ui.common.save"))
         self.save_config_button.setMinimumHeight(30)
         self.save_config_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
-        self.clear_list_button = QPushButton("清空列表")
+        self.clear_list_button = QPushButton(tr("ui.common.clear"))
         self.clear_list_button.setMinimumHeight(30)
         self.clear_list_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         
@@ -465,19 +472,17 @@ class DownloadView(QWidget):
     def _init_ui_state(self):
         """初始化UI状态"""
         # 设置工具提示
-        self.channel_input.setToolTip("输入Telegram频道链接或ID")
-        self.start_id.setToolTip("起始消息ID (包含)")
-        self.end_id.setToolTip("结束消息ID (包含), 0表示最新消息")
-        self.browse_path_button.setToolTip("选择下载文件保存位置")
-        
-        # 关键词输入提示 - 移除对use_keywords的检查
-        self.keyword_input.setToolTip("输入要筛选的关键词，多个用英文逗号分隔，同义词用横杠'-'连接（例如：关键词1-关键词2-关键词3）")
+        self.channel_input.setToolTip(tr("ui.download.source_channel"))
+        self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
+        self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
+        self.browse_path_button.setToolTip(tr("ui.download.browse_title"))
+        self.keyword_input.setToolTip(tr("ui.download.keyword_placeholder"))
     
     def _browse_download_path(self):
         """浏览下载路径对话框"""
         path = QFileDialog.getExistingDirectory(
             self, 
-            "选择下载文件保存位置",
+            tr("ui.download.browse_title"),
             self.download_path.text()
         )
         
@@ -489,14 +494,14 @@ class DownloadView(QWidget):
         channel = self.channel_input.text().strip()
         
         if not channel:
-            QMessageBox.warning(self, "警告", "请输入频道链接或ID")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.add_pair_warning"))
             return
         
         # 检查是否已存在相同频道
         for i in range(self.channel_list.count()):
             item_data = self.channel_list.item(i).data(Qt.UserRole)
             if item_data.get('channel') == channel:
-                QMessageBox.information(self, "提示", "此频道已在列表中")
+                QMessageBox.information(self, tr("ui.common.info"), tr("ui.download.messages.already_in_list"))
                 return
         
         # 获取关键词
@@ -520,25 +525,22 @@ class DownloadView(QWidget):
         
         # 创建列表项并设置文本
         item = QListWidgetItem()
-        display_text = f"{channel} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})"
-        
+        display_text = f"{channel} (" + tr("ui.download.display.id_range_both", start=channel_data['start_id'], end=(channel_data['end_id'] if channel_data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
         # 如果有关键词，添加到显示文本中
         if keywords:
-            keywords_str = '，'.join(keywords)
-            display_text += f"（关键词：{keywords_str}）"
-        
+            keywords_str = ', '.join(keywords)
+            display_text += f"（{tr('ui.download.display.keywords')}: {keywords_str}）"
         # 添加媒体类型到显示文本中
         if media_types:
             media_types_display = {
-                "photo": "照片",
-                "video": "视频",
-                "document": "文档",
-                "audio": "音频",
-                "animation": "动画"
+                "photo": tr("ui.forward.media_types.photo"),
+                "video": tr("ui.forward.media_types.video"),
+                "document": tr("ui.forward.media_types.document"),
+                "audio": tr("ui.forward.media_types.audio"),
+                "animation": tr("ui.forward.media_types.animation")
             }
-            media_types_str = '、'.join([media_types_display.get(t, t) for t in media_types])
-            display_text += f"（媒体类型：{media_types_str}）"
-        
+            media_types_str = ', '.join([media_types_display.get(t, t) for t in media_types])
+            display_text += f"（{tr('ui.download.display.media', types=media_types_str)}）"
         item.setText(display_text)
         item.setData(Qt.UserRole, channel_data)
         
@@ -557,7 +559,7 @@ class DownloadView(QWidget):
         selected_items = self.channel_list.selectedItems()
         
         if not selected_items:
-            QMessageBox.information(self, "提示", "请先选择要删除的频道")
+            QMessageBox.information(self, tr("ui.common.info"), tr("ui.download.messages.select_to_remove"))
             return
         
         # 删除选中的频道
@@ -687,12 +689,12 @@ class DownloadView(QWidget):
         # 创建对话框
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Warning)
-        msg_box.setWindowTitle("下载目录大小超出限制")
-        msg_box.setText(f"下载目录大小已超出设置的限制!\n\n当前大小: {current_size_mb} MB\n限制大小: {limit_mb} MB\n\n下载任务已自动停止。")
+        msg_box.setWindowTitle(tr("ui.download.dir_exceed_title"))
+        msg_box.setText(tr("ui.download.dir_exceed_text", current=current_size_mb, limit=limit_mb))
         msg_box.setStandardButtons(QMessageBox.Ok)
         
         # 创建倒计时标签
-        countdown_label = QLabel("此对话框将在 5 秒后自动关闭")
+        countdown_label = QLabel(tr("ui.download.dir_exceed_countdown", seconds=5))
         msg_box.setInformativeText(countdown_label.text())
         
         # 显示对话框（不阻塞）
@@ -705,7 +707,7 @@ class DownloadView(QWidget):
             nonlocal countdown
             countdown -= 1
             if countdown > 0:
-                msg_box.setInformativeText(f"此对话框将在 {countdown} 秒后自动关闭")
+                msg_box.setInformativeText(tr("ui.download.dir_exceed_countdown", seconds=countdown))
                 timer.start(1000)  # 继续倒计时
             else:
                 msg_box.close()  # 关闭对话框
@@ -721,18 +723,18 @@ class DownloadView(QWidget):
         """开始下载"""
         # 检查频道列表
         if self.channel_list.count() == 0:
-            QMessageBox.warning(self, "警告", "请至少添加一个频道")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.forward.messages.add_pair_warning"))
             return
         
         # 检查媒体类型
         media_types = self._get_media_types()
         if not media_types:
-            QMessageBox.warning(self, "警告", "请至少选择一种媒体类型")
+            QMessageBox.warning(self, tr("ui.common.warning"), tr("ui.download.file_types"))
             return
         
         # 检查下载器是否已设置
         if not hasattr(self, 'downloader') or self.downloader is None:
-            QMessageBox.warning(self, "错误", "下载器未初始化，请稍后再试")
+            QMessageBox.warning(self, tr("ui.common.error"), tr("ui.download.error_downloader_not_init"))
             logger.error("尝试开始下载，但下载器未初始化")
             return
             
@@ -750,7 +752,7 @@ class DownloadView(QWidget):
             self.downloader.reset_progress()
         
         # 准备开始下载，更新按钮状态
-        self.start_button.setText("正在下载")
+        self.start_button.setText(tr("ui.download.start_download"))
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)  # 启用停止按钮
         
@@ -761,14 +763,15 @@ class DownloadView(QWidget):
         self.completed_downloads = 0
         self.total_downloads = 0
         self.progress_bar.setValue(0)
-        self.progress_label.setText("下载进度: 0%")
-        self.overall_progress_label.setText("总进度: 准备中")
+        self.progress_label.setText(tr("ui.download.status.progress", percent=0))
+        self.overall_progress_label.setText(tr("ui.download.status.overall_progress", completed=0, total=0, percent=0))
+        self.current_task_label.setText(tr("ui.download.status.not_started"))
         
-        # 添加一个标志，表示需要强制更新总文件数
+        # 重置强制更新总数标志
         self._need_update_total = True
         
         # 更新状态
-        self.current_task_label.setText("下载准备中...")
+        self.current_task_label.setText(tr("ui.download.status.preparing"))
         
         # 使用异步任务执行下载
         try:
@@ -809,12 +812,12 @@ class DownloadView(QWidget):
             logger.error(traceback.format_exc())
             
             # 恢复按钮状态
-            self.start_button.setText("开始下载")
+            self.start_button.setText(tr("ui.download.start_download"))
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
             
             # 显示错误消息
-            QMessageBox.critical(self, "下载错误", f"启动下载任务失败: {str(e)}")
+            QMessageBox.critical(self, tr("ui.common.error"), tr("ui.download.error_start_failed", error=str(e)))
     
     def _save_config(self):
         """保存当前配置"""
@@ -903,15 +906,15 @@ class DownloadView(QWidget):
         self.completed_downloads = 0
         self.total_downloads = 0
         self.progress_bar.setValue(0)
-        self.progress_label.setText("下载进度: 0%")
-        self.overall_progress_label.setText("总进度: 0/0 (0%)")
+        self.progress_label.setText(tr("ui.download.status.progress", percent=0))
+        self.overall_progress_label.setText(tr("ui.download.status.overall_progress", completed=0, total=0, percent=0))
         self.current_task_label.setText("未开始下载")
         
         # 重置强制更新总数标志
         self._need_update_total = True
         
         # 显示成功消息
-        QMessageBox.information(self, "配置保存", "下载配置已保存")
+        QMessageBox.information(self, tr("ui.common.info"), tr("ui.download.messages.config_saved"))
         
         # 更新本地配置引用
         self.config = updated_config
@@ -945,7 +948,7 @@ class DownloadView(QWidget):
             # 如果当前不在下载列表标签页，显示提示
             if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
                 # 切换到下载列表标签页查看详情
-                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
+                self.download_tabs.setTabText(1, tr("ui.download.list_tab") + " *")  # 添加星号表示有新内容
     
     def update_overall_progress(self, completed, total):
         """更新总体进度
@@ -959,7 +962,7 @@ class DownloadView(QWidget):
         
         if actual_total > 0:
             percentage = min(int((completed / actual_total) * 100), 100)
-            self.overall_progress_label.setText(f"总进度: {completed}/{actual_total} ({percentage}%)")
+            self.overall_progress_label.setText(tr("ui.download.status.overall_progress", completed=completed, total=actual_total, percent=percentage))
             
             # 如果有进度条，也更新进度条，使用高精度的1000分比
             if hasattr(self, 'progress_bar'):
@@ -970,18 +973,18 @@ class DownloadView(QWidget):
                 progress_value = min(int((completed / actual_total) * 1000), 1000)
                 self.progress_bar.setValue(progress_value)
         else:
-            self.overall_progress_label.setText("总进度: 准备中")
+            self.overall_progress_label.setText(tr("ui.download.status.preparing"))
         
         # 切换到下载状态标签页
         if self.download_tabs.currentIndex() != 0:  # 0是下载状态的索引
-            self.download_tabs.setTabText(0, "下载状态 *")  # 添加星号表示有更新
+            self.download_tabs.setTabText(0, tr("ui.download.status_tab") + " *")  # 添加星号表示有更新
         
         # 如果已全部完成，启用开始按钮
         if completed >= actual_total and actual_total > 0:
             self.start_button.setEnabled(True)
             # 恢复标签页文本
-            self.download_tabs.setTabText(0, "下载状态")
-            self.download_tabs.setTabText(1, "下载列表")
+            self.download_tabs.setTabText(0, tr("ui.download.status_tab"))
+            self.download_tabs.setTabText(1, tr("ui.download.list_tab"))
     
     def update_current_task(self, task_description):
         """更新当前任务描述
@@ -1024,30 +1027,30 @@ class DownloadView(QWidget):
                 
                 # 更新进度文本和当前下载任务标签
                 if filename:
-                    self.progress_label.setText(f"下载进度: {percentage}%")
-                    self.current_task_label.setText(f"当前下载: {filename}")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=percentage))
+                    self.current_task_label.setText(tr("ui.download.status.current_task") + f" {filename}")
                 else:
-                    self.progress_label.setText(f"下载进度: {percentage}%")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=percentage))
                 
                 # 如果有速度信息，添加到显示中
                 if speed and isinstance(speed, tuple) and len(speed) == 2:
                     speed_value, speed_unit = speed
-                    self.progress_label.setText(f"下载进度: {percentage}% - 速度: {speed_value:.1f} {speed_unit}")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=percentage) + f" - {tr('ui.download.speed', speed=f'{speed_value:.1f}', unit=speed_unit)}")
             else:
                 # 不确定的进度，使用循环进度条
                 self.progress_bar.setRange(0, 0)
                 
                 # 更新进度文本和当前下载任务标签
                 if filename:
-                    self.progress_label.setText("正在下载...")
-                    self.current_task_label.setText(f"当前下载: {filename}")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=0))
+                    self.current_task_label.setText(tr("ui.download.status.current_task") + f" {filename}")
                 else:
-                    self.progress_label.setText("正在下载...")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=0))
                 
                 # 如果有速度信息，添加到显示中
                 if speed and isinstance(speed, tuple) and len(speed) == 2:
                     speed_value, speed_unit = speed
-                    self.progress_label.setText(f"正在下载... - 速度: {speed_value:.1f} {speed_unit}")
+                    self.progress_label.setText(tr("ui.download.status.progress", percent=0) + f" - {tr('ui.download.speed', speed=f'{speed_value:.1f}', unit=speed_unit)}")
         except Exception as e:
             logger.error(f"更新进度时出错: {e}")
     
@@ -1075,7 +1078,7 @@ class DownloadView(QWidget):
             readable_size = self._format_size(file_size)
             
             # 创建列表项
-            item = QListWidgetItem(f"{filename} ({readable_size}) - 已完成")
+            item = QListWidgetItem(f"{filename} ({readable_size}) - {tr('ui.download.status.completed')}")
             
             # 添加到下载列表
             self.download_list.addItem(item)
@@ -1086,7 +1089,7 @@ class DownloadView(QWidget):
             # 如果当前不在下载列表标签页，显示提示
             if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
                 # 切换到下载列表标签页查看详情
-                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
+                self.download_tabs.setTabText(1, tr("ui.download.list_tab") + " *")  # 添加星号表示有新内容
             
             # 获取最新的总文件数
             total_items = self.total_downloads
@@ -1120,7 +1123,7 @@ class DownloadView(QWidget):
             self.overall_progress_label.setText(tr("ui.download.status.completed"))
             
             # 恢复按钮状态
-            self.start_button.setText("开始下载")
+            self.start_button.setText(tr("ui.download.start_download"))
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
             
@@ -1223,7 +1226,7 @@ class DownloadView(QWidget):
     def clear_download_list(self):
         """清空下载列表"""
         self.download_list.clear()
-        self.download_tabs.setTabText(1, "下载列表")  # 恢复标签页文本
+        self.download_tabs.setTabText(1, tr("ui.download.list_tab"))  # 恢复标签页文本
         
     def load_config(self, config):
         """从配置加载UI状态
@@ -1253,25 +1256,22 @@ class DownloadView(QWidget):
             
             if channel_data['channel']:
                 item = QListWidgetItem()
-                display_text = f"{channel_data['channel']} (ID范围: {channel_data['start_id']}-{channel_data['end_id'] if channel_data['end_id'] > 0 else '最新'})"
-                
+                display_text = f"{channel_data['channel']} (" + tr("ui.download.display.id_range_both", start=channel_data['start_id'], end=(channel_data['end_id'] if channel_data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
                 # 如果有关键词，添加到显示文本中
                 if channel_data['keywords']:
-                    keywords_str = '，'.join(channel_data['keywords'])
-                    display_text += f"（关键词：{keywords_str}）"
-                
+                    keywords_str = ', '.join(channel_data['keywords'])
+                    display_text += f"（{tr('ui.download.display.keywords')}: {keywords_str}）"
                 # 添加媒体类型到显示文本中
                 if channel_data['media_types']:
                     media_types_display = {
-                        "photo": "照片",
-                        "video": "视频",
-                        "document": "文档",
-                        "audio": "音频",
-                        "animation": "动画"
+                        "photo": tr("ui.forward.media_types.photo"),
+                        "video": tr("ui.forward.media_types.video"),
+                        "document": tr("ui.forward.media_types.document"),
+                        "audio": tr("ui.forward.media_types.audio"),
+                        "animation": tr("ui.forward.media_types.animation")
                     }
-                    media_types_str = '、'.join([media_types_display.get(t, t) for t in channel_data['media_types']])
-                    display_text += f"（媒体类型：{media_types_str}）"
-                
+                    media_types_str = ', '.join([media_types_display.get(t, t) for t in channel_data['media_types']])
+                    display_text += f"（{tr('ui.download.display.media', types=media_types_str)}）"
                 item.setText(display_text)
                 item.setData(Qt.UserRole, channel_data)
                 self.channel_list.addItem(item)
@@ -1429,9 +1429,10 @@ class DownloadView(QWidget):
                     speed = self.downloader.get_download_speed()
                 
                 # 如果正在下载但没有显示文件名或速度，才主动更新UI
-                if current_file and ("未开始下载" in self.current_task_label.text() or 
-                                     "下载准备中" in self.current_task_label.text() or
-                                     not "速度" in self.progress_label.text()):
+                speed_label = tr('ui.download.speed', speed='', unit='')
+                if current_file and (tr("ui.download.status.not_started") in self.current_task_label.text() or 
+                                     tr("ui.download.status.preparing") in self.current_task_label.text() or
+                                     not speed_label.split(':')[0].strip() in self.progress_label.text()):
                     self._update_progress(current, total, current_file, speed)
     
     def _on_progress_updated(self, current, total, filename):
@@ -1459,7 +1460,7 @@ class DownloadView(QWidget):
         """
         try:
             # 添加到下载列表
-            item = QListWidgetItem(f"消息[{message_id}]已下载，跳过：{filename}")
+            item = QListWidgetItem(tr("ui.download.file_already_downloaded", message_id=message_id, filename=filename))
             item.setForeground(QColor(128, 128, 128))  # 使用灰色文本
             self.download_list.addItem(item)
             
@@ -1469,7 +1470,7 @@ class DownloadView(QWidget):
             # 如果当前不在下载列表标签页，显示提示
             if self.download_tabs.currentIndex() != 1:  # 1是下载列表的索引
                 # 切换到下载列表标签页查看详情
-                self.download_tabs.setTabText(1, "下载列表 *")  # 添加星号表示有新内容
+                self.download_tabs.setTabText(1, tr("ui.download.list_tab") + " *")  # 添加星号表示有新内容
                 
             logger.debug(f"显示已下载跳过消息: ID={message_id}, 文件={filename}")
         except Exception as e:
@@ -1718,7 +1719,7 @@ class DownloadView(QWidget):
         
         # 创建编辑对话框
         edit_dialog = QDialog(self)
-        edit_dialog.setWindowTitle(tr("ui.download.edit_channel"))
+        edit_dialog.setWindowTitle(tr("ui.download.edit"))
         edit_dialog.setMinimumWidth(400)
         
         # 对话框布局
@@ -1870,83 +1871,11 @@ class DownloadView(QWidget):
         if 0 <= row < self.channel_list.count():
             item = self.channel_list.item(row)
             if item:
-                # 创建显示文本
-                display_text = f"{updated_data['channel']} (ID范围: {updated_data['start_id']}-{updated_data['end_id'] if updated_data['end_id'] > 0 else '最新'})"
-                
-                # 如果有关键词，添加到显示文本中
+                display_text = f"{updated_data['channel']} (" + tr("ui.download.display.id_range_both", start=updated_data['start_id'], end=(updated_data['end_id'] if updated_data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
                 if updated_data.get('keywords'):
-                    keywords_str = '，'.join(updated_data['keywords'])
-                    display_text += f"（关键词：{keywords_str}）"
-                
-                # 添加媒体类型到显示文本中
-                if updated_data.get('media_types'):
-                    media_types_display = {
-                        "photo": "照片",
-                        "video": "视频",
-                        "document": "文档",
-                        "audio": "音频",
-                        "animation": "动画"
-                    }
-                    media_types_str = '、'.join([media_types_display.get(t, t) for t in updated_data['media_types']])
-                    display_text += f"（媒体类型：{media_types_str}）"
-                
-                # 更新项目文本和数据
-                item.setText(display_text)
-                item.setData(Qt.UserRole, updated_data) 
-
-    def _update_translations(self):
-        self.channel_label.setText(tr("ui.download.source_channel"))
-        self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
-        self.id_label.setText(tr("ui.download.message_range.start_id"))
-        self.to_label.setText(tr("ui.download.message_range.to"))
-        self.end_id.setSpecialValueText(tr("ui.download.message_range.latest_message"))
-        self.keyword_label.setText(tr("ui.download.keyword_filter"))
-        self.keyword_input.setPlaceholderText(tr("ui.download.keyword_placeholder"))
-        self.add_channel_button.setText(tr("ui.download.add_pair"))
-        self.remove_channel_button.setText(tr("ui.download.remove_pair"))
-        self.media_type_label.setText(tr("ui.download.file_types"))
-        self.photo_check.setText(tr("ui.forward.media_types.photo"))
-        self.video_check.setText(tr("ui.forward.media_types.video"))
-        self.document_check.setText(tr("ui.forward.media_types.document"))
-        self.audio_check.setText(tr("ui.forward.media_types.audio"))
-        self.animation_check.setText(tr("ui.forward.media_types.animation"))
-        self.channel_list_label.setText(tr("ui.download.configured_pairs", count=self.channel_list.count()))
-        self.config_tabs.setTabText(0, tr("ui.download.channel_tab"))
-        self.config_tabs.setTabText(1, tr("ui.download.options_tab"))
-        self.parallel_check.setText(tr("ui.download.parallel_download"))
-        self.max_concurrent_label.setText(tr("ui.download.max_concurrent"))
-        self.restart_note.setText(tr("ui.download.restart_note"))
-        self.dir_size_limit_check.setText(tr("ui.download.dir_size_limit_check"))
-        self.check_dir_size_button.setText(tr("ui.download.check_dir_size"))
-        self.download_path_label.setText(tr("ui.download.download_path"))
-        self.download_path.setPlaceholderText(tr("ui.download.download_path"))
-        self.browse_path_button.setText(tr("ui.download.browse"))
-        # ... 其它所有用户可见文本 ...
-        self.start_button.setText(tr("ui.download.start_download"))
-        self.stop_button.setText(tr("ui.download.stop_download"))
-        self.save_config_button.setText(tr("ui.common.save"))
-        self.clear_list_button.setText(tr("ui.common.clear"))
-        self.start_button.setToolTip(tr("ui.download.start_download"))
-        self.stop_button.setToolTip(tr("ui.download.stop_download"))
-        self.save_config_button.setToolTip(tr("ui.common.save"))
-        self.clear_list_button.setToolTip(tr("ui.common.clear"))
-        self.channel_input.setToolTip(tr("ui.download.source_channel"))
-        self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
-        self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
-        self.browse_path_button.setToolTip(tr("ui.download.browse"))
-        self.keyword_input.setToolTip(tr("ui.download.keyword_placeholder"))
-        self.download_tabs.setTabText(0, tr("ui.download.status_tab"))
-        self.download_tabs.setTabText(1, tr("ui.download.list_tab"))
-        # 动态刷新频道列表项文本
-        for i in range(self.channel_list.count()):
-            item = self.channel_list.item(i)
-            data = item.data(Qt.UserRole)
-            if data:
-                display_text = f"{data['channel']} (" + tr("ui.download.display.id_range_both", start=data['start_id'], end=(data['end_id'] if data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
-                if data.get('keywords'):
-                    keywords_str = '，'.join(data['keywords'])
+                    keywords_str = ', '.join(updated_data['keywords'])
                     display_text += f"（{tr('ui.download.display.keywords')}: {keywords_str}）"
-                if data.get('media_types'):
+                if updated_data.get('media_types'):
                     media_types_display = {
                         "photo": tr("ui.forward.media_types.photo"),
                         "video": tr("ui.forward.media_types.video"),
@@ -1954,39 +1883,193 @@ class DownloadView(QWidget):
                         "audio": tr("ui.forward.media_types.audio"),
                         "animation": tr("ui.forward.media_types.animation")
                     }
-                    media_types_str = '、'.join([media_types_display.get(t, t) for t in data['media_types']])
+                    media_types_str = ', '.join([media_types_display.get(t, t) for t in updated_data['media_types']])
                     display_text += f"（{tr('ui.download.display.media', types=media_types_str)}）"
                 item.setText(display_text)
-        # 下载状态/进度等标签国际化（如有）
-        self.status_label.setText(tr("ui.download.status.current_task"))
-        # 当前任务
-        if self.current_task_label.text() in ["未开始下载", tr("ui.download.status.not_started")]:
-            self.current_task_label.setText(tr("ui.download.status.not_started"))
-        elif self.current_task_label.text().startswith("当前下载:") or self.current_task_label.text().startswith("Current Download:"):
-            # 动态内容，保留文件名
-            filename = self.current_task_label.text().split(":", 1)[-1].strip()
-            self.current_task_label.setText(tr("ui.download.status.current_task") + f" {filename}")
-        # 进度
-        progress_match = re.match(r".*?(\d+)%", self.progress_label.text())
-        percent = int(progress_match.group(1)) if progress_match else 0
-        if "速度" in self.progress_label.text() or "Speed" in self.progress_label.text():
-            # 保留速度信息
-            speed_info = self.progress_label.text().split("-", 1)[-1].strip() if "-" in self.progress_label.text() else ""
-            self.progress_label.setText(tr("ui.download.status.progress", percent=percent) + (f" - {speed_info}" if speed_info else ""))
-        elif "错误" in self.progress_label.text() or "error" in self.progress_label.text().lower():
-            self.progress_label.setText(tr("ui.download.status.error_label"))
-        elif "完成" in self.progress_label.text() or "completed" in self.progress_label.text().lower():
-            self.progress_label.setText(tr("ui.download.status.completed"))
-        else:
-            self.progress_label.setText(tr("ui.download.status.progress", percent=percent))
-        # 总进度
-        overall_match = re.match(r".*?(\d+)/(\d+).*?\((\d+)%\)", self.overall_progress_label.text())
-        if overall_match:
-            completed = int(overall_match.group(1))
-            total = int(overall_match.group(2))
-            percent = int(overall_match.group(3))
-            self.overall_progress_label.setText(tr("ui.download.status.overall_progress", completed=completed, total=total, percent=percent))
-        elif "完成" in self.overall_progress_label.text() or "Completed" in self.overall_progress_label.text():
-            self.overall_progress_label.setText(tr("ui.download.status.completed"))
-        elif "准备中" in self.overall_progress_label.text() or "Preparing" in self.overall_progress_label.text():
-            self.overall_progress_label.setText(tr("ui.download.status.preparing"))
+                item.setData(Qt.UserRole, updated_data) 
+
+    def _update_translations(self):
+        # 防止递归调用
+        if hasattr(self, '_updating_translations') and self._updating_translations:
+            return
+            
+        self._updating_translations = True
+        try:
+            logger.debug("=== 开始更新下载视图翻译 ===")
+            
+            # 更新所有静态文本
+            self.channel_label.setText(tr("ui.download.source_channel"))
+            self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
+            self.id_label.setText(tr("ui.download.message_range.start_id"))
+            self.to_label.setText(tr("ui.download.message_range.to"))
+            self.end_id.setSpecialValueText(tr("ui.download.message_range.latest_message"))
+            self.keyword_label.setText(tr("ui.download.keyword_filter"))
+            self.keyword_input.setPlaceholderText(tr("ui.download.keyword_placeholder"))
+            self.add_channel_button.setText(tr("ui.download.add_pair"))
+            self.remove_channel_button.setText(tr("ui.download.remove_pair"))
+            self.media_type_label.setText(tr("ui.download.file_types"))
+            self.photo_check.setText(tr("ui.forward.media_types.photo"))
+            self.video_check.setText(tr("ui.forward.media_types.video"))
+            self.document_check.setText(tr("ui.forward.media_types.document"))
+            self.audio_check.setText(tr("ui.forward.media_types.audio"))
+            self.animation_check.setText(tr("ui.forward.media_types.animation"))
+            self.channel_list_label.setText(tr("ui.download.configured_pairs", count=self.channel_list.count()))
+            self.config_tabs.setTabText(0, tr("ui.download.channel_tab"))
+            self.config_tabs.setTabText(1, tr("ui.download.options_tab"))
+            self.parallel_check.setText(tr("ui.download.parallel_download"))
+            self.max_concurrent_label.setText(tr("ui.download.max_concurrent"))
+            self.restart_note.setText(tr("ui.download.restart_note"))
+            self.dir_size_limit_check.setText(tr("ui.download.dir_size_limit_check"))
+            self.check_dir_size_button.setText(tr("ui.download.check_dir_size"))
+            self.download_path_label.setText(tr("ui.download.download_path"))
+            self.download_path.setPlaceholderText(tr("ui.download.download_path"))
+            self.browse_path_button.setText(tr("ui.download.browse"))
+            self.start_button.setText(tr("ui.download.start_download"))
+            self.stop_button.setText(tr("ui.download.stop_download"))
+            self.save_config_button.setText(tr("ui.common.save"))
+            self.clear_list_button.setText(tr("ui.common.clear"))
+            
+            # 更新工具提示
+            self.start_button.setToolTip(tr("ui.download.start_download"))
+            self.stop_button.setToolTip(tr("ui.download.stop_download"))
+            self.save_config_button.setToolTip(tr("ui.common.save"))
+            self.clear_list_button.setToolTip(tr("ui.common.clear"))
+            self.channel_input.setToolTip(tr("ui.download.source_channel"))
+            self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
+            self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
+            self.browse_path_button.setToolTip(tr("ui.download.browse_title"))
+            self.keyword_input.setToolTip(tr("ui.download.keyword_placeholder"))
+            
+            # 更新标签页文本
+            self.download_tabs.setTabText(0, tr("ui.download.status_tab"))
+            self.download_tabs.setTabText(1, tr("ui.download.list_tab"))
+            
+            # 更新状态标签
+            self.status_label.setText(tr("ui.download.status.current_task"))
+            
+            # 动态刷新频道列表项文本
+            for i in range(self.channel_list.count()):
+                item = self.channel_list.item(i)
+                data = item.data(Qt.UserRole)
+                if data:
+                    display_text = f"{data['channel']} (" + tr("ui.download.display.id_range_both", start=data['start_id'], end=(data['end_id'] if data['end_id'] > 0 else tr('ui.download.message_range.latest_message'))) + ")"
+                    if data.get('keywords'):
+                        keywords_str = ', '.join(data['keywords'])
+                        display_text += f"（{tr('ui.download.display.keywords')}: {keywords_str}）"
+                    if data.get('media_types'):
+                        media_types_display = {
+                            "photo": tr("ui.forward.media_types.photo"),
+                            "video": tr("ui.forward.media_types.video"),
+                            "document": tr("ui.forward.media_types.document"),
+                            "audio": tr("ui.forward.media_types.audio"),
+                            "animation": tr("ui.forward.media_types.animation")
+                        }
+                        media_types_str = ', '.join([media_types_display.get(t, t) for t in data['media_types']])
+                        display_text += f"（{tr('ui.download.display.media', types=media_types_str)}）"
+                    item.setText(display_text)
+            
+            # 更新下载列表中的项目
+            import re
+            for i in range(self.download_list.count()):
+                item = self.download_list.item(i)
+                if item:
+                    item_text = item.text()
+                    
+                    # 检查是否是"已下载跳过"项目
+                    if any(keyword in item_text.lower() for keyword in ["already downloaded", "skipped", "已下载", "跳过"]):
+                        # 尝试提取消息ID和文件名
+                        msg_match = re.search(r"(?:Message|消息)\s*\[(\d+)\].*?(?:skipped|跳过)[:：]?\s*(.+?)(?:\s*\(|$)", item_text, re.IGNORECASE)
+                        if msg_match:
+                            message_id, filename = msg_match.groups()
+                            filename = filename.strip()
+                            new_text = tr("ui.download.file_already_downloaded", message_id=message_id, filename=filename)
+                            item.setText(new_text)
+                            # 保持灰色文本
+                            from PySide6.QtGui import QColor
+                            item.setForeground(QColor(128, 128, 128))
+                    
+                    # 检查是否是"已完成"项目
+                    elif any(keyword in item_text.lower() for keyword in ["completed", "已完成", "完成"]):
+                        # 尝试提取文件名和大小信息
+                        completed_match = re.search(r"(.+?)\s*\(([^)]+)\)\s*-\s*(?:completed|已完成)", item_text, re.IGNORECASE)
+                        if completed_match:
+                            filename, size_info = completed_match.groups()
+                            new_text = f"{filename.strip()} ({size_info.strip()}) - {tr('ui.download.status.completed')}"
+                            item.setText(new_text)
+            
+            # === 最关键的部分：更新进度标签和总进度标签 ===
+            # 暂时断开信号连接，避免在更新过程中触发其他更新
+            progress_text = self.progress_label.text()
+            overall_text = self.overall_progress_label.text()
+            
+            logger.debug(f"准备更新进度标签: '{progress_text}' -> 检测状态")
+            logger.debug(f"准备更新总进度标签: '{overall_text}' -> 检测状态")
+            
+            # 更新进度标签
+            if progress_text:
+                # 提取百分比
+                progress_match = re.search(r"(\d+)%", progress_text)
+                if progress_match:
+                    percent = int(progress_match.group(1))
+                    new_text = tr("ui.download.status.progress", percent=percent)
+                    self.progress_label.setText(new_text)
+                    logger.debug(f"进度标签更新为: '{new_text}'")
+                elif any(keyword in progress_text.lower() for keyword in ["completed", "完成", "已完成", "all downloads completed", "所有下载已完成"]):
+                    new_text = tr("ui.download.status.completed")
+                    self.progress_label.setText(new_text)
+                    logger.debug(f"进度标签更新为完成状态: '{new_text}'")
+                elif any(keyword in progress_text.lower() for keyword in ["error", "错误"]):
+                    new_text = tr("ui.download.status.error_label")
+                    self.progress_label.setText(new_text)
+                    logger.debug(f"进度标签更新为错误状态: '{new_text}'")
+                elif any(keyword in progress_text.lower() for keyword in ["preparing", "准备"]):
+                    new_text = tr("ui.download.status.preparing")
+                    self.progress_label.setText(new_text)
+                    logger.debug(f"进度标签更新为准备状态: '{new_text}'")
+            
+            # 更新总进度标签
+            if overall_text:
+                # 提取数字信息
+                overall_match = re.search(r"(\d+)[^\d]+(\d+).*?(\d+)%", overall_text)
+                if overall_match:
+                    completed, total, percent = overall_match.groups()
+                    new_text = tr("ui.download.status.overall_progress", completed=int(completed), total=int(total), percent=int(percent))
+                    self.overall_progress_label.setText(new_text)
+                    logger.debug(f"总进度标签更新为: '{new_text}'")
+                elif any(keyword in overall_text.lower() for keyword in ["completed", "完成", "已完成", "all downloads completed", "所有下载已完成"]):
+                    new_text = tr("ui.download.status.completed")
+                    self.overall_progress_label.setText(new_text)
+                    logger.debug(f"总进度标签更新为完成状态: '{new_text}'")
+                elif any(keyword in overall_text.lower() for keyword in ["preparing", "准备"]):
+                    new_text = tr("ui.download.status.preparing")
+                    self.overall_progress_label.setText(new_text)
+                    logger.debug(f"总进度标签更新为准备状态: '{new_text}'")
+                elif any(keyword in overall_text.lower() for keyword in ["not started", "未开始"]):
+                    new_text = tr("ui.download.status.not_started")
+                    self.overall_progress_label.setText(new_text)
+                    logger.debug(f"总进度标签更新为未开始状态: '{new_text}'")
+            
+            # 更新当前任务标签
+            current_text = self.current_task_label.text()
+            if current_text:
+                not_started_patterns = ["未开始下载", "not started", "Not started"]
+                preparing_patterns = ["下载准备中", "preparing download", "Preparing download"]
+                completed_patterns = ["所有下载已完成", "all downloads completed", "All downloads completed"]
+                
+                if any(pattern in current_text for pattern in not_started_patterns):
+                    self.current_task_label.setText(tr("ui.download.status.not_started"))
+                elif any(pattern in current_text for pattern in preparing_patterns):
+                    self.current_task_label.setText(tr("ui.download.status.preparing"))
+                elif any(pattern in current_text for pattern in completed_patterns):
+                    self.current_task_label.setText(tr("ui.download.status.completed"))
+                elif ":" in current_text:
+                    # 如果包含冒号，可能是"当前下载: 文件名"格式
+                    parts = current_text.split(":", 1)
+                    if len(parts) == 2:
+                        filename = parts[1].strip()
+                        self.current_task_label.setText(tr("ui.download.status.current_task") + f": {filename}")
+            
+            logger.debug("=== 下载视图翻译更新完成 ===")
+            
+        finally:
+            self._updating_translations = False

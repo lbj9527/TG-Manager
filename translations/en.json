@@ -251,14 +251,13 @@
       "file_types": "File Types:",
       "progress": "Download Progress:",
       "status": {
-        "current_task": "Current Download Task:",
         "not_started": "Not started",
+        "preparing": "Preparing download...",
+        "current_task": "Current Download:",
         "progress": "Download Progress: {percent}%",
-        "overall_progress": "Overall Progress: {completed}/{total} ({percent}%)",
+        "error_label": "An error occurred during download",
         "completed": "All downloads completed",
-        "preparing": "Preparing",
-        "error": "Download error: {error}",
-        "error_label": "An error occurred during download"
+        "overall_progress": "Overall Progress: {completed}/{total} ({percent}%)"
       },
       "edit": "Edit",
       "delete": "Delete",
@@ -268,7 +267,7 @@
         "start_id": "Start ID:",
         "end_id": "End ID:",
         "to": "to",
-        "latest_message": "Latest Message"
+        "latest_message": "Latest"
       },
       "keyword_filter": "Keyword Filter:",
       "keyword_placeholder": "Enter keywords, separated by commas",
@@ -296,7 +295,23 @@
       "dir_exceed_limit": "⚠️ The directory size has exceeded the set limit ({limit} MB)!",
       "dir_near_limit": "⚠️ The directory size is close to the set limit ({limit} MB)!",
       "dir_info": "Download directory: {path}\nCurrent size: {size}",
-      "dir_check_error": "Error checking directory size: {error}"
+      "dir_check_error": "Error checking directory size: {error}",
+      "messages": {
+        "input_error": "Please enter the channel link or ID",
+        "already_in_list": "This channel is already in the list",
+        "select_to_remove": "Please select the channel to remove first",
+        "config_saved": "Download configuration saved"
+      },
+      "speed": "Speed: {speed} {unit}",
+      "error_downloader_not_init": "Downloader not initialized, please try again later",
+      "error_start_failed": "Failed to start download task: {error}",
+      "dir_exceed_title": "Download Directory Size Exceeded",
+      "dir_exceed_text": "The download directory size has exceeded the set limit!\n\nCurrent size: {current} MB\nLimit: {limit} MB\n\nThe download task has been automatically stopped.",
+      "dir_exceed_countdown": "This dialog will close automatically in {seconds} seconds",
+      "browse_title": "Select Download Directory",
+      "save": "Save",
+      "clear": "Clear List",
+      "file_already_downloaded": "Message [{message_id}] already downloaded, skipped: {filename}"
     },
     "listen": {
       "title": "Message Monitoring",

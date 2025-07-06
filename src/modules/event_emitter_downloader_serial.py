@@ -100,11 +100,8 @@ class EventEmitterDownloaderSerial(BaseEventEmitter):
             # 发送开始状态
             self.status_updated.emit("开始串行下载媒体文件...")
             
-            # 调用原始方法
+            # 调用原始方法（原始方法会在完成时发送all_downloads_complete信号）
             result = await self.downloader_serial.download_media_from_channels()
-            
-            # 确保发送完成信号
-            self.all_downloads_completed.emit()
             
             return result
             
