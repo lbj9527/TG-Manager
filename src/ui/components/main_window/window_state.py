@@ -246,10 +246,10 @@ class WindowStateMixin:
                 'visible': self.sidebar_dock.isVisible()
             }
             
-            # 保存分割器状态
-            if hasattr(self, 'sidebar_splitter'):
-                sidebar_data['splitter_sizes'] = self.sidebar_splitter.sizes()
-                logger.debug(f"保存分割器状态: {sidebar_data['splitter_sizes']}")
+            # 当前实现使用QDockWidget而不是QSplitter，所以不需要保存分割器状态
+            # if hasattr(self, 'sidebar_splitter'):
+            #     sidebar_data['splitter_sizes'] = self.sidebar_splitter.sizes()
+            #     logger.debug(f"保存分割器状态: {sidebar_data['splitter_sizes']}")
             
             window_state['sidebar_geometry'] = sidebar_data['geometry']
             window_state['sidebar_data'] = sidebar_data
@@ -271,7 +271,8 @@ class WindowStateMixin:
         
         # 如果是第一次显示窗口，执行一些初始化
         if not self._is_window_state_loaded and self.isVisible():
-            self._init_splitter_sizes()
+            # 移除对不存在方法的调用，因为当前使用QDockWidget而不是QSplitter
+            # self._init_splitter_sizes()
             self._is_window_state_loaded = True
         
         # 显示窗口时立即检查网络状态，确保状态栏显示最新信息
@@ -317,45 +318,46 @@ class WindowStateMixin:
                 self.window_state_changed.emit(window_state)
                 return
         
-        if hasattr(self, 'sidebar_splitter'):
-            logger.debug(f"侧边栏分割器存在，当前尺寸: {self.sidebar_splitter.sizes()}")
-            
-            # 获取当前窗口高度
-            current_height = self.height()
-            logger.debug(f"当前窗口高度: {current_height}")
-            
-            # 获取当前分割器尺寸
-            current_sizes = self.sidebar_splitter.sizes()
-            nav_height = current_sizes[0]  # 导航树当前高度
-            logger.debug(f"当前分割器尺寸: {current_sizes}, 导航树高度: {nav_height}")
-            
-            # 检查是否有用户保存的分割器设置
-            has_saved_splitter_sizes = False
-            if hasattr(self, 'config') and 'UI' in self.config:
-                ui_config = self.config['UI']
-                if 'sidebar_data' in ui_config and 'splitter_sizes' in ui_config['sidebar_data']:
-                    saved_sizes = ui_config['sidebar_data']['splitter_sizes']
-                    if saved_sizes and len(saved_sizes) == 2:
-                        has_saved_splitter_sizes = True
-                        logger.debug(f"检测到保存的分割器设置: {saved_sizes}")
-            
-            # 只有当窗口高度大于阈值且没有保存的分割器设置时才调整
-            if current_height > 400 and not has_saved_splitter_sizes:
-                logger.debug("窗口高度大于400且无保存的分割器设置，使用默认50%分割")
-                # 调整为50%导航树，50%任务概览
-                new_sizes = [int(current_height * 0.5), int(current_height * 0.5)]
-                logger.debug(f"设置新的分割器尺寸: {new_sizes}")
-                self.sidebar_splitter.setSizes(new_sizes)
-                
-                # 验证设置是否成功
-                actual_sizes = self.sidebar_splitter.sizes()
-                logger.debug(f"设置后的实际分割器尺寸: {actual_sizes}")
-            elif has_saved_splitter_sizes:
-                logger.debug("检测到保存的分割器设置，保持当前用户配置")
-            else:
-                logger.debug(f"窗口高度 {current_height} 小于等于400，跳过分割器调整")
-        else:
-            logger.warning("侧边栏分割器不存在")
+        # 当前实现使用QDockWidget而不是QSplitter，所以不需要处理分割器尺寸调整
+        # if hasattr(self, 'sidebar_splitter'):
+        #     logger.debug(f"侧边栏分割器存在，当前尺寸: {self.sidebar_splitter.sizes()}")
+        #     
+        #     # 获取当前窗口高度
+        #     current_height = self.height()
+        #     logger.debug(f"当前窗口高度: {current_height}")
+        #     
+        #     # 获取当前分割器尺寸
+        #     current_sizes = self.sidebar_splitter.sizes()
+        #     nav_height = current_sizes[0]  # 导航树当前高度
+        #     logger.debug(f"当前分割器尺寸: {current_sizes}, 导航树高度: {nav_height}")
+        #     
+        #     # 检查是否有用户保存的分割器设置
+        #     has_saved_splitter_sizes = False
+        #     if hasattr(self, 'config') and 'UI' in self.config:
+        #         ui_config = self.config['UI']
+        #         if 'sidebar_data' in ui_config and 'splitter_sizes' in ui_config['sidebar_data']:
+        #             saved_sizes = ui_config['sidebar_data']['splitter_sizes']
+        #             if saved_sizes and len(saved_sizes) == 2:
+        #                 has_saved_splitter_sizes = True
+        #                 logger.debug(f"检测到保存的分割器设置: {saved_sizes}")
+        #     
+        #     # 只有当窗口高度大于阈值且没有保存的分割器设置时才调整
+        #     if current_height > 400 and not has_saved_splitter_sizes:
+        #         logger.debug("窗口高度大于400且无保存的分割器设置，使用默认50%分割")
+        #         # 调整为50%导航树，50%任务概览
+        #         new_sizes = [int(current_height * 0.5), int(current_height * 0.5)]
+        #         logger.debug(f"设置新的分割器尺寸: {new_sizes}")
+        #         self.sidebar_splitter.setSizes(new_sizes)
+        #         
+        #         # 验证设置是否成功
+        #         actual_sizes = self.sidebar_splitter.sizes()
+        #         logger.debug(f"设置后的实际分割器尺寸: {actual_sizes}")
+        #     elif has_saved_splitter_sizes:
+        #         logger.debug("检测到保存的分割器设置，保持当前用户配置")
+        #     else:
+        #         logger.debug(f"窗口高度 {current_height} 小于等于400，跳过分割器调整")
+        # else:
+        #     logger.warning("侧边栏分割器不存在")
         
         # 发出窗口状态变化信号
         window_state = {
@@ -467,19 +469,22 @@ class WindowStateMixin:
         Args:
             sizes: 分割器大小列表
         """
-        if hasattr(self, 'sidebar_splitter') and sizes:
-            try:
-                logger.debug(f"恢复分割器大小: {sizes}")
-                self.sidebar_splitter.setSizes(sizes)
-                
-                # 验证恢复是否成功
-                actual_sizes = self.sidebar_splitter.sizes()
-                if actual_sizes != sizes:
-                    logger.warning(f"分割器大小恢复失败: 期望 {sizes}, 实际 {actual_sizes}")
-                else:
-                    logger.debug("分割器大小恢复成功")
-            except Exception as e:
-                logger.error(f"恢复分割器大小时出错: {e}")
+        # 当前实现使用QDockWidget而不是QSplitter，所以不需要恢复分割器大小
+        logger.debug(f"当前实现使用QDockWidget，跳过分割器大小恢复: {sizes}")
+        
+        # if hasattr(self, 'sidebar_splitter') and sizes:
+        #     try:
+        #         logger.debug(f"恢复分割器大小: {sizes}")
+        #         self.sidebar_splitter.setSizes(sizes)
+        #         
+        #         # 验证恢复是否成功
+        #         actual_sizes = self.sidebar_splitter.sizes()
+        #         if actual_sizes != sizes:
+        #             logger.warning(f"分割器大小恢复失败: 期望 {sizes}, 实际 {actual_sizes}")
+        #         else:
+        #             logger.debug("分割器大小恢复成功")
+        #     except Exception as e:
+        #         logger.error(f"恢复分割器大小时出错: {e}")
     
     def _sync_sidebar_menu_state(self, visible):
         """同步侧边栏菜单按钮状态
