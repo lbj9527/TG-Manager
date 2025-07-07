@@ -177,6 +177,12 @@ class LogViewerView(QWidget):
         self.clear_button.clicked.connect(lambda: logger.debug("清空过滤器按钮点击事件已触发"))
         button_panel.addWidget(self.clear_button)
         
+        # 添加自动刷新控制
+        self.auto_refresh_checkbox = QCheckBox(tr("ui.log_viewer.auto_refresh"))
+        self.auto_refresh_checkbox.setChecked(True)  # 默认启用
+        self.auto_refresh_checkbox.toggled.connect(self._on_auto_refresh_toggled)
+        button_panel.addWidget(self.auto_refresh_checkbox)
+        
         # 添加空白占位符
         button_panel.addStretch(1)
         
@@ -634,10 +640,27 @@ class LogViewerView(QWidget):
         if hasattr(self, 'clear_button'):
             self.clear_button.setText(tr("ui.log_viewer.clear_filters"))
         
+        # 更新自动刷新控制
+        if hasattr(self, 'auto_refresh_checkbox'):
+            self.auto_refresh_checkbox.setText(tr("ui.log_viewer.auto_refresh"))
+        
         # 更新表格头部
         if hasattr(self, 'log_table'):
             self.log_table.setHorizontalHeaderLabels([
                 tr("ui.log_viewer.table_headers.time"),
                 tr("ui.log_viewer.table_headers.level"),
                 tr("ui.log_viewer.table_headers.message")
-            ]) 
+            ])
+    
+    def _on_auto_refresh_toggled(self, checked):
+        """当自动刷新控制选项变化时调用"""
+        if checked:
+            # 启用自动刷新
+            if hasattr(self, 'refresh_timer'):
+                self.refresh_timer.start()
+                logger.debug("自动刷新已启用")
+        else:
+            # 禁用自动刷新
+            if hasattr(self, 'refresh_timer'):
+                self.refresh_timer.stop()
+                logger.debug("自动刷新已禁用") 

@@ -846,6 +846,7 @@
       "level_error": "Error",
       "level_critical": "Critical",
       "clear_filters": "Clear Filters",
+      "auto_refresh": "Auto Refresh",
       "table_headers": {
         "time": "Time",
         "level": "Level",

@@ -852,6 +852,7 @@
       "level_error": "错误",
       "level_critical": "严重",
       "clear_filters": "清空过滤器",
+      "auto_refresh": "自动刷新",
       "table_headers": {
         "time": "时间",
         "level": "级别",
