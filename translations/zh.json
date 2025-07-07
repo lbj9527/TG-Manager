@@ -865,7 +865,13 @@
         "load_failed": "加载日志失败: {error}",
         "loaded_count": "已加载当日日志的最新 {count} 条记录（限制2000条）",
         "loaded_count_simple": "加载了 {count} 条当日日志记录",
-        "no_records": "未找到当日日志记录"
+        "no_records": "未找到当日日志记录",
+        "copied": "日志已复制到剪贴板",
+        "copy_failed": "复制失败"
+      },
+      "context_menu": {
+        "copy": "复制日志",
+        "copy_all": "复制所有日志"
       }
     }
   },

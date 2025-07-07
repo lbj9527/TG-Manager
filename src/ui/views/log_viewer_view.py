@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QCheckBox, QComboBox, QPushButton,
     QGroupBox, QTextEdit, QSplitter, QToolBar, QFrame,
     QFileDialog, QMessageBox, QSizePolicy, QTableWidget,
-    QTableWidgetItem, QHeaderView, QApplication
+    QTableWidgetItem, QHeaderView, QApplication, QMenu
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer, QDateTime
 from PySide6.QtGui import QColor, QTextCharFormat, QBrush, QIcon, QFont
@@ -208,6 +208,10 @@ class LogViewerView(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # 时间
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # 级别
         header.setSectionResizeMode(2, QHeaderView.Stretch)           # 消息
+        
+        # 启用右键菜单
+        self.log_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.log_table.customContextMenuRequested.connect(self._show_context_menu)
         
         # 添加到主布局
         self.main_layout.addWidget(self.log_table, 1)  # 1为拉伸系数
@@ -663,4 +667,84 @@ class LogViewerView(QWidget):
             # 禁用自动刷新
             if hasattr(self, 'refresh_timer'):
                 self.refresh_timer.stop()
-                logger.debug("自动刷新已禁用") 
+                logger.debug("自动刷新已禁用")
+
+    def _show_context_menu(self, position):
+        """显示右键菜单"""
+        menu = QMenu()
+        
+        # 获取点击位置的行
+        index = self.log_table.indexAt(position)
+        if index.isValid():
+            # 如果点击在有效行上，添加复制单行选项
+            copy_row_action = menu.addAction(tr("ui.log_viewer.context_menu.copy"))
+            copy_row_action.triggered.connect(lambda: self._copy_row(index.row()))
+            menu.addSeparator()
+        
+        # 添加复制所有日志选项
+        copy_all_action = menu.addAction(tr("ui.log_viewer.context_menu.copy_all"))
+        copy_all_action.triggered.connect(self._copy_all_logs)
+        
+        # 显示菜单
+        menu.exec(self.log_table.viewport().mapToGlobal(position))
+    
+    def _copy_row(self, row):
+        """复制指定行的日志
+        
+        Args:
+            row: 行索引
+        """
+        try:
+            # 获取该行的所有列数据
+            time_item = self.log_table.item(row, 0)
+            level_item = self.log_table.item(row, 1)
+            message_item = self.log_table.item(row, 2)
+            
+            if time_item and level_item and message_item:
+                # 格式化为标准日志格式
+                log_text = f"{time_item.text()} | {level_item.text()} | {message_item.text()}"
+                
+                # 复制到剪贴板
+                clipboard = QApplication.clipboard()
+                clipboard.setText(log_text)
+                
+                # 显示成功消息
+                self.status_update_signal.emit(tr("ui.log_viewer.status.copied"))
+                logger.debug(f"已复制日志行 {row}: {log_text}")
+            else:
+                self.status_update_signal.emit(tr("ui.log_viewer.status.copy_failed"))
+        except Exception as e:
+            logger.error(f"复制日志行失败: {e}")
+            self.status_update_signal.emit(tr("ui.log_viewer.status.copy_failed"))
+    
+    def _copy_all_logs(self):
+        """复制所有显示的日志"""
+        try:
+            if self.log_table.rowCount() == 0:
+                self.status_update_signal.emit(tr("ui.log_viewer.status.copy_failed"))
+                return
+            
+            # 复制所有行
+            log_texts = []
+            for row in range(self.log_table.rowCount()):
+                time_item = self.log_table.item(row, 0)
+                level_item = self.log_table.item(row, 1)
+                message_item = self.log_table.item(row, 2)
+                
+                if time_item and level_item and message_item:
+                    log_text = f"{time_item.text()} | {level_item.text()} | {message_item.text()}"
+                    log_texts.append(log_text)
+            
+            if log_texts:
+                # 复制到剪贴板
+                clipboard = QApplication.clipboard()
+                clipboard.setText("\n".join(log_texts))
+                
+                # 显示成功消息
+                self.status_update_signal.emit(tr("ui.log_viewer.status.copied"))
+                logger.debug(f"已复制所有 {len(log_texts)} 行日志")
+            else:
+                self.status_update_signal.emit(tr("ui.log_viewer.status.copy_failed"))
+        except Exception as e:
+            logger.error(f"复制所有日志失败: {e}")
+            self.status_update_signal.emit(tr("ui.log_viewer.status.copy_failed")) 

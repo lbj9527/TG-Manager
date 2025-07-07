@@ -859,7 +859,13 @@
         "load_failed": "Failed to load logs: {error}",
         "loaded_count": "Loaded latest {count} records from today's logs (limited to 2000)",
         "loaded_count_simple": "Loaded {count} records from today's logs",
-        "no_records": "No today's log records found"
+        "no_records": "No today's log records found",
+        "copied": "Log copied to clipboard",
+        "copy_failed": "Copy failed"
+      },
+      "context_menu": {
+        "copy": "Copy Log",
+        "copy_all": "Copy All Logs"
       }
     }
   },
