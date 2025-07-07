@@ -182,7 +182,7 @@ class MainWindowBase(QMainWindow):
                 "pause": QStyle.SP_MediaPause,
                 "resume": QStyle.SP_MediaPlay,
                 "navigation": QStyle.SP_DirIcon,
-                "task_overview": QStyle.SP_FileDialogListView,
+
                 "toolbar": QStyle.SP_TitleBarMenuButton,
                 "statusbar": QStyle.SP_TitleBarMinButton,
                 "help": QStyle.SP_MessageBoxQuestion,

@@ -96,6 +96,8 @@ class WindowStateMixin:
                         # 恢复可见性和浮动状态
                         if 'visible' in sidebar_data:
                             QTimer.singleShot(200, lambda: self._restore_sidebar_visibility(sidebar_data['visible']))
+                            # 同步菜单按钮状态
+                            QTimer.singleShot(200, lambda: self._sync_sidebar_menu_state(sidebar_data['visible']))
                         if 'floating' in sidebar_data:
                             QTimer.singleShot(250, lambda: self._restore_sidebar_floating(sidebar_data['floating']))
                         
@@ -107,6 +109,11 @@ class WindowStateMixin:
                         
                 except Exception as e:
                     logger.warning(f"恢复侧边栏完整状态失败: {e}")
+        else:
+            # 如果没有保存的侧边栏状态，设置默认可见
+            logger.debug("没有保存的侧边栏状态，设置默认可见")
+            QTimer.singleShot(200, lambda: self._restore_sidebar_visibility(True))
+            QTimer.singleShot(200, lambda: self._sync_sidebar_menu_state(True))
         
         # 确保所有窗口元素正确显示
         self.update()
@@ -472,4 +479,17 @@ class WindowStateMixin:
                 else:
                     logger.debug("分割器大小恢复成功")
             except Exception as e:
-                logger.error(f"恢复分割器大小时出错: {e}") 
+                logger.error(f"恢复分割器大小时出错: {e}")
+    
+    def _sync_sidebar_menu_state(self, visible):
+        """同步侧边栏菜单按钮状态
+        
+        Args:
+            visible: 侧边栏是否可见
+        """
+        if hasattr(self, 'show_sidebar_action'):
+            try:
+                logger.debug(f"同步侧边栏菜单按钮状态: {visible}")
+                self.show_sidebar_action.setChecked(visible)
+            except Exception as e:
+                logger.error(f"同步侧边栏菜单按钮状态时出错: {e}") 

@@ -55,9 +55,9 @@ class MainWindow(
         
         # 创建停靠面板，但暂时不添加到窗口
         self._create_navigation_tree()
-        self._create_task_overview()
+
         
-        # 创建左侧分割器，管理导航树和任务概览
+        # 创建左侧侧边栏，包含导航树
         self._create_sidebar_splitter()
         
         # 创建系统托盘图标和菜单
@@ -68,9 +68,6 @@ class MainWindow(
         
         # 连接信号和槽
         self._connect_signals()
-        
-        # 添加示例任务（仅用于UI布局展示）
-        self._add_sample_tasks()
         
         # 设置初始语言
         self._initialize_language()

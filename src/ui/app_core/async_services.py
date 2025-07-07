@@ -341,11 +341,7 @@ class AsyncServicesInitializer:
                 listen_view.set_monitor(self.app.monitor)
                 logger.info("监听视图已设置监听器实例")
             
-            # 任务视图 - 将任务管理器传递给任务视图
-            task_view = self.app.main_window.get_view("task")
-            if task_view and hasattr(self.app, 'task_manager'):
-                task_view.set_task_manager(self.app.task_manager)
-                logger.info("任务视图已设置任务管理器实例")
+            # 任务视图已删除，无需设置任务管理器
             
             logger.info("视图组件初始化设置完成（视图将在用户点击时加载，日志查看器已自动加载）")
         except Exception as e:

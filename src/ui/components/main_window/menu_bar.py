@@ -86,10 +86,7 @@ class MenuBarMixin:
             
             # 更新工具菜单项
             for action in self.tools_menu.actions():
-                if action.objectName() == "task_manager_action":
-                    action.setText(tr("ui.menu_bar.tools_menu.task_manager"))
-                    action.setStatusTip(tr("ui.menu_bar.tools_menu.task_manager_tooltip"))
-                elif action.objectName() == "log_viewer_action":
+                if action.objectName() == "log_viewer_action":
                     action.setText(tr("ui.menu_bar.tools_menu.log_viewer"))
                     action.setStatusTip(tr("ui.menu_bar.tools_menu.log_viewer_tooltip"))
                 elif action.objectName() == "pause_all_action":
@@ -207,14 +204,7 @@ class MenuBarMixin:
         # 工具菜单
         self.tools_menu = self.menubar.addMenu(tr("ui.menu_bar.tools"))
         
-        # 任务管理器
-        task_manager_action = QAction(tr("ui.menu_bar.tools_menu.task_manager"), self)
-        task_manager_action.setObjectName("task_manager_action")
-        task_manager_action.setIcon(self._get_icon("tasks"))
-        task_manager_action.setShortcut("Ctrl+T")
-        task_manager_action.setStatusTip(tr("ui.menu_bar.tools_menu.task_manager_tooltip"))
-        task_manager_action.triggered.connect(self._open_task_manager)
-        self.tools_menu.addAction(task_manager_action)
+
         
         # 日志查看器
         log_viewer_action = QAction(tr("ui.menu_bar.tools_menu.log_viewer"), self)
@@ -258,7 +248,7 @@ class MenuBarMixin:
         self.show_sidebar_action.setShortcut("Ctrl+B")
         self.show_sidebar_action.setStatusTip(tr("ui.menu_bar.view_menu.sidebar_tooltip"))
         self.show_sidebar_action.setCheckable(True)
-        self.show_sidebar_action.setChecked(True)
+        # 初始状态将在窗口状态加载后设置，避免与保存的状态冲突
         self.show_sidebar_action.triggered.connect(self._toggle_sidebar)
         self.view_menu.addAction(self.show_sidebar_action)
         

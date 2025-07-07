@@ -43,12 +43,7 @@ class ToolBarMixin:
         self.settings_action.triggered.connect(self._open_settings)
         self.toolbar.addAction(self.settings_action)
         
-        # 任务管理器按钮
-        self.task_manager_action = QAction(tr("ui.toolbar.task_manager"), self)
-        self.task_manager_action.setIcon(self._get_icon("tasks"))
-        self.task_manager_action.setStatusTip(tr("ui.toolbar.task_manager_tip"))
-        self.task_manager_action.triggered.connect(self._open_task_manager)
-        self.toolbar.addAction(self.task_manager_action)
+
         
         # 日志查看器按钮
         self.log_viewer_action = QAction(tr("ui.toolbar.log_viewer"), self)
@@ -106,7 +101,6 @@ class ToolBarMixin:
         self.home_action.setStatusTip(tr("ui.toolbar.home_tip"))
         self.settings_action.setText(tr("ui.toolbar.settings"))
         self.settings_action.setStatusTip(tr("ui.toolbar.settings_tip"))
-        self.task_manager_action.setText(tr("ui.toolbar.task_manager"))
-        self.task_manager_action.setStatusTip(tr("ui.toolbar.task_manager_tip"))
+
         self.log_viewer_action.setText(tr("ui.toolbar.log_viewer"))
         self.log_viewer_action.setStatusTip(tr("ui.toolbar.log_viewer_tip")) 

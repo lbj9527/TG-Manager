@@ -168,9 +168,7 @@ class StatusBarMixin:
                 # 没有活动任务，使用绿色
                 self.task_stats_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
                 
-            # 同时更新任务概览中的统计信息，如果存在
-            if hasattr(self, 'task_overview') and self.task_overview:
-                self.task_overview.update_counters(running, completed, waiting, 0)
+            # 任务概览已移除，不再需要更新
                 
         except Exception as e:
             logger.error(f"更新任务统计信息失败: {e}")
@@ -185,23 +183,7 @@ class StatusBarMixin:
             waiting = 0
             completed = 0
             
-            # 从任务管理视图获取数据（如果已打开）
-            if "task_manager" in self.opened_views:
-                task_view = self.opened_views["task_manager"]
-                if hasattr(task_view, 'get_task_statistics'):
-                    # 首选：任务管理器提供专门的统计方法
-                    running, waiting, completed = task_view.get_task_statistics()
-                elif hasattr(task_view, 'tasks'):
-                    # 备选：手动统计任务数量
-                    tasks = task_view.tasks
-                    for task in tasks.values():
-                        status = task.get('status', '').lower()
-                        if status in ['运行中', 'running']:
-                            running += 1
-                        elif status in ['等待中', 'waiting', '排队中', 'queued']:
-                            waiting += 1
-                        elif status in ['已完成', 'completed', 'finished']:
-                            completed += 1
+            # 任务视图已删除，无法获取统计数据，使用默认值
             
             # 更新状态栏中的任务统计信息
             self._update_task_statistics(running, waiting, completed)

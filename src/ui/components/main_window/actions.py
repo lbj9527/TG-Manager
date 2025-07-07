@@ -54,17 +54,9 @@ class ActionsMixin:
         # 这里应该调用业务逻辑层的任务暂停方法
         # 示例代码：self.task_manager.pause_task(task_id)
         
-        # 暂时使用任务概览组件更新状态
-        if hasattr(self, 'task_overview') and self.task_overview:
-            self.task_overview.update_task_status(task_id, "已暂停")
+        # 任务概览已移除，不再需要更新状态
         
-        # 更新任务视图
-        if "task_manager" in self.opened_views:
-            task_view = self.opened_views["task_manager"]
-            if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
-                task_data = task_view.tasks[task_id]
-                task_data['status'] = "已暂停"
-                task_view.add_task(task_data)  # 更新任务状态
+        # 任务视图已删除，无需更新任务状态
         
         # 刷新任务统计
         self._refresh_task_statistics()
@@ -80,17 +72,9 @@ class ActionsMixin:
         # 这里应该调用业务逻辑层的任务恢复方法
         # 示例代码：self.task_manager.resume_task(task_id)
         
-        # 暂时使用任务概览组件更新状态
-        if hasattr(self, 'task_overview') and self.task_overview:
-            self.task_overview.update_task_status(task_id, "运行中")
+        # 任务概览已移除，不再需要更新状态
         
-        # 更新任务视图
-        if "task_manager" in self.opened_views:
-            task_view = self.opened_views["task_manager"]
-            if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
-                task_data = task_view.tasks[task_id]
-                task_data['status'] = "运行中"
-                task_view.add_task(task_data)  # 更新任务状态
+        # 任务视图已删除，无需更新任务状态
         
         # 刷新任务统计
         self._refresh_task_statistics()
@@ -118,18 +102,9 @@ class ActionsMixin:
         # 这里应该调用业务逻辑层的任务取消方法
         # 示例代码：self.task_manager.cancel_task(task_id)
         
-        # 暂时使用任务概览组件更新状态
-        if hasattr(self, 'task_overview') and self.task_overview:
-            self.task_overview.update_task_status(task_id, "已取消")
-            # 在短暂延迟后从概览中移除任务
-            QTimer.singleShot(3000, lambda: self.task_overview.remove_task(task_id))
+        # 任务概览已移除，不再需要更新状态
         
-        # 更新任务视图
-        if "task_manager" in self.opened_views:
-            task_view = self.opened_views["task_manager"]
-            if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
-                # 从任务管理器中移除任务
-                task_view.remove_task(task_id)
+        # 任务视图已删除，无需更新任务状态
         
         # 刷新任务统计
         self._refresh_task_statistics()
@@ -142,16 +117,9 @@ class ActionsMixin:
         """
         logger.info(f"移除任务: {task_id}")
         
-        # 暂时使用任务概览组件移除任务
-        if hasattr(self, 'task_overview') and self.task_overview:
-            self.task_overview.remove_task(task_id)
+        # 任务概览已移除，不再需要移除任务
         
-        # 更新任务视图
-        if "task_manager" in self.opened_views:
-            task_view = self.opened_views["task_manager"]
-            if hasattr(task_view, 'tasks') and task_id in task_view.tasks:
-                # 从任务管理器中移除任务
-                task_view.remove_task(task_id)
+        # 任务视图已删除，无需更新任务状态
         
         # 刷新任务统计
         self._refresh_task_statistics()
@@ -493,58 +461,7 @@ class ActionsMixin:
                 QMessageBox.Ok
             )
     
-    def _open_task_manager(self):
-        """打开任务管理器"""
-        logger.debug("尝试打开任务管理器视图")
-        try:
-            # 先检查是否已经打开
-            if "task_manager" in self.opened_views:
-                logger.debug("任务管理器视图已存在，切换到该视图")
-                self.central_layout.setCurrentWidget(self.opened_views["task_manager"])
-                return
-                
-            # 通过导航树API找到任务管理项并触发点击
-            logger.debug("尝试通过导航树打开任务管理器视图")
-            if self.nav_tree.select_item_by_function("task_manager"):
-                logger.debug("通过导航树成功打开任务管理器视图")
-                return
-                
-            # 如果通过导航树无法打开，直接创建并显示
-            logger.debug("直接创建任务管理器视图")
-            from src.ui.views.task_view import TaskView
-            
-            # 创建任务管理器视图
-            task_manager = TaskView(self.config, self)
-            
-            # 添加到中心区域
-            self.central_layout.addWidget(task_manager)
-            self.opened_views["task_manager"] = task_manager
-            
-            # 使任务管理器可见
-            self.central_layout.setCurrentWidget(task_manager)
-            
-            # 连接任务管理器的信号
-            if hasattr(task_manager, 'task_pause'):
-                task_manager.task_pause.connect(self._pause_task)
-            if hasattr(task_manager, 'task_resume'):
-                task_manager.task_resume.connect(self._resume_task)
-            if hasattr(task_manager, 'task_cancel'):
-                task_manager.task_cancel.connect(self._cancel_task)
-            if hasattr(task_manager, 'task_remove'):
-                task_manager.task_remove.connect(self._remove_task)
-            if hasattr(task_manager, 'tasks_updated'):
-                task_manager.tasks_updated.connect(self._update_task_statistics)
-            
-            logger.info("成功打开任务管理器视图")
-            
-        except Exception as e:
-            logger.error(f"打开任务管理器视图失败: {e}", exc_info=True)
-            QMessageBox.warning(
-                self,
-                "模块加载失败",
-                f"无法加载任务管理器模块。\n错误: {str(e)}",
-                QMessageBox.Ok
-            )
+
     
     def _open_log_viewer(self):
         """打开日志查看器"""
