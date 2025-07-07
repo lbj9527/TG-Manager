@@ -111,7 +111,7 @@ class ForwardView(QWidget):
                 elif i == 1:  # 转发选项标签页
                     self.config_tabs.setTabText(i, tr("ui.forward.forward_options"))
                 elif i == 2:  # 转发进度标签页
-                    self.config_tabs.setTabText(i, tr("ui.tabs.forward"))
+                    self.config_tabs.setTabText(i, tr("ui.forward.progress_tab"))
         
         # 更新表单标签
         if 'source_label' in self.translatable_widgets:
@@ -210,7 +210,7 @@ class ForwardView(QWidget):
         if hasattr(self, 'original_text_input'):
             self.original_text_input.setPlaceholderText(tr("ui.forward.original_text"))
         if hasattr(self, 'target_text_input'):
-            self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+            self.target_text_input.setPlaceholderText(tr("ui.forward.target_text_placeholder"))
         if hasattr(self, 'keyword_input'):
             self.keyword_input.setPlaceholderText(tr("ui.forward.keyword_placeholder"))
         if hasattr(self, 'main_final_message_html_file'):
@@ -342,7 +342,7 @@ class ForwardView(QWidget):
         replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         self.target_text_input = QLineEdit()
-        self.target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+        self.target_text_input.setPlaceholderText(tr("ui.forward.target_text_placeholder"))
         replace_to_label = QLabel(tr("ui.forward.replace_to"))
         self.translatable_widgets['replace_to_label'] = replace_to_label
         replace_to_form_layout.addRow(replace_to_label, self.target_text_input)
@@ -686,7 +686,7 @@ class ForwardView(QWidget):
         main_layout.addWidget(splitter)
         
         # 添加转发进度标签页到配置面板
-        self.config_tabs.addTab(self.progress_tab, tr("ui.tabs.forward"))
+        self.config_tabs.addTab(self.progress_tab, tr("ui.forward.progress_tab"))
     
     def _create_action_buttons(self):
         """创建底部操作按钮"""
@@ -2245,7 +2245,7 @@ class ForwardView(QWidget):
         replace_to_form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
         
         target_text_input = QLineEdit(', '.join(target_texts))
-        target_text_input.setPlaceholderText(tr("ui.forward.target_text"))
+        target_text_input.setPlaceholderText(tr("ui.forward.target_text_placeholder"))
         replace_to_form_layout.addRow(tr("ui.forward.replace_to"), target_text_input)
         dialog_layout.addLayout(replace_to_form_layout)
         

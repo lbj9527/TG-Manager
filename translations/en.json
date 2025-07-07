@@ -54,7 +54,7 @@
       "tasks": "Tasks"
     },
     "forward": {
-      "title": "Message Forwarding",
+      "title": "Channel Configuration",
       "source_channel": "Source Channel:",
       "target_channels": "Target Channels:",
       "source_placeholder": "Channel link or ID (e.g: https://t.me/example or -1001234567890)",
@@ -108,6 +108,7 @@
       "forwarded_messages": "Forwarded Messages",
       "forward_log": "Forward Log:",
       "log_placeholder": "Forward logs will be displayed here...",
+      "progress_tab": "Forward Progress",
       "status": {
         "ready": "Ready",
         "running": "Forwarding",

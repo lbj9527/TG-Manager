@@ -54,7 +54,7 @@
       "tasks": "任务"
     },
     "forward": {
-      "title": "消息转发",
+      "title": "频道配置",
       "source_channel": "源频道:",
       "target_channels": "目标频道:",
       "source_placeholder": "频道链接或ID (例如: https://t.me/example 或 -1001234567890)",
@@ -108,6 +108,7 @@
       "forwarded_messages": "已转发消息数",
       "forward_log": "转发日志:",
       "log_placeholder": "转发日志将在此处显示...",
+      "progress_tab": "转发进度",
       "status": {
         "ready": "就绪",
         "running": "转发中",
