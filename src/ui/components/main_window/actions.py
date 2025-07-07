@@ -58,8 +58,7 @@ class ActionsMixin:
         
         # 任务视图已删除，无需更新任务状态
         
-        # 刷新任务统计
-        self._refresh_task_statistics()
+        # 任务统计功能已移除，无需刷新
     
     def _resume_task(self, task_id):
         """恢复任务
@@ -76,8 +75,7 @@ class ActionsMixin:
         
         # 任务视图已删除，无需更新任务状态
         
-        # 刷新任务统计
-        self._refresh_task_statistics()
+        # 任务统计功能已移除，无需刷新
     
     def _cancel_task(self, task_id):
         """取消任务
@@ -106,8 +104,7 @@ class ActionsMixin:
         
         # 任务视图已删除，无需更新任务状态
         
-        # 刷新任务统计
-        self._refresh_task_statistics()
+        # 任务统计功能已移除，无需刷新
     
     def _remove_task(self, task_id):
         """从界面移除已完成的任务
@@ -121,8 +118,7 @@ class ActionsMixin:
         
         # 任务视图已删除，无需更新任务状态
         
-        # 刷新任务统计
-        self._refresh_task_statistics()
+        # 任务统计功能已移除，无需刷新
     
     def _handle_login(self):
         """处理用户登录"""
@@ -658,10 +654,7 @@ class ActionsMixin:
                 if hasattr(view, 'config_saved'):
                     view.config_saved.connect(self.config_saved)
                 
-                # 连接任务相关信号（如适用）
-                if function_name in ['download', 'upload', 'forward'] and hasattr(view, 'tasks_updated'):
-                    view.tasks_updated.connect(self._update_task_statistics)
-                    logger.debug(f"已连接 {function_name} 视图的任务统计信号")
+                # 任务统计功能已移除，无需连接相关信号
                 
                 # 添加视图到中心区域并记录
                 self.central_layout.addWidget(view)

@@ -45,12 +45,6 @@ class StatusBarMixin:
         self.resource_usage_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
         self.statusBar().addPermanentWidget(self.resource_usage_label)
         
-        # 添加任务统计标签
-        self.task_stats_label = QLabel()
-        self.task_stats_label.setMinimumWidth(250)
-        self.task_stats_label.setStyleSheet("padding: 0 8px; color: #2196F3;")
-        self.statusBar().addPermanentWidget(self.task_stats_label)
-        
         # 设置定时器，定期更新资源使用率
         self.resource_timer = QTimer(self)
         self.resource_timer.timeout.connect(self._update_resource_usage)
@@ -144,61 +138,9 @@ class StatusBarMixin:
                 self.client_status_label.setStyleSheet("padding: 0 8px; color: #F44336;")  # 红色
             except:
                 pass
-    
-    def _update_task_statistics(self, running=0, waiting=0, completed=0):
-        """更新状态栏中的任务统计信息
-        
-        Args:
-            running: 运行中的任务数量
-            waiting: 等待中的任务数量
-            completed: 已完成的任务数量
-        """
-        try:
-            # 更新任务统计文本
-            self.task_stats_label.setText(tr("ui.status_bar.task_stats", running=running, waiting=waiting, completed=completed))
-            
-            # 根据任务状态设置颜色
-            if running > 0:
-                # 有运行中的任务，使用蓝色
-                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #2196F3;") 
-            elif waiting > 0:
-                # 有等待中的任务，使用橙色
-                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #FF9800;")
-            else:
-                # 没有活动任务，使用绿色
-                self.task_stats_label.setStyleSheet("padding: 0 8px; color: #4CAF50;")
-                
-            # 任务概览已移除，不再需要更新
-                
-        except Exception as e:
-            logger.error(f"更新任务统计信息失败: {e}")
-            self.task_stats_label.setText(tr("ui.status_bar.task_stats_error"))
-            self.task_stats_label.setStyleSheet("padding: 0 8px; color: #F44336;")
-    
-    def _refresh_task_statistics(self):
-        """刷新任务统计信息，从当前打开的视图和任务管理器中获取最新数据"""
-        try:
-            # 默认初始值
-            running = 0
-            waiting = 0
-            completed = 0
-            
-            # 任务视图已删除，无法获取统计数据，使用默认值
-            
-            # 更新状态栏中的任务统计信息
-            self._update_task_statistics(running, waiting, completed)
-            
-        except Exception as e:
-            logger.error(f"刷新任务统计信息失败: {e}")
-    
-    def _check_network_status(self):
-        """检查网络连接状态"""
-        # 该方法已移除，网络延时显示功能已禁用
-        pass 
 
     def _update_translations(self):
         """刷新状态栏所有文本的翻译"""
         self.statusBar().showMessage(tr("ui.status_bar.ready"))
         self._update_client_status(self._client_connected, self._client_info)
-        self._update_resource_usage()
-        self._refresh_task_statistics() 
+        self._update_resource_usage() 
