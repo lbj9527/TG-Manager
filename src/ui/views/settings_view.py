@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 import json
+import os
 
 from src.utils.logger import get_logger
 from src.utils.theme_manager import get_theme_manager
@@ -53,6 +54,7 @@ class SettingsView(QWidget):
             config: 配置对象
             parent: 父窗口部件
         """
+        self._initializing = True
         super().__init__(parent)
         
         self.config = config or {}
@@ -120,9 +122,12 @@ class SettingsView(QWidget):
         # 初始化翻译
         self._update_translations()
         
+        # 缓存当前语言（用于判断语言切换）
+        self._current_language = self.translation_manager.get_current_language_name()
+        
         # 设置初始化完成标志
         self._initialization_complete = True
-        
+        self._initializing = False
         logger.info("设置界面初始化完成")
     
     def _create_settings_tabs(self):
@@ -479,13 +484,26 @@ class SettingsView(QWidget):
         Args:
             language_name: 新语言名称
         """
-        # 设置翻译管理器的语言
+        # 初始化期间不处理信号，避免误弹窗
+        if getattr(self, '_initializing', False):
+            return
+        # 仅在语言实际发生变化时弹窗（用self._current_language判断）
+        if language_name == getattr(self, '_current_language', None):
+            logger.debug(f"选择的语言与当前语言相同({language_name})，不弹出重启提示")
+            return
+        # 1. 在切换语言前，缓存当前语言的提示文本
+        restart_message = tr("ui.settings.dialogs.language_changed_restart.message")
+        restart_title = tr("ui.settings.dialogs.language_changed_restart.title")
+        ok_text = tr("ui.common.ok")
+        # 2. 先弹出倒计时对话框
+        self._show_language_restart_dialog(restart_title, restart_message, ok_text)
+        # 3. 切换语言（此时对话框已弹出，内容为切换前语言）
         success = self.translation_manager.set_language(language_name)
-        
         if success:
             # 标记设置已更改
             self._on_setting_changed()
-            
+            # 切换成功后，更新缓存的当前语言
+            self._current_language = language_name
             logger.info(f"语言已切换到: {language_name}")
         else:
             logger.warning(f"语言切换失败: {language_name}")
@@ -936,3 +954,56 @@ class SettingsView(QWidget):
         
         # 重新连接信号
         self.theme_selector.currentTextChanged.connect(self._on_theme_changed) 
+
+    def _show_language_restart_dialog(self, title: str, message: str, ok_text: str):
+        """
+        弹出语言切换后的倒计时对话框，3秒倒计时，无确定按钮，倒计时结束自动关闭。
+        Args:
+            title: 对话框标题
+            message: 主体文本（不含倒计时）
+            ok_text: 确定按钮文本（已废弃）
+        """
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtCore import QTimer
+        import sys
+
+        # 倒计时秒数
+        total_seconds = 3
+        self._restart_dialog_seconds_left = total_seconds
+
+        # 构造初始文本
+        def get_full_text():
+            countdown_tip = tr("ui.settings.dialogs.language_changed_restart.countdown_tip")
+            return f"{message}\n\n{self._restart_dialog_seconds_left} {countdown_tip}"
+
+        # 创建对话框（无按钮，仅信息）
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(title)
+        dialog.setText(get_full_text())
+        dialog.setIcon(QMessageBox.Information)
+        dialog.setStandardButtons(QMessageBox.NoButton)  # 无按钮
+
+        # 定时器每秒更新文本
+        timer = QTimer(dialog)
+        timer.setInterval(1000)
+        timer.timeout.connect(lambda: self._update_restart_dialog(dialog, message, timer))
+        timer.start()
+
+        # 显示对话框（阻塞）
+        dialog.exec()
+        # 关闭逻辑在_update_restart_dialog中处理
+
+    def _update_restart_dialog(self, dialog, message, timer):
+        """更新倒计时文本，每秒调用一次"""
+        self._restart_dialog_seconds_left -= 1
+        if self._restart_dialog_seconds_left > 0:
+            countdown_tip = tr("ui.settings.dialogs.language_changed_restart.countdown_tip")
+            
+            dialog.setText(f"{message}\n\n{self._restart_dialog_seconds_left} {countdown_tip}")
+        else:
+            timer.stop()
+            dialog.done(0)
+            # 自动保存配置，silent=True避免弹窗
+            self._save_settings(silent=True)
+            # 延迟800ms后强制退出进程，跳过所有关闭事件
+            QTimer.singleShot(800, lambda: os._exit(0)) 

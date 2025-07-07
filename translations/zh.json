@@ -642,6 +642,13 @@
         "login_current_user": "当前登录用户: {user}",
         "login_logged_in": "当前已登录",
         "login_click_to_login": "点击登录到Telegram账号"
+      },
+      "dialogs": {
+        "language_changed_restart": {
+          "title": "提示",
+          "message": "系统语言已修改，程序将在3秒后关闭，请稍后重启程序",
+          "countdown_tip": "秒后自动关闭..."
+        }
       }
     },
     "login": {

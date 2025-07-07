@@ -632,6 +632,13 @@
         "login_current_user": "Current logged in user: {user}",
         "login_logged_in": "Currently logged in",
         "login_click_to_login": "Click to login to Telegram account"
+      },
+      "dialogs": {
+        "language_changed_restart": {
+          "title": "Notice",
+          "message": "System language has been changed. The program will close in 3 seconds. Please restart it later.",
+          "countdown_tip": "seconds before auto close..."
+        }
       }
     },
     "dialogs": {
