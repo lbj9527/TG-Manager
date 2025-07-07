@@ -37,7 +37,6 @@ class MetricWidget(QFrame):
         font = QFont()
         font.setPointSize(8)
         self.title_label.setFont(font)
-        self.title_label.setStyleSheet("color: #666666;")
         layout.addWidget(self.title_label)
         
         # 值
