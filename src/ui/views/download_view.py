@@ -136,7 +136,7 @@ class DownloadView(QWidget):
         
         # 频道输入
         self.channel_input = QLineEdit()
-        self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
+        self.channel_input.setPlaceholderText(tr("ui.download.source_channel_placeholder"))
         self.channel_label = QLabel(tr("ui.download.source_channel"))
         form_layout.addRow(self.channel_label, self.channel_input)
         
@@ -472,7 +472,7 @@ class DownloadView(QWidget):
     def _init_ui_state(self):
         """初始化UI状态"""
         # 设置工具提示
-        self.channel_input.setToolTip(tr("ui.download.source_channel"))
+        self.channel_input.setToolTip(tr("ui.download.source_channel_placeholder"))
         self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
         self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
         self.browse_path_button.setToolTip(tr("ui.download.browse_title"))
@@ -1899,7 +1899,7 @@ class DownloadView(QWidget):
             
             # 更新所有静态文本
             self.channel_label.setText(tr("ui.download.source_channel"))
-            self.channel_input.setPlaceholderText(tr("ui.download.source_channel"))
+            self.channel_input.setPlaceholderText(tr("ui.download.source_channel_placeholder"))
             self.id_label.setText(tr("ui.download.message_range.start_id"))
             self.to_label.setText(tr("ui.download.message_range.to"))
             self.end_id.setSpecialValueText(tr("ui.download.message_range.latest_message"))
@@ -1934,7 +1934,7 @@ class DownloadView(QWidget):
             self.stop_button.setToolTip(tr("ui.download.stop_download"))
             self.save_config_button.setToolTip(tr("ui.common.save"))
             self.clear_list_button.setToolTip(tr("ui.common.clear"))
-            self.channel_input.setToolTip(tr("ui.download.source_channel"))
+            self.channel_input.setToolTip(tr("ui.download.source_channel_placeholder"))
             self.start_id.setToolTip(tr("ui.download.message_range.start_id"))
             self.end_id.setToolTip(tr("ui.download.message_range.end_id"))
             self.browse_path_button.setToolTip(tr("ui.download.browse_title"))

@@ -338,6 +338,7 @@
     "download": {
       "title": "Media Download",
       "source_channel": "Source Channel:",
+      "source_channel_placeholder": "Please enter source channel",
       "download_path": "Download Path:",
       "start_download": "Start Download",
       "stop_download": "Stop Download",

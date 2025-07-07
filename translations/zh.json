@@ -348,6 +348,7 @@
     "download": {
       "title": "媒体下载",
       "source_channel": "源频道:",
+      "source_channel_placeholder": "请输入源频道",
       "download_path": "下载路径:",
       "start_download": "开始下载",
       "stop_download": "停止下载",
