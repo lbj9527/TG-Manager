@@ -832,6 +832,34 @@
       "total_failed": "Total Failed",
       "min_processing_time": "Min Processing Time",
       "max_processing_time": "Max Processing Time"
+    },
+    "log_viewer": {
+      "title": "Today's Log Control",
+      "file_path": "Today's log file: {path}",
+      "keyword_label": "Keyword:",
+      "keyword_placeholder": "Enter keyword to filter logs",
+      "level_label": "Level:",
+      "level_all": "All Levels",
+      "level_debug": "Debug",
+      "level_info": "Info",
+      "level_warning": "Warning",
+      "level_error": "Error",
+      "level_critical": "Critical",
+      "clear_filters": "Clear Filters",
+      "table_headers": {
+        "time": "Time",
+        "level": "Level",
+        "message": "Message"
+      },
+      "status": {
+        "loading": "Loading today's logs...",
+        "file_not_found": "Today's log file not found: {path}",
+        "file_empty": "Today's log file is empty: {path}",
+        "load_failed": "Failed to load logs: {error}",
+        "loaded_count": "Loaded latest {count} records from today's logs (limited to 2000)",
+        "loaded_count_simple": "Loaded {count} records from today's logs",
+        "no_records": "No today's log records found"
+      }
     }
   },
   "errors": {

@@ -24,6 +24,7 @@ from src.utils.async_utils import (
     create_task, qt_connect_async, AsyncTimer, as_task,
     get_event_loop
 )
+from src.utils.translation_manager import tr, get_translation_manager
 
 logger = get_logger()
 
@@ -60,6 +61,13 @@ class LogViewerView(QWidget):
         self.log_entries = []
         self.parent_window = parent
         self.is_loading = False  # 添加加载状态标志
+        
+        # 存储可翻译的UI组件
+        self.translatable_widgets = {}
+        
+        # 获取翻译管理器并连接语言变化信号
+        self.translation_manager = get_translation_manager()
+        self.translation_manager.language_changed.connect(self._update_translations)
         
         # 连接信号
         self.logs_loaded_signal.connect(self._on_logs_loaded)
@@ -123,34 +131,36 @@ class LogViewerView(QWidget):
     def _create_control_panel(self):
         """创建控制面板"""
         # 创建控制面板分组框
-        control_group = QGroupBox("当日日志控制")
-        control_layout = QVBoxLayout(control_group)
+        self.control_group = QGroupBox(tr("ui.log_viewer.title"))
+        control_layout = QVBoxLayout(self.control_group)
         
         # 文件路径状态标签 - 仅显示当日日志文件路径
-        self.file_path_label = QLabel(f"当日日志文件: {self.log_file_path}")
+        self.file_path_label = QLabel(tr("ui.log_viewer.file_path").format(path=self.log_file_path))
         control_layout.addWidget(self.file_path_label)
         
         # 筛选面板
         filter_panel = QHBoxLayout()
         
         # 关键字筛选
-        filter_panel.addWidget(QLabel("关键字:"))
+        self.keyword_label = QLabel(tr("ui.log_viewer.keyword_label"))
+        filter_panel.addWidget(self.keyword_label)
         
         self.filter_input = QLineEdit()
-        self.filter_input.setPlaceholderText("输入关键字筛选日志")
+        self.filter_input.setPlaceholderText(tr("ui.log_viewer.keyword_placeholder"))
         self.filter_input.textChanged.connect(self._filter_changed)
         filter_panel.addWidget(self.filter_input, 1)
         
         # 日志级别筛选
-        filter_panel.addWidget(QLabel("级别:"))
+        self.level_label = QLabel(tr("ui.log_viewer.level_label"))
+        filter_panel.addWidget(self.level_label)
         
         self.level_combo = QComboBox()
-        self.level_combo.addItem("所有级别", "ALL")
-        self.level_combo.addItem("调试", "DEBUG")
-        self.level_combo.addItem("信息", "INFO")
-        self.level_combo.addItem("警告", "WARNING")
-        self.level_combo.addItem("错误", "ERROR")
-        self.level_combo.addItem("严重", "CRITICAL")
+        self.level_combo.addItem(tr("ui.log_viewer.level_all"), "ALL")
+        self.level_combo.addItem(tr("ui.log_viewer.level_debug"), "DEBUG")
+        self.level_combo.addItem(tr("ui.log_viewer.level_info"), "INFO")
+        self.level_combo.addItem(tr("ui.log_viewer.level_warning"), "WARNING")
+        self.level_combo.addItem(tr("ui.log_viewer.level_error"), "ERROR")
+        self.level_combo.addItem(tr("ui.log_viewer.level_critical"), "CRITICAL")
         # 设置默认显示INFO级别（索引2，即"信息"级别）
         self.level_combo.setCurrentIndex(2)
         self.level_combo.currentIndexChanged.connect(self._filter_changed)
@@ -161,9 +171,11 @@ class LogViewerView(QWidget):
         # 清空按钮
         button_panel = QHBoxLayout()
         
-        clear_button = QPushButton("清空过滤器")
-        clear_button.clicked.connect(self._clear_filters)
-        button_panel.addWidget(clear_button)
+        self.clear_button = QPushButton(tr("ui.log_viewer.clear_filters"))
+        self.clear_button.clicked.connect(self._clear_filters)
+        # 添加测试连接，确保按钮正常工作
+        self.clear_button.clicked.connect(lambda: logger.debug("清空过滤器按钮点击事件已触发"))
+        button_panel.addWidget(self.clear_button)
         
         # 添加空白占位符
         button_panel.addStretch(1)
@@ -171,7 +183,7 @@ class LogViewerView(QWidget):
         control_layout.addLayout(button_panel)
         
         # 添加到主布局
-        self.main_layout.addWidget(control_group)
+        self.main_layout.addWidget(self.control_group)
     
     def _create_log_display(self):
         """创建日志显示区域"""
@@ -179,7 +191,11 @@ class LogViewerView(QWidget):
         self.log_table = QTableWidget()
         # 减少列数从5到3，移除"来源"和"行号"列
         self.log_table.setColumnCount(3)
-        self.log_table.setHorizontalHeaderLabels(["时间", "级别", "消息"])
+        self.log_table.setHorizontalHeaderLabels([
+            tr("ui.log_viewer.table_headers.time"),
+            tr("ui.log_viewer.table_headers.level"),
+            tr("ui.log_viewer.table_headers.message")
+        ])
         
         # 设置表格列宽
         header = self.log_table.horizontalHeader()
@@ -200,12 +216,12 @@ class LogViewerView(QWidget):
             self.is_loading = True
             # 在首次加载时显示加载消息
             if not hasattr(self, '_initial_load_done'):
-                self.status_update_signal.emit("正在加载当日日志...")
+                self.status_update_signal.emit(tr("ui.log_viewer.status.loading"))
             
             # 检查日志文件是否存在
             if not os.path.exists(self.log_file_path):
                 logger.warning(f"当日日志文件不存在: {self.log_file_path}")
-                self.status_update_signal.emit(f"当日日志文件不存在: {self.log_file_path}")
+                self.status_update_signal.emit(tr("ui.log_viewer.status.file_not_found").format(path=self.log_file_path))
                 self.logs_loaded_signal.emit([])
                 self.is_loading = False
                 return
@@ -213,7 +229,7 @@ class LogViewerView(QWidget):
             # 检查日志文件大小
             if os.path.getsize(self.log_file_path) == 0:
                 logger.warning(f"当日日志文件为空: {self.log_file_path}")
-                self.status_update_signal.emit(f"当日日志文件为空: {self.log_file_path}")
+                self.status_update_signal.emit(tr("ui.log_viewer.status.file_empty").format(path=self.log_file_path))
                 self.logs_loaded_signal.emit([])
                 self.is_loading = False
                 return
@@ -357,7 +373,7 @@ class LogViewerView(QWidget):
             
         except Exception as e:
             logger.error(f"异步加载日志失败: {e}")
-            self.status_update_signal.emit(f"加载日志失败: {e}")
+            self.status_update_signal.emit(tr("ui.log_viewer.status.load_failed").format(error=str(e)))
             self.logs_loaded_signal.emit([])
         finally:
             self.is_loading = False
@@ -372,7 +388,7 @@ class LogViewerView(QWidget):
         self.log_entries = log_entries
         # 更新文件路径标签
         if hasattr(self, 'file_path_label'):
-            self.file_path_label.setText(f"当日日志文件: {self.log_file_path}")
+            self.file_path_label.setText(tr("ui.log_viewer.file_path").format(path=self.log_file_path))
         
         # 根据过滤条件显示日志
         self._apply_filters()
@@ -385,12 +401,12 @@ class LogViewerView(QWidget):
                 # 只在状态栏显示，不写入日志文件
                 total_entries = len(log_entries)
                 if total_entries >= 2000:
-                    self.status_update_signal.emit(f"已加载当日日志的最新 {total_entries} 条记录（限制2000条）")
+                    self.status_update_signal.emit(tr("ui.log_viewer.status.loaded_count").format(count=total_entries))
                 else:
-                    self.status_update_signal.emit(f"加载了 {total_entries} 条当日日志记录")
+                    self.status_update_signal.emit(tr("ui.log_viewer.status.loaded_count_simple").format(count=total_entries))
             else:
                 # 只在状态栏显示，不写入日志文件
-                self.status_update_signal.emit("未找到当日日志记录")
+                self.status_update_signal.emit(tr("ui.log_viewer.status.no_records"))
     
     @Slot(str)
     def _on_status_update(self, message):
@@ -403,9 +419,19 @@ class LogViewerView(QWidget):
     
     def _filter_changed(self):
         """当过滤条件变化时调用"""
-        # 使用异步处理筛选，避免大量日志时UI卡顿
-        create_task(self._async_apply_filters())
-        
+        # 检查事件循环是否可用，如果不可用则使用同步版本
+        try:
+            loop = get_event_loop()
+            if loop and loop.is_running():
+                # 使用异步处理筛选，避免大量日志时UI卡顿
+                create_task(self._async_apply_filters())
+            else:
+                # 事件循环不可用，使用同步版本
+                self._apply_filters()
+        except Exception as e:
+            logger.warning(f"异步筛选失败，使用同步版本: {e}")
+            self._apply_filters()
+    
     async def _async_apply_filters(self):
         """异步应用筛选条件"""
         # 获取筛选条件
@@ -485,10 +511,24 @@ class LogViewerView(QWidget):
         
     def _clear_filters(self):
         """清空所有过滤条件"""
+        logger.debug("清空过滤器按钮被点击")
+        
+        # 清空关键字输入框
         self.filter_input.clear()
+        logger.debug("已清空关键字输入框")
+        
         # 清空过滤器时设置为INFO级别，而不是所有级别
         self.level_combo.setCurrentIndex(2)  # 设置为"信息"级别
-        create_task(self._async_apply_filters())
+        logger.debug("已设置级别为INFO")
+        
+        # 重新应用筛选条件 - 使用同步版本避免事件循环问题
+        self._apply_filters()
+        logger.debug("已触发筛选应用")
+    
+    def _test_clear_button(self):
+        """测试清空按钮功能"""
+        logger.debug("测试清空按钮功能")
+        self._clear_filters()
     
     def _apply_filters(self):
         """同步应用筛选条件（保留向后兼容性）"""
@@ -535,4 +575,69 @@ class LogViewerView(QWidget):
             parent = parent.parent()
         
         # 如果找不到有状态栏的父窗口，只记录消息
-        logger.debug(f"状态消息: {message}") 
+        logger.debug(f"状态消息: {message}")
+    
+    def _update_translations(self):
+        """更新所有UI文本的翻译"""
+        # 更新控制面板
+        if hasattr(self, 'control_group'):
+            self.control_group.setTitle(tr("ui.log_viewer.title"))
+        
+        # 更新文件路径标签
+        if hasattr(self, 'file_path_label'):
+            self.file_path_label.setText(tr("ui.log_viewer.file_path").format(path=self.log_file_path))
+        
+        # 更新关键字标签
+        if hasattr(self, 'keyword_label'):
+            self.keyword_label.setText(tr("ui.log_viewer.keyword_label"))
+        
+        # 更新关键字输入框占位符
+        if hasattr(self, 'filter_input'):
+            self.filter_input.setPlaceholderText(tr("ui.log_viewer.keyword_placeholder"))
+        
+        # 更新级别标签
+        if hasattr(self, 'level_label'):
+            self.level_label.setText(tr("ui.log_viewer.level_label"))
+        
+        # 更新级别下拉框
+        if hasattr(self, 'level_combo'):
+            # 保存当前选中的索引
+            current_index = self.level_combo.currentIndex()
+            
+            # 临时断开信号连接，避免在更新过程中触发筛选
+            try:
+                self.level_combo.currentIndexChanged.disconnect()
+            except TypeError:
+                # 信号可能已经断开，忽略错误
+                pass
+            
+            # 清空并重新添加翻译后的项目
+            self.level_combo.clear()
+            self.level_combo.addItem(tr("ui.log_viewer.level_all"), "ALL")
+            self.level_combo.addItem(tr("ui.log_viewer.level_debug"), "DEBUG")
+            self.level_combo.addItem(tr("ui.log_viewer.level_info"), "INFO")
+            self.level_combo.addItem(tr("ui.log_viewer.level_warning"), "WARNING")
+            self.level_combo.addItem(tr("ui.log_viewer.level_error"), "ERROR")
+            self.level_combo.addItem(tr("ui.log_viewer.level_critical"), "CRITICAL")
+            
+            # 恢复选中的索引（如果有效）
+            if 0 <= current_index < self.level_combo.count():
+                self.level_combo.setCurrentIndex(current_index)
+            else:
+                # 默认设置为INFO级别
+                self.level_combo.setCurrentIndex(2)
+            
+            # 重新连接信号
+            self.level_combo.currentIndexChanged.connect(self._filter_changed)
+        
+        # 更新清空过滤器按钮
+        if hasattr(self, 'clear_button'):
+            self.clear_button.setText(tr("ui.log_viewer.clear_filters"))
+        
+        # 更新表格头部
+        if hasattr(self, 'log_table'):
+            self.log_table.setHorizontalHeaderLabels([
+                tr("ui.log_viewer.table_headers.time"),
+                tr("ui.log_viewer.table_headers.level"),
+                tr("ui.log_viewer.table_headers.message")
+            ]) 

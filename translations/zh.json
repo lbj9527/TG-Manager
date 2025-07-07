@@ -838,6 +838,34 @@
       "max_processing_time": "最大处理时间",
       "detail_metric": "指标",
       "detail_value": "值"
+    },
+    "log_viewer": {
+      "title": "当日日志控制",
+      "file_path": "当日日志文件: {path}",
+      "keyword_label": "关键字:",
+      "keyword_placeholder": "输入关键字筛选日志",
+      "level_label": "级别:",
+      "level_all": "所有级别",
+      "level_debug": "调试",
+      "level_info": "信息",
+      "level_warning": "警告",
+      "level_error": "错误",
+      "level_critical": "严重",
+      "clear_filters": "清空过滤器",
+      "table_headers": {
+        "time": "时间",
+        "level": "级别",
+        "message": "消息"
+      },
+      "status": {
+        "loading": "正在加载当日日志...",
+        "file_not_found": "当日日志文件不存在: {path}",
+        "file_empty": "当日日志文件为空: {path}",
+        "load_failed": "加载日志失败: {error}",
+        "loaded_count": "已加载当日日志的最新 {count} 条记录（限制2000条）",
+        "loaded_count_simple": "加载了 {count} 条当日日志记录",
+        "no_records": "未找到当日日志记录"
+      }
     }
   },
   "errors": {
