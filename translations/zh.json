@@ -44,6 +44,12 @@
     "sidebar": {
       "title": "导航"
     },
+    "navigation": {
+      "media_download": "媒体下载",
+      "local_upload": "本地上传",
+      "history_forward": "历史转发",
+      "real_time_monitor": "实时监听"
+    },
     "tabs": {
       "download": "下载",
       "upload": "上传",

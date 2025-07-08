@@ -44,6 +44,12 @@
     "sidebar": {
       "title": "Navigation"
     },
+    "navigation": {
+      "media_download": "Media Download",
+      "local_upload": "Local Upload",
+      "history_forward": "History Forward",
+      "real_time_monitor": "Real-time Monitor"
+    },
     "tabs": {
       "download": "Download",
       "upload": "Upload",

@@ -84,28 +84,28 @@ class NavigationTree(QWidget):
         nav_items = [
             # 媒体下载分类
             NavigationItem("ui.tabs.download", "download_category", None, "category"),
-            NavigationItem("ui.tabs.download", "normal_download", "download_category", "function", {
+            NavigationItem("ui.navigation.media_download", "normal_download", "download_category", "function", {
                 "function": "download",
                 "description": "从频道批量下载媒体文件"
             }),
             
             # 媒体上传分类
             NavigationItem("ui.tabs.upload", "upload_category", None, "category"),
-            NavigationItem("ui.tabs.upload", "local_upload", "upload_category", "function", {
+            NavigationItem("ui.navigation.local_upload", "local_upload", "upload_category", "function", {
                 "function": "upload",
                 "description": "将本地媒体文件上传到频道"
             }),
             
             # 消息转发分类
             NavigationItem("ui.tabs.forward", "forward_category", None, "category"),
-            NavigationItem("ui.tabs.forward", "history_forward", "forward_category", "function", {
+            NavigationItem("ui.navigation.history_forward", "history_forward", "forward_category", "function", {
                 "function": "forward",
                 "description": "转发频道历史消息"
             }),
             
             # 消息监听分类
             NavigationItem("ui.tabs.monitor", "monitor_category", None, "category"),
-            NavigationItem("ui.tabs.monitor", "real_time_monitor", "monitor_category", "function", {
+            NavigationItem("ui.navigation.real_time_monitor", "real_time_monitor", "monitor_category", "function", {
                 "function": "monitor",
                 "description": "监听频道实时消息并转发"
             }),
