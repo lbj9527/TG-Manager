@@ -439,7 +439,7 @@ class RestrictedForwardHandler:
                 )
                 
                 # 准备上传的媒体组
-                media_group = self.media_uploader.prepare_media_group_for_upload(media_group_download, thumbnails)
+                media_group = await self.media_uploader.prepare_media_group_for_upload_parallel(media_group_download, thumbnails)
                 
                 # 上传到第一个目标频道
                 _logger.debug(f"开始上传媒体到目标频道 {first_target[2]}，缩略图数量: {len(thumbnails)}")

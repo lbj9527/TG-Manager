@@ -353,67 +353,48 @@ class Monitor:
 
                     # 检查是否为媒体组消息
                     if message.media_group_id:
-                        # 应用非关键词过滤逻辑（与媒体组处理器中的逻辑保持一致）
+                        # 【优化】媒体组消息的过滤逻辑
+                        # 1. 首先应用通用过滤（转发、回复、纯文本、链接）
+                        is_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
+                        if is_filtered:
+                            logger.info(f"媒体组消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
+                            return
+
+                        # 2. 应用关键词过滤（媒体组级别）
                         keywords = pair_config.get('keywords', [])
-                        exclude_forwards = pair_config.get('exclude_forwards', False)
-                        exclude_replies = pair_config.get('exclude_replies', False)
-                        exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
-                        exclude_links = pair_config.get('exclude_links', False)
-                        
-                        # 应用过滤逻辑（除了关键词过滤，因为媒体组关键词过滤需要特殊处理）
-                        if exclude_forwards and message.forward_from:
-                            filter_reason = "转发消息"
-                            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                            # 发送过滤消息事件到UI
-                            if hasattr(self, 'emit') and self.emit:
-                                self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                            return
+                        if keywords:
+                            # 检查该媒体组是否已经进行过关键词检查
+                            if message.media_group_id not in self.media_group_handler.media_group_keyword_filter:
+                                # 首次检查该媒体组，需要获取媒体组的说明文字
+                                media_group_caption = message.caption or ""
+                                
+                                # 检查媒体组说明是否包含关键词
+                                keywords_passed = any(keyword.lower() in media_group_caption.lower() for keyword in keywords)
+                                
+                                # 记录该媒体组的关键词检查结果
+                                self.media_group_handler.media_group_keyword_filter[message.media_group_id] = {
+                                    'keywords_passed': keywords_passed,
+                                    'checked': True,
+                                    'ui_notified': False
+                                }
+                                
+                                if not keywords_passed:
+                                    filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})"
+                                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
+                                    if hasattr(self, 'emit') and self.emit:
+                                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
+                                    return
+                            else:
+                                # 根据已记录的检查结果决定是否过滤
+                                if not self.media_group_handler.media_group_keyword_filter[message.media_group_id]['keywords_passed']:
+                                    return
 
-                        if exclude_replies and message.reply_to_message:
-                            filter_reason = "回复消息"
-                            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                            # 发送过滤消息事件到UI
-                            if hasattr(self, 'emit') and self.emit:
-                                self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                            return
-
-                        # 检查是否为媒体消息
-                        is_media_message = bool(message.photo or message.video or message.document or 
-                                              message.audio or message.animation or message.sticker or 
-                                              message.voice or message.video_note)
-                        
-                        # 检查是否为纯文本消息（非媒体消息）
-                        is_text_message = not is_media_message
-                        
-                        if exclude_text and is_text_message:
-                            filter_reason = "纯文本消息"
-                            logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                            # 发送过滤消息事件到UI
-                            if hasattr(self, 'emit') and self.emit:
-                                self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                            return
-
-                        if exclude_links:
-                            text_content = message.text or message.caption or ""
-                            if self._contains_links(text_content) or (message.entities and any(entity.type in ["url", "text_link"] for entity in message.entities)):
-                                filter_reason = "包含链接"
-                                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
-                                # 发送过滤消息事件到UI
-                                if hasattr(self, 'emit') and self.emit:
-                                    self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                                return
-                        
-                        # 【关键修复】禁用媒体组消息的早期媒体类型过滤
-                        # 媒体类型过滤应该在MediaGroupHandler中统一处理，确保媒体组的完整性
-                        # 这样可以避免媒体组中的某些消息被错误过滤，导致媒体组不完整
-                        logger.debug(f"【关键修复】跳过媒体组消息 [ID: {message.id}] 的早期媒体类型过滤，交由MediaGroupHandler统一处理")
-                        
-                        # 无论消息是否会被过滤，都先发射new_message事件
+                        # 3. 无论消息是否会被过滤，都先发射new_message事件
                         # 这确保UI显示顺序正确：所有消息都先显示"收到新消息"，然后显示处理结果
                         if hasattr(self, 'emit') and self.emit:
                             self.emit("new_message", message.id, source_info_str)
                         
-                        # 处理媒体组消息（内部会进行关键词过滤等媒体组级别的检查）
+                        # 4. 处理媒体组消息（内部会进行媒体类型过滤等媒体组级别的检查）
                         await self.media_group_handler.handle_media_group_message(message, pair_config)
                         
                         # 记录处理时间
@@ -664,31 +645,32 @@ class Monitor:
             replaced_text = None
             should_remove_caption = False
             
-            # 根据消息类型和配置决定处理方式
-            if is_media_message and remove_captions:
-                # 媒体消息且设置了移除媒体说明：删除说明，文本替换失效
-                should_remove_caption = True
-                logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，文本替换功能失效")
-            elif not is_media_message and remove_captions:
-                # 纯文本消息且设置了移除媒体说明：移除媒体说明失效，文本替换依旧起作用
-                if text and text_replacements:
-                    replaced_text = text
-                    for find_text, replace_text in text_replacements.items():
-                        if find_text in replaced_text:
-                            replaced_text = replaced_text.replace(find_text, replace_text)
-                    
-                    if replaced_text != text:
-                        logger.info(f"纯文本消息 [ID: {message.id}] 已应用文本替换（移除媒体说明对纯文本消息无效）")
-            else:
-                # 其他情况：正常应用文本替换
-                if text and text_replacements:
-                    replaced_text = text
-                    for find_text, replace_text in text_replacements.items():
-                        if find_text in replaced_text:
-                            replaced_text = replaced_text.replace(find_text, replace_text)
-                    
-                    if replaced_text != text:
-                        logger.info(f"消息 [ID: {message.id}] 已应用文本替换")
+            # 【优化】改进文本替换逻辑
+            if text and text_replacements:
+                # 先应用文本替换
+                replaced_text = text
+                for find_text, replace_text in text_replacements.items():
+                    if find_text in replaced_text:
+                        replaced_text = replaced_text.replace(find_text, replace_text)
+                
+                if replaced_text != text:
+                    logger.info(f"消息 [ID: {message.id}] 已应用文本替换")
+            
+            # 【优化】改进移除媒体说明的逻辑
+            if remove_captions:
+                if is_media_message:
+                    # 媒体消息：移除说明文字，但保留文本替换的结果
+                    should_remove_caption = True
+                    if replaced_text:
+                        logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，但保留文本替换结果")
+                    else:
+                        logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字")
+                else:
+                    # 纯文本消息：移除媒体说明无效，但文本替换依然有效
+                    if replaced_text and replaced_text != text:
+                        logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效，但文本替换已应用")
+                    else:
+                        logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效")
             
             # 转发消息
             await self.message_processor.forward_message(

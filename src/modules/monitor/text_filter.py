@@ -3,7 +3,7 @@
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple, Optional
 from pyrogram.types import Message
 
 from src.utils.logger import get_logger
@@ -128,4 +128,257 @@ class TextFilter:
         if replacement_made:
             logger.info(f"已应用文本替换，原文本: '{text}'，新文本: '{modified_text}'")
         
-        return modified_text 
+        return modified_text
+    
+    @staticmethod
+    def apply_universal_filters(message: Message, pair_config: dict) -> Tuple[bool, str]:
+        """
+        应用通用消息过滤规则（最高优先级判断）
+        
+        Args:
+            message: 消息对象
+            pair_config: 频道对配置
+            
+        Returns:
+            tuple[bool, str]: (是否被过滤, 过滤原因)
+        """
+        try:
+            # 获取该频道对的过滤选项
+            exclude_forwards = pair_config.get('exclude_forwards', False)
+            exclude_replies = pair_config.get('exclude_replies', False)
+            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
+            exclude_links = pair_config.get('exclude_links', False)
+            
+            # 【最高优先级1】排除转发消息
+            if exclude_forwards and message.forward_from:
+                filter_reason = "转发消息"
+                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                return True, filter_reason
+
+            # 【最高优先级2】排除回复消息
+            if exclude_replies and message.reply_to_message:
+                filter_reason = "回复消息"
+                logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                return True, filter_reason
+
+            # 【最高优先级3】排除纯文本消息
+            if exclude_text:
+                # 检查是否为纯文本消息（没有任何媒体内容）
+                is_media_message = bool(message.photo or message.video or message.document or 
+                                      message.audio or message.animation or message.sticker or 
+                                      message.voice or message.video_note)
+                if not is_media_message and (message.text or message.caption):
+                    filter_reason = "纯文本消息"
+                    logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
+                    return True, filter_reason
+
+            # 【最高优先级4】排除包含链接的消息
+            if exclude_links:
+                # 检查消息文本或说明中是否包含链接
+                text_to_check = message.text or message.caption or ""
+                if TextFilter._contains_links(text_to_check):
+                    filter_reason = "包含链接的消息"
+                    logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                    return True, filter_reason
+
+            # 所有过滤检查都通过
+            return False, ""
+            
+        except Exception as e:
+            logger.error(f"应用通用消息过滤时发生错误: {str(e)}")
+            # 发生错误时认为消息不被过滤，让后续处理决定
+            return False, ""
+    
+    @staticmethod
+    def apply_keyword_filter(message: Message, keywords: List[str]) -> Tuple[bool, str]:
+        """
+        应用关键词过滤
+        
+        Args:
+            message: 消息对象
+            keywords: 关键词列表
+            
+        Returns:
+            tuple[bool, str]: (是否被过滤, 过滤原因)
+        """
+        if not keywords:
+            return False, ""
+        
+        text_to_check = (message.text or message.caption or "").lower()
+        keywords_passed = any(keyword.lower() in text_to_check for keyword in keywords)
+        
+        if not keywords_passed:
+            filter_reason = f"不包含关键词({', '.join(keywords)})"
+            return True, filter_reason
+        
+        return False, ""
+    
+    @staticmethod
+    def apply_media_type_filter(message: Message, allowed_media_types: List) -> Tuple[bool, str]:
+        """
+        应用媒体类型过滤
+        
+        Args:
+            message: 消息对象
+            allowed_media_types: 允许的媒体类型列表
+            
+        Returns:
+            tuple[bool, str]: (是否被过滤, 过滤原因)
+        """
+        if not allowed_media_types:
+            return False, ""
+        
+        message_media_type = TextFilter._get_message_media_type(message)
+        if message_media_type and not TextFilter._is_media_type_allowed(message_media_type, allowed_media_types):
+            media_type_names = {
+                "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
+                "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
+            }
+            media_type_name = media_type_names.get(message_media_type.value, message_media_type.value)
+            filter_reason = f"媒体类型({media_type_name})不在允许列表中"
+            return True, filter_reason
+        
+        return False, ""
+    
+    @staticmethod
+    def _get_message_media_type(message: Message):
+        """
+        获取消息的媒体类型
+        
+        Args:
+            message: 消息对象
+            
+        Returns:
+            MediaType: 媒体类型枚举，如果是纯文本消息则返回None
+        """
+        from src.utils.ui_config_models import MediaType
+        
+        if message.photo:
+            return MediaType.PHOTO
+        elif message.video:
+            return MediaType.VIDEO
+        elif message.document:
+            return MediaType.DOCUMENT
+        elif message.audio:
+            return MediaType.AUDIO
+        elif message.animation:
+            return MediaType.ANIMATION
+        elif message.sticker:
+            return MediaType.STICKER
+        elif message.voice:
+            return MediaType.VOICE
+        elif message.video_note:
+            return MediaType.VIDEO_NOTE
+        else:
+            # 纯文本消息，不需要媒体类型过滤
+            return None
+    
+    @staticmethod
+    def _is_media_type_allowed(message_media_type, allowed_media_types):
+        """
+        检查消息的媒体类型是否在允许列表中
+        
+        Args:
+            message_media_type: 消息的媒体类型
+            allowed_media_types: 允许的媒体类型列表
+            
+        Returns:
+            bool: 是否允许该媒体类型
+        """
+        if not allowed_media_types:
+            # 如果没有配置允许的媒体类型，默认允许所有类型
+            return True
+        
+        # 检查媒体类型是否在允许列表中
+        for allowed_type in allowed_media_types:
+            # 处理字符串和枚举类型的兼容性
+            if hasattr(allowed_type, 'value'):
+                allowed_value = allowed_type.value
+            else:
+                allowed_value = allowed_type
+                
+            if hasattr(message_media_type, 'value'):
+                message_value = message_media_type.value
+            else:
+                message_value = message_media_type
+                
+            if allowed_value == message_value:
+                return True
+        
+        return False
+    
+    @staticmethod
+    def _contains_links(text: str) -> bool:
+        """
+        检查文本中是否包含链接
+        
+        Args:
+            text: 要检查的文本
+            
+        Returns:
+            bool: 是否包含链接
+        """
+        if not text:
+            return False
+        
+        # 简单的URL正则匹配
+        url_patterns = [
+            r'https?://[^\s]+',  # http或https链接
+            r'www\.[^\s]+',      # www链接
+            r't\.me/[^\s]+',     # Telegram链接
+            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
+        ]
+        
+        for pattern in url_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        return False
+    
+    @staticmethod
+    def process_text_and_caption(message: Message, text_replacements: Dict[str, str], 
+                                remove_captions: bool) -> Tuple[Optional[str], bool]:
+        """
+        处理消息的文本替换和标题移除
+        
+        Args:
+            message: 消息对象
+            text_replacements: 文本替换规则
+            remove_captions: 是否移除标题
+            
+        Returns:
+            tuple[Optional[str], bool]: (替换后的文本, 是否应该移除标题)
+        """
+        # 检查是否为媒体消息
+        is_media_message = bool(message.photo or message.video or message.document or 
+                              message.animation or message.audio or message.voice or 
+                              message.video_note or message.sticker)
+        
+        # 获取原始文本
+        text = message.text or message.caption or ""
+        replaced_text = None
+        should_remove_caption = False
+        
+        # 应用文本替换
+        if text and text_replacements:
+            replaced_text = TextFilter.apply_text_replacements_static(text, text_replacements)
+            if replaced_text != text:
+                logger.info(f"消息 [ID: {message.id}] 已应用文本替换")
+        
+        # 处理移除媒体说明的逻辑
+        if remove_captions:
+            if is_media_message:
+                # 媒体消息：移除说明文字，但保留文本替换的结果
+                should_remove_caption = True
+                if replaced_text:
+                    logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，但保留文本替换结果")
+                else:
+                    logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字")
+            else:
+                # 纯文本消息：移除媒体说明无效，但文本替换依然有效
+                if replaced_text and replaced_text != text:
+                    logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效，但文本替换已应用")
+                else:
+                    logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效")
+        
+        return replaced_text, should_remove_caption 

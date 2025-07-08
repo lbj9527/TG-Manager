@@ -378,67 +378,13 @@ class MediaGroupHandler:
         # 【调试】记录接收到的配置
         logger.debug(f"【调试】handle_media_group_message接收到的pair_config: {pair_config}")
         
-        # 【最高优先级】首先应用通用消息过滤（转发、回复、纯文本、链接）
-        try:
-            source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-        except Exception:
-            source_info_str = str(message.chat.id)
-        
-        # 使用Monitor的通用过滤方法（需要通过引用访问）
-        if hasattr(self, 'monitor') and self.monitor:
-            is_filtered, filter_reason = await self.monitor._apply_universal_message_filters(message, pair_config, source_info_str)
-            if is_filtered:
-                logger.debug(f"媒体组消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
-                return
-        else:
-            # 如果没有monitor引用，手动实现通用过滤逻辑
-            exclude_forwards = pair_config.get('exclude_forwards', False)
-            exclude_replies = pair_config.get('exclude_replies', False)
-            exclude_text = pair_config.get('exclude_text', pair_config.get('exclude_media', False))
-            exclude_links = pair_config.get('exclude_links', False)
-            
-            # 排除转发消息
-            if exclude_forwards and message.forward_from:
-                filter_reason = "转发消息"
-                logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
-                self._emit_message_filtered(message, filter_reason)
-                return
-            
-            # 排除回复消息
-            if exclude_replies and message.reply_to_message:
-                filter_reason = "回复消息"
-                logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
-                self._emit_message_filtered(message, filter_reason)
-                return
-            
-            # 排除纯文本消息
-            if exclude_text:
-                is_media_message = bool(message.photo or message.video or message.document or 
-                                      message.audio or message.animation or message.sticker or 
-                                      message.voice or message.video_note)
-                if not is_media_message and (message.text or message.caption):
-                    filter_reason = "纯文本消息"
-                    logger.info(f"媒体组消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
-                    await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
-                    self._emit_message_filtered(message, filter_reason)
-                    return
-            
-            # 排除包含链接的消息
-            if exclude_links:
-                text_to_check = message.text or message.caption or ""
-                if self._contains_links(text_to_check):
-                    filter_reason = "包含链接的消息"
-                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
-                    await asyncio.sleep(0.05)  # 确保UI事件处理顺序正确
-                    self._emit_message_filtered(message, filter_reason)
-                    return
+        # 【优化】移除重复的通用过滤逻辑，因为已经在core.py中处理过了
+        # 这里只处理媒体组特有的逻辑
         
         # 获取该频道对的其他过滤选项
         keywords = pair_config.get('keywords', [])
         
-        # 关键词过滤 - 媒体组级别检查
+        # 关键词过滤 - 媒体组级别检查（如果还没有在core.py中处理过）
         if keywords:
             # 检查该媒体组是否已经进行过关键词检查
             if message.media_group_id not in self.media_group_keyword_filter:
@@ -484,7 +430,7 @@ class MediaGroupHandler:
                 # 直接返回，不再发送UI通知
                 return
         
-        # 媒体类型过滤 - 这里是关键的修改
+        # 【优化】媒体类型过滤 - 恢复早期过滤以提高性能
         allowed_media_types = pair_config.get('media_types', [])
         message_media_type = self._get_message_media_type(message)
         
@@ -514,13 +460,8 @@ class MediaGroupHandler:
         message_media_type = self._get_message_media_type(message)
         logger.debug(f"【关键】检查消息 {message.id} 媒体类型: type='{message_media_type}', allowed={allowed_media_types}")
         
-        # 【重要修复】移除早期媒体类型过滤，让所有消息都进入缓存，在最终处理时统一过滤
-        # 注释掉原来的媒体类型过滤逻辑，这样所有消息都会进入缓存
-        # 在_process_direct_forward_media_group中会进行统一的媒体类型过滤和重组
-        should_filter_media_type = False  # 暂时关闭早期媒体类型过滤
-        
-        if should_filter_media_type and message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
-            # 【注释】原来的早期过滤逻辑被注释掉，确保所有媒体组消息都能进入缓存
+        # 【优化】恢复媒体类型过滤，但只在有明确配置时进行
+        if allowed_media_types and message_media_type and not self._is_media_type_allowed(message_media_type, allowed_media_types):
             media_type_names = {
                 "photo": "照片", "video": "视频", "document": "文件", "audio": "音频",
                 "animation": "动画", "sticker": "贴纸", "voice": "语音", "video_note": "视频笔记"
@@ -569,25 +510,11 @@ class MediaGroupHandler:
                         
                         # 清理缓存
                         del self.media_group_cache[channel_id][media_group_id]
-                        if not self.media_group_cache[channel_id]:
-                            del self.media_group_cache[channel_id]
-                        
-                        # 清理延迟任务
-                        if media_group_id in self.pending_delay_tasks:
-                            delay_task = self.pending_delay_tasks[media_group_id]
-                            if not delay_task.done():
-                                delay_task.cancel()
-                            del self.pending_delay_tasks[media_group_id]
-                        
-                        # 移除获取标记
-                        if media_group_id in self.fetching_media_groups:
-                            self.fetching_media_groups.remove(media_group_id)
                         
                         # 处理媒体组
                         await self._process_media_group(cached_messages, pair_config_cached)
-                        return
             
-            return  # 直接返回，不添加到缓存
+            return
         
         # 【修复】现在所有通过关键词过滤的消息都会添加到缓存，媒体类型过滤将在最终处理时进行
         logger.debug(f"【修复】消息 [ID: {message.id}] 通过关键词过滤，将添加到缓存 (媒体类型: {message_media_type})")
@@ -1890,7 +1817,7 @@ class MediaGroupHandler:
             return f"媒体组[{message_count}个文件]-{min_message_id}"
             
         except Exception as e:
-            _logger.error(f"生成媒体组显示ID时出错: {e}")
+            logger.error(f"生成媒体组显示ID时出错: {e}")
             import time
             timestamp = int(time.time())
             return f"媒体组[未知]-{timestamp}"
