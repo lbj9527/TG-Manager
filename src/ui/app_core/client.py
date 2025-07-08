@@ -237,8 +237,8 @@ class ClientHandler:
             if not hasattr(self.app, 'history_manager'):
                 logger.info("正在创建历史管理器...")
                 try:
-                    from src.utils.history_manager import HistoryManager
-                    self.app.history_manager = HistoryManager()
+                    from src.utils.database_manager import DatabaseManager
+                    self.app.history_manager = DatabaseManager()
                     logger.info("已创建历史管理器")
                     initialized_components.append('history_manager')
                 except Exception as e:

@@ -17,7 +17,7 @@ from pyrogram.errors import FloodWait
 from src.utils.ui_config_manager import UIConfigManager
 from src.utils.config_utils import convert_ui_config_to_dict
 from src.utils.channel_resolver import ChannelResolver
-from src.utils.history_manager import HistoryManager
+from src.utils.database_manager import DatabaseManager
 from src.utils.logger import get_logger
 
 
@@ -29,7 +29,7 @@ class DownloaderSerial():
     下载模块（顺序版本），负责按顺序下载历史消息的媒体文件
     """
     
-    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: HistoryManager, app=None):
+    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, history_manager: DatabaseManager, app=None):
         """
         初始化下载模块
         
@@ -37,7 +37,7 @@ class DownloaderSerial():
             client: Pyrogram客户端实例
             ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
-            history_manager: 历史记录管理器实例
+            history_manager: 数据库管理器实例
             app: 应用程序实例，用于网络错误时立即检查连接状态
         """
         super().__init__()

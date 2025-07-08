@@ -89,8 +89,8 @@ class AsyncServicesInitializer:
                 logger.info("已创建频道解析器(无客户端)")
                 
                 # 3. 初始化history_manager
-                from src.utils.history_manager import HistoryManager
-                self.app.history_manager = HistoryManager()
+                from src.utils.database_manager import DatabaseManager
+                self.app.history_manager = DatabaseManager()
                 logger.info("已创建历史管理器")
                 
                 # 4-8. 不初始化其他核心组件，等待用户登录后再初始化
@@ -163,8 +163,8 @@ class AsyncServicesInitializer:
                 # 3. 初始化history_manager
                 logger.info("正在创建历史管理器...")
                 try:
-                    from src.utils.history_manager import HistoryManager
-                    self.app.history_manager = HistoryManager()
+                    from src.utils.database_manager import DatabaseManager
+                    self.app.history_manager = DatabaseManager()
                     logger.info("已创建历史管理器")
                     initialized_components.append('history_manager')
                 except Exception as e:
