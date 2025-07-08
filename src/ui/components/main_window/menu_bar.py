@@ -89,12 +89,6 @@ class MenuBarMixin:
                 if action.objectName() == "log_viewer_action":
                     action.setText(tr("ui.menu_bar.tools_menu.log_viewer"))
                     action.setStatusTip(tr("ui.menu_bar.tools_menu.log_viewer_tooltip"))
-                elif action.objectName() == "pause_all_action":
-                    action.setText(tr("ui.menu_bar.tools_menu.pause_all"))
-                    action.setStatusTip(tr("ui.menu_bar.tools_menu.pause_all_tooltip"))
-                elif action.objectName() == "resume_all_action":
-                    action.setText(tr("ui.menu_bar.tools_menu.resume_all"))
-                    action.setStatusTip(tr("ui.menu_bar.tools_menu.resume_all_tooltip"))
             
             # 更新视图菜单项
             for action in self.view_menu.actions():
@@ -214,27 +208,6 @@ class MenuBarMixin:
         log_viewer_action.setStatusTip(tr("ui.menu_bar.tools_menu.log_viewer_tooltip"))
         log_viewer_action.triggered.connect(self._open_log_viewer)
         self.tools_menu.addAction(log_viewer_action)
-        
-        # 任务分隔线
-        self.tools_menu.addSeparator()
-        
-        # 暂停所有任务
-        pause_all_action = QAction(tr("ui.menu_bar.tools_menu.pause_all"), self)
-        pause_all_action.setObjectName("pause_all_action")
-        pause_all_action.setIcon(self._get_icon("pause"))
-        pause_all_action.setShortcut("Ctrl+P")
-        pause_all_action.setStatusTip(tr("ui.menu_bar.tools_menu.pause_all_tooltip"))
-        pause_all_action.triggered.connect(self._pause_all_tasks)
-        self.tools_menu.addAction(pause_all_action)
-        
-        # 恢复所有任务
-        resume_all_action = QAction(tr("ui.menu_bar.tools_menu.resume_all"), self)
-        resume_all_action.setObjectName("resume_all_action")
-        resume_all_action.setIcon(self._get_icon("resume"))
-        resume_all_action.setShortcut("Ctrl+R")
-        resume_all_action.setStatusTip(tr("ui.menu_bar.tools_menu.resume_all_tooltip"))
-        resume_all_action.triggered.connect(self._resume_all_tasks)
-        self.tools_menu.addAction(resume_all_action)
     
     def _create_view_menu(self):
         """创建视图菜单"""

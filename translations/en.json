@@ -744,14 +744,8 @@
         "monitor_tooltip": "Monitor channel real-time messages and forward"
       },
       "tools_menu": {
-        "task_manager": "Task Manager",
         "log_viewer": "Log Viewer",
-        "pause_all": "Pause All Tasks",
-        "resume_all": "Resume All Tasks",
-        "task_manager_tooltip": "Open task manager",
-        "log_viewer_tooltip": "Open log viewer",
-        "pause_all_tooltip": "Pause all running tasks",
-        "resume_all_tooltip": "Resume all paused tasks"
+        "log_viewer_tooltip": "Open log viewer"
       },
       "view_menu": {
         "sidebar": "Sidebar",
@@ -791,8 +785,6 @@
       "home_tip": "Return to welcome page",
       "settings": "Settings",
       "settings_tip": "Open settings view",
-      "task_manager": "Task Manager",
-      "task_manager_tip": "Open task manager",
       "log_viewer": "Log Viewer",
       "log_viewer_tip": "Open log viewer"
     },

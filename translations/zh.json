@@ -750,14 +750,8 @@
         "monitor_tooltip": "监听频道实时消息并转发"
       },
       "tools_menu": {
-        "task_manager": "任务管理器",
         "log_viewer": "日志查看器",
-        "pause_all": "暂停所有任务",
-        "resume_all": "恢复所有任务",
-        "task_manager_tooltip": "打开任务管理器",
-        "log_viewer_tooltip": "打开日志查看器",
-        "pause_all_tooltip": "暂停所有正在执行的任务",
-        "resume_all_tooltip": "恢复所有暂停的任务"
+        "log_viewer_tooltip": "打开日志查看器"
       },
       "view_menu": {
         "sidebar": "侧边栏",
@@ -797,8 +791,6 @@
       "home_tip": "返回到欢迎页面",
       "settings": "设置",
       "settings_tip": "打开设置界面",
-      "task_manager": "任务管理器",
-      "task_manager_tip": "打开任务管理器",
       "log_viewer": "日志查看器",
       "log_viewer_tip": "打开日志查看器"
     },
