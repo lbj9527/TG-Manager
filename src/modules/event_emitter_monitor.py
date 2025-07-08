@@ -7,6 +7,7 @@ from PySide6.QtCore import Signal
 from src.modules.monitor.core import Monitor as NewMonitor  # 使用新的监听器架构
 from src.utils.logger import get_logger
 from src.utils.event_emitter import BaseEventEmitter
+from src.utils.translation_manager import tr
 from typing import Any, Dict, List, Optional
 
 logger = get_logger()
@@ -184,7 +185,7 @@ class EventEmitterMonitor(BaseEventEmitter):
         """
         try:
             # 发送开始状态
-            self.status_updated.emit("开始监听频道消息...")
+            self.status_updated.emit(tr("ui.listen.messages.start_monitoring"))
             # 发送监听开始信号
             self.monitoring_started.emit()
             
@@ -198,7 +199,7 @@ class EventEmitterMonitor(BaseEventEmitter):
             
         except Exception as e:
             # 发送错误信号
-            self.error_occurred.emit(f"监听过程中发生错误: {e}", "")
+            self.error_occurred.emit(tr("ui.listen.messages.monitoring_error", error=str(e)), "")
             # 发送监听停止信号
             self.monitoring_stopped.emit()
             # 重新抛出异常
@@ -212,7 +213,7 @@ class EventEmitterMonitor(BaseEventEmitter):
         """
         try:
             # 发送状态
-            self.status_updated.emit("正在停止监听...")
+            self.status_updated.emit(tr("ui.listen.messages.stopping_monitoring"))
             
             # 调用原始方法
             result = await self.monitor.stop_monitoring()
@@ -221,13 +222,13 @@ class EventEmitterMonitor(BaseEventEmitter):
             self.monitoring_stopped.emit()
             
             # 发送停止完成状态
-            self.status_updated.emit("监听已停止")
+            self.status_updated.emit(tr("ui.listen.messages.monitoring_stopped"))
             
             return result
             
         except Exception as e:
             # 发送错误信号
-            self.error_occurred.emit(f"停止监听过程中发生错误: {e}", "")
+            self.error_occurred.emit(tr("ui.listen.messages.stop_monitoring_error", error=str(e)), "")
             # 发送监听停止信号
             self.monitoring_stopped.emit()
             # 重新抛出异常

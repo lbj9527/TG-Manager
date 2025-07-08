@@ -2043,13 +2043,13 @@ class ListenView(QWidget):
             target_channel: 目标频道(可选)
         """
         # 构建转发信息
-        forward_info = f"消息ID: {msg_id}"
+        forward_info = tr("ui.listen.messages.forward_info_id", msg_id=msg_id)
         if source_channel and target_channel:
-            forward_info = f"消息ID: {msg_id}, 从 {source_channel} 到 {target_channel}"
+            forward_info = tr("ui.listen.messages.forward_info_complete", msg_id=msg_id, source=source_channel, target=target_channel)
         elif source_channel:
-            forward_info = f"消息ID: {msg_id}, 来自 {source_channel}"
+            forward_info = tr("ui.listen.messages.forward_info_from", msg_id=msg_id, source=source_channel)
         elif target_channel:
-            forward_info = f"消息ID: {msg_id}, 转发到 {target_channel}"
+            forward_info = tr("ui.listen.messages.forward_info_to", msg_id=msg_id, target=target_channel)
         
         # 添加到转发列表
         self._add_forward_item(forward_info)

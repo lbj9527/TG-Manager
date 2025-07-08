@@ -501,7 +501,16 @@
         "listening_started": "Monitoring started",
         "listening_stopped": "Monitoring stopped",
         "monitor_error": "Monitor error: {error}",
-        "monitor_error_title": "Monitor Error"
+        "monitor_error_title": "Monitor Error",
+        "forward_info_id": "Message ID: {msg_id}",
+        "start_monitoring": "Starting to monitor channel messages...",
+        "stopping_monitoring": "Stopping monitoring...",
+        "monitoring_stopped": "Monitoring stopped",
+        "monitoring_error": "Error occurred during monitoring: {error}",
+        "stop_monitoring_error": "Error occurred while stopping monitoring: {error}",
+        "forward_info_complete": "Message ID: {msg_id}, from {source} to {target}",
+        "forward_info_from": "Message ID: {msg_id}, from {source}",
+        "forward_info_to": "Message ID: {msg_id}, forwarded to {target}"
       },
       "context_menu": {
         "edit": "Edit",

@@ -511,7 +511,16 @@
         "listening_started": "监听已开始",
         "listening_stopped": "监听已停止",
         "monitor_error": "监听出错: {error}",
-        "monitor_error_title": "监听错误"
+        "monitor_error_title": "监听错误",
+        "forward_info_id": "消息ID: {msg_id}",
+        "start_monitoring": "开始监听频道消息...",
+        "stopping_monitoring": "正在停止监听...",
+        "monitoring_stopped": "监听已停止",
+        "monitoring_error": "监听过程中发生错误: {error}",
+        "stop_monitoring_error": "停止监听过程中发生错误: {error}",
+        "forward_info_complete": "消息ID: {msg_id}, 从 {source} 到 {target}",
+        "forward_info_from": "消息ID: {msg_id}, 来自 {source}",
+        "forward_info_to": "消息ID: {msg_id}, 转发到 {target}"
       },
       "context_menu": {
         "edit": "编辑",
