@@ -378,57 +378,64 @@ class MediaGroupHandler:
         # 【调试】记录接收到的配置
         logger.debug(f"【调试】handle_media_group_message接收到的pair_config: {pair_config}")
         
-        # 【优化】移除重复的通用过滤逻辑，因为已经在core.py中处理过了
-        # 这里只处理媒体组特有的逻辑
-        
-        # 获取该频道对的其他过滤选项
+        # 获取该频道对的过滤选项
         keywords = pair_config.get('keywords', [])
+        exclude_links = pair_config.get('exclude_links', False)
         
-        # 关键词过滤 - 媒体组级别检查（如果还没有在core.py中处理过）
-        if keywords:
-            # 检查该媒体组是否已经进行过关键词检查
-            if message.media_group_id not in self.media_group_keyword_filter:
-                # 首次检查该媒体组，需要获取媒体组的说明文字
-                media_group_caption = None
-                
-                # 尝试从当前消息获取说明
-                if message.caption:
-                    media_group_caption = message.caption
-                    logger.debug(f"从消息 [ID: {message.id}] 获取媒体组 {message.media_group_id} 的说明: '{media_group_caption}'")
-                
-                # 检查媒体组说明是否包含关键词
-                keywords_passed = False
-                if media_group_caption:
-                    keywords_passed = any(keyword.lower() in media_group_caption.lower() for keyword in keywords)
-                    if keywords_passed:
-                        logger.info(f"媒体组 {message.media_group_id} 的说明包含关键词({', '.join(keywords)})，允许转发")
-                    else:
-                        logger.info(f"媒体组 {message.media_group_id} 的说明不包含关键词({', '.join(keywords)})，过滤整个媒体组")
-                else:
-                    logger.info(f"媒体组 {message.media_group_id} 没有说明文字，算作不含关键词，过滤整个媒体组")
-                
-                # 记录该媒体组的关键词检查结果
-                self.media_group_keyword_filter[message.media_group_id] = {
-                    'keywords_passed': keywords_passed,
-                    'checked': True,
-                    'ui_notified': False  # 添加UI通知标记
-                }
-                
-                # 如果首次检查发现不通过关键词过滤，发送UI通知
-                if not keywords_passed:
-                    # 添加小延迟确保UI事件处理顺序正确
-                    await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
-                    filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})，过滤规则跳过"
-                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
-                    self._emit_message_filtered(message, filter_reason)
-                    # 标记已通知UI
-                    self.media_group_keyword_filter[message.media_group_id]['ui_notified'] = True
-                    return
+        # 【修复】媒体组级别的链接检测和关键词检测
+        # 检查该媒体组是否已经进行过检测
+        if message.media_group_id not in self.media_group_keyword_filter:
+            # 首次检查该媒体组，需要获取媒体组的完整文本
+            media_group_text = await self._get_media_group_text(message.media_group_id, message.chat.id)
             
-            # 根据已记录的检查结果决定是否过滤（后续消息直接使用缓存结果）
-            if not self.media_group_keyword_filter[message.media_group_id]['keywords_passed']:
-                # 直接返回，不再发送UI通知
+            # 链接检测
+            links_passed = True
+            if exclude_links and media_group_text:
+                from src.utils.text_utils import contains_links
+                if contains_links(media_group_text):
+                    links_passed = False
+                    logger.info(f"媒体组 {message.media_group_id} 包含链接，过滤整个媒体组")
+            
+            # 关键词检测
+            keywords_passed = True
+            if keywords and media_group_text:
+                keywords_passed = any(keyword.lower() in media_group_text.lower() for keyword in keywords)
+                if not keywords_passed:
+                    logger.info(f"媒体组 {message.media_group_id} 不包含关键词({', '.join(keywords)})，过滤整个媒体组")
+            elif keywords and not media_group_text:
+                # 如果没有文本但有关键词要求，算作不通过
+                keywords_passed = False
+                logger.info(f"媒体组 {message.media_group_id} 没有文本且要求关键词，过滤整个媒体组")
+            
+            # 记录该媒体组的检测结果
+            self.media_group_keyword_filter[message.media_group_id] = {
+                'keywords_passed': keywords_passed,
+                'links_passed': links_passed,
+                'checked': True,
+                'ui_notified': False
+            }
+            
+            # 如果检测不通过，发送UI通知并返回
+            if not links_passed or not keywords_passed:
+                # 添加小延迟确保UI事件处理顺序正确
+                await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
+                
+                if not links_passed:
+                    filter_reason = f"媒体组[{message.media_group_id}]包含链接，过滤规则跳过"
+                else:
+                    filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})，过滤规则跳过"
+                
+                logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
+                self._emit_message_filtered(message, filter_reason)
+                # 标记已通知UI
+                self.media_group_keyword_filter[message.media_group_id]['ui_notified'] = True
                 return
+        
+        # 根据已记录的检测结果决定是否过滤（后续消息直接使用缓存结果）
+        filter_result = self.media_group_keyword_filter[message.media_group_id]
+        if not filter_result['keywords_passed'] or not filter_result['links_passed']:
+            # 直接返回，不再发送UI通知
+            return
         
         # 【优化】媒体类型过滤 - 恢复早期过滤以提高性能
         allowed_media_types = pair_config.get('media_types', [])
@@ -516,8 +523,8 @@ class MediaGroupHandler:
             
             return
         
-        # 【修复】现在所有通过关键词过滤的消息都会添加到缓存，媒体类型过滤将在最终处理时进行
-        logger.debug(f"【修复】消息 [ID: {message.id}] 通过关键词过滤，将添加到缓存 (媒体类型: {message_media_type})")
+        # 【修复】现在所有通过检测的消息都会添加到缓存，媒体类型过滤将在最终处理时进行
+        logger.debug(f"【修复】消息 [ID: {message.id}] 通过检测，将添加到缓存 (媒体类型: {message_media_type})")
         
         # 只有通过了所有过滤的消息才会添加到缓存
         channel_id = message.chat.id
@@ -569,22 +576,37 @@ class MediaGroupHandler:
                 media_group_id in self.media_group_cache[channel_id]):
                 cached_count = len(self.media_group_cache[channel_id][media_group_id]['messages'])
             
-            # 如果缓存中已有足够多的消息，跳过API调用
-            if cached_count >= 8:
-                logger.info(f"媒体组 {media_group_id} 在缓存中已有 {cached_count} 条消息，跳过API调用")
+            # 如果缓存的消息数量已经达到预期，直接处理
+            if cached_count >= message_count_in_group:
+                logger.info(f"媒体组 {media_group_id} 缓存消息数量已满足预期，直接处理")
                 await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
                 return
             
-            # 将请求加入队列
+            # 记录获取时间
+            self.last_media_group_fetch[media_group_id] = current_time
+            
+            # 尝试使用API获取完整媒体组
             try:
-                self.api_request_queue.put_nowait((channel_id, message.id, media_group_id, message, pair_config))
-                logger.debug(f"已将媒体组 {media_group_id} 的API请求加入队列")
-            except asyncio.QueueFull:
-                logger.warning(f"API请求队列已满，直接处理媒体组 {media_group_id}")
+                # 将当前消息添加到缓存
                 await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
-        else:
-            # 单条消息或无法获取计数，直接添加到缓存
-            await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
+                
+                # 标记为正在获取
+                self.fetching_media_groups.add(media_group_id)
+                
+                # 创建API获取任务
+                asyncio.create_task(self._fetch_media_group_via_api(
+                    media_group_id, channel_id, message_count_in_group, pair_config
+                ))
+                
+                return
+                
+            except Exception as e:
+                logger.error(f"API获取媒体组 {media_group_id} 失败: {str(e)}")
+                # 移除获取标记
+                self.fetching_media_groups.discard(media_group_id)
+        
+        # 如果不需要API获取或API获取失败，直接添加到缓存
+        await self._add_message_to_cache(message, media_group_id, channel_id, pair_config)
     
     async def _add_message_to_cache(self, message: Message, media_group_id: str, channel_id: int, pair_config: dict):
         """将消息添加到媒体组缓存
@@ -2037,3 +2059,88 @@ class MediaGroupHandler:
         except Exception as e:
             logger.error(f"创建InputMedia对象失败，消息ID: {message.id}, 错误: {str(e)}")
             return None
+
+    async def _get_media_group_text(self, media_group_id: str, channel_id: int) -> str:
+        """
+        获取媒体组的完整文本，遍历所有消息获取第一个文本
+        
+        Args:
+            media_group_id: 媒体组ID
+            channel_id: 频道ID
+            
+        Returns:
+            str: 媒体组的文本内容，如果没有找到则返回空字符串
+        """
+        try:
+            # 首先检查缓存中是否已有该媒体组的消息
+            if (channel_id in self.media_group_cache and 
+                media_group_id in self.media_group_cache[channel_id]):
+                cached_messages = self.media_group_cache[channel_id][media_group_id]['messages']
+                
+                # 遍历缓存的消息，查找第一个有文本的消息
+                for msg in cached_messages:
+                    text = msg.text or msg.caption or ""
+                    if text.strip():
+                        logger.debug(f"从缓存消息 [ID: {msg.id}] 获取媒体组 {media_group_id} 的文本: '{text[:50]}...'")
+                        return text.strip()
+            
+            # 如果缓存中没有找到，尝试从API获取
+            try:
+                # 获取媒体组的所有消息
+                messages = []
+                async for msg in self.client.get_chat_history(channel_id, limit=100):
+                    if msg.media_group_id == media_group_id:
+                        messages.append(msg)
+                        # 如果找到有文本的消息，立即返回
+                        text = msg.text or msg.caption or ""
+                        if text.strip():
+                            logger.debug(f"从API消息 [ID: {msg.id}] 获取媒体组 {media_group_id} 的文本: '{text[:50]}...'")
+                            return text.strip()
+                
+                # 如果遍历完所有消息都没有找到文本
+                logger.debug(f"媒体组 {media_group_id} 没有找到任何文本内容")
+                return ""
+                
+            except Exception as e:
+                logger.error(f"通过API获取媒体组 {media_group_id} 文本失败: {str(e)}")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"获取媒体组 {media_group_id} 文本时发生错误: {str(e)}")
+            return ""
+
+    async def _fetch_media_group_via_api(self, media_group_id: str, channel_id: int, expected_count: int, pair_config: dict):
+        """
+        通过API获取完整的媒体组消息
+        
+        Args:
+            media_group_id: 媒体组ID
+            channel_id: 频道ID
+            expected_count: 预期的消息数量
+            pair_config: 频道对配置
+        """
+        try:
+            logger.info(f"开始通过API获取媒体组 {media_group_id} 的完整消息")
+            
+            # 获取媒体组的所有消息
+            messages = []
+            async for msg in self.client.get_chat_history(channel_id, limit=100):
+                if msg.media_group_id == media_group_id:
+                    messages.append(msg)
+                    # 如果已经获取到足够多的消息，停止获取
+                    if len(messages) >= expected_count:
+                        break
+            
+            logger.info(f"API获取到媒体组 {media_group_id} 的 {len(messages)} 条消息")
+            
+            # 将获取到的消息添加到缓存
+            for msg in messages:
+                await self._add_message_to_cache(msg, media_group_id, channel_id, pair_config)
+            
+            # 移除获取标记
+            self.fetching_media_groups.discard(media_group_id)
+            
+        except Exception as e:
+            logger.error(f"通过API获取媒体组 {media_group_id} 失败: {str(e)}")
+            # 移除获取标记
+            self.fetching_media_groups.discard(media_group_id)

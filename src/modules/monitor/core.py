@@ -353,48 +353,18 @@ class Monitor:
 
                     # 检查是否为媒体组消息
                     if message.media_group_id:
-                        # 【优化】媒体组消息的过滤逻辑
+                        # 【修复】媒体组消息的过滤逻辑
                         # 1. 首先应用通用过滤（转发、回复、纯文本、链接）
                         is_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
                         if is_filtered:
                             logger.info(f"媒体组消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
                             return
 
-                        # 2. 应用关键词过滤（媒体组级别）
-                        keywords = pair_config.get('keywords', [])
-                        if keywords:
-                            # 检查该媒体组是否已经进行过关键词检查
-                            if message.media_group_id not in self.media_group_handler.media_group_keyword_filter:
-                                # 首次检查该媒体组，需要获取媒体组的说明文字
-                                media_group_caption = message.caption or ""
-                                
-                                # 检查媒体组说明是否包含关键词
-                                keywords_passed = any(keyword.lower() in media_group_caption.lower() for keyword in keywords)
-                                
-                                # 记录该媒体组的关键词检查结果
-                                self.media_group_handler.media_group_keyword_filter[message.media_group_id] = {
-                                    'keywords_passed': keywords_passed,
-                                    'checked': True,
-                                    'ui_notified': False
-                                }
-                                
-                                if not keywords_passed:
-                                    filter_reason = f"媒体组[{message.media_group_id}]不包含关键词({', '.join(keywords)})"
-                                    logger.info(f"媒体组消息 [ID: {message.id}] {filter_reason}")
-                                    if hasattr(self, 'emit') and self.emit:
-                                        self.emit("message_filtered", message.id, source_info_str, filter_reason)
-                                    return
-                            else:
-                                # 根据已记录的检查结果决定是否过滤
-                                if not self.media_group_handler.media_group_keyword_filter[message.media_group_id]['keywords_passed']:
-                                    return
-
-                        # 3. 无论消息是否会被过滤，都先发射new_message事件
-                        # 这确保UI显示顺序正确：所有消息都先显示"收到新消息"，然后显示处理结果
+                        # 2. 发射new_message事件给UI（媒体组消息会在media_group_handler中进行链接和关键词检测）
                         if hasattr(self, 'emit') and self.emit:
                             self.emit("new_message", message.id, source_info_str)
                         
-                        # 4. 处理媒体组消息（内部会进行媒体类型过滤等媒体组级别的检查）
+                        # 3. 处理媒体组消息（内部会进行链接检测、关键词检测、媒体类型过滤等）
                         await self.media_group_handler.handle_media_group_message(message, pair_config)
                         
                         # 记录处理时间
@@ -406,6 +376,13 @@ class Monitor:
                     # 先检查是否会被过滤
                     will_be_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
                     if will_be_filtered:
+                        # 消息将被过滤，不发射new_message事件
+                        logger.info(f"单条消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
+                        return
+
+                    # 应用其他过滤条件（关键词、媒体类型等）
+                    is_filtered, filter_reason = await self._check_single_message_filters(message, pair_config, source_info_str)
+                    if is_filtered:
                         # 消息将被过滤，不发射new_message事件
                         logger.info(f"单条消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
                         return
@@ -607,22 +584,7 @@ class Monitor:
             pair_config: 频道对配置
         """
         try:
-            # 【最高优先级】首先应用通用消息过滤（转发、回复、纯文本、链接）
-            try:
-                source_info_str, _ = await self.channel_resolver.format_channel_info(message.chat.id)
-            except Exception:
-                source_info_str = str(message.chat.id)
-            
-            is_filtered, filter_reason = await self._apply_universal_message_filters(message, pair_config, source_info_str)
-            if is_filtered:
-                logger.debug(f"单条消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
-                return
-            
-            # 应用其他过滤条件（关键词、媒体类型等）
-            is_filtered, filter_reason = await self._check_single_message_filters(message, pair_config, source_info_str)
-            if is_filtered:
-                logger.debug(f"单条消息 [ID: {message.id}] 被其他过滤规则过滤: {filter_reason}")
-                return
+            # 【修复】过滤逻辑已经在handle_new_message中完成，这里只处理转发逻辑
             
             # 获取目标频道列表
             target_channels = pair_config.get('target_channels', [])
@@ -658,7 +620,7 @@ class Monitor:
             
             # 【优化】改进移除媒体说明的逻辑
             if remove_captions:
-                if is_media_message:
+                if is_media:
                     # 媒体消息：移除说明文字，但保留文本替换的结果
                     should_remove_caption = True
                     if replaced_text:
