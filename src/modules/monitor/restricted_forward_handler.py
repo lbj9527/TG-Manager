@@ -225,7 +225,7 @@ class RestrictedForwardHandler:
                 filter_reason = ""
                 
                 # 【最高优先级1】排除转发消息
-                if exclude_forwards and message.forward_from:
+                if exclude_forwards and (message.forward_from or message.forward_from_chat):
                     should_filter = True
                     filter_reason = "转发消息"
                 

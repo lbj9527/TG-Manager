@@ -803,7 +803,7 @@ class Monitor:
             exclude_links = pair_config.get('exclude_links', False)
             
             # 【最高优先级1】排除转发消息
-            if exclude_forwards and message.forward_from:
+            if exclude_forwards and (message.forward_from or message.forward_from_chat):
                 filter_reason = "转发消息"
                 logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
                 # 发送过滤消息事件到UI
