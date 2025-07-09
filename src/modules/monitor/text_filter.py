@@ -133,7 +133,7 @@ class TextFilter:
     @staticmethod
     def apply_universal_filters(message: Message, pair_config: dict) -> Tuple[bool, str]:
         """
-        应用通用消息过滤规则（最高优先级判断）
+        应用通用消息过滤规则（最高优先级判断）- 统一过滤逻辑入口
         
         Args:
             message: 消息对象
@@ -188,6 +188,41 @@ class TextFilter:
             logger.error(f"应用通用消息过滤时发生错误: {str(e)}")
             # 发生错误时认为消息不被过滤，让后续处理决定
             return False, ""
+    
+    @staticmethod
+    def apply_universal_filters_to_list(messages: List[Message], pair_config: dict) -> Tuple[List[Message], List[Message]]:
+        """
+        应用通用消息过滤规则到消息列表（批量处理版本）
+        
+        Args:
+            messages: 消息列表
+            pair_config: 频道对配置
+            
+        Returns:
+            Tuple[List[Message], List[Message]]: (通过过滤的消息列表, 被过滤的消息列表)
+        """
+        if not messages:
+            return [], []
+            
+        try:
+            passed_messages = []
+            filtered_messages = []
+            
+            for message in messages:
+                is_filtered, filter_reason = TextFilter.apply_universal_filters(message, pair_config)
+                
+                if is_filtered:
+                    logger.info(f"消息 [ID: {message.id}] 被通用过滤规则过滤: {filter_reason}")
+                    filtered_messages.append(message)
+                else:
+                    passed_messages.append(message)
+            
+            return passed_messages, filtered_messages
+            
+        except Exception as e:
+            logger.error(f"应用通用消息过滤到列表时发生错误: {str(e)}")
+            # 发生错误时返回原始消息列表，让后续处理决定
+            return messages, []
     
     @staticmethod
     def apply_keyword_filter(message: Message, keywords: List[str]) -> Tuple[bool, str]:
