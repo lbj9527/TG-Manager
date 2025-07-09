@@ -618,21 +618,22 @@ class Monitor:
                 if replaced_text != text:
                     logger.info(f"消息 [ID: {message.id}] 已应用文本替换")
             
-            # 【优化】改进移除媒体说明的逻辑
+            # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
             if remove_captions:
                 if is_media:
-                    # 媒体消息：移除说明文字，但保留文本替换的结果
+                    # 媒体消息：移除说明文字，忽略文本替换的结果
                     should_remove_caption = True
-                    if replaced_text:
-                        logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，但保留文本替换结果")
-                    else:
-                        logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字")
+                    replaced_text = None  # 强制清空文本替换结果
+                    logger.debug(f"媒体消息 [ID: {message.id}] 将移除说明文字，忽略文本替换结果")
                 else:
                     # 纯文本消息：移除媒体说明无效，但文本替换依然有效
                     if replaced_text and replaced_text != text:
                         logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效，但文本替换已应用")
                     else:
                         logger.debug(f"纯文本消息 [ID: {message.id}] 移除媒体说明无效")
+            else:
+                # 不移除媒体说明时，使用文本替换的结果
+                should_remove_caption = False
             
             # 转发消息
             await self.message_processor.forward_message(

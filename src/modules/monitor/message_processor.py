@@ -172,13 +172,16 @@ class MessageProcessor:
                     elif use_copy:
                         # 使用copy_message复制消息（适用于媒体消息或无文本替换的纯文本消息）
                         caption = None
-                        if message.text or message.caption:
+                        
+                        # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
+                        if remove_caption:
+                            # 移除媒体说明 - 最高优先级，忽略文本替换
+                            caption = ""
+                            logger.debug(f"移除媒体说明，忽略文本替换")
+                        elif message.text or message.caption:
+                            # 不移除媒体说明时，才考虑文本替换
                             caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                         
-                        # 如果需要移除caption，对于copy_message必须传递空字符串
-                        if remove_caption:
-                            caption = ""
-                            
                         await self.client.copy_message(
                             chat_id=target_id,
                             from_chat_id=source_chat_id,
@@ -237,13 +240,16 @@ class MessageProcessor:
                         else:
                             # 使用copy_message复制消息
                             caption = None
-                            if message.text or message.caption:
+                            
+                            # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
+                            if remove_caption:
+                                # 移除媒体说明 - 最高优先级，忽略文本替换
+                                caption = ""
+                                logger.debug(f"移除媒体说明，忽略文本替换")
+                            elif message.text or message.caption:
+                                # 不移除媒体说明时，才考虑文本替换
                                 caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                                 
-                                # 如果需要移除caption，对于copy_message必须传递空字符串
-                                if remove_caption:
-                                    caption = ""
-                                    
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
@@ -311,10 +317,15 @@ class MessageProcessor:
                             # 使用copy_message复制消息
                             caption = None
                             if message.text or message.caption:
-                                caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                                # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
                                 if remove_caption:
+                                    # 移除媒体说明 - 最高优先级，忽略文本替换
                                     caption = ""
-                                    
+                                    logger.debug(f"移除媒体说明，忽略文本替换")
+                                else:
+                                    # 不移除媒体说明时，才考虑文本替换
+                                    caption = replace_caption if replace_caption is not None else (message.caption or message.text)
+                                
                             await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,

@@ -1163,13 +1163,15 @@ class MediaGroupHandler:
             actually_modified = False
             use_copy_media_group = False  # 是否需要使用copy_media_group
             
+            # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
             if remove_captions:
-                # 移除说明
+                # 移除说明 - 最高优先级，忽略文本替换
                 final_caption = ""  # 空字符串表示移除说明
                 actually_modified = bool(original_caption)
                 use_copy_media_group = True
-                logger.debug(f"移除媒体组说明，原始说明: '{original_caption}'")
+                logger.debug(f"移除媒体组说明，原始说明: '{original_caption}'，忽略文本替换")
             else:
+                # 不移除媒体说明时，才考虑文本替换
                 if text_replacements and original_caption:
                     # 应用文本替换
                     replaced_caption = original_caption
@@ -1252,7 +1254,7 @@ class MediaGroupHandler:
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                    captions=[""],  # 空字符串移除说明
+                                    captions="",  # 空字符串移除说明
                                     disable_notification=True
                                 )
                             elif final_caption:
@@ -1261,7 +1263,7 @@ class MediaGroupHandler:
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                    captions=[final_caption],  # 设置说明
+                                    captions=final_caption,  # 设置说明
                                     disable_notification=True
                                 )
                             else:

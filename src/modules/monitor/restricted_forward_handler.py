@@ -363,11 +363,14 @@ class RestrictedForwardHandler:
                 final_caption = None
                 actually_modified = False
                 
+                # 【修复】改进移除媒体说明的逻辑 - 优先级：移除媒体说明 > 文本替换
                 if remove_caption:
-                    # 移除标题
+                    # 移除标题 - 最高优先级，忽略文本替换
                     final_caption = None
                     actually_modified = bool(original_caption)  # 只有原本有标题时，移除才算修改
+                    _logger.debug(f"移除媒体说明，原始说明: '{original_caption}'，忽略文本替换")
                 else:
+                    # 不移除媒体说明时，才考虑文本替换
                     if caption is not None:
                         # 使用指定的标题
                         final_caption = caption
