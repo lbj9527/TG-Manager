@@ -636,12 +636,12 @@ class Monitor:
             remove_captions = pair_config.get('remove_captions', False)
             
             # 检查是否为媒体消息
-            is_media_message = bool(message.photo or message.video or message.document or 
-                                  message.animation or message.audio or message.voice or 
-                                  message.video_note or message.sticker)
+            from src.utils.text_utils import is_media_message
+            is_media = is_media_message(message)
             
             # 获取原始文本
-            text = message.text or message.caption or ""
+            from src.utils.text_utils import extract_text_from_message
+            text = extract_text_from_message(message)
             replaced_text = None
             should_remove_caption = False
             
@@ -740,36 +740,10 @@ class Monitor:
     
     def _is_media_type_allowed(self, message_media_type, allowed_media_types):
         """
-        检查消息的媒体类型是否在允许列表中
-        
-        Args:
-            message_media_type: 消息的媒体类型
-            allowed_media_types: 允许的媒体类型列表
-            
-        Returns:
-            bool: 是否允许该媒体类型
+        已废弃：请统一使用 src.utils.text_utils.is_media_type_allowed
         """
-        if not allowed_media_types:
-            # 如果没有配置允许的媒体类型，默认允许所有类型
-            return True
-        
-        # 检查媒体类型是否在允许列表中
-        for allowed_type in allowed_media_types:
-            # 处理字符串和枚举类型的兼容性
-            if hasattr(allowed_type, 'value'):
-                allowed_value = allowed_type.value
-            else:
-                allowed_value = allowed_type
-                
-            if hasattr(message_media_type, 'value'):
-                message_value = message_media_type.value
-            else:
-                message_value = message_media_type
-                
-            if allowed_value == message_value:
-                return True
-        
-        return False
+        from src.utils.text_utils import is_media_type_allowed
+        return is_media_type_allowed(message_media_type, allowed_media_types)
     
     def _contains_links(self, text: str) -> bool:
         """
@@ -781,24 +755,8 @@ class Monitor:
         Returns:
             bool: 是否包含链接
         """
-        import re
-        
-        if not text:
-            return False
-        
-        # 简单的URL正则匹配
-        url_patterns = [
-            r'https?://[^\s]+',  # http或https链接
-            r'www\.[^\s]+',      # www链接
-            r't\.me/[^\s]+',     # Telegram链接
-            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
-        ]
-        
-        for pattern in url_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        
-        return False
+        from src.utils.text_utils import contains_links
+        return contains_links(text)
 
     def get_cached_channel_info(self, channel_id: int) -> str:
         """
@@ -902,10 +860,9 @@ class Monitor:
             # 【最高优先级3】排除纯文本消息
             if exclude_text:
                 # 检查是否为纯文本消息（没有任何媒体内容）
-                is_media_message = bool(message.photo or message.video or message.document or 
-                                      message.audio or message.animation or message.sticker or 
-                                      message.voice or message.video_note)
-                if not is_media_message and (message.text or message.caption):
+                from src.utils.text_utils import is_media_message
+                is_media = is_media_message(message)
+                if not is_media and (message.text or message.caption):
                     filter_reason = "纯文本消息"
                     logger.info(f"消息 [ID: {message.id}] 是{filter_reason}，根据过滤规则跳过")
                     # 发送过滤消息事件到UI
@@ -916,7 +873,8 @@ class Monitor:
             # 【最高优先级4】排除包含链接的消息
             if exclude_links:
                 # 检查消息文本或说明中是否包含链接
-                text_to_check = message.text or message.caption or ""
+                from src.utils.text_utils import extract_text_from_message
+                text_to_check = extract_text_from_message(message)
                 if self._contains_links(text_to_check):
                     filter_reason = "包含链接的消息"
                     logger.info(f"消息 [ID: {message.id}] {filter_reason}，根据过滤规则跳过")
@@ -953,7 +911,8 @@ class Monitor:
             
             # 关键词过滤
             if keywords:
-                text_to_check = (message.text or message.caption or "").lower()
+                from src.utils.text_utils import extract_text_from_message
+                text_to_check = extract_text_from_message(message).lower()
                 keywords_passed = any(keyword.lower() in text_to_check for keyword in keywords)
                 if not keywords_passed:
                     filter_reason = f"不包含关键词({', '.join(keywords)})"

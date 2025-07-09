@@ -276,36 +276,10 @@ class TextFilter:
     @staticmethod
     def _is_media_type_allowed(message_media_type, allowed_media_types):
         """
-        检查消息的媒体类型是否在允许列表中
-        
-        Args:
-            message_media_type: 消息的媒体类型
-            allowed_media_types: 允许的媒体类型列表
-            
-        Returns:
-            bool: 是否允许该媒体类型
+        已废弃：请统一使用 src.utils.text_utils.is_media_type_allowed
         """
-        if not allowed_media_types:
-            # 如果没有配置允许的媒体类型，默认允许所有类型
-            return True
-        
-        # 检查媒体类型是否在允许列表中
-        for allowed_type in allowed_media_types:
-            # 处理字符串和枚举类型的兼容性
-            if hasattr(allowed_type, 'value'):
-                allowed_value = allowed_type.value
-            else:
-                allowed_value = allowed_type
-                
-            if hasattr(message_media_type, 'value'):
-                message_value = message_media_type.value
-            else:
-                message_value = message_media_type
-                
-            if allowed_value == message_value:
-                return True
-        
-        return False
+        from src.utils.text_utils import is_media_type_allowed
+        return is_media_type_allowed(message_media_type, allowed_media_types)
     
     @staticmethod
     def _contains_links(text: str) -> bool:
@@ -318,22 +292,8 @@ class TextFilter:
         Returns:
             bool: 是否包含链接
         """
-        if not text:
-            return False
-        
-        # 简单的URL正则匹配
-        url_patterns = [
-            r'https?://[^\s]+',  # http或https链接
-            r'www\.[^\s]+',      # www链接
-            r't\.me/[^\s]+',     # Telegram链接
-            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
-        ]
-        
-        for pattern in url_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        
-        return False
+        from src.utils.text_utils import contains_links
+        return contains_links(text)
     
     @staticmethod
     def process_text_and_caption(message: Message, text_replacements: Dict[str, str], 
@@ -350,9 +310,8 @@ class TextFilter:
             tuple[Optional[str], bool]: (替换后的文本, 是否应该移除标题)
         """
         # 检查是否为媒体消息
-        is_media_message = bool(message.photo or message.video or message.document or 
-                              message.animation or message.audio or message.voice or 
-                              message.video_note or message.sticker)
+        from src.utils.text_utils import is_media_message
+        is_media = is_media_message(message)
         
         # 获取原始文本
         text = message.text or message.caption or ""
@@ -367,7 +326,7 @@ class TextFilter:
         
         # 处理移除媒体说明的逻辑
         if remove_captions:
-            if is_media_message:
+            if is_media:
                 # 媒体消息：移除说明文字，但保留文本替换的结果
                 should_remove_caption = True
                 if replaced_text:

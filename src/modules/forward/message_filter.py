@@ -235,15 +235,13 @@ class MessageFilter:
             for message in group_messages:
                 # 排除纯文本消息（整个媒体组都是纯文本才过滤）
                 if exclude_text:
-                    is_media_message = bool(message.photo or message.video or message.document or 
-                                          message.audio or message.animation or message.sticker or 
-                                          message.voice or message.video_note)
-                    if not is_media_message and (message.text or message.caption):
+                    from src.utils.text_utils import is_media_message
+                    is_media = is_media_message(message)
+                    if not is_media and (message.text or message.caption):
                         # 检查整个媒体组是否都是纯文本
                         all_text = True
                         for msg in group_messages:
-                            if (msg.photo or msg.video or msg.document or msg.audio or 
-                                msg.animation or msg.sticker or msg.voice or msg.video_note):
+                            if is_media_message(msg):
                                 all_text = False
                                 break
                         if all_text:
@@ -531,11 +529,12 @@ class MessageFilter:
             return "text"
         return None
     
-    def _is_media_type_allowed(self, message_media_type: str, allowed_media_types: List[str]) -> bool:
-        """检查消息的媒体类型是否在允许列表中"""
-        if not allowed_media_types:
-            return True
-        return message_media_type in allowed_media_types
+    def _is_media_type_allowed(self, message_media_type, allowed_media_types):
+        """
+        已废弃：请统一使用 src.utils.text_utils.is_media_type_allowed
+        """
+        from src.utils.text_utils import is_media_type_allowed
+        return is_media_type_allowed(message_media_type, allowed_media_types)
     
     def _contains_links(self, text: str, entities=None) -> bool:
         """
@@ -548,53 +547,8 @@ class MessageFilter:
         Returns:
             bool: 是否包含链接
         """
-        if not text:
-            return False
-        
-        # 1. 检查Telegram消息实体中的链接（优先级最高，能检测隐式链接）
-        if entities:
-            for entity in entities:
-                # 获取实体类型，处理pyrogram的MessageEntityType枚举
-                entity_type = None
-                if hasattr(entity, 'type'):
-                    raw_type = entity.type
-                    # 调试信息：记录原始类型
-                    _logger.debug(f"检测到消息实体类型: {type(raw_type)} (原始: {raw_type})")
-                    
-                    # 处理pyrogram的MessageEntityType枚举
-                    if hasattr(raw_type, 'name'):
-                        # 这是一个枚举，获取名称并转为小写
-                        entity_type = raw_type.name.lower()
-                    elif hasattr(raw_type, 'value'):
-                        # 这是一个枚举，获取值
-                        entity_type = str(raw_type.value).lower()
-                    else:
-                        # 直接转换为字符串
-                        entity_type = str(raw_type).lower()
-                
-                # 调试信息：记录转换后的类型
-                _logger.debug(f"转换后的实体类型: {entity_type}")
-                
-                # 检查是否为链接相关的实体类型
-                link_types = ['url', 'text_link', 'email', 'phone_number']
-                if entity_type and entity_type in link_types:
-                    _logger.info(f"发现链接实体: {entity_type}")
-                    return True
-        
-        # 2. 检查显式链接模式（作为备用检测）
-        link_patterns = [
-            r'https?://[^\s]+',     # HTTP/HTTPS链接
-            r'www\.[^\s]+',         # www开头的链接
-            r't\.me/[^\s]+',        # Telegram链接
-            r'@\w+',                # @用户名
-        ]
-        
-        for pattern in link_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                _logger.info(f"发现显式链接模式: {pattern}")
-                return True
-        
-        return False
+        from src.utils.text_utils import contains_links
+        return contains_links(text, entities)
     
     def is_media_allowed(self, message: Message, source_channel: str = None) -> bool:
         """

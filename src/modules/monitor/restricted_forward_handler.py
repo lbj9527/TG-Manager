@@ -132,7 +132,7 @@ class RestrictedForwardHandler:
         for message in messages:
             message_media_type = self._get_message_media_type(message)
             
-            if message_media_type and self._is_media_type_allowed(message_media_type, allowed_media_types):
+            if message_media_type and src.utils.text_utils.is_media_type_allowed(message_media_type, allowed_media_types):
                 filtered_messages.append(message)
             else:
                 if message_media_type:
@@ -167,11 +167,12 @@ class RestrictedForwardHandler:
             return "video_note"
         return None
     
-    def _is_media_type_allowed(self, message_media_type: str, allowed_media_types: List[str]) -> bool:
-        """检查消息的媒体类型是否在允许列表中"""
-        if not allowed_media_types:
-            return True
-        return message_media_type in allowed_media_types
+    def _is_media_type_allowed(self, message_media_type, allowed_media_types):
+        """
+        已废弃：请统一使用 src.utils.text_utils.is_media_type_allowed
+        """
+        from src.utils.text_utils import is_media_type_allowed
+        return is_media_type_allowed(message_media_type, allowed_media_types)
     
     def _apply_text_replacements(self, text: str, text_replacements: Dict[str, str]) -> str:
         """
@@ -274,24 +275,8 @@ class RestrictedForwardHandler:
         Returns:
             bool: 是否包含链接
         """
-        import re
-        
-        if not text:
-            return False
-        
-        # 简单的URL正则匹配
-        url_patterns = [
-            r'https?://[^\s]+',  # http或https链接
-            r'www\.[^\s]+',      # www链接
-            r't\.me/[^\s]+',     # Telegram链接
-            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
-        ]
-        
-        for pattern in url_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        
-        return False
+        from src.utils.text_utils import contains_links
+        return contains_links(text)
 
     async def process_restricted_message(self, 
                                        message: Message, 
@@ -369,7 +354,8 @@ class RestrictedForwardHandler:
                 return sent_messages, False
             
             # 检查是否是媒体消息
-            if message.media:
+            from src.utils.text_utils import is_media_message
+            if is_media_message(message):
                 # 获取原始标题
                 original_caption = message.caption or ""
                 

@@ -1735,31 +1735,10 @@ class MediaGroupHandler:
     
     def _is_media_type_allowed(self, message_media_type, allowed_media_types):
         """
-        检查消息的媒体类型是否在允许列表中
-        
-        Args:
-            message_media_type: 消息的媒体类型
-            allowed_media_types: 允许的媒体类型列表（字符串列表）
-            
-        Returns:
-            bool: 是否允许该媒体类型
+        已废弃：请统一使用 src.utils.text_utils.is_media_type_allowed
         """
-        if not allowed_media_types:
-            # 如果没有配置允许的媒体类型，默认允许所有类型
-            return True
-        
-        if not message_media_type:
-            # 如果消息没有媒体类型（如纯文本），通常允许通过
-            return True
-        
-        # 获取消息的媒体类型字符串
-        if hasattr(message_media_type, 'value'):
-            message_type_str = message_media_type.value
-        else:
-            message_type_str = str(message_media_type)
-        
-        # 检查是否在允许列表中（allowed_media_types现在应该是字符串列表）
-        return message_type_str in allowed_media_types
+        from src.utils.text_utils import is_media_type_allowed
+        return is_media_type_allowed(message_media_type, allowed_media_types)
     
     def _contains_links(self, text: str) -> bool:
         """
@@ -1771,24 +1750,8 @@ class MediaGroupHandler:
         Returns:
             bool: 是否包含链接
         """
-        import re
-        
-        if not text:
-            return False
-        
-        # 简单的URL正则匹配
-        url_patterns = [
-            r'https?://[^\s]+',  # http或https链接
-            r'www\.[^\s]+',      # www链接
-            r't\.me/[^\s]+',     # Telegram链接
-            r'[^\s]+\.[a-z]{2,}[^\s]*'  # 一般域名
-        ]
-        
-        for pattern in url_patterns:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        
-        return False 
+        from src.utils.text_utils import contains_links
+        return contains_links(text) 
 
     def _generate_media_group_display_id(self, message_ids: List[int], media_group_id: str) -> str:
         """生成安全的媒体组显示ID，用于UI显示
