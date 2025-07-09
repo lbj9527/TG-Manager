@@ -13,7 +13,6 @@ Monitor 模块负责监听源频道的新消息，并实时转发到目标频道
 - **text_filter.py**: 文本过滤器，处理关键词过滤和文本替换
 - **message_processor.py**: 消息处理器，负责处理和转发单条消息
 - **media_group_handler.py**: 媒体组处理器，负责处理和转发媒体组消息
-- **history_fetcher.py**: 历史消息获取器，负责获取频道的历史消息
 
 ## 功能说明
 
@@ -53,10 +52,6 @@ MediaGroupHandler 类负责处理和转发媒体组消息，主要功能包括�
 - 处理媒体组转发限制情况
 - 发送修改后的媒体组消息
 
-### history_fetcher.py
-
-提供获取频道历史消息的功能，包括处理 FloodWait 等异常情况。
-
 ## 使用方法
 
 Monitor 模块的使用方法与重构前保持一致，示例如下：
@@ -72,9 +67,6 @@ await monitor.start_monitoring()
 
 # 停止监听
 await monitor.stop_monitoring()
-
-# 获取历史消息
-messages = await monitor.get_message_history(channel, limit=100)
 ```
 
 通过这种模块化设计，监听模块的代码更加清晰，各个功能之间的边界更加明确，便于后续维护和扩展。

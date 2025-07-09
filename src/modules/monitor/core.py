@@ -706,20 +706,6 @@ class Monitor:
             except Exception as e:
                 logger.error(f"触发连接状态检查失败: {e}")
 
-    async def get_message_history(self, channel: str, limit: int = 100):
-        """
-        获取指定频道的历史消息
-        
-        Args:
-            channel: 频道ID或用户名
-            limit: 获取消息的数量限制
-            
-        Returns:
-            获取到的消息列表
-        """
-        from src.modules.monitor.history_fetcher import get_channel_history
-        return await get_channel_history(self.client, self.channel_resolver, channel, limit, self.should_stop)
-
     def _get_message_media_type(self, message: Message):
         """
         获取消息的媒体类型
