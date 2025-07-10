@@ -132,7 +132,7 @@ class RestrictedForwardHandler:
         for message in messages:
             message_media_type = self._get_message_media_type(message)
             
-            if message_media_type and src.utils.text_utils.is_media_type_allowed(message_media_type, allowed_media_types):
+            if message_media_type and self._is_media_type_allowed(message_media_type, allowed_media_types):
                 filtered_messages.append(message)
             else:
                 if message_media_type:
