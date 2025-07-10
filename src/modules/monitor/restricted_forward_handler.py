@@ -425,6 +425,13 @@ class RestrictedForwardHandler:
                 # 处理文本消息（不常见的情况，因为通常只有媒体消息会被禁止转发）
                 _logger.info(f"处理禁止转发的文本消息 [ID: {message.id}]")
                 
+                # 【修复调试】添加详细的调试日志
+                _logger.debug(f"【文本替换调试】消息 [ID: {message.id}] 处理开始:")
+                _logger.debug(f"  原始文本: '{message.text or message.caption or ''}'")
+                _logger.debug(f"  指定标题: '{caption}'")
+                _logger.debug(f"  移除标题: {remove_caption}")
+                _logger.debug(f"  文本替换规则: {text_replacements}")
+                
                 # 获取原始文本
                 original_text = message.text or message.caption or ""
                 
@@ -432,16 +439,37 @@ class RestrictedForwardHandler:
                 final_text = original_text
                 actually_modified = False
                 
-                if text_replacements and original_text:
+                # 【关键修复】优先级处理逻辑
+                if remove_caption:
+                    # 最高优先级：移除标题
+                    final_text = ""
+                    actually_modified = True
+                    _logger.debug(f"  -> 移除标题模式，final_text=''")
+                elif caption is not None:
+                    # 第二优先级：使用指定标题（已在外层应用了文本替换）
+                    final_text = caption
+                    actually_modified = (caption != original_text)
+                    _logger.debug(f"  -> 使用指定标题: '{final_text}', 修改={actually_modified}")
+                elif text_replacements and original_text:
+                    # 第三优先级：对原始文本应用文本替换
                     replaced_text = self._apply_text_replacements(original_text, text_replacements)
                     final_text = replaced_text
                     actually_modified = (replaced_text != original_text)
+                    _logger.debug(f"  -> 应用文本替换: '{original_text}' -> '{final_text}', 修改={actually_modified}")
+                else:
+                    # 保持原始文本不变
+                    final_text = original_text
+                    actually_modified = False
+                    _logger.debug(f"  -> 保持原始文本: '{final_text}'")
+                
+                _logger.debug(f"【文本替换调试】最终结果: '{final_text}', 实际修改={actually_modified}")
                 
                 sent_messages = []
                 for target, target_id, target_info in target_channels:
                     try:
                         if final_text != original_text:
                             # 如果文本被修改，发送新文本消息
+                            _logger.debug(f"  -> 发送修改后的文本到 {target_info}: '{final_text}'")
                             sent_message = await self.client.send_message(
                                 chat_id=target_id,
                                 text=final_text,
@@ -449,6 +477,7 @@ class RestrictedForwardHandler:
                             )
                         else:
                             # 否则直接复制
+                            _logger.debug(f"  -> 直接复制原始消息到 {target_info}")
                             sent_message = await self.client.copy_message(
                                 chat_id=target_id,
                                 from_chat_id=source_id,

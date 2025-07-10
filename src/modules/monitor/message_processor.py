@@ -96,7 +96,8 @@ class MessageProcessor:
         self.performance_monitor = performance_monitor
     
     async def forward_message(self, message: Message, target_channels: List[Tuple[str, int, str]], 
-                              use_copy: bool = True, replace_caption: str = None, remove_caption: bool = False) -> bool:
+                              use_copy: bool = True, replace_caption: str = None, remove_caption: bool = False,
+                              text_replacements: Dict[str, str] = None, allowed_media_types: List[str] = None) -> bool:
         """
         转发消息到多个目标频道
         
@@ -106,6 +107,8 @@ class MessageProcessor:
             use_copy: 是否使用copy_message（适用于需要修改内容的情况）
             replace_caption: 替换的标题文本
             remove_caption: 是否移除标题
+            text_replacements: 文本替换规则字典（用于禁止转发频道）
+            allowed_media_types: 允许的媒体类型列表（用于禁止转发频道）
             
         Returns:
             bool: 是否至少有一个频道转发成功
@@ -394,7 +397,9 @@ class MessageProcessor:
                     source_id=source_chat_id,
                     target_channels=target_channels,
                     caption=replace_caption,
-                    remove_caption=remove_caption
+                    remove_caption=remove_caption,
+                    text_replacements=text_replacements,
+                    allowed_media_types=allowed_media_types
                 )
                 
                 if sent_messages:

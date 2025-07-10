@@ -987,8 +987,8 @@ class ListenView(QWidget):
             self._add_status_message(tr("ui.listen.messages.monitor_not_initialized"))
             return
         
-        # 添加状态消息
-        self._add_status_message(tr("ui.listen.messages.stop_listening"))
+        # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
+        # self._add_status_message(tr("ui.listen.messages.stop_listening"))
         
         # 更新按钮状态
         self.start_listen_button.setEnabled(True)
@@ -1007,9 +1007,11 @@ class ListenView(QWidget):
     async def _async_start_monitoring(self):
         """异步启动监听"""
         try:
-            self._add_status_message(tr("ui.listen.status.preparing"))
+            # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
+            # self._add_status_message(tr("ui.listen.status.preparing"))
             await self.monitor.start_monitoring()
-            self._add_status_message(tr("ui.listen.messages.listening_started"))
+            # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
+            # self._add_status_message(tr("ui.listen.messages.listening_started"))
         except Exception as e:
             logger.error(f"异步启动监听失败: {e}")
             self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
@@ -1021,7 +1023,8 @@ class ListenView(QWidget):
         """异步停止监听"""
         try:
             await self.monitor.stop_monitoring()
-            self._add_status_message(tr("ui.listen.messages.listening_stopped"))
+            # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
+            # self._add_status_message(tr("ui.listen.messages.listening_stopped"))
         except Exception as e:
             logger.error(f"异步停止监听失败: {e}")
             self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))

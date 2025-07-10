@@ -192,8 +192,9 @@ class EventEmitterMonitor(BaseEventEmitter):
             # 调用原始方法 - 不传递任何参数，因为Monitor.start_monitoring不接受参数
             result = await self.monitor.start_monitoring()
             
-            # 监听结束
-            self.monitoring_stopped.emit()
+            # 【修复】正常结束时不发射监听停止信号，因为这会导致状态混乱
+            # 只有在异常情况下才发射停止信号
+            # self.monitoring_stopped.emit()
             
             return result
             
@@ -221,8 +222,8 @@ class EventEmitterMonitor(BaseEventEmitter):
             # 发送监听停止信号
             self.monitoring_stopped.emit()
             
-            # 发送停止完成状态
-            self.status_updated.emit(tr("ui.listen.messages.monitoring_stopped"))
+            # 【修复】移除重复的状态消息，由_on_monitoring_stopped统一处理
+            # self.status_updated.emit(tr("ui.listen.messages.monitoring_stopped"))
             
             return result
             

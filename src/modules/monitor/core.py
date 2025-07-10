@@ -647,7 +647,8 @@ class Monitor:
                 target_channels=target_channels,
                 use_copy=True,  # 使用copy_message方式以支持文本替换
                 replace_caption=replaced_text,
-                remove_caption=should_remove_caption
+                remove_caption=should_remove_caption,
+                text_replacements=text_replacements  # 【修复】传递文本替换规则给禁止转发处理器
             )
             
         except Exception as e:
