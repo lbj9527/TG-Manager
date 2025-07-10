@@ -480,10 +480,17 @@ class MediaGroupHandler:
             logger.debug(f"【关键】消息 {message.id} 被过滤: {filter_reason}")
             logger.debug(f"【关键】过滤时media_group_filter_stats状态: {self.media_group_filter_stats.get(media_group_id, 'NOT_FOUND')}")
             
+            # 【新增debug日志】记录被早期过滤的消息详情
+            logger.debug(f"【早期过滤】消息ID: {message.id}, 媒体组ID: {media_group_id}, 媒体类型: {message_media_type}, 允许类型: {allowed_media_types}")
+            
             logger.info(f"媒体组消息 [ID: {message.id}] 的{filter_reason}，跳过处理")
             
             # 更新统计：过滤数
             self.media_group_filter_stats[media_group_id]['filtered_count'] += 1
+            
+            # 【新增debug日志】记录过滤后的统计状态
+            filter_stats = self.media_group_filter_stats[media_group_id]
+            logger.debug(f"【早期过滤统计】媒体组 {media_group_id}: 总接收={filter_stats['total_received']}, 已过滤={filter_stats['filtered_count']}")
             
             # 添加小延迟确保UI事件处理顺序正确
             await asyncio.sleep(0.05)  # 50ms延迟，确保new_message事件先被UI处理
@@ -645,6 +652,10 @@ class MediaGroupHandler:
         
         # 排序媒体组消息（按照ID）
         messages.sort(key=lambda m: m.id)
+        
+        # 【新增debug日志】记录缓存状态
+        logger.debug(f"【缓存添加】添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 媒体类型: {self._get_message_media_type(message)}")
+        logger.debug(f"【缓存状态】媒体组 {media_group_id} 现有 {len(messages)} 条消息，消息ID: {[msg.id for msg in messages]}")
         
         logger.debug(f"添加消息 [ID: {message.id}] 到媒体组 {media_group_id}, 现有 {len(messages)} 条消息")
         
@@ -949,7 +960,7 @@ class MediaGroupHandler:
                     # 如果配置中明确标记了某些频道禁止转发，优先使用配置
                     
                     # 方法3：基于经验的简单检测 - 假设大部分频道支持直接转发
-                    # 只有在实际转发失败时才切换到下载上传模式
+                    # 只有在实际转发失败时才切换到下载上传方式
                     # 为了避免副作用，我们先假设都支持直接转发，失败时再切换
                     
                     direct_forward_channels.append((target_channel, target_id, target_info))
@@ -1052,6 +1063,13 @@ class MediaGroupHandler:
             Tuple[bool, List]: (是否有频道处理成功, 需要回退到下载上传的频道列表)
         """
         try:
+            # 【新增debug日志】记录进入函数时的消息详情
+            logger.debug(f"【直接转发开始】媒体组 {media_group_id} 进入_process_direct_forward_media_group")
+            logger.debug(f"【直接转发开始】接收到的消息数量: {len(messages)}")
+            logger.debug(f"【直接转发开始】接收到的消息ID: {[msg.id for msg in messages]}")
+            logger.debug(f"【直接转发开始】接收到的消息媒体类型: {[self._get_message_media_type(msg) for msg in messages]}")
+            logger.debug(f"【直接转发开始】允许的媒体类型: {allowed_media_types}")
+            
             # 【严格防护】在处理前检查，确保没有被早期过滤的消息
             if hasattr(self, 'media_group_filter_stats') and media_group_id in self.media_group_filter_stats:
                 early_filtered_ids = self.media_group_filter_stats[media_group_id].get('filtered_message_ids', set())
@@ -1111,6 +1129,9 @@ class MediaGroupHandler:
                     msg_media_type = self._get_message_media_type(msg)
                     logger.debug(f"  消息 [ID: {msg.id}] 媒体类型: {msg_media_type}")
                     
+                    # 【新增debug日志】记录每条消息的过滤检查
+                    logger.debug(f"【过滤检查】消息 [ID: {msg.id}] 媒体类型: {msg_media_type}, 是否在允许列表中: {msg_media_type in allowed_media_types if msg_media_type else 'N/A'}")
+                    
                     # 【修复3】修复媒体类型检查逻辑
                     if msg_media_type:
                         # 处理enum类型和字符串类型
@@ -1151,12 +1172,38 @@ class MediaGroupHandler:
                 
                 # 检查过滤结果
                 if not filtered_messages:
-                    logger.info(f"媒体组 {media_group_id} 中的所有消息都被媒体类型过滤，跳过转发")
-                    return False, target_channels
+                    logger.info(f"【过滤完成】媒体组 {media_group_id} 的所有消息都被媒体类型过滤器排除，跳过转发")
+                    # 发送统计事件
+                    if hasattr(self, 'monitor') and self.monitor:
+                        self.monitor._emit_signal('media_group_processed', {
+                            'media_group_id': media_group_id,
+                            'total_messages': original_message_count,
+                            'forwarded_messages': 0,
+                            'filtered_messages': original_message_count,
+                            'source_channel': self.get_cached_channel_info(source_id),
+                            'target_channels': len(target_channels),
+                            'status': 'all_filtered'
+                        })
+                    return True, []  # 全部过滤也算"成功"，不需要fallback
                 
-                logger.info(f"媒体组 {media_group_id} 媒体类型过滤结果: 原始{original_message_count}条 → 保留{len(filtered_messages)}条 → 过滤{filtered_out_count}条")
-            else:
-                logger.info(f"媒体组 {media_group_id} 未配置媒体类型过滤，保留所有 {original_message_count} 条消息")
+                # 【新增debug日志】记录过滤完成后的结果
+                logger.debug(f"【过滤完成】媒体组 {media_group_id} 过滤结果: 原始={original_message_count}条, 剩余={len(filtered_messages)}条, 被过滤={filtered_out_count}条")
+                logger.debug(f"【过滤完成】剩余消息ID: {[msg.id for msg in filtered_messages]}")
+                logger.debug(f"【过滤完成】剩余消息媒体类型: {[self._get_message_media_type(msg) for msg in filtered_messages]}")
+                
+                logger.info(f"【过滤完成】媒体组 {media_group_id} 媒体类型过滤：{original_message_count} -> {len(filtered_messages)} 条消息")
+            
+            # 【关键修复】正确判断是否发生了过滤
+            # 如果配置了媒体类型过滤，就认为发生了过滤（无论是早期过滤还是当前过滤）
+            # 因为早期过滤可能已经在handle_media_group_message阶段过滤了一些消息
+            messages_were_filtered = bool(allowed_media_types)
+            if messages_were_filtered:
+                logger.debug(f"【关键修复】检测到媒体类型过滤配置: {allowed_media_types}，将使用send_media_group重组媒体组")
+            
+            # 如果在当前阶段也发生了进一步过滤，记录日志
+            current_stage_filtered = len(filtered_messages) != original_message_count
+            if current_stage_filtered:
+                logger.debug(f"【当前阶段过滤】在_process_direct_forward_media_group中进一步过滤了 {original_message_count - len(filtered_messages)} 条消息")
             
             # 确定最终的说明文字和处理方式
             final_caption = None
@@ -1188,7 +1235,7 @@ class MediaGroupHandler:
                     # 使用原始说明或None（保持原始）
                     final_caption = None  # None表示保持原始说明
                     # 【关键】如果进行了媒体类型过滤，即使没有文本替换也需要使用copy_media_group重组
-                    if allowed_media_types and len(filtered_messages) != len(messages):
+                    if messages_were_filtered:
                         use_copy_media_group = True
                         final_caption = original_caption if original_caption else ""
                         logger.debug(f"媒体组被过滤需要重组，保持原始说明: '{original_caption}'")
@@ -1201,9 +1248,12 @@ class MediaGroupHandler:
             # 对每个非禁止转发频道进行转发
             for target_channel, target_id, target_info in target_channels:
                 try:
+                    # 【新增debug日志】记录使用的转发方式
+                    logger.debug(f"【转发方式选择】媒体组 {media_group_id} -> {target_info}: use_copy_media_group={use_copy_media_group}, messages_were_filtered={messages_were_filtered}")
+                    
                     if use_copy_media_group:
                         # 检查是否需要媒体类型过滤
-                        if allowed_media_types and len(filtered_messages) != len(messages):
+                        if messages_were_filtered:
                             # 【关键修复】当存在媒体类型过滤时，使用send_media_group重组媒体组
                             logger.debug(f"存在媒体类型过滤，使用send_media_group重组 {len(filtered_messages)} 条过滤后的消息到 {target_info}")
                             
@@ -1277,6 +1327,7 @@ class MediaGroupHandler:
                     else:
                         # 方式3: forward_messages (保留原始信息，无过滤无修改)
                         logger.debug(f"使用forward_messages转发原始媒体组到 {target_info}，保留原始说明")
+                        logger.debug(f"【forward_messages】转发消息ID列表: {message_ids}")
                         await self.client.forward_messages(
                             chat_id=target_id,
                             from_chat_id=source_id,
@@ -1337,87 +1388,6 @@ class MediaGroupHandler:
             logger.debug(f"错误详情:\n{traceback.format_exc()}")
             # 发生异常时，将所有频道都标记为需要回退
             return False, target_channels
-    
-    async def _forward_media_group(self, messages: List[Message], target_channels: List[Tuple[str, int, str]], 
-                                   replaced_caption: str = None, remove_captions: bool = False, caption_modified: bool = False,
-                                   allowed_media_types: List[str] = None, text_replacements: Dict[str, str] = None):
-        """
-        转发媒体组到目标频道
-        
-        Args:
-            messages: 媒体组消息列表  
-            target_channels: 目标频道列表
-            replaced_caption: 替换后的标题
-            remove_captions: 是否移除标题
-            caption_modified: 是否修改了标题
-            allowed_media_types: 允许的媒体类型列表（可选）
-            text_replacements: 文本替换规则字典（可选）
-        """
-        if not messages or not target_channels:
-            logger.warning("没有有效的消息或目标频道，跳过媒体组转发")
-            return False
-            
-        try:
-            # 记录转发开始时间
-            forward_start_time = time.time()
-            
-            # 按消息ID排序以保持顺序
-            sorted_messages = sorted(messages, key=lambda x: x.id)
-            media_group_id = sorted_messages[0].media_group_id
-            
-            # 获取源频道信息
-            source_id = sorted_messages[0].chat.id
-            try:
-                source_title = sorted_messages[0].chat.title or "未知频道"
-            except:
-                source_title = str(source_id)
-            
-            if not target_channels:
-                logger.warning(f"没有有效的目标频道，跳过媒体组处理")
-                return False
-
-            logger.info(f"开始转发媒体组 [ID: {media_group_id}] 从 {source_title} 到 {len(target_channels)} 个目标频道")
-            
-            # 统一使用RestrictedForwardHandler处理所有目标频道
-            # 这样可以自动处理禁止转发和非禁止转发的频道
-            source_channel = str(source_id)
-        
-            # 创建RestrictedForwardHandler实例
-            if not hasattr(self, '_restricted_handler') or self._restricted_handler is None:
-                self._restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
-                logger.debug("创建了新的RestrictedForwardHandler实例")
-        
-            logger.info(f"使用RestrictedForwardHandler统一处理媒体组 {media_group_id} 到所有目标频道")
-        
-            # 调用增强的RestrictedForwardHandler方法
-            success = await self._restricted_handler.process_restricted_media_group_to_multiple_targets(
-                messages=sorted_messages,
-                source_channel=source_channel,
-                source_id=source_id,
-                target_channels=target_channels,
-                caption=replaced_caption,
-                remove_caption=remove_captions,
-                allowed_media_types=allowed_media_types,  # 传递媒体类型过滤配置
-                text_replacements=text_replacements,      # 传递文本替换配置
-                event_emitter=self.emit,
-                message_type="媒体组"
-            )
-        
-            if not success:
-                logger.warning(f"RestrictedForwardHandler处理媒体组转发失败: {media_group_id}")
-            
-            # 记录转发性能数据
-            if self.performance_monitor:
-                forward_time = time.time() - forward_start_time
-                self.performance_monitor.record_message_forwarded(forward_time, success=success)
-                        
-            return success
-            
-        except Exception as e:
-            logger.error(f"转发媒体组失败: {str(e)}", error_type="MEDIA_GROUP_FORWARD", recoverable=True)
-            import traceback
-            logger.debug(f"错误详情:\n{traceback.format_exc()}")
-            return False
     
     async def _api_request_worker(self):
         """API请求队列工作器，负责处理排队的API请求"""
