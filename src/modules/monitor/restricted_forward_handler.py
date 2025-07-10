@@ -582,8 +582,14 @@ class RestrictedForwardHandler:
                     _logger.debug(f"  -> 保持原始说明不变: '{final_caption}'")
             else:
                 # 媒体组无原始说明的情况
-                if caption is not None:
-                    # 如果指定了说明，使用指定说明
+                # 【关键修复】首先检查是否要移除说明，优先级最高
+                if remove_caption:
+                    # 如果配置要求移除说明，则不使用任何说明（包括指定说明）
+                    final_caption = None
+                    actually_modified = True
+                    _logger.debug(f"  -> 配置要求移除说明，忽略指定说明和文本替换，final_caption=None")
+                elif caption is not None:
+                    # 如果指定了说明且不移除说明，使用指定说明
                     final_caption = caption
                     # 【修复】对指定说明也应用文本替换
                     if text_replacements:
