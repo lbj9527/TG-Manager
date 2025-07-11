@@ -32,12 +32,12 @@ class Monitor:
     监听模块，监听源频道的新消息，并实时转发到目标频道
     """
     
-    def __init__(self, client: Client, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, app=None):
+    def __init__(self, client_or_manager, ui_config_manager: UIConfigManager, channel_resolver: ChannelResolver, app=None):
         """
         初始化监听模块
         
         Args:
-            client: Pyrogram客户端实例
+            client_or_manager: Pyrogram客户端实例或强壮客户端管理器
             ui_config_manager: UI配置管理器实例
             channel_resolver: 频道解析器实例
             app: 应用程序实例，用于网络错误时立即检查连接状态
@@ -45,7 +45,19 @@ class Monitor:
         # 初始化
         super().__init__()
         
-        self.client = client
+        # 检查传入的是客户端还是客户端管理器
+        if hasattr(client_or_manager, 'client') and hasattr(client_or_manager, '_execute_with_retry'):
+            # 这是强壮客户端管理器
+            self.client_manager = client_or_manager
+            # 注意：不保存客户端引用，而是在需要时动态获取
+            self._client = None  # 内部缓存的客户端引用
+            logger.info("监听器使用强壮客户端管理器")
+        else:
+            # 这是原生Pyrogram客户端
+            self.client_manager = None
+            self._client = client_or_manager
+            logger.info("监听器使用原生Pyrogram客户端")
+        
         self.ui_config_manager = ui_config_manager
         self.channel_resolver = channel_resolver
         self.app = app  # 保存应用程序实例引用
@@ -86,8 +98,10 @@ class Monitor:
         self.is_processing = False
         
         # 初始化消息处理器和媒体组处理器
-        self.message_processor = MessageProcessor(self.client, self.channel_resolver, self._handle_network_error)
-        self.media_group_handler = MediaGroupHandler(self.client, self.channel_resolver, self.message_processor)
+        # 如果有强壮客户端管理器，传递给子处理器
+        client_for_processor = self.client_manager if self.client_manager else self._client
+        self.message_processor = MessageProcessor(client_for_processor, self.channel_resolver, self._handle_network_error)
+        self.media_group_handler = MediaGroupHandler(client_for_processor, self.channel_resolver, self.message_processor)
         
         # 消息处理器列表，用于跟踪注册的处理器
         self.message_handlers = []
@@ -105,6 +119,21 @@ class Monitor:
         # 设置频道信息缓存和性能监控器引用
         self.media_group_handler.set_channel_info_cache(self.channel_info_cache)
         self.media_group_handler.set_performance_monitor(self.performance_monitor)
+    
+    @property
+    def client(self):
+        """
+        动态获取当前可用的客户端实例
+        
+        Returns:
+            Client: 当前的Pyrogram客户端实例
+        """
+        if self.client_manager:
+            # 从强壮客户端管理器获取最新的客户端实例
+            return self.client_manager.client
+        else:
+            # 使用原生客户端
+            return self._client
     
     def _emit_signal(self, signal_type: str, *args, **kwargs):
         """
@@ -173,7 +202,11 @@ class Monitor:
             
             # 解析源频道ID
             try:
-                source_id = await self.channel_resolver.get_channel_id(source_channel)
+                source_id = await self._safe_api_call(
+                    self.channel_resolver.get_channel_id, 
+                    source_channel,
+                    context="resolve_source_channel"
+                )
                 # 预先获取并缓存源频道信息
                 cached_info = self.channel_info_cache.get_channel_info(source_id)
                 if cached_info:
@@ -183,7 +216,11 @@ class Monitor:
                 else:
                     # 如果缓存中没有，则获取并缓存（兜底方案）
                     try:
-                        source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
+                        source_info_str, source_info_tuple = await self._safe_api_call(
+                            self.channel_resolver.format_channel_info, 
+                            source_id,
+                            context="format_source_channel_info"
+                        )
                         self.channel_info_cache.set_channel_info(source_id, source_info_str, source_info_tuple[0])
                         self.performance_monitor.record_cache_miss()
                         source_title = source_info_tuple[0]
@@ -199,8 +236,16 @@ class Monitor:
             resolved_targets = []
             for target_channel in target_channels:
                 try:
-                    target_id = await self.channel_resolver.get_channel_id(target_channel)
-                    target_info_str, target_info_tuple = await self.channel_resolver.format_channel_info(target_id)
+                    target_id = await self._safe_api_call(
+                        self.channel_resolver.get_channel_id, 
+                        target_channel,
+                        context="resolve_target_channel"
+                    )
+                    target_info_str, target_info_tuple = await self._safe_api_call(
+                        self.channel_resolver.format_channel_info, 
+                        target_id,
+                        context="format_target_channel_info"
+                    )
                     # 缓存目标频道信息
                     self.channel_info_cache.set_channel_info(target_id, target_info_str, target_info_tuple[0])
                     self.performance_monitor.record_cache_miss()  # 首次加载记录为miss
@@ -325,7 +370,11 @@ class Monitor:
                     else:
                         # 如果缓存中没有，则获取并缓存（兜底方案）
                         try:
-                            source_info_str, source_info_tuple = await self.channel_resolver.format_channel_info(source_id)
+                            source_info_str, source_info_tuple = await self._safe_api_call(
+                                self.channel_resolver.format_channel_info, 
+                                source_id,
+                                context="format_message_source_info"
+                            )
                             self.channel_info_cache.set_channel_info(source_id, source_info_str, source_info_tuple[0])
                             self.performance_monitor.record_cache_miss()
                             source_title = source_info_tuple[0]
@@ -422,7 +471,7 @@ class Monitor:
             
             # 创建处理器并注册
             handler = MessageHandler(handle_new_message, filters.chat(list(self.monitored_channels)))
-            self.client.add_handler(handler)
+            self.client.add_handler(handler) # 使用动态属性添加处理器
             
             # 保存当前处理器引用以便后续清理
             self.current_message_handler = handler
@@ -528,7 +577,7 @@ class Monitor:
             # 移除当前活跃的处理器
             if self.current_message_handler:
                 try:
-                    self.client.remove_handler(self.current_message_handler)
+                    self.client.remove_handler(self.current_message_handler) # 使用动态属性移除处理器
                     logger.debug("已移除当前消息处理器")
                 except Exception as e:
                     logger.error(f"移除当前消息处理器时异常: {str(e)}")
@@ -538,7 +587,7 @@ class Monitor:
             # 移除所有注册的处理器（兼容旧代码）
             for handler in self.message_handlers:
                 try:
-                    self.client.remove_handler(handler)
+                    self.client.remove_handler(handler) # 使用动态属性移除处理器
                 except Exception as e:
                     logger.error(f"移除消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
             
@@ -843,3 +892,31 @@ class Monitor:
             logger.error(f"检查单条消息过滤时发生错误: {str(e)}")
             # 发生错误时认为消息不被过滤，让后续处理决定
             return False, "" 
+
+    async def _safe_api_call(self, func, *args, context="monitor_api", **kwargs):
+        """
+        安全的API调用，使用强壮客户端管理器（如果可用）
+        
+        Args:
+            func: 要调用的API函数
+            *args: 函数参数
+            context: 调用上下文
+            **kwargs: 关键字参数
+            
+        Returns:
+            API调用结果
+        """
+        if self.client_manager:
+            # 使用强壮客户端管理器的重试机制
+            from src.utils.robust_client.request_queue import RequestPriority, RequestType
+            return await self.client_manager._execute_with_retry(
+                func, *args,
+                context=context,
+                priority=RequestPriority.LOW,
+                request_type=RequestType.MESSAGE,
+                max_retries=2,
+                **kwargs
+            )
+        else:
+            # 直接调用原生客户端方法
+            return await func(*args, **kwargs) 

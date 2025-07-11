@@ -29,6 +29,7 @@ class SettingsView(QWidget):
     settings_saved = Signal(dict)  # 带参数的信号
     settings_cancelled = Signal()  # 设置取消信号
     login_requested = Signal()     # 添加登录请求信号
+    logout_requested = Signal()    # 添加注销请求信号
     
     # 主题标识符到翻译键的映射
     THEME_TRANSLATION_MAP = {
@@ -181,13 +182,31 @@ class SettingsView(QWidget):
         self.phone_number_label = QLabel(tr("ui.settings.api.phone_number"))
         telegram_layout.addRow(self.phone_number_label, self.phone_number)
         
+        # 创建按钮布局（登录和注销按钮）
+        button_layout = QHBoxLayout()
+        
         # 添加登录按钮
         self.login_button = QPushButton(tr("ui.settings.api.login"))
         self.login_button.setMinimumWidth(120)
         self.login_button.clicked.connect(self._handle_login)
         # 设置默认颜色，添加无边框样式
         self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")
-        telegram_layout.addRow("", self.login_button)
+        button_layout.addWidget(self.login_button)
+        
+        # 添加注销按钮
+        self.logout_button = QPushButton(tr("ui.settings.api.logout"))
+        self.logout_button.setMinimumWidth(120)
+        self.logout_button.clicked.connect(self._handle_logout)
+        # 设置默认颜色（橙色背景）
+        self.logout_button.setStyleSheet("background-color: #FF9800; color: white; border: none; border-radius: 3px;")
+        self.logout_button.setEnabled(False)  # 默认禁用
+        button_layout.addWidget(self.logout_button)
+        
+        # 添加弹性空间
+        button_layout.addStretch()
+        
+        # 将按钮布局添加到表单
+        telegram_layout.addRow("", button_layout)
         
         # 添加登录提示标签
         self.login_tip = QLabel(tr("ui.settings.api.login_tip"))
@@ -227,6 +246,7 @@ class SettingsView(QWidget):
             'phone_number_label': self.phone_number_label,
             'session_name_label': self.session_name_label,
             'login_button': self.login_button,
+            'logout_button': self.logout_button,
             'login_tip': self.login_tip,
             'auto_restart_session': self.auto_restart_session
         }
@@ -882,29 +902,39 @@ class SettingsView(QWidget):
                 self.notification_sound.setChecked(ui["notification_sound"])
     
     def update_login_button(self, is_logged_in, user_info=None):
-        """更新登录按钮状态
+        """更新登录和注销按钮状态
         
         Args:
             is_logged_in: 是否已登录
             user_info: 用户信息（可选）
         """
-        if not hasattr(self, 'login_button'):
+        if not hasattr(self, 'login_button') or not hasattr(self, 'logout_button'):
             return
             
         if is_logged_in:
+            # 更新登录按钮状态（已登录）
             self.login_button.setText(tr("ui.settings.api.logged_in"))
-            self.login_button.setStyleSheet("background-color: #F44336; color: white; border: none; border-radius: 3px;")  # 红色背景，无边框
-            self.login_button.setEnabled(False)  # 禁用按钮
+            self.login_button.setStyleSheet("background-color: #4CAF50; color: white; border: none; border-radius: 3px;")  # 绿色背景表示已登录
+            self.login_button.setEnabled(False)  # 禁用登录按钮
             if user_info:
                 tooltip_text = tr("ui.settings.tooltips.login_current_user").format(user=user_info)
                 self.login_button.setToolTip(tooltip_text)
             else:
                 self.login_button.setToolTip(tr("ui.settings.tooltips.login_logged_in"))
+            
+            # 启用注销按钮
+            self.logout_button.setEnabled(True)
+            self.logout_button.setToolTip("点击注销当前登录的账户")
         else:
+            # 更新登录按钮状态（未登录）
             self.login_button.setText(tr("ui.settings.api.login"))
-            self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")  # 蓝色背景，无边框
-            self.login_button.setEnabled(True)  # 启用按钮
+            self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")  # 蓝色背景
+            self.login_button.setEnabled(True)  # 启用登录按钮
             self.login_button.setToolTip(tr("ui.settings.tooltips.login_click_to_login"))
+            
+            # 禁用注销按钮
+            self.logout_button.setEnabled(False)
+            self.logout_button.setToolTip("当前未登录，无法注销")
     
     def _handle_login(self):
         """处理登录按钮点击事件"""
@@ -912,7 +942,23 @@ class SettingsView(QWidget):
         self._save_settings(silent=True)
         
         # 发出登录请求信号
-        self.login_requested.emit() 
+        self.login_requested.emit()
+    
+    def _handle_logout(self):
+        """处理注销按钮点击事件"""
+        # 显示确认对话框
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self,
+            "确认注销",
+            "确定要注销当前登录的账户吗？\n\n注销后将删除本地会话文件，下次登录需要重新输入验证码。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 发出注销请求信号
+            self.logout_requested.emit() 
 
     def _populate_theme_selector(self):
         """填充主题选择器，使用翻译后的主题名称"""

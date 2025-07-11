@@ -317,8 +317,9 @@ class ClientHandler:
             logger.info("正在初始化监听模块...")
             try:
                 from src.modules.monitor.core import Monitor  # 使用新的监听器架构
-                original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
-                                        self.app.channel_resolver, self.app)
+                # 传递强壮客户端管理器而不是原生客户端
+                original_monitor = Monitor(self.app.client_manager, self.app.ui_config_manager, 
+                                         self.app.channel_resolver, self.app)
                                     
                 # 使用事件发射器包装监听器
                 from src.modules.event_emitter_monitor import EventEmitterMonitor

@@ -21,16 +21,27 @@ class MessageProcessor:
     消息处理器，负责处理和转发消息
     """
     
-    def __init__(self, client: Client, channel_resolver: ChannelResolver, network_error_handler: Callable = None):
+    def __init__(self, client_or_manager, channel_resolver: ChannelResolver, network_error_handler: Callable = None):
         """
         初始化消息处理器
         
         Args:
-            client: Pyrogram客户端实例
+            client_or_manager: Pyrogram客户端实例或强壮客户端管理器
             channel_resolver: 频道解析器实例
             network_error_handler: 网络错误处理器回调函数
         """
-        self.client = client
+        # 检查传入的是客户端还是客户端管理器
+        if hasattr(client_or_manager, 'client') and hasattr(client_or_manager, '_execute_with_retry'):
+            # 这是强壮客户端管理器
+            self.client_manager = client_or_manager
+            self.client = client_or_manager.client
+            logger.info("消息处理器使用强壮客户端管理器")
+        else:
+            # 这是原生Pyrogram客户端
+            self.client_manager = None
+            self.client = client_or_manager
+            logger.info("消息处理器使用原生Pyrogram客户端")
+        
         self.channel_resolver = channel_resolver
         self.network_error_handler = network_error_handler
         self.monitor_config = {}
@@ -47,6 +58,34 @@ class MessageProcessor:
         # 性能监控器引用（由Monitor模块设置）
         self.performance_monitor = None
         
+    async def _safe_api_call(self, func, *args, context="message_processor_api", **kwargs):
+        """
+        安全的API调用，使用强壮客户端管理器（如果可用）
+        
+        Args:
+            func: 要调用的API函数
+            *args: 函数参数
+            context: 调用上下文
+            **kwargs: 关键字参数
+            
+        Returns:
+            API调用结果
+        """
+        if self.client_manager:
+            # 使用强壮客户端管理器的重试机制
+            from src.utils.robust_client.request_queue import RequestPriority, RequestType
+            return await self.client_manager._execute_with_retry(
+                func, *args,
+                context=context,
+                priority=RequestPriority.NORMAL,
+                request_type=RequestType.MESSAGE,
+                max_retries=3,
+                **kwargs
+            )
+        else:
+            # 直接调用原生客户端方法
+            return await func(*args, **kwargs)
+    
     def set_monitor_config(self, monitor_config: Dict[str, Any]):
         """
         设置监控配置
@@ -161,7 +200,7 @@ class MessageProcessor:
                         # 对于纯文本消息且需要文本替换，直接使用send_message（最快）
                         text_to_send = replace_caption if not remove_caption else ""
                         
-                        await self.client.send_message(
+                        await self._safe_api_call(self.client.send_message,
                             chat_id=target_id,
                             text=text_to_send,
                             disable_notification=True
@@ -185,7 +224,7 @@ class MessageProcessor:
                             # 不移除媒体说明时，才考虑文本替换
                             caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                         
-                        await self.client.copy_message(
+                        await self._safe_api_call(self.client.copy_message,
                             chat_id=target_id,
                             from_chat_id=source_chat_id,
                             message_id=source_message_id,
@@ -200,7 +239,7 @@ class MessageProcessor:
                             self.emit("forward", source_message_id, source_display_name, target_info, True, modified=text_modified)
                     else:
                         # 使用forward_messages保留原始信息
-                        await self.client.forward_messages(
+                        await self._safe_api_call(self.client.forward_messages,
                             chat_id=target_id,
                             from_chat_id=source_chat_id,
                             message_ids=source_message_id,
@@ -229,7 +268,7 @@ class MessageProcessor:
                             # 对于纯文本消息且需要文本替换，直接使用send_message
                             text_to_send = replace_caption if not remove_caption else ""
                             
-                            await self.client.send_message(
+                            await self._safe_api_call(self.client.send_message,
                                 chat_id=target_id,
                                 text=text_to_send,
                                 disable_notification=True
@@ -253,7 +292,7 @@ class MessageProcessor:
                                 # 不移除媒体说明时，才考虑文本替换
                                 caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                                 
-                            await self.client.copy_message(
+                            await self._safe_api_call(self.client.copy_message,
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
                                 message_id=source_message_id,
@@ -305,7 +344,7 @@ class MessageProcessor:
                             # 对于纯文本消息且需要文本替换，直接使用send_message
                             text_to_send = replace_caption if not remove_caption else ""
                             
-                            await self.client.send_message(
+                            await self._safe_api_call(self.client.send_message,
                                 chat_id=target_id,
                                 text=text_to_send,
                                 disable_notification=True
@@ -329,7 +368,7 @@ class MessageProcessor:
                                     # 不移除媒体说明时，才考虑文本替换
                                     caption = replace_caption if replace_caption is not None else (message.caption or message.text)
                                 
-                            await self.client.copy_message(
+                            await self._safe_api_call(self.client.copy_message,
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
                                 message_id=source_message_id,
@@ -366,7 +405,7 @@ class MessageProcessor:
                     if "Can't copy this message" in str(e) or "copy" in str(e).lower():
                         try:
                             logger.info(f"copy_message失败，尝试使用forward_messages方式: {target_info}")
-                            await self.client.forward_messages(
+                            await self._safe_api_call(self.client.forward_messages,
                                 chat_id=target_id,
                                 from_chat_id=source_chat_id,
                                 message_ids=source_message_id,
@@ -533,7 +572,7 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_photo(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_photo, **kwargs)
                     elif original_message.video:
                         # 视频消息
                         kwargs = {
@@ -544,7 +583,7 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_video(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_video, **kwargs)
                     elif original_message.document:
                         # 文档消息
                         kwargs = {
@@ -554,7 +593,7 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_document(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_document, **kwargs)
                     elif original_message.animation:
                         # 动画/GIF消息
                         kwargs = {
@@ -564,7 +603,7 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_animation(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_animation, **kwargs)
                     elif original_message.audio:
                         # 音频消息
                         kwargs = {
@@ -574,10 +613,10 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_audio(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_audio, **kwargs)
                     elif original_message.sticker:
                         # 贴纸消息
-                        sent_message = await self.client.send_sticker(
+                        sent_message = await self._safe_api_call(self.client.send_sticker,
                             chat_id=target_id,
                             sticker=original_message.sticker.file_id,
                             disable_notification=True
@@ -591,17 +630,17 @@ class MessageProcessor:
                         if not remove_caption and caption_to_use:
                             kwargs['caption'] = caption_to_use
                         kwargs['disable_notification'] = True
-                        sent_message = await self.client.send_voice(**kwargs)
+                        sent_message = await self._safe_api_call(self.client.send_voice, **kwargs)
                     elif original_message.video_note:
                         # 视频笔记消息
-                        sent_message = await self.client.send_video_note(
+                        sent_message = await self._safe_api_call(self.client.send_video_note,
                             chat_id=target_id,
                             video_note=original_message.video_note.file_id,
                             disable_notification=True
                         )
                     else:
                         # 纯文本消息
-                        sent_message = await self.client.send_message(
+                        sent_message = await self._safe_api_call(self.client.send_message,
                             chat_id=target_id,
                             text=caption_to_use,
                             disable_notification=True
