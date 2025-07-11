@@ -33,27 +33,16 @@ class MediaGroupHandler:
     媒体组处理器，负责处理和转发媒体组消息
     """
     
-    def __init__(self, client_or_manager, channel_resolver: ChannelResolver, message_processor):
+    def __init__(self, client: Client, channel_resolver: ChannelResolver, message_processor):
         """
         初始化媒体组处理器
         
         Args:
-            client_or_manager: Pyrogram客户端实例或强壮客户端管理器
+            client: Pyrogram客户端实例
             channel_resolver: 频道解析器实例
             message_processor: 消息处理器实例
         """
-        # 检查传入的是客户端还是客户端管理器
-        if hasattr(client_or_manager, 'client') and hasattr(client_or_manager, '_execute_with_retry'):
-            # 这是强壮客户端管理器
-            self.client_manager = client_or_manager
-            self.client = client_or_manager.client
-            logger.info("媒体组处理器使用强壮客户端管理器")
-        else:
-            # 这是原生Pyrogram客户端
-            self.client_manager = None
-            self.client = client_or_manager
-            logger.info("媒体组处理器使用原生Pyrogram客户端")
-        
+        self.client = client
         self.channel_resolver = channel_resolver
         self.message_processor = message_processor
         
@@ -961,7 +950,7 @@ class MediaGroupHandler:
                     
                     # 方法1：尝试检查频道权限
                     try:
-                        chat_info = await self._safe_api_call(self.client.get_chat, target_id, context="get_target_chat_info")
+                        chat_info = await self.client.get_chat(target_id)
                         # 如果是私人频道且有特定限制，可能禁止转发
                         # 但这个检测不够准确，我们使用另一种方法
                     except Exception:
@@ -1295,12 +1284,10 @@ class MediaGroupHandler:
                             
                             if input_media_list:
                                 # 使用send_media_group发送重组的媒体组
-                                sent_messages = await self._safe_api_call(
-                                    self.client.send_media_group,
+                                sent_messages = await self.client.send_media_group(
                                     chat_id=target_id,
                                     media=input_media_list,
-                                    disable_notification=True,
-                                    context="send_media_group"
+                                    disable_notification=True
                                 )
                                 logger.info(f"成功使用send_media_group重组 {len(sent_messages)} 条过滤后的消息到 {target_info}")
                             else:
@@ -1313,47 +1300,39 @@ class MediaGroupHandler:
                             
                             if final_caption == "":
                                 # 空字符串表示移除说明
-                                await self._safe_api_call(
-                                    self.client.copy_media_group,
+                                await self.client.copy_media_group(
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message_ids[0],  # 重组媒体组的第一条消息ID
                                     captions="",  # 空字符串移除说明
-                                    disable_notification=True,
-                                    context="copy_media_group_remove_caption"
+                                    disable_notification=True
                                 )
                             elif final_caption:
                                 # 有具体的替换说明或保持原始说明
-                                await self._safe_api_call(
-                                    self.client.copy_media_group,
+                                await self.client.copy_media_group(
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message_ids[0],  # 重组媒体组的第一条消息ID
                                     captions=final_caption,  # 设置说明
-                                    disable_notification=True,
-                                    context="copy_media_group_with_caption"
+                                    disable_notification=True
                                 )
                             else:
                                 # None或空说明，不设置captions参数（保持原始说明）
-                                await self._safe_api_call(
-                                    self.client.copy_media_group,
+                                await self.client.copy_media_group(
                                     chat_id=target_id,
                                     from_chat_id=source_id,
                                     message_id=message_ids[0],  # 重组媒体组的第一条消息ID
-                                    disable_notification=True,
-                                    context="copy_media_group_original"
+                                    disable_notification=True
                                 )
                     else:
                         # 方式3: forward_messages (保留原始信息，无过滤无修改)
                         logger.debug(f"使用forward_messages转发原始媒体组到 {target_info}，保留原始说明")
                         logger.debug(f"【forward_messages】转发消息ID列表: {message_ids}")
-                        await self._safe_api_call(
-                            self.client.forward_messages,
+                        await self.client.forward_messages(
                             chat_id=target_id,
                             from_chat_id=source_id,
                             message_ids=message_ids,
-                            disable_notification=True,
-                            context="forward_media_group"
+                            disable_notification=True
                         )
                     
                     logger.info(f"成功直接转发媒体组 {media_group_id} 到 {target_info}")
@@ -1468,12 +1447,7 @@ class MediaGroupHandler:
                             self.last_media_group_fetch[media_group_id] = time.time()
                             
                             logger.info(f"从队列处理媒体组 {media_group_id} 的API请求")
-                            complete_media_group = await self._safe_api_call(
-                                self.client.get_media_group, 
-                                channel_id, 
-                                message_id,
-                                context="get_media_group"
-                            )
+                            complete_media_group = await self.client.get_media_group(channel_id, message_id)
                             
                             if complete_media_group:
                                 logger.info(f"成功获取媒体组 {media_group_id} 的所有消息，共 {len(complete_media_group)} 条")
@@ -2142,31 +2116,3 @@ class MediaGroupHandler:
             logger.error(f"通过API获取媒体组 {media_group_id} 失败: {str(e)}")
             # 移除获取标记
             self.fetching_media_groups.discard(media_group_id)
-
-    async def _safe_api_call(self, func, *args, context="media_group_handler_api", **kwargs):
-        """
-        安全的API调用，使用强壮客户端管理器（如果可用）
-        
-        Args:
-            func: 要调用的API函数
-            *args: 函数参数
-            context: 调用上下文
-            **kwargs: 关键字参数
-            
-        Returns:
-            API调用结果
-        """
-        if self.client_manager:
-            # 使用强壮客户端管理器的重试机制
-            from src.utils.robust_client.request_queue import RequestPriority, RequestType
-            return await self.client_manager._execute_with_retry(
-                func, *args,
-                context=context,
-                priority=RequestPriority.NORMAL,
-                request_type=RequestType.MESSAGE,
-                max_retries=3,
-                **kwargs
-            )
-        else:
-            # 直接调用原生客户端方法
-            return await func(*args, **kwargs)

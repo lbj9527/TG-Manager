@@ -215,56 +215,8 @@ class ActionsMixin:
                         # 导入需要的模块，确保在异步函数中可以使用
                         import asyncio
                         
-                        # 【重要修复】在登录前重新检查首次登录状态，确保使用最新的会话文件状态
-                        if hasattr(self.app, 'first_login_handler') and hasattr(self.app, 'client_manager'):
-                            session_name = self.app.client_manager.session_name
-                            current_first_login_status = self.app.first_login_handler.check_first_login(session_name)
-                            
-                            # 如果检测到状态变化，更新标志
-                            if current_first_login_status != getattr(self.app, 'is_first_login', False):
-                                self.app.is_first_login = current_first_login_status
-                                logger.info(f"登录前重新检查首次登录状态: {self.app.is_first_login}")
-                        
-                        # 检查是否为首次登录
-                        if hasattr(self.app, 'is_first_login') and self.app.is_first_login:
-                            logger.info("首次登录模式，使用手动验证码流程")
-                            
-                            # 创建客户端但不启动（避免控制台输入验证码）
-                            await self.app.client_manager.create_client()
-                            
-                            # 发送验证码（从配置中获取电话号码）
-                            phone, code_type = await self.app.client_manager.send_code()
-                            logger.info(f"验证码已发送到 {phone}")
-                            
-                        else:
-                            logger.info("非首次登录模式，尝试直接启动客户端")
-                            try:
-                                # 非首次登录，尝试直接启动客户端
-                                await self.app.client_manager.start_client()
-                                user = self.app.client_manager.me
-                                
-                                # 如果直接启动成功，更新UI并返回
-                                if user:
-                                    user_info = f"{user.first_name}"
-                                    if user.last_name:
-                                        user_info += f" {user.last_name}"
-                                    if user.username:
-                                        user_info += f" (@{user.username})"
-                                    
-                                    self.statusBar().showMessage(tr("ui.login.status.logged_in").format(user=user_info), 5000)
-                                    
-                                    # 更新设置视图中的登录按钮
-                                    if "settings_view" in self.opened_views:
-                                        settings_view = self.opened_views["settings_view"]
-                                        if hasattr(settings_view, 'update_login_button'):
-                                            settings_view.update_login_button(True, user_info)
-                                    return
-                            except Exception as start_error:
-                                logger.warning(f"直接启动客户端失败，转为手动验证码流程: {start_error}")
-                                # 直接启动失败，转为手动验证码流程
-                                await self.app.client_manager.create_client()
-                                phone, code_type = await self.app.client_manager.send_code()
-                                logger.info(f"验证码已发送到 {phone}")
+                        # 发送验证码
+                        await self.app.client_manager.send_code(phone)
                         
                         # 在主线程中显示验证码输入对话框
                         code_result = [None]  # 使用列表存储结果，以便在嵌套函数中修改
@@ -301,16 +253,6 @@ class ActionsMixin:
                         
                         # 使用验证码登录
                         user = await self.app.client_manager.sign_in(code)
-                        logger.info("登录成功，开始初始化剩余组件")
-                        
-                        # 首次登录成功后，标记不再是首次登录
-                        if hasattr(self.app, 'is_first_login') and self.app.is_first_login:
-                            self.app.is_first_login = False
-                            logger.info("首次登录完成，开始初始化剩余核心组件")
-                            
-                            # 初始化剩余的核心组件
-                            if hasattr(self.app, 'client_handler'):
-                                self.app.client_handler._handle_first_login_success()
                         
                         # 登录成功后更新状态栏
                         if user:
@@ -334,8 +276,7 @@ class ActionsMixin:
                         logger.error(f"登录过程中出错: {e}")
                         # 在主线程中显示错误消息
                         error_msg = str(e)
-                        self.statusBar().showMessage(f"{tr('ui.login.status.failed')}: {error_msg}", 5000)
-                        self._show_login_error(error_msg)
+                        self.statusBar().showMessage(tr("ui.login.status.error").format(error=error_msg), 5000)
                 
                 # 启动登录任务
                 if hasattr(self.app, 'task_manager'):
@@ -350,75 +291,6 @@ class ActionsMixin:
                 self,
                 tr("ui.login.errors.login_error_title"),
                 tr("ui.login.errors.login_error_msg").format(error=str(e)),
-                QMessageBox.Ok
-            )
-    
-    def _handle_logout(self):
-        """处理注销请求"""
-        try:
-            logger.info("开始处理注销请求")
-            
-            # 检查客户端管理器是否存在
-            if not hasattr(self, 'app') or not hasattr(self.app, 'client_manager'):
-                QMessageBox.warning(
-                    self,
-                    "注销失败",
-                    "客户端管理器不存在，无法执行注销操作",
-                    QMessageBox.Ok
-                )
-                return
-            
-            # 显示进度消息
-            self.statusBar().showMessage("正在注销...")
-            
-            # 创建异步任务执行注销过程
-            async def logout_process():
-                try:
-                    # 执行注销
-                    success = await self.app.client_manager.sign_out()
-                    
-                    if success:
-                        # 注销成功，重新设置首次登录标志
-                        if hasattr(self.app, 'is_first_login'):
-                            self.app.is_first_login = True
-                            logger.info("注销成功，已重新设置首次登录标志")
-                        
-                        # 重新检查首次登录状态（使用首次登录处理器）
-                        if hasattr(self.app, 'first_login_handler') and hasattr(self.app, 'client_manager'):
-                            session_name = self.app.client_manager.session_name
-                            self.app.is_first_login = self.app.first_login_handler.check_first_login(session_name)
-                            logger.info(f"重新检查首次登录状态: {self.app.is_first_login}")
-                        
-                        # 更新状态栏和UI
-                        self.statusBar().showMessage("已成功注销", 5000)
-                        
-                        # 更新设置视图中的登录按钮
-                        if "settings_view" in self.opened_views:
-                            settings_view = self.opened_views["settings_view"]
-                            if hasattr(settings_view, 'update_login_button'):
-                                settings_view.update_login_button(False)
-                    else:
-                        self.statusBar().showMessage("注销失败", 5000)
-                        
-                except Exception as e:
-                    logger.error(f"注销过程中出错: {e}")
-                    # 在主线程中显示错误消息
-                    error_msg = str(e)
-                    self.statusBar().showMessage(f"注销失败: {error_msg}", 5000)
-            
-            # 启动注销任务
-            if hasattr(self.app, 'task_manager'):
-                self.app.task_manager.add_task("user_logout", logout_process())
-            else:
-                import asyncio
-                asyncio.create_task(logout_process())
-        
-        except Exception as e:
-            logger.error(f"注销处理时出错: {e}")
-            QMessageBox.critical(
-                self,
-                "注销错误",
-                f"处理注销请求时发生错误：\n{str(e)}",
                 QMessageBox.Ok
             )
             
@@ -543,9 +415,8 @@ class ActionsMixin:
             # 创建设置视图
             settings_view = SettingsView(self.config, self)
             
-            # 连接登录和注销请求信号
+            # 连接登录请求信号
             settings_view.login_requested.connect(self._handle_login)
-            settings_view.logout_requested.connect(self._handle_logout)
             
             # 添加到中心区域
             self.central_layout.addWidget(settings_view)

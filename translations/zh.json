@@ -601,7 +601,6 @@
         "api_hash": "API Hash:",
         "phone_number": "手机号码:",
         "login": "登录",
-        "logout": "注销",
         "logged_in": "已登录",
         "login_tip": "请填写您的Telegram API ID、API Hash和手机号码后点击登录按钮。\n如未申请API凭据，请访问 <a href='https://my.telegram.org'>https://my.telegram.org</a> 申请。\n手机号码格式应为国际格式，例如：+86 12345678901",
         "session": {

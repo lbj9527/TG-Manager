@@ -11,8 +11,15 @@ from pyrogram.errors import FloodWait
 
 from src.utils.logger import get_logger
 
-# pyropatch功能已移除，使用内置FloodWait处理
-PYROPATCH_AVAILABLE = False
+# 导入pyropatch FloodWait处理器
+try:
+    from src.utils.pyropatch_flood_handler import (
+        execute_with_pyropatch_flood_wait,
+        is_pyropatch_available
+    )
+    PYROPATCH_AVAILABLE = True
+except ImportError:
+    PYROPATCH_AVAILABLE = False
 
 # 导入原有FloodWait处理器作为备选
 try:
@@ -44,7 +51,10 @@ class MessageIterator:
         self.should_stop = False
         
         # 选择最佳可用的FloodWait处理器
-        if FALLBACK_HANDLER_AVAILABLE:
+        if PYROPATCH_AVAILABLE and is_pyropatch_available():
+            self._flood_wait_method = "pyropatch"
+            _logger.info("MessageIterator: 使用pyropatch FloodWait处理器")
+        elif FALLBACK_HANDLER_AVAILABLE:
             self._flood_wait_method = "fallback"
             _logger.info("MessageIterator: 使用内置FloodWait处理器")
         else:
@@ -65,7 +75,11 @@ class MessageIterator:
         Returns:
             函数执行结果
         """
-        if self._flood_wait_method == "fallback":
+        if self._flood_wait_method == "pyropatch":
+            return await execute_with_pyropatch_flood_wait(
+                func, *args, max_retries=max_retries, base_delay=base_delay, **kwargs
+            )
+        elif self._flood_wait_method == "fallback":
             return await execute_with_flood_wait(
                 func, *args, max_retries=max_retries, base_delay=base_delay, **kwargs
             )

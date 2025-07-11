@@ -40,9 +40,9 @@ class AsyncServicesInitializer:
                 self.app.task_manager = AsyncTaskManager()
                 logger.debug("已创建异步任务管理器")
             
-            # 1. 初始化强壮的Telegram客户端
-            from src.utils.robust_client import RobustTelegramClient
-            self.app.client_manager = RobustTelegramClient()
+            # 1. 初始化client_manager
+            from src.utils.client_manager import ClientManager
+            self.app.client_manager = ClientManager(self.app.ui_config_manager)
             logger.debug("已初始化客户端管理器")
             
             # 连接客户端状态信号
@@ -69,21 +69,16 @@ class AsyncServicesInitializer:
             
             # 检查会话文件是否存在，判断是否为首次登录
             session_name = self.app.client_manager.session_name
-            logger.debug(f"检查首次登录状态，会话名称: {session_name}")
             
             # 使用首次登录处理器检查是否为首次登录
             if first_login_handler:
-                logger.debug("使用FirstLoginHandler检查首次登录状态")
                 self.app.is_first_login = first_login_handler.check_first_login(session_name)
             else:
                 # 兼容性：直接检查会话文件
                 session_path = f"sessions/{session_name}.session"
                 self.app.is_first_login = not os.path.exists(session_path)
-                logger.debug(f"直接检查会话文件: {session_path}, 存在: {os.path.exists(session_path)}")
                 if self.app.is_first_login:
                     logger.info(f"检测到首次登录，会话文件不存在: {session_path}")
-            
-            logger.info(f"首次登录检测结果: {self.app.is_first_login}")
             
             if self.app.is_first_login:
                 # 首次登录不自动启动客户端，等待用户点击登录按钮
@@ -269,8 +264,7 @@ class AsyncServicesInitializer:
                 logger.info("正在初始化监听模块...")
                 try:
                     from src.modules.monitor.core import Monitor  # 使用新的监听器架构
-                    # 传递强壮客户端管理器而不是原生客户端
-                    original_monitor = Monitor(self.app.client_manager, self.app.ui_config_manager, 
+                    original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
                                              self.app.channel_resolver, self.app)
                     
                     # 使用事件发射器包装监听器
