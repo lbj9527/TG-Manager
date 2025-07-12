@@ -128,6 +128,74 @@ class Monitor:
         self.message_handlers.append(handler_func)
         logger.info(f"添加了新的消息处理器: {handler_func.__name__}")
     
+    def update_client(self, new_client: Client):
+        """
+        更新监听模块及其内部组件的客户端引用
+        
+        Args:
+            new_client: 新的客户端实例
+        """
+        try:
+            # 更新主客户端引用
+            self.client = new_client
+            logger.info("已更新监听模块的主客户端引用")
+            
+            # 更新消息处理器的客户端引用
+            if hasattr(self, 'message_processor') and self.message_processor:
+                self.message_processor.client = new_client
+                logger.info("已更新消息处理器的客户端引用")
+                
+                # 更新restricted_handler的客户端引用
+                if hasattr(self.message_processor, 'restricted_handler') and self.message_processor.restricted_handler:
+                    self.message_processor.restricted_handler.client = new_client
+                    logger.info("已更新禁止转发处理器的客户端引用")
+            
+            # 更新媒体组处理器的客户端引用
+            if hasattr(self, 'media_group_handler') and self.media_group_handler:
+                self.media_group_handler.client = new_client
+                logger.info("已更新媒体组处理器的客户端引用")
+            
+            # 更新频道解析器的客户端引用
+            if hasattr(self, 'channel_resolver') and self.channel_resolver:
+                self.channel_resolver.client = new_client
+                logger.info("已更新频道解析器的客户端引用")
+            
+            # 【修复】如果监听模块已经启动，需要重新启动以确保消息处理器正确绑定
+            # 注意：只有在监听模块真正启动时才重新启动，避免影响客户端正常功能
+            if (hasattr(self, 'is_processing') and self.is_processing and 
+                hasattr(self, 'monitored_channels') and self.monitored_channels):
+                logger.info("检测到监听模块已启动，重新启动监听以确保消息处理器正确绑定")
+                # 异步重新启动监听
+                asyncio.create_task(self._restart_monitoring_after_client_update())
+            else:
+                logger.debug("监听模块未启动或未完全初始化，跳过重新启动逻辑")
+                
+        except Exception as e:
+            logger.error(f"更新监听模块客户端引用时出错: {e}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
+    
+    async def _restart_monitoring_after_client_update(self):
+        """
+        在客户端引用更新后重新启动监听
+        """
+        try:
+            # 等待一小段时间确保客户端完全更新
+            await asyncio.sleep(1)
+            
+            # 停止当前监听
+            await self.stop_monitoring()
+            
+            # 重新启动监听
+            await self.start_monitoring()
+            
+            logger.info("监听模块已重新启动完成")
+            
+        except Exception as e:
+            logger.error(f"重新启动监听模块时出错: {e}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
+    
     async def start_monitoring(self):
         """
         开始监听所有配置的频道
@@ -559,8 +627,12 @@ class Monitor:
             # 移除当前活跃的处理器
             if self.current_message_handler:
                 try:
-                    self.client.remove_handler(self.current_message_handler)
-                    logger.debug("已移除当前消息处理器")
+                    # 【修复】检查客户端是否存在且有效，避免在客户端已销毁时尝试移除处理器
+                    if hasattr(self, 'client') and self.client and hasattr(self.client, 'remove_handler'):
+                        self.client.remove_handler(self.current_message_handler)
+                        logger.debug("已移除当前消息处理器")
+                    else:
+                        logger.debug("客户端不存在或已销毁，跳过移除消息处理器")
                 except Exception as e:
                     logger.error(f"移除当前消息处理器时异常: {str(e)}")
                 finally:
@@ -569,7 +641,11 @@ class Monitor:
             # 移除所有注册的处理器（兼容旧代码）
             for handler in self.message_handlers:
                 try:
-                    self.client.remove_handler(handler)
+                    # 【修复】检查客户端是否存在且有效
+                    if hasattr(self, 'client') and self.client and hasattr(self.client, 'remove_handler'):
+                        self.client.remove_handler(handler)
+                    else:
+                        logger.debug("客户端不存在或已销毁，跳过移除消息处理器")
                 except Exception as e:
                     logger.error(f"移除消息处理器时异常: {str(e)}", error_type="HANDLER_REMOVE", recoverable=True)
             

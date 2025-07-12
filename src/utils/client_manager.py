@@ -143,6 +143,29 @@ class ClientManager(QObject):
             if hasattr(user, 'channel_resolver') and hasattr(user.channel_resolver, 'client'):
                 user.channel_resolver.client = self.client
                 logger.debug(f"已更新 {type(user).__name__}.channel_resolver 的客户端引用")
+            
+            # 【新增】特殊处理监听模块的内部组件
+            if hasattr(user, 'message_processor') and hasattr(user.message_processor, 'client'):
+                user.message_processor.client = self.client
+                logger.debug(f"已更新 {type(user).__name__}.message_processor 的客户端引用")
+                
+                # 更新message_processor内部的restricted_handler
+                if hasattr(user.message_processor, 'restricted_handler') and hasattr(user.message_processor.restricted_handler, 'client'):
+                    user.message_processor.restricted_handler.client = self.client
+                    logger.debug(f"已更新 {type(user).__name__}.message_processor.restricted_handler 的客户端引用")
+            
+            # 【新增】更新媒体组处理器的客户端引用
+            if hasattr(user, 'media_group_handler') and hasattr(user.media_group_handler, 'client'):
+                user.media_group_handler.client = self.client
+                logger.debug(f"已更新 {type(user).__name__}.media_group_handler 的客户端引用")
+            
+            # 【新增】调用模块的专用客户端更新方法（如果存在）
+            if hasattr(user, 'update_client') and callable(user.update_client):
+                try:
+                    user.update_client(self.client)
+                    logger.debug(f"已调用 {type(user).__name__} 的专用客户端更新方法")
+                except Exception as update_error:
+                    logger.warning(f"调用 {type(user).__name__} 的专用客户端更新方法时出错: {update_error}")
                 
         except Exception as e:
             logger.warning(f"更新 {type(user).__name__} 的客户端引用时出错: {e}")
@@ -414,6 +437,9 @@ class ClientManager(QObject):
             
             # 发出信号
             self.connection_status_changed.emit(True, self.me)
+            
+            # 【修复】更新所有使用者的客户端引用，确保所有模块都能获得新的客户端实例
+            self._update_all_users_client()
             
             return self.client
             

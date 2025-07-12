@@ -3062,7 +3062,7 @@ class ForwardView(QWidget):
             if hasattr(self, 'log_display'):
                 self._log_message_filtered(message_id, message_type, filter_reason)
                 
-            logger.debug(f"处理消息过滤信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
+            #logger.debug(f"处理消息过滤信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
         except Exception as e:
             logger.error(f"处理消息过滤信号时出错: {e}")
 

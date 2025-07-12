@@ -1309,7 +1309,7 @@ class ListenView(QWidget):
             config: 配置字典
         """
         logger.info(f"监听界面开始加载配置，配置数据: {type(config)}")
-        logger.debug(f"配置内容: {config}")
+        # logger.debug(f"配置内容: {config}")
         
         # 清空现有项目
         self.pairs_list.clear()

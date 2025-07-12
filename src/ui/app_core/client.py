@@ -258,6 +258,9 @@ class ClientHandler:
                 # 使用事件发射器包装下载器
                 from src.modules.event_emitter_downloader import EventEmitterDownloader
                 self.app.downloader = EventEmitterDownloader(original_downloader)
+                
+                # 【修复】注册为客户端使用者，确保客户端引用更新时能通知下载模块
+                self.app.client_manager.register_client_user(original_downloader)
                 logger.info("已初始化下载模块并添加信号支持")
                 initialized_components.append('downloader')
             except Exception as e:
@@ -274,6 +277,9 @@ class ClientHandler:
                 # 使用事件发射器包装串行下载器
                 from src.modules.event_emitter_downloader_serial import EventEmitterDownloaderSerial
                 self.app.downloader_serial = EventEmitterDownloaderSerial(original_downloader_serial)
+                
+                # 【修复】注册为客户端使用者，确保客户端引用更新时能通知串行下载模块
+                self.app.client_manager.register_client_user(original_downloader_serial)
                 logger.info("已初始化串行下载模块并添加信号支持")
                 initialized_components.append('downloader_serial')
             except Exception as e:
@@ -290,6 +296,9 @@ class ClientHandler:
                 # 使用事件发射器包装上传器
                 from src.modules.event_emitter_uploader import EventEmitterUploader
                 self.app.uploader = EventEmitterUploader(original_uploader)
+                
+                # 【修复】注册为客户端使用者，确保客户端引用更新时能通知上传模块
+                self.app.client_manager.register_client_user(original_uploader)
                 logger.info("已初始化上传模块并添加信号支持")
                 initialized_components.append('uploader')
             except Exception as e:
@@ -307,6 +316,9 @@ class ClientHandler:
                 # 使用事件发射器包装转发器
                 from src.modules.event_emitter_forwarder import EventEmitterForwarder
                 self.app.forwarder = EventEmitterForwarder(original_forwarder)
+                
+                # 【修复】注册为客户端使用者，确保客户端引用更新时能通知转发模块
+                self.app.client_manager.register_client_user(original_forwarder)
                 logger.info("已初始化转发模块并添加信号支持")
                 initialized_components.append('forwarder')
             except Exception as e:
@@ -323,6 +335,9 @@ class ClientHandler:
                 # 使用事件发射器包装监听器
                 from src.modules.event_emitter_monitor import EventEmitterMonitor
                 self.app.monitor = EventEmitterMonitor(original_monitor)
+                
+                # 【修复】注册为客户端使用者，确保客户端引用更新时能通知监听模块
+                self.app.client_manager.register_client_user(original_monitor)
                 logger.info("已初始化监听模块并添加信号支持")
                 initialized_components.append('monitor')
             except Exception as e:

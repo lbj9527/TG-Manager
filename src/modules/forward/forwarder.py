@@ -121,7 +121,7 @@ class Forwarder():
                     # 发射过滤事件到应用
                     if hasattr(self.app, 'message_filtered'):
                         self.app.message_filtered.emit(message_id, message_type, filter_reason)
-                        _logger.debug(f"发射message_filtered信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
+                        #_logger.debug(f"发射message_filtered信号: {message_type}({message_id}) 过滤原因: {filter_reason}")
                 
                 elif event_type == "collection_started" and len(args) >= 1:
                     total_count = args[0]
