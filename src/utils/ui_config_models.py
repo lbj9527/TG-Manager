@@ -35,6 +35,7 @@ class UIGeneralConfig(BaseModel):
     api_id: int = Field(..., description="Telegram API ID")
     api_hash: str = Field(..., description="Telegram API Hash")
     phone_number: Optional[str] = Field(None, description="Telegram账号手机号码")
+    session_name: str = Field("tg_manager", description="Telegram会话名称")
     limit: int = Field(50, description="每次批量获取消息的数量", ge=1, le=1000)
     pause_time: int = Field(60, description="API限制后的暂停时间(秒)", ge=1)
     timeout: int = Field(30, description="网络请求超时时间(秒)", ge=5, le=300)
@@ -586,7 +587,8 @@ def create_default_config() -> UIConfig:
             proxy_port=1080,  # 确保即使禁用代理，端口值也有效
             proxy_username=None,
             proxy_password=None,
-            auto_restart_session=True  # 默认启用自动重连
+            auto_restart_session=True,  # 默认启用自动重连
+            session_name="tg_manager" # 添加session_name
         ),
         DOWNLOAD=UIDownloadConfig(
             downloadSetting=[

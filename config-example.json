@@ -3,6 +3,7 @@
     "api_id": 25448404,
     "api_hash": "0c910748a61fc30bb14e073a31933fb6",
     "phone_number": "",
+    "session_name": "tg_manager",
     "limit": 50,
     "pause_time": 60,
     "timeout": 30,

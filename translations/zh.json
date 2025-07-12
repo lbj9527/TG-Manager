@@ -606,6 +606,7 @@
         "session": {
           "title": "会话设置",
           "session_name": "会话名称:",
+          "session_name_tip": "会话名称只能包含英文字母、数字和下划线，且必须以英文字母开头",
           "auto_restart": "连接断开后自动重连"
         }
       },
@@ -887,6 +888,8 @@
     "validation": {
       "api_id_required": "API ID必须是正整数",
       "api_hash_required": "API Hash必须是32位十六进制字符串",
+      "session_name_required": "会话名称不能为空",
+      "session_name_format": "会话名称只能包含英文字母、数字和下划线，且必须以英文字母开头",
       "proxy_addr_required": "启用代理时，代理地址不能为空。请输入有效的代理服务器地址。",
       "proxy_port_invalid": "代理端口必须在1-65535范围内"
     },

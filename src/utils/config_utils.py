@@ -32,6 +32,8 @@ def convert_ui_config_to_dict(ui_config: Any) -> Dict[str, Any]:
             general_dict['api_hash'] = ui_config.GENERAL.api_hash
         if hasattr(ui_config.GENERAL, 'phone_number'):
             general_dict['phone_number'] = ui_config.GENERAL.phone_number
+        if hasattr(ui_config.GENERAL, 'session_name'):
+            general_dict['session_name'] = ui_config.GENERAL.session_name
         if hasattr(ui_config.GENERAL, 'limit'):
             general_dict['limit'] = ui_config.GENERAL.limit
         if hasattr(ui_config.GENERAL, 'pause_time'):

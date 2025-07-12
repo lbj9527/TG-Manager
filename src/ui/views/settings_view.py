@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 import json
 import os
+import re
 
 from src.utils.logger import get_logger
 from src.utils.theme_manager import get_theme_manager
@@ -204,9 +205,16 @@ class SettingsView(QWidget):
         self.session_group = QGroupBox(tr("ui.settings.api.session.title"))
         session_layout = QFormLayout()
         
-        self.session_name = QLineEdit("tg_manager_session")
+        self.session_name = QLineEdit("tg_manager")
         self.session_name_label = QLabel(tr("ui.settings.api.session.session_name"))
         session_layout.addRow(self.session_name_label, self.session_name)
+        
+        # 添加会话名称验证提示
+        self.session_name_tip = QLabel(tr("ui.settings.api.session.session_name_tip"))
+        self.session_name_tip.setWordWrap(True)
+        self.session_name_tip.setTextFormat(Qt.RichText)
+        self.session_name_tip.setStyleSheet("font-size: 9pt; color: #666;")
+        session_layout.addRow("", self.session_name_tip)
         
         self.auto_restart_session = QCheckBox(tr("ui.settings.api.session.auto_restart"))
         self.auto_restart_session.setChecked(True)
@@ -226,6 +234,7 @@ class SettingsView(QWidget):
             'api_hash_label': self.api_hash_label,
             'phone_number_label': self.phone_number_label,
             'session_name_label': self.session_name_label,
+            'session_name_tip': self.session_name_tip,
             'login_button': self.login_button,
             'login_tip': self.login_tip,
             'auto_restart_session': self.auto_restart_session
@@ -526,6 +535,7 @@ class SettingsView(QWidget):
             api_widgets['api_hash_label'].setText(tr("ui.settings.api.api_hash"))
             api_widgets['phone_number_label'].setText(tr("ui.settings.api.phone_number"))
             api_widgets['session_name_label'].setText(tr("ui.settings.api.session.session_name"))
+            api_widgets['session_name_tip'].setText(tr("ui.settings.api.session.session_name_tip"))
             api_widgets['auto_restart_session'].setText(tr("ui.settings.api.session.auto_restart"))
             api_widgets['login_tip'].setText(tr("ui.settings.api.login_tip"))
             
@@ -615,6 +625,15 @@ class SettingsView(QWidget):
                 int(api_id)  # 确保是有效的整数
             except ValueError:
                 return False, tr("errors.validation.api_id_required")
+        
+        # 验证会话名称
+        session_name = self.session_name.text().strip()
+        if not session_name:
+            return False, tr("errors.validation.session_name_required")
+        
+        # 验证会话名称格式：必须是英文字母、数字和下划线的组合，第一位必须是英文字母
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', session_name):
+            return False, tr("errors.validation.session_name_format")
         
         # 这里可以添加其他验证逻辑
         
@@ -706,7 +725,7 @@ class SettingsView(QWidget):
         self.api_id.setText("")
         self.api_hash.setText("")
         self.phone_number.setText("")
-        self.session_name.setText("tg_manager_session")
+        self.session_name.setText("tg_manager")
         self.auto_restart_session.setChecked(True)
         
         # 重置代理设置
@@ -750,6 +769,7 @@ class SettingsView(QWidget):
             "api_id": int(self.api_id.text()) if self.api_id.text().strip() else 0,
             "api_hash": self.api_hash.text().strip(),
             "phone_number": self.phone_number.text().strip(),
+            "session_name": self.session_name.text().strip(),
             "auto_restart_session": self.auto_restart_session.isChecked()
         }
         
@@ -822,6 +842,8 @@ class SettingsView(QWidget):
                 self.api_hash.setText(general["api_hash"])
             if "phone_number" in general and general["phone_number"]:
                 self.phone_number.setText(general["phone_number"])
+            if "session_name" in general and general["session_name"]:
+                self.session_name.setText(general["session_name"])
             if "auto_restart_session" in general:
                 self.auto_restart_session.setChecked(general["auto_restart_session"])
             

@@ -73,6 +73,9 @@ class ClientManager(QObject):
         self.api_hash = general_config.get('api_hash')
         self.phone_number = general_config.get('phone_number')
         
+        # 获取会话名称，如果配置中没有则使用默认值
+        self.session_name = general_config.get('session_name', session_name)
+        
         # 输出API凭据信息(注意不要输出完整信息，保护安全)
         logger.info(f"从配置中读取到API ID: {self.api_id}")
         if self.api_hash:
@@ -88,6 +91,9 @@ class ClientManager(QObject):
             logger.info(f"从配置中读取到电话号码: {masked_phone}")
         else:
             logger.warning("未能从配置中读取到电话号码")
+        
+        # 输出会话名称信息
+        logger.info(f"从配置中读取到会话名称: {self.session_name}")
         
         # 检查API凭据是否有效
         if not self.api_id or not self.api_hash:

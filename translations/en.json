@@ -596,6 +596,7 @@
         "session": {
           "title": "Session Settings",
           "session_name": "Session Name:",
+          "session_name_tip": "Session name can only contain English letters, numbers and underscores, and must start with an English letter",
           "auto_restart": "Auto reconnect when disconnected"
         }
       },
@@ -881,6 +882,8 @@
     "validation": {
       "api_id_required": "API ID must be a positive integer",
       "api_hash_required": "API Hash must be a 32-character hexadecimal string",
+      "session_name_required": "Session name cannot be empty",
+      "session_name_format": "Session name can only contain English letters, numbers and underscores, and must start with an English letter",
       "proxy_addr_required": "When proxy is enabled, proxy address cannot be empty. Please enter a valid proxy server address.",
       "proxy_port_invalid": "Proxy port must be in the range 1-65535"
     },
