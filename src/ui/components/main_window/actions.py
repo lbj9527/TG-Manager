@@ -401,11 +401,11 @@ class ActionsMixin:
             
     def _open_settings(self):
         """打开设置界面"""
-        logger.debug("尝试打开设置视图")
+
         try:
             # 先检查是否已经打开
             if "settings_view" in self.opened_views:
-                logger.debug("设置视图已存在，切换到该视图")
+
                 self.central_layout.setCurrentWidget(self.opened_views["settings_view"])
                 return
             
@@ -434,7 +434,7 @@ class ActionsMixin:
                     if user_obj.username:
                         user_info += f" (@{user_obj.username})"
                 
-                logger.debug(f"更新设置视图登录按钮状态: 已连接={is_connected}, 用户信息={user_info}")
+    
                 settings_view.update_login_button(is_connected, user_info)
             else:
                 logger.debug("无法获取客户端状态，未更新登录按钮")
@@ -461,28 +461,28 @@ class ActionsMixin:
     
     def _open_log_viewer(self):
         """打开日志查看器"""
-        logger.debug("尝试打开日志查看器视图")
+
         try:
             # 【修复】先检查自动加载的日志查看器是否已经存在
             if "log_viewer" in self.opened_views:
-                logger.debug("发现自动加载的日志查看器视图，切换到该视图")
+
                 self.central_layout.setCurrentWidget(self.opened_views["log_viewer"])
                 return
                 
             # 检查通过导航树加载的日志查看器是否已经存在
             if "function.logs" in self.opened_views:
-                logger.debug("发现通过导航树加载的日志查看器视图，切换到该视图")
+
                 self.central_layout.setCurrentWidget(self.opened_views["function.logs"])
                 return
                 
             # 通过导航树API找到日志查看器项并触发点击
-            logger.debug("尝试通过导航树打开日志查看器视图")
+            
             if self.nav_tree.select_item_by_function("logs") or self.nav_tree.select_item("log_viewer"):
-                logger.debug("通过导航树成功打开日志查看器视图")
+
                 return
             
             # 如果通过导航树无法打开，直接创建并显示
-            logger.debug("直接创建日志查看器视图")
+            
             from src.ui.views.log_viewer_view import LogViewerView
             
             # 创建日志查看器视图
@@ -557,7 +557,7 @@ class ActionsMixin:
                 # 返回到欢迎视图
                 self.central_layout.setCurrentWidget(self.welcome_widget)
                 # 记录日志
-                logger.debug(f"已关闭设置视图: {view_id}")
+
                 break 
 
     def _on_settings_saved(self):
@@ -571,7 +571,7 @@ class ActionsMixin:
         Args:
             function_name: 功能名称，如'download', 'upload', 'forward', 'monitor'
         """
-        logger.debug(f"从功能菜单打开视图: {function_name}")
+
         
         try:
             # 检查应用程序是否正在初始化
@@ -584,7 +584,7 @@ class ActionsMixin:
             if hasattr(self, 'nav_tree') and self.nav_tree:
                 # 先尝试通过导航树API打开功能
                 if self.nav_tree.select_item_by_function(function_name):
-                    logger.debug(f"通过导航树成功打开 {function_name} 视图")
+    
                     return
             
             # 如果导航树方法失败，直接处理各种功能
@@ -628,7 +628,7 @@ class ActionsMixin:
             # 检查视图是否已经存在
             if view_id in self.opened_views:
                 self.central_layout.setCurrentWidget(self.opened_views[view_id])
-                logger.debug(f"{display_name}视图已存在，切换到该视图")
+
                 return
             
             # 创建对应的视图
@@ -711,5 +711,5 @@ class ActionsMixin:
             return self.opened_views['log_viewer']
             
         # 如果视图尚未打开，返回None
-        logger.debug(f"视图 '{view_name}' 尚未打开，无法获取引用")
+
         return None 

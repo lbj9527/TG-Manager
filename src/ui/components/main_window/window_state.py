@@ -30,7 +30,7 @@ class WindowStateMixin:
                 try:
                     geometry = ui_config.get('window_geometry')
                     if geometry:
-                        logger.debug("正在恢复窗口几何形状")
+
                         self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
                 except Exception as e:
                     logger.warning(f"恢复窗口几何形状失败: {e}")
@@ -40,7 +40,7 @@ class WindowStateMixin:
                 try:
                     state = ui_config.get('window_state')
                     if state:
-                        logger.debug("正在恢复窗口状态，包括工具栏位置")
+
                         
                         # 尝试恢复窗口状态
                         success = self.restoreState(QByteArray.fromBase64(state.encode()))
@@ -56,7 +56,7 @@ class WindowStateMixin:
                             except Exception as e:
                                 logger.warning(f"尝试恢复工具栏状态时出错: {e}")
                         else:
-                            logger.debug("成功恢复窗口状态")
+                            pass  # 窗口状态恢复成功，无需额外操作
                 except Exception as e:
                     logger.warning(f"恢复窗口状态失败: {e}")
             
@@ -64,7 +64,7 @@ class WindowStateMixin:
             if 'sidebar_geometry' in ui_config:
                 try:
                     sidebar_geo = ui_config.get('sidebar_geometry')
-                    logger.debug(f"读取到的侧边栏几何配置: {sidebar_geo}")
+
                     if sidebar_geo and isinstance(sidebar_geo, dict):
                         from PySide6.QtCore import QRect
                         
@@ -74,24 +74,24 @@ class WindowStateMixin:
                         width = sidebar_geo.get('width', 200)
                         height = sidebar_geo.get('height', 600)
                         
-                        logger.debug(f"侧边栏几何参数: x={x}, y={y}, width={width}, height={height}")
+
                         
                         restored_geometry = QRect(x, y, width, height)
-                        logger.debug(f"正在恢复侧边栏几何形状: {restored_geometry}")
+
                         
                         # 延迟恢复侧边栏几何形状，确保侧边栏已创建
                         QTimer.singleShot(100, lambda: self._restore_sidebar_geometry(restored_geometry))
                 except Exception as e:
                     logger.warning(f"恢复侧边栏几何形状失败: {e}")
                     import traceback
-                    logger.debug(f"恢复侧边栏几何形状错误详情:\n{traceback.format_exc()}")
+
             
             # 恢复侧边栏完整状态（包括分割器状态）
             if 'sidebar_data' in ui_config:
                 try:
                     sidebar_data = ui_config.get('sidebar_data')
                     if sidebar_data and isinstance(sidebar_data, dict):
-                        logger.debug(f"正在恢复侧边栏完整状态: {sidebar_data}")
+
                         
                         # 恢复可见性和浮动状态
                         if 'visible' in sidebar_data:
@@ -104,14 +104,14 @@ class WindowStateMixin:
                         # 恢复分割器状态
                         if 'splitter_sizes' in sidebar_data and sidebar_data['splitter_sizes']:
                             splitter_sizes = sidebar_data['splitter_sizes']
-                            logger.debug(f"正在恢复分割器状态: {splitter_sizes}")
+
                             QTimer.singleShot(300, lambda: self._restore_splitter_sizes(splitter_sizes))
                         
                 except Exception as e:
                     logger.warning(f"恢复侧边栏完整状态失败: {e}")
         else:
             # 如果没有保存的侧边栏状态，设置默认可见
-            logger.debug("没有保存的侧边栏状态，设置默认可见")
+            # logger.debug("没有保存的侧边栏状态，设置默认可见")
             QTimer.singleShot(200, lambda: self._restore_sidebar_visibility(True))
             QTimer.singleShot(200, lambda: self._sync_sidebar_menu_state(True))
         
@@ -134,7 +134,7 @@ class WindowStateMixin:
                 if hasattr(config_manager, '_last_window_state_save_time'):
                     # 如果上次保存时间距现在不足500毫秒，则跳过本次保存
                     if current_time - config_manager._last_window_state_save_time < 0.5:
-                        logger.debug("窗口状态保存请求过于频繁，跳过本次保存")
+                        # logger.debug("窗口状态保存请求过于频繁，跳过本次保存")
                         return
                 
                 # 更新上次保存时间
@@ -147,11 +147,11 @@ class WindowStateMixin:
                     # 更新窗口状态数据
                     if 'geometry' in state_data:
                         ui_config['window_geometry'] = state_data['geometry'].toBase64().data().decode()
-                        logger.debug("保存了窗口几何形状")
+                        # logger.debug("保存了窗口几何形状")
                     
                     if 'state' in state_data:
                         ui_config['window_state'] = state_data['state'].toBase64().data().decode()
-                        logger.debug("保存了窗口状态，包括工具栏位置")
+                        # logger.debug("保存了窗口状态，包括工具栏位置")
                     
                     # 保存侧边栏几何形状
                     if 'sidebar_geometry' in state_data:
@@ -162,7 +162,7 @@ class WindowStateMixin:
                             'width': sidebar_geo.width(),
                             'height': sidebar_geo.height()
                         }
-                        logger.debug(f"保存了侧边栏几何形状: {ui_config['sidebar_geometry']}")
+                        # logger.debug(f"保存了侧边栏几何形状: {ui_config['sidebar_geometry']}")
                     
                     # 保存侧边栏完整状态（包括分割器状态）
                     if 'sidebar_data' in state_data:
@@ -172,7 +172,7 @@ class WindowStateMixin:
                             'visible': sidebar_data.get('visible', True),
                             'splitter_sizes': sidebar_data.get('splitter_sizes', [])
                         }
-                        logger.debug(f"保存了侧边栏完整状态: {ui_config['sidebar_data']}")
+                        # logger.debug(f"保存了侧边栏完整状态: {ui_config['sidebar_data']}")
                     
                     # 更新配置
                     self.config['UI'] = ui_config
@@ -196,36 +196,36 @@ class WindowStateMixin:
                         # 添加侧边栏几何形状的保存（修复侧边栏宽度无法保存的问题）
                         if 'sidebar_geometry' in ui_config:
                             file_config['UI']['sidebar_geometry'] = ui_config['sidebar_geometry']
-                            logger.debug(f"保存侧边栏几何形状到配置文件: {ui_config['sidebar_geometry']}")
+                            # logger.debug(f"保存侧边栏几何形状到配置文件: {ui_config['sidebar_geometry']}")
                         
                         # 添加侧边栏完整状态的保存（包括分割器状态）
                         if 'sidebar_data' in ui_config:
                             file_config['UI']['sidebar_data'] = ui_config['sidebar_data']
-                            logger.debug(f"保存侧边栏完整状态到配置文件: {ui_config['sidebar_data']}")
+                            # logger.debug(f"保存侧边栏完整状态到配置文件: {ui_config['sidebar_data']}")
                         
                         # 保存回文件
                         with open(config_manager.ui_config_manager.config_path, 'w', encoding='utf-8') as f:
                             json.dump(file_config, f, ensure_ascii=False, indent=2)
                         
-                        logger.debug("窗口布局状态已单独保存，未影响其他配置")
+                        # logger.debug("窗口布局状态已单独保存，未影响其他配置")
                     except PermissionError:
                         logger.warning("保存窗口布局状态时遇到权限问题，将在下次完整保存配置时一并处理")
                     except Exception as e:
                         logger.error(f"保存窗口布局状态失败: {e}")
                         import traceback
-                        logger.debug(f"保存窗口布局状态错误详情:\n{traceback.format_exc()}")
+
                         
                 except Exception as e:
                     logger.error(f"获取窗口状态失败: {e}")
                     import traceback
-                    logger.debug(f"获取窗口状态错误详情:\n{traceback.format_exc()}")
+
             else:
                 logger.warning("无法访问配置管理器，窗口状态保存失败")
                 
         except Exception as e:
             logger.error(f"保存窗口状态失败: {e}")
             import traceback
-            logger.debug(f"保存窗口状态错误详情:\n{traceback.format_exc()}")
+
     
     def _save_current_state(self):
         """保存当前窗口状态（只保存窗口几何信息和工具栏位置等布局状态）
@@ -253,9 +253,9 @@ class WindowStateMixin:
             
             window_state['sidebar_geometry'] = sidebar_data['geometry']
             window_state['sidebar_data'] = sidebar_data
-            logger.debug(f"保存侧边栏完整状态: {sidebar_data}")
+            # logger.debug(f"保存侧边栏完整状态: {sidebar_data}")
         
-        logger.debug("保存窗口布局状态，包括窗口几何信息和工具栏位置")
+        # logger.debug("保存窗口布局状态，包括窗口几何信息和工具栏位置")
         self.window_state_changed.emit(window_state)
     
     def showEvent(self, event):
@@ -303,8 +303,7 @@ class WindowStateMixin:
     
     def _handle_resize_completed(self):
         """窗口大小调整完成后的处理"""
-        logger.debug(f"=== 窗口大小调整完成处理开始 ===")
-        logger.debug(f"当前窗口尺寸: {self.width()}x{self.height()}")
+
         
         # 检查是否正在进行语言切换，如果是则跳过分割器尺寸调整
         if hasattr(self, 'translation_manager') and hasattr(self.translation_manager, '_is_language_changing'):
@@ -318,55 +317,14 @@ class WindowStateMixin:
                 self.window_state_changed.emit(window_state)
                 return
         
-        # 当前实现使用QDockWidget而不是QSplitter，所以不需要处理分割器尺寸调整
-        # if hasattr(self, 'sidebar_splitter'):
-        #     logger.debug(f"侧边栏分割器存在，当前尺寸: {self.sidebar_splitter.sizes()}")
-        #     
-        #     # 获取当前窗口高度
-        #     current_height = self.height()
-        #     logger.debug(f"当前窗口高度: {current_height}")
-        #     
-        #     # 获取当前分割器尺寸
-        #     current_sizes = self.sidebar_splitter.sizes()
-        #     nav_height = current_sizes[0]  # 导航树当前高度
-        #     logger.debug(f"当前分割器尺寸: {current_sizes}, 导航树高度: {nav_height}")
-        #     
-        #     # 检查是否有用户保存的分割器设置
-        #     has_saved_splitter_sizes = False
-        #     if hasattr(self, 'config') and 'UI' in self.config:
-        #         ui_config = self.config['UI']
-        #         if 'sidebar_data' in ui_config and 'splitter_sizes' in ui_config['sidebar_data']:
-        #             saved_sizes = ui_config['sidebar_data']['splitter_sizes']
-        #             if saved_sizes and len(saved_sizes) == 2:
-        #                 has_saved_splitter_sizes = True
-        #                 logger.debug(f"检测到保存的分割器设置: {saved_sizes}")
-        #     
-        #     # 只有当窗口高度大于阈值且没有保存的分割器设置时才调整
-        #     if current_height > 400 and not has_saved_splitter_sizes:
-        #         logger.debug("窗口高度大于400且无保存的分割器设置，使用默认50%分割")
-        #         # 调整为50%导航树，50%任务概览
-        #         new_sizes = [int(current_height * 0.5), int(current_height * 0.5)]
-        #         logger.debug(f"设置新的分割器尺寸: {new_sizes}")
-        #         self.sidebar_splitter.setSizes(new_sizes)
-        #         
-        #         # 验证设置是否成功
-        #         actual_sizes = self.sidebar_splitter.sizes()
-        #         logger.debug(f"设置后的实际分割器尺寸: {actual_sizes}")
-        #     elif has_saved_splitter_sizes:
-        #         logger.debug("检测到保存的分割器设置，保持当前用户配置")
-        #     else:
-        #         logger.debug(f"窗口高度 {current_height} 小于等于400，跳过分割器调整")
-        # else:
-        #     logger.warning("侧边栏分割器不存在")
-        
         # 发出窗口状态变化信号
         window_state = {
             'geometry': self.saveGeometry(),
             'state': self.saveState()
         }
-        logger.debug("发出窗口状态变化信号")
+
         self.window_state_changed.emit(window_state)
-        logger.debug("=== 窗口大小调整完成处理结束 ===")
+
     
     def eventFilter(self, obj, event):
         """事件过滤器，用于捕获工具栏的鼠标事件
@@ -400,14 +358,6 @@ class WindowStateMixin:
         """
         if hasattr(self, 'sidebar_dock'):
             try:
-                logger.info(f"=== 开始恢复侧边栏几何形状 ===")
-                logger.info(f"目标几何形状: {geometry}")
-                logger.info(f"目标宽度: {geometry.width()}, 目标高度: {geometry.height()}")
-                
-                # 获取当前几何形状
-                current_geometry = self.sidebar_dock.geometry()
-                logger.info(f"当前几何形状: {current_geometry}")
-                
                 # 恢复几何形状
                 self.sidebar_dock.setGeometry(geometry)
                 
@@ -416,26 +366,17 @@ class WindowStateMixin:
                 
                 # 验证恢复是否成功
                 actual_geometry = self.sidebar_dock.geometry()
-                logger.info(f"恢复后实际几何形状: {actual_geometry}")
                 
                 if actual_geometry.width() != geometry.width() or actual_geometry.height() != geometry.height():
                     logger.warning(f"侧边栏几何形状恢复不完全匹配: 期望 {geometry}, 实际 {actual_geometry}")
                     
                     # 尝试使用resize方法
-                    logger.info("尝试使用resize方法恢复尺寸")
                     self.sidebar_dock.resize(geometry.width(), geometry.height())
                     
-                    # 再次验证
-                    final_geometry = self.sidebar_dock.geometry()
-                    logger.info(f"使用resize后的几何形状: {final_geometry}")
-                else:
-                    logger.info("侧边栏几何形状恢复成功")
-                    
-                logger.info(f"=== 侧边栏几何形状恢复完成 ===")
             except Exception as e:
                 logger.error(f"恢复侧边栏几何形状时出错: {e}")
                 import traceback
-                logger.debug(f"恢复侧边栏几何形状错误详情:\n{traceback.format_exc()}")
+
     
     def _restore_sidebar_visibility(self, visible):
         """恢复侧边栏可见性
@@ -445,7 +386,7 @@ class WindowStateMixin:
         """
         if hasattr(self, 'sidebar_dock'):
             try:
-                logger.debug(f"恢复侧边栏可见性: {visible}")
+        
                 self.sidebar_dock.setVisible(visible)
             except Exception as e:
                 logger.error(f"恢复侧边栏可见性时出错: {e}")
@@ -458,7 +399,7 @@ class WindowStateMixin:
         """
         if hasattr(self, 'sidebar_dock'):
             try:
-                logger.debug(f"恢复侧边栏浮动状态: {floating}")
+        
                 self.sidebar_dock.setFloating(floating)
             except Exception as e:
                 logger.error(f"恢复侧边栏浮动状态时出错: {e}")
@@ -494,7 +435,7 @@ class WindowStateMixin:
         """
         if hasattr(self, 'show_sidebar_action'):
             try:
-                logger.debug(f"同步侧边栏菜单按钮状态: {visible}")
+        
                 self.show_sidebar_action.setChecked(visible)
             except Exception as e:
                 logger.error(f"同步侧边栏菜单按钮状态时出错: {e}") 

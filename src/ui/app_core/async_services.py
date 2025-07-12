@@ -38,34 +38,27 @@ class AsyncServicesInitializer:
             # 初始化异步任务计划
             if not hasattr(self.app, 'task_manager') or self.app.task_manager is None:
                 self.app.task_manager = AsyncTaskManager()
-                logger.debug("已创建异步任务管理器")
+        
             
             # 1. 初始化client_manager
             from src.utils.client_manager import ClientManager
             self.app.client_manager = ClientManager(self.app.ui_config_manager)
-            logger.debug("已初始化客户端管理器")
+
             
             # 连接客户端状态信号
             if hasattr(self.app.client_manager, 'connection_status_changed'):
                 if hasattr(self.app, 'client_handler'):
                     self.app.client_manager.connection_status_changed.connect(
                         self.app.client_handler.on_client_connection_status_changed)
-                    logger.debug("已连接客户端状态变化信号到客户端处理器")
+        
                 else:
                     # 兼容性：直接连接到应用程序的回调
                     if hasattr(self.app, '_on_client_connection_status_changed'):
                         self.app.client_manager.connection_status_changed.connect(
                             self.app._on_client_connection_status_changed)
-                        logger.debug("已连接客户端状态变化信号到应用程序回调")
+    
             
-            # 连接时间同步错误信号
-            if hasattr(self.app.client_manager, 'time_sync_error'):
-                if hasattr(self.app, 'client_handler'):
-                    self.app.client_manager.time_sync_error.connect(
-                        self.app.client_handler.on_time_sync_error)
-                    logger.debug("已连接时间同步错误信号到客户端处理器")
-                else:
-                    logger.warning("客户端处理器不存在，无法连接时间同步错误信号")
+
             
             # 检查会话文件是否存在，判断是否为首次登录
             session_name = self.app.client_manager.session_name
@@ -128,14 +121,14 @@ class AsyncServicesInitializer:
                         
                         # 更新主窗口状态栏
                         self.app.main_window._update_client_status(True, user_info)
-                        logger.debug(f"已更新状态栏客户端状态: {user_info}")
+        
                         
                         # 更新设置界面中的登录按钮状态
                         if hasattr(self.app.main_window, 'opened_views') and 'settings_view' in self.app.main_window.opened_views:
                             settings_view = self.app.main_window.opened_views['settings_view']
                             if hasattr(settings_view, 'update_login_button'):
                                 settings_view.update_login_button(True, user_info)
-                                logger.debug("已更新设置视图中的登录按钮状态")
+            
                 
                 except Exception as e:
                     logger.error(f"启动Telegram客户端时出错: {e}")
@@ -358,7 +351,7 @@ class AsyncServicesInitializer:
         try:
             # 检查日志查看器是否已经加载
             if "log_viewer" in self.app.main_window.opened_views:
-                logger.debug("日志查看器视图已存在，跳过自动加载")
+
                 return
             
             logger.info("正在自动加载日志查看器视图...")

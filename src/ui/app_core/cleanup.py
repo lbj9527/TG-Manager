@@ -34,7 +34,7 @@ class CleanupManager:
         # 连接应用程序退出信号
         if hasattr(self.app, 'app') and hasattr(self.app.app, 'aboutToQuit'):
             self.app.app.aboutToQuit.connect(self._cleanup_sync)
-            logger.debug("已连接应用程序退出信号到清理处理器")
+    
         
         # 设置系统信号处理器
         try:
@@ -63,20 +63,20 @@ class CleanupManager:
             # 停止资源监控计时器
             if hasattr(self.app.main_window, "resource_timer") and self.app.main_window.resource_timer:
                 self.app.main_window.resource_timer.stop()
-                logger.debug("资源监控计时器已停止")
+    
             
             # 隐藏系统托盘图标
             if hasattr(self.app.main_window, 'tray_icon') and self.app.main_window.tray_icon:
                 self.app.main_window.tray_icon.hide()
-                logger.debug("系统托盘图标已隐藏")
+    
         
         # 取消所有定时器和任务
         if hasattr(self.app, 'task_manager'):
-            logger.debug("取消网络连接检查任务")
+
             self.app.task_manager.cancel_task("network_connection_check")
             # 取消所有其他任务
             self.app.task_manager.cancel_all_tasks()
-            logger.debug("所有任务已取消")
+
         
         # 创建异步清理任务
         loop = get_event_loop()
@@ -87,7 +87,7 @@ class CleanupManager:
                 timer.setSingleShot(True)
                 timer.timeout.connect(lambda: self._execute_async_cleanup(loop))
                 timer.start(10)  # 10毫秒后执行异步清理
-                logger.debug("已安排延迟执行异步清理")
+        
             except Exception as e:
                 logger.error(f"创建清理任务时出错: {e}")
                 # 如果创建任务失败，尝试直接退出
@@ -108,7 +108,7 @@ class CleanupManager:
         try:
             # 安全创建异步清理任务
             future = asyncio.run_coroutine_threadsafe(self._async_cleanup(), loop)
-            logger.debug("已创建异步清理任务")
+
             
             # 设置回调函数处理完成
             future.add_done_callback(lambda f: self._on_cleanup_done(f))
@@ -156,11 +156,11 @@ class CleanupManager:
                                   "network_connection_check", "global_exception_handler"]:
                     if self.app.task_manager.is_task_running(task_name):
                         self.app.task_manager.cancel_task(task_name)
-                        logger.debug(f"取消了特定任务: {task_name}")
+        
                 
                 # 取消所有其他任务
                 self.app.task_manager.cancel_all_tasks()
-                logger.debug("已取消任务管理器中的所有任务")
+
             
             # 停止Telegram客户端
             if hasattr(self.app, 'client_manager') and self.app.client_manager:
@@ -178,7 +178,7 @@ class CleanupManager:
                         if hasattr(view, '_cleanup_resources'):
                             try:
                                 view._cleanup_resources()
-                                logger.debug(f"已清理视图资源: {view_name}")
+                
                             except Exception as e:
                                 logger.error(f"清理视图 {view_name} 资源时出错: {e}")
             
@@ -187,18 +187,18 @@ class CleanupManager:
                           if t is not asyncio.current_task() and not t.done()]
             
             if pending_tasks:
-                logger.debug(f"发现 {len(pending_tasks)} 个待处理的异步任务")
+
                 
                 for task in pending_tasks:
                     task_name = task.get_name()
-                    logger.debug(f"取消任务: {task_name}")
+                    
                     task.cancel()
                 
                 # 等待所有任务处理取消请求
                 await asyncio.gather(*pending_tasks, return_exceptions=True)
-                logger.debug("已等待所有任务处理取消请求")
+
             else:
-                logger.debug("没有发现待处理的异步任务")
+                pass  # 没有待处理的异步任务
             
             logger.info("异步资源清理完成")
             return True

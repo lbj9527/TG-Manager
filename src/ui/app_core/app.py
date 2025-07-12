@@ -298,7 +298,7 @@ class TGManagerApp(QObject):
                                 logger.debug(f"已删除临时文件: {item}")
                             elif item.is_dir():
                                 shutil.rmtree(item)
-                                logger.debug(f"已删除临时目录: {item}")
+                    
                         
                         if dir_size > 0:
                             cleaned_count += 1
@@ -312,7 +312,7 @@ class TGManagerApp(QObject):
             if cleaned_count > 0:
                 logger.info(f"启动清理完成，共清理 {cleaned_count} 个目录，释放 {total_size_cleaned / 1024 / 1024:.2f} MB 空间")
             else:
-                logger.debug("启动清理完成，没有找到需要清理的临时文件")
+                logger.info("启动清理完成，没有找到需要清理的临时文件")
                 
         except Exception as e:
             logger.error(f"启动时清理临时目录失败: {e}")

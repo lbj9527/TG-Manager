@@ -37,17 +37,17 @@ class SidebarMixin:
     
     def _create_sidebar_splitter(self):
         """创建左侧侧边栏，包含导航树"""
-        logger.debug("=== 开始创建侧边栏 ===")
+
         
         # 移除之前添加的停靠窗口
         if hasattr(self, 'nav_dock'):
-            logger.debug("移除旧的导航停靠窗口")
+    
             self.removeDockWidget(self.nav_dock)
         
         # 创建新的停靠窗口，包含导航树
         from src.utils.translation_manager import tr
         sidebar_title = tr("ui.sidebar.title") if hasattr(self, 'translation_manager') else "导航"
-        logger.debug(f"创建侧边栏停靠窗口，标题: {sidebar_title}")
+
         
         self.sidebar_dock = QDockWidget("", self)  # 标题留空，使用自定义标题栏
         self.sidebar_dock.setObjectName("sidebar_dock")
@@ -55,35 +55,34 @@ class SidebarMixin:
         self.sidebar_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         
         # 直接将导航树添加到停靠窗口，不使用分割器
-        logger.debug("直接添加导航树到停靠窗口")
+
         self.sidebar_dock.setWidget(self.nav_tree)
         
         # 将停靠窗口添加到左侧区域
-        logger.debug("将停靠窗口添加到左侧区域")
+
         self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar_dock)
         
         # 连接停靠窗口状态变化信号，确保位置变化时能保存状态
         self.sidebar_dock.dockLocationChanged.connect(self._on_sidebar_dock_changed)
         self.sidebar_dock.topLevelChanged.connect(self._on_sidebar_dock_changed)
         self.sidebar_dock.visibilityChanged.connect(self._on_sidebar_dock_changed)
-        logger.debug("已连接停靠窗口状态变化信号")
+
         
         # 安装事件过滤器来监听停靠窗口的调整大小事件
         self.sidebar_dock.installEventFilter(self)
-        logger.debug("已为侧边栏停靠窗口安装事件过滤器")
+
         
         # 记录停靠窗口的最终状态
-        logger.debug(f"侧边栏停靠窗口尺寸: {self.sidebar_dock.size()}")
-        logger.debug(f"侧边栏停靠窗口几何形状: {self.sidebar_dock.geometry()}")
+
         
         # 保存初始几何形状用于恢复
         self._last_sidebar_geometry = self.sidebar_dock.geometry()
-        logger.debug(f"已保存侧边栏初始几何形状: {self._last_sidebar_geometry}")
+
         
         # 设置自定义多行标题栏
         self._set_sidebar_title(sidebar_title)
         
-        logger.debug("=== 侧边栏创建完成 ===")
+
     
 
     
@@ -97,7 +96,7 @@ class SidebarMixin:
         Args:
             *args: 信号参数（不同信号参数不同）
         """
-        logger.debug(f"侧边栏停靠窗口状态变化: {args}")
+
         
         # 使用延迟保存机制，避免状态变化过程中频繁保存
         if not hasattr(self, '_dock_save_timer'):
@@ -127,12 +126,12 @@ class SidebarMixin:
     
     def _update_sidebar_translations(self):
         """更新侧边栏的翻译文本"""
-        logger.debug("=== 更新侧边栏翻译 ===")
+
         
         if hasattr(self, 'sidebar_dock'):
             from src.utils.translation_manager import tr
             new_title = tr("ui.sidebar.title")
-            logger.debug(f"更新侧边栏标题: {new_title}")
+
             
             # 使用自定义多行标题栏
             self._set_sidebar_title(new_title)
@@ -141,17 +140,12 @@ class SidebarMixin:
             current_geometry = self.sidebar_dock.geometry()
             current_size = self.sidebar_dock.size()
             
-            logger.debug(f"保存当前状态 - 几何形状: {current_geometry}, 尺寸: {current_size}")
-            
             # 验证状态是否保持
             new_geometry = self.sidebar_dock.geometry()
             new_size = self.sidebar_dock.size()
             
-            logger.debug(f"更新后状态 - 几何形状: {new_geometry}, 尺寸: {new_size}")
-            
             # 如果尺寸发生变化，使用强制恢复机制
             if current_size != new_size:
-                logger.warning(f"侧边栏尺寸发生变化: {current_size} -> {new_size}")
                 
                 # 方法1: 直接恢复尺寸
                 self.sidebar_dock.resize(current_size)
@@ -168,7 +162,7 @@ class SidebarMixin:
         
 
         
-        logger.debug("=== 侧边栏翻译更新完成 ===")
+
     
     def eventFilter(self, obj, event):
         """事件过滤器，监听侧边栏停靠窗口的调整大小事件
@@ -183,21 +177,19 @@ class SidebarMixin:
         # 检查事件是否来自侧边栏停靠窗口
         if hasattr(self, 'sidebar_dock') and obj == self.sidebar_dock:
             from PySide6.QtCore import QEvent
-            if event.type() == QEvent.Resize:
-                logger.info(f"!!! 侧边栏停靠窗口调整大小事件 !!! 新尺寸: {event.size()}")
-                
+            if event.type() == QEvent.Resize:          
                 # 使用延迟保存机制，避免调整过程中频繁保存
                 if not hasattr(self, '_dock_resize_timer'):
                     from PySide6.QtCore import QTimer
                     self._dock_resize_timer = QTimer(self)
                     self._dock_resize_timer.setSingleShot(True)
                     self._dock_resize_timer.timeout.connect(self._save_current_state)
-                    logger.debug("创建停靠窗口调整大小保存定时器")
+        
                 
                 # 重新开始定时器
                 self._dock_resize_timer.stop()
                 self._dock_resize_timer.start(500)  # 500毫秒后保存
-                logger.debug("停靠窗口调整大小保存定时器已启动，500ms后保存状态")
+
         
         # 继续正常事件处理
         return super().eventFilter(obj, event)
@@ -247,7 +239,7 @@ class SidebarMixin:
             checked: 是否显示
         """
         if hasattr(self, 'sidebar_dock'):
-            logger.debug(f"用户切换侧边栏可见性: {checked}")
+    
             self.sidebar_dock.setVisible(checked)
             
             # 保存当前状态

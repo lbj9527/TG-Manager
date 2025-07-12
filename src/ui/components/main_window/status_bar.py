@@ -53,8 +53,6 @@ class StatusBarMixin:
         # 立即更新一次状态
         self._update_resource_usage()
         self._update_translations()
-        
-        logger.debug("状态栏创建完成")
     
     def _toggle_statusbar(self, checked):
         """切换状态栏的可见性
@@ -130,7 +128,6 @@ class StatusBarMixin:
                 self.client_status_label.setStyleSheet("padding: 0 8px; font-weight: bold; color: #F44336;")  # 红色加粗
             self.client_status_label.setText(text)
             self.client_status_label.repaint()
-            logger.debug(f"状态栏客户端状态已更新: {text}")
         except Exception as e:
             logger.error(f"更新客户端状态标签时出错: {e}")
             try:

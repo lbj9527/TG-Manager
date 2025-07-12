@@ -78,7 +78,7 @@ class SystemTrayMixin:
         if event.type() == QEvent.WindowStateChange:
             # 检查窗口是否被最小化
             if self.windowState() & Qt.WindowMinimized:
-                logger.debug("窗口被最小化")
+        
                 
                 # 检查是否启用了最小化到托盘功能
                 minimize_to_tray = False

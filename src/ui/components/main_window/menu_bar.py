@@ -26,8 +26,6 @@ class MenuBarMixin:
         self._create_tools_menu()
         self._create_view_menu()
         self._create_help_menu()
-        
-        logger.debug("主菜单栏创建完成")
     
     def _update_menu_bar_translations(self):
         """更新菜单栏翻译"""

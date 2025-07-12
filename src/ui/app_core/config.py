@@ -255,13 +255,13 @@ class ConfigManager(QObject):
         try:
             # 如果接收到更新后的配置，先更新内存中的配置
             if isinstance(updated_config, dict):
-                logger.debug(f"接收到更新后的配置数据，准备保存")
+        
                 
                 # 备份当前主题设置（如果有的话）
                 current_theme = None
                 if 'UI' in self.config and 'theme' in self.config['UI']:
                     current_theme = self.config['UI'].get('theme')
-                    logger.debug(f"备份当前主题设置: {current_theme}")
+    
                 
                 # 更新内存中的配置
                 for section, section_data in updated_config.items():
@@ -275,7 +275,7 @@ class ConfigManager(QObject):
                     self.config['UI']['theme'] = current_theme
                 
                 # 使用UI配置管理器更新和保存
-                logger.debug("通过UIConfigManager更新配置")
+
                 try:
                     self.ui_config_manager.update_from_dict(self.config)
                     save_success = self.ui_config_manager.save_config()

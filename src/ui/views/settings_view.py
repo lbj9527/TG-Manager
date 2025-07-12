@@ -91,7 +91,7 @@ class SettingsView(QWidget):
         
         # 如果父窗口有config_saved方法，连接信号
         if parent and hasattr(parent, 'config_saved'):
-            logger.debug("将设置视图的config_saved信号连接到父窗口")
+    
             self.settings_saved.connect(parent.config_saved)
         
         # 检查父窗口是否有app属性，并且app有client_manager，如果有就更新登录按钮状态
@@ -659,7 +659,7 @@ class SettingsView(QWidget):
             self.original_theme = self.temp_theme
             
             # 发送配置保存信号
-            logger.debug("向主窗口发送配置保存信号，更新设置")
+    
             self.settings_saved.emit(updated_config)
             
             # 重置设置变更状态
@@ -791,7 +791,7 @@ class SettingsView(QWidget):
             for key in layout_config_keys:
                 if key in existing_ui:
                     settings["UI"][key] = existing_ui[key]
-                    logger.debug(f"保留现有窗口布局配置项: {key}")
+            
         
         # 合并现有配置
         merged_settings = self.config.copy() if self.config else {}

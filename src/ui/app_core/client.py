@@ -68,7 +68,7 @@ class ClientHandler:
             # 启动网络连接检查任务
             if self.app and hasattr(self.app, 'task_manager'):
                 self.app.task_manager.add_task("start_network_check", self._start_network_check())
-                logger.debug("已安排启动网络连接检查")
+    
         else:
             logger.info("客户端已断开连接")
             # 更新主窗口状态栏为断开状态
@@ -91,7 +91,7 @@ class ClientHandler:
         """
         # 检查是否已存在网络检查任务
         if hasattr(self.app, 'task_manager') and self.app.task_manager.is_task_running("network_connection_check"):
-            logger.debug("网络连接检查任务已在运行，无需重复启动")
+
             return
             
         # 等待短暂延迟，确保登录过程完全结束
@@ -110,7 +110,7 @@ class ClientHandler:
             try:
                 # 已经关闭应用则停止检查
                 if not hasattr(self.app, 'client_manager') or not self.app.client_manager:
-                    logger.debug("客户端管理器不存在，停止网络连接检查")
+        
                     break
                 
                 # 执行连接检查
@@ -359,40 +359,4 @@ class ClientHandler:
             import traceback
             logger.error(traceback.format_exc())
 
-    def on_time_sync_error(self, error_message):
-        """处理时间同步错误
-        
-        Args:
-            error_message: 错误消息
-        """
-        logger.error(f"收到时间同步错误信号: {error_message}")
-        
-        # 在主线程中显示错误对话框
-        def show_time_sync_dialog():
-            from PySide6.QtWidgets import QMessageBox
-            from PySide6.QtCore import Qt
-            
-            # 创建错误对话框
-            msg_box = QMessageBox()
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setWindowTitle("系统时间同步错误")
-            msg_box.setText("检测到系统时间与服务器时间不同步")
-            msg_box.setDetailedText(error_message)
-            msg_box.setStandardButtons(QMessageBox.Ok)
-            
-            # 设置对话框为模态
-            msg_box.setModal(True)
-            
-            # 显示对话框并等待用户点击
-            result = msg_box.exec()
-            
-            # 用户点击确定后关闭程序
-            if result == QMessageBox.Ok:
-                logger.info("用户确认时间同步错误对话框，程序即将关闭")
-                # 关闭应用程序
-                if self.app and hasattr(self.app, 'app'):
-                    self.app.app.quit()
-        
-        # 使用QTimer在主线程中延迟执行
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(100, show_time_sync_dialog) 
+ 

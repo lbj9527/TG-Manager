@@ -79,7 +79,7 @@ class MainWindowBase(QMainWindow):
                     # 处理ui_config是配置对象的情况
                     confirm_exit = ui_config.confirm_exit
             
-            logger.debug(f"窗口关闭事件，confirm_exit设置: {confirm_exit}")
+    
             
             # 如果启用了退出确认，显示确认对话框
             if confirm_exit:
@@ -205,7 +205,7 @@ class MainWindowBase(QMainWindow):
             message: 显示的消息文本
             timeout: 显示时间(毫秒)，默认3秒
         """
-        logger.debug(f"状态栏消息: {message}")
+
         self.statusBar().showMessage(message, timeout)
     
     def set_initialization_state(self, is_initializing=True):

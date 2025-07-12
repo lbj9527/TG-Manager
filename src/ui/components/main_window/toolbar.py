@@ -57,8 +57,6 @@ class ToolBarMixin:
         
         # 连接信号
         self._connect_toolbar_signals()
-        
-        logger.debug("主工具栏创建完成")
     
     def _connect_toolbar_signals(self):
         """连接工具栏相关信号"""
@@ -76,7 +74,6 @@ class ToolBarMixin:
             self._toolbar_state_timer.stop()
         
         # 重新启动定时器，延迟500ms后保存状态
-        logger.debug("工具栏状态已改变，计划500ms后保存")
         self._toolbar_state_timer.start()
     
     def _toggle_toolbar(self, checked):
