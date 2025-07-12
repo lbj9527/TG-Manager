@@ -382,11 +382,8 @@ class TGManagerApp(QObject):
             self.task_manager.add_task("global_exception_handler", 
                                       self.async_services_initializer.global_exception_handler())
             
-            # 如果是首次登录，在初始化完成后自动打开设置界面
-            if self.is_first_login:
-                # 使用计时器延迟执行，确保主窗口已完全初始化
-                logger.info("检测到首次登录，将自动打开设置界面引导用户登录")
-                QTimer.singleShot(1000, self.first_login_handler.open_settings_for_first_login)
+            # 注意：首次登录的处理现在在异步服务初始化器中完成
+            # 如果客户端启动失败，会自动打开设置界面并显示登录对话框
             
             # 不需要在这里执行Qt事件循环，qasync会处理
             # 只需要保持协程运行

@@ -466,6 +466,9 @@ def get_proxy_settings_from_config(config: Dict[str, Any]) -> Optional[Dict[str,
                         proxy_settings['proxy']['password'] = proxy_password
                 
                 return proxy_settings
+        else:
+            # 代理未启用，返回空字典
+            return proxy_settings
     
     # 检查旧版配置结构中的代理设置（PROXY部分）
     proxy_config = config.get('PROXY', {})

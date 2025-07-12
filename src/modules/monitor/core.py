@@ -162,6 +162,9 @@ class Monitor:
         # 解析所有源频道及其目标频道
         channel_pairs = {}
         
+        # 收集验证错误
+        validation_errors = []
+        
         logger.debug(f"从配置文件读取到 {len(self.monitor_config.get('monitor_channel_pairs', []))} 个频道对:")
         for pair in self.monitor_config.get('monitor_channel_pairs', []):
             source_channel = pair.get('source_channel', '')
@@ -171,7 +174,7 @@ class Monitor:
                 logger.warning(f"跳过无效的频道对配置: source={source_channel}, targets={target_channels}")
                 continue
             
-            # 解析源频道ID
+            # 验证源频道
             try:
                 source_id = await self.channel_resolver.get_channel_id(source_channel)
                 # 预先获取并缓存源频道信息
@@ -187,16 +190,22 @@ class Monitor:
                         self.channel_info_cache.set_channel_info(source_id, source_info_str, source_info_tuple[0])
                         self.performance_monitor.record_cache_miss()
                         source_title = source_info_tuple[0]
-                    except Exception:
-                        source_info_str = f"频道 (ID: {source_id})"
-                        source_title = f"频道{source_id}"
+                    except Exception as e:
+                        # 源频道验证失败
+                        error_msg = f"源频道 '{source_channel}' 无效或无法访问: {str(e)}"
+                        logger.error(error_msg)
+                        validation_errors.append((source_channel, e))
+                        continue
             except Exception as e:
-                logger.warning(f"无法解析源频道 {source_channel}，错误: {e}")
-                self.performance_monitor.record_error('api')
+                # 源频道解析失败
+                error_msg = f"无法解析源频道 '{source_channel}': {str(e)}"
+                logger.error(error_msg)
+                validation_errors.append((source_channel, e))
                 continue
             
-            # 解析目标频道ID
+            # 验证目标频道
             resolved_targets = []
+            target_validation_errors = []
             for target_channel in target_channels:
                 try:
                     target_id = await self.channel_resolver.get_channel_id(target_channel)
@@ -207,8 +216,14 @@ class Monitor:
                     resolved_targets.append((target_channel, target_id, target_info_str))
                     logger.debug(f"已缓存目标频道信息: {target_info_str}")
                 except Exception as e:
-                    logger.warning(f"无法解析目标频道 {target_channel}，错误: {e}")
+                    # 目标频道验证失败
+                    error_msg = f"目标频道 '{target_channel}' 无效或无法访问: {str(e)}"
+                    logger.error(error_msg)
+                    target_validation_errors.append((target_channel, e))
                     self.performance_monitor.record_error('api')
+            
+            # 如果有目标频道验证错误，添加到总错误列表
+            validation_errors.extend(target_validation_errors)
             
             if not resolved_targets:
                 logger.warning(f"源频道 {source_channel} 没有有效的目标频道，跳过")
@@ -269,9 +284,25 @@ class Monitor:
             logger.debug(f"    文本替换规则: {len(text_replacements)} 条")
             logger.debug(f"    移除媒体说明: {remove_captions}")
         
+        # 如果有验证错误，抛出异常让UI层处理
+        if validation_errors:
+            error_msg = f"频道验证失败，发现 {len(validation_errors)} 个错误"
+            logger.error(error_msg)
+            # 创建一个包含所有验证错误的异常
+            from src.utils.error_handler import get_error_handler
+            error_handler = get_error_handler()
+            
+            # 构建详细的错误信息
+            detailed_errors = []
+            for channel_name, error in validation_errors:
+                error_type = error_handler.classify_error(error)
+                detailed_errors.append(f"{channel_name}: {error_type} - {str(error)}")
+            
+            raise ValueError(f"{error_msg}\n详细错误:\n" + "\n".join(detailed_errors))
+        
         if not channel_pairs:
             logger.warning("没有有效的频道对配置，无法启动监听")
-            return
+            raise ValueError("没有有效的频道对配置，请检查监听配置")
         
         # 设置处理中标志
         self.is_processing = True

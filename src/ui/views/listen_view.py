@@ -18,6 +18,7 @@ from datetime import datetime
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import UIMonitorConfig, UIMonitorChannelPair, MediaType
 from src.utils.translation_manager import get_translation_manager, tr
+from src.utils.error_handler import get_error_handler
 
 # 添加性能监控视图导入
 from src.ui.views.performance_monitor_view import PerformanceMonitorView
@@ -1007,17 +1008,26 @@ class ListenView(QWidget):
     async def _async_start_monitoring(self):
         """异步启动监听"""
         try:
-            # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
-            # self._add_status_message(tr("ui.listen.status.preparing"))
-            await self.monitor.start_monitoring()
-            # 【修复】移除重复的状态消息，由EventEmitterMonitor统一处理
-            # self._add_status_message(tr("ui.listen.messages.listening_started"))
+            if self.monitor:
+                await self.monitor.start_monitoring()
+                logger.info("监听启动成功")
+            else:
+                logger.error("监听器未初始化")
+                # 使用错误处理器显示错误
+                error_handler = get_error_handler()
+                error_handler.show_error_dialog(self, Exception("监听器未初始化"), "监听", "请检查客户端连接状态")
+        except ValueError as e:
+            # 频道验证错误
+            logger.error(f"频道验证失败: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "监听", "请检查频道配置是否正确")
         except Exception as e:
-            logger.error(f"异步启动监听失败: {e}")
-            self._add_status_message(tr("ui.listen.messages.monitor_error", error=str(e)))
-            # 恢复按钮状态
-            self.start_listen_button.setEnabled(True)
-            self.stop_listen_button.setEnabled(False)
+            # 其他错误
+            logger.error(f"启动监听时出错: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "监听", "启动监听时发生错误")
     
     async def _async_stop_monitoring(self):
         """异步停止监听"""
@@ -2077,8 +2087,9 @@ class ListenView(QWidget):
         self.start_listen_button.setEnabled(True)
         self.stop_listen_button.setEnabled(False)
         
-        # 显示错误对话框
-        self._show_error_dialog(tr("ui.listen.messages.monitor_error_title"), error_msg)
+        # 使用新的错误处理器显示友好的错误对话框
+        error_handler = get_error_handler()
+        error_handler.show_error_dialog(self, error, "监听", message)
         
         logger.error(f"监听错误: {error}")
         if message:

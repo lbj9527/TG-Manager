@@ -18,6 +18,7 @@ from pathlib import Path
 import os
 from src.utils.logger import get_logger
 from src.utils.translation_manager import get_translation_manager, tr
+from src.utils.error_handler import get_error_handler
 import asyncio
 import re
 
@@ -498,8 +499,11 @@ class UploadView(QWidget):
         
         # 检查是否设置了uploader实例
         if not hasattr(self, 'uploader') or self.uploader is None:
-            QMessageBox.warning(self, tr("ui.upload.messages.warning"), 
-                              tr("ui.upload.messages.uploader_not_initialized"))
+            error_msg = tr("ui.upload.messages.uploader_not_initialized")
+            logger.error("尝试开始上传，但上传器未初始化")
+            # 使用错误处理器显示错误
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, Exception(error_msg), "上传", "请检查客户端连接状态")
             return
         
         # 更新UI状态
@@ -977,6 +981,10 @@ class UploadView(QWidget):
         # self.start_button.setEnabled(True)
         # self.stop_button.setEnabled(False)
         
+        # 使用新的错误处理器显示友好的错误对话框
+        error_handler = get_error_handler()
+        error_handler.show_error_dialog(self, error, "上传")
+        
         logger.error(error_message)
 
     def _handle_file_already_uploaded(self, file_data):
@@ -1027,10 +1035,27 @@ class UploadView(QWidget):
             # 通过Qt的信号/槽机制安全地在主线程更新UI
             QMetaObject.invokeMethod(self, "all_uploads_completed", Qt.QueuedConnection)
             
+        except ValueError as e:
+            # 频道验证错误
+            logger.error(f"频道验证失败: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "上传", "请检查频道配置是否正确")
+            # 恢复按钮状态
+            QMetaObject.invokeMethod(
+                self, 
+                "_update_error_ui", 
+                Qt.QueuedConnection,
+                Q_ARG(str, str(e))
+            )
         except Exception as e:
-            # 捕获并处理可能的异常
+            # 其他错误
             error_message = tr("ui.upload.messages.upload_error_detail", error=str(e))
             logger.error(error_message)
+            
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "上传", "启动上传时发生错误")
             
             # 使用Qt信号在主线程中更新UI
             # 避免在异步任务中直接操作UI

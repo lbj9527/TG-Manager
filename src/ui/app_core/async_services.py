@@ -24,12 +24,13 @@ class AsyncServicesInitializer:
         """初始化异步服务
         
         Args:
-            first_login_handler: 首次登录处理器实例，可选
+            first_login_handler: 首次登录处理器实例
             
         Returns:
-            bool: 是否成功初始化
+            bool: 初始化是否成功
         """
         logger.info("正在初始化异步服务...")
+        
         try:
             if self.app is None:
                 logger.error("应用程序实例未设置，无法初始化异步服务")
@@ -88,24 +89,20 @@ class AsyncServicesInitializer:
                 
                 # 4-8. 不初始化其他核心组件，等待用户登录后再初始化
                 logger.info("首次登录模式，核心组件将在用户登录后初始化")
-            else:
-                # 非首次登录，正常启动客户端和初始化所有组件
-                logger.info("正在启动Telegram客户端...")
-                # 用于追踪组件初始化状态
-                initialized_components = []
-                failed_components = []
                 
+                # 自动打开设置界面并显示首次登录对话框
+                if hasattr(self.app, 'main_window'):
+                    # 延迟打开设置界面，确保主窗口已完全初始化
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(1000, self._open_settings_for_first_login)
+            else:
+                # 非首次登录，尝试启动客户端
+                logger.info("检测到会话文件存在，尝试使用官方推荐方式启动Telegram客户端...")
+                
+                # 尝试启动客户端
                 try:
-                    # 启动客户端
-                    logger.info("正在启动客户端...")
-                    try:
-                        self.app.client = await self.app.client_manager.start_client()
-                        logger.info("客户端启动成功")
-                        initialized_components.append('client')
-                    except Exception as client_error:
-                        logger.error(f"启动客户端失败: {client_error}")
-                        failed_components.append('client')
-                        raise  # 如果客户端启动失败，重新抛出异常以中止其他初始化
+                    self.app.client = await self.app.client_manager.start_client()
+                    logger.info("客户端启动成功")
                     
                     # 标记客户端为活动状态
                     self.app.client_manager.connection_active = True
@@ -128,11 +125,56 @@ class AsyncServicesInitializer:
                             settings_view = self.app.main_window.opened_views['settings_view']
                             if hasattr(settings_view, 'update_login_button'):
                                 settings_view.update_login_button(True, user_info)
-            
-                
-                except Exception as e:
-                    logger.error(f"启动Telegram客户端时出错: {e}")
-                    # 显示错误但继续运行，允许用户稍后通过登录按钮登录
+                    
+                    # 客户端启动成功，继续初始化其他组件
+                    await self._initialize_core_components()
+                    
+                except Exception as client_error:
+                    logger.error(f"启动客户端失败: {client_error}")
+                    
+                    # 客户端启动失败，删除损坏的会话文件
+                    session_name = self.app.client_manager.session_name
+                    session_path = f"sessions/{session_name}.session"
+                    
+                    try:
+                        # 先尝试停止客户端，释放文件锁
+                        if hasattr(self.app.client_manager, 'client') and self.app.client_manager.client:
+                            try:
+                                await self.app.client_manager.stop_client()
+                                logger.info("已停止客户端，释放文件锁")
+                            except Exception as stop_error:
+                                logger.warning(f"停止客户端时出错: {stop_error}")
+                        
+                        # 等待一下，确保文件锁被释放
+                        await asyncio.sleep(1)
+                        
+                        if os.path.exists(session_path):
+                            os.remove(session_path)
+                            logger.info(f"已删除损坏的会话文件: {session_path}")
+                            
+                            # 删除可能的-wal和-shm文件
+                            for ext in ['-wal', '-shm']:
+                                wal_path = f"{session_path}{ext}"
+                                if os.path.exists(wal_path):
+                                    os.remove(wal_path)
+                                    logger.info(f"已删除会话相关文件: {wal_path}")
+                    except Exception as delete_error:
+                        logger.error(f"删除会话文件时出错: {delete_error}")
+                    
+                    # 客户端启动失败，设置为首次登录模式
+                    self.app.is_first_login = True
+                    logger.info("客户端启动失败，切换到首次登录模式")
+                    
+                    # 创建基础组件
+                    from src.utils.channel_resolver import ChannelResolver
+                    self.app.channel_resolver = ChannelResolver(None)
+                    logger.info("已创建频道解析器(无客户端)")
+                    
+                    from src.utils.database_manager import DatabaseManager
+                    self.app.history_manager = DatabaseManager()
+                    logger.info("已创建历史管理器")
+                    
+                    # 更新主窗口状态
                     if hasattr(self.app, 'main_window'):
                         self.app.main_window._update_client_status(False)
                         # 更新设置界面中的登录按钮状态
@@ -140,160 +182,301 @@ class AsyncServicesInitializer:
                             settings_view = self.app.main_window.opened_views['settings_view']
                             if hasattr(settings_view, 'update_login_button'):
                                 settings_view.update_login_button(False)
-                    return False  # 如果客户端启动失败，提前返回
-                
-                # 2. 创建channel_resolver
-                logger.info("正在创建频道解析器...")
-                try:
-                    from src.utils.channel_resolver import ChannelResolver
-                    self.app.channel_resolver = ChannelResolver(self.app.client)
-                    logger.info("已创建频道解析器")
-                    initialized_components.append('channel_resolver')
-                except Exception as e:
-                    logger.error(f"创建频道解析器时出错: {e}")
-                    failed_components.append('channel_resolver')
-                
-                # 3. 初始化history_manager
-                logger.info("正在创建历史管理器...")
-                try:
-                    from src.utils.database_manager import DatabaseManager
-                    self.app.history_manager = DatabaseManager()
-                    logger.info("已创建历史管理器")
-                    initialized_components.append('history_manager')
-                except Exception as e:
-                    logger.error(f"创建历史管理器时出错: {e}")
-                    failed_components.append('history_manager')
-                
-                # 4. 初始化下载模块
-                logger.info("正在初始化下载模块...")
-                try:
-                    from src.modules.downloader import Downloader
-                    original_downloader = Downloader(self.app.client, self.app.ui_config_manager, 
-                                                    self.app.channel_resolver, self.app.history_manager)
                     
-                    # 使用事件发射器包装下载器
-                    from src.modules.event_emitter_downloader import EventEmitterDownloader
-                    self.app.downloader = EventEmitterDownloader(original_downloader)
-                    logger.info("已初始化下载模块并添加信号支持")
-                    initialized_components.append('downloader')
-                except Exception as e:
-                    logger.error(f"初始化下载模块时出错: {e}")
-                    failed_components.append('downloader')
-                
-                # 5. 初始化串行下载模块
-                logger.info("正在初始化串行下载模块...")
-                try:
-                    from src.modules.downloader_serial import DownloaderSerial
-                    original_downloader_serial = DownloaderSerial(self.app.client, self.app.ui_config_manager, 
-                                                                self.app.channel_resolver, self.app.history_manager, self.app)
-                    
-                    # 使用事件发射器包装串行下载器
-                    from src.modules.event_emitter_downloader_serial import EventEmitterDownloaderSerial
-                    self.app.downloader_serial = EventEmitterDownloaderSerial(original_downloader_serial)
-                    logger.info("已初始化串行下载模块并添加信号支持")
-                    initialized_components.append('downloader_serial')
-                except Exception as e:
-                    logger.error(f"初始化串行下载模块时出错: {e}")
-                    failed_components.append('downloader_serial')
-                
-                # 6. 初始化上传模块
-                logger.info("正在初始化上传模块...")
-                try:
-                    from src.modules.uploader import Uploader
-                    original_uploader = Uploader(self.app.client, self.app.ui_config_manager, 
-                                                self.app.channel_resolver, self.app.history_manager, self.app)
-                    
-                    # 使用事件发射器包装上传器
-                    from src.modules.event_emitter_uploader import EventEmitterUploader
-                    self.app.uploader = EventEmitterUploader(original_uploader)
-                    logger.info("已初始化上传模块并添加信号支持")
-                    initialized_components.append('uploader')
-                except Exception as e:
-                    logger.error(f"初始化上传模块时出错: {e}")
-                    failed_components.append('uploader')
-                
-                # 7. 初始化转发模块
-                logger.info("正在初始化转发模块...")
-                try:
-                    # 检查依赖组件
-                    logger.debug(f"检查转发器依赖组件:")
-                    logger.debug(f"  - client: {hasattr(self.app, 'client')}")
-                    logger.debug(f"  - ui_config_manager: {hasattr(self.app, 'ui_config_manager')}")
-                    logger.debug(f"  - channel_resolver: {hasattr(self.app, 'channel_resolver')}")
-                    logger.debug(f"  - history_manager: {hasattr(self.app, 'history_manager')}")
-                    logger.debug(f"  - downloader: {hasattr(self.app, 'downloader')}")
-                    logger.debug(f"  - uploader: {hasattr(self.app, 'uploader')}")
-                    
-                    # 导入转发器类
-                    logger.debug("导入Forwarder类...")
-                    from src.modules.forward.forwarder import Forwarder
-                    
-                    # 创建原始转发器实例
-                    logger.debug("创建原始转发器实例...")
-                    original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
-                                                  self.app.channel_resolver, self.app.history_manager, 
-                                                  self.app.downloader, self.app.uploader, self.app)
-                    logger.debug("原始转发器实例创建成功")
-                    
-                    # 导入事件发射器包装类
-                    logger.debug("导入EventEmitterForwarder类...")
-                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
-                    
-                    # 使用事件发射器包装转发器
-                    logger.debug("创建事件发射器包装转发器...")
-                    self.app.forwarder = EventEmitterForwarder(original_forwarder)
-                    logger.debug("事件发射器包装转发器创建成功")
-                    
-                    logger.info("已初始化转发模块并添加信号支持")
-                    initialized_components.append('forwarder')
-                except Exception as e:
-                    logger.error(f"初始化转发模块时出错: {e}")
-                    logger.error(f"错误类型: {type(e).__name__}")
-                    import traceback
-                    logger.error(f"完整错误堆栈:\n{traceback.format_exc()}")
-                    failed_components.append('forwarder')
-                
-                # 8. 初始化监听模块
-                logger.info("正在初始化监听模块...")
-                try:
-                    from src.modules.monitor.core import Monitor  # 使用新的监听器架构
-                    original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
-                                             self.app.channel_resolver, self.app)
-                    
-                    # 使用事件发射器包装监听器
-                    from src.modules.event_emitter_monitor import EventEmitterMonitor
-                    self.app.monitor = EventEmitterMonitor(original_monitor)
-                    logger.info("已初始化监听模块并添加信号支持")
-                    initialized_components.append('monitor')
-                except Exception as e:
-                    logger.error(f"初始化监听模块时出错: {e}")
-                    failed_components.append('monitor')
-                
-                # 检查必需组件是否全部初始化
-                required_components = ['client', 'channel_resolver', 'history_manager', 
-                                      'downloader', 'downloader_serial',
-                                      'uploader', 'forwarder', 'monitor']
-                
-                missing_components = [comp for comp in required_components 
-                                     if comp not in initialized_components]
-                
-                if missing_components:
-                    logger.warning(f"以下必需组件未初始化: {', '.join(missing_components)}")
-                
-                if failed_components:
-                    logger.error(f"以下组件初始化失败: {', '.join(failed_components)}")
-                    
-                # 组件初始化总结
-                logger.info(f"非首次登录组件初始化总结: 成功={len(initialized_components)}, 失败={len(failed_components)}, 缺失={len(missing_components)}")
-                logger.info(f"已初始化的组件: {', '.join(initialized_components)}")
+                    # 自动打开设置界面并弹出会话失败对话框
+                    if hasattr(self.app, 'main_window'):
+                        # 延迟打开设置界面，确保主窗口已完全初始化
+                        from PySide6.QtCore import QTimer
+                        QTimer.singleShot(1000, self._open_settings_and_show_session_failed_dialog)
+            
+            # 自动加载日志查看器视图
+            self._auto_load_log_viewer()
             
             logger.info("异步服务初始化完成")
             return True
+            
         except Exception as e:
             logger.error(f"初始化异步服务时出错: {e}")
             import traceback
-            logger.error(f"错误详情:\n{traceback.format_exc()}")
+            logger.error(traceback.format_exc())
             return False
+    
+    def _open_settings_and_show_session_failed_dialog(self):
+        """打开设置界面并显示会话失败对话框"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                logger.warning("应用程序没有主窗口实例，无法打开设置界面")
+                return
+            
+            # 打开设置界面
+            self.app.main_window._open_settings()
+            logger.info("已打开设置界面")
+            
+            # 延迟显示会话失败对话框
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, self._show_session_failed_dialog)
+            
+        except Exception as e:
+            logger.error(f"打开设置界面时出错: {e}")
+    
+    def _open_settings_and_show_login_dialog(self):
+        """打开设置界面并显示登录对话框"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                logger.warning("应用程序没有主窗口实例，无法打开设置界面")
+                return
+            
+            # 打开设置界面
+            self.app.main_window._open_settings()
+            logger.info("已打开设置界面")
+            
+            # 延迟显示登录对话框
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, self._show_login_dialog)
+            
+        except Exception as e:
+            logger.error(f"打开设置界面时出错: {e}")
+    
+    def _open_settings_for_first_login(self):
+        """为首次登录打开设置界面并显示指导信息"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                logger.warning("应用程序没有主窗口实例，无法打开设置界面")
+                return
+            
+            # 打开设置界面
+            self.app.main_window._open_settings()
+            logger.info("已打开设置界面（首次登录）")
+            
+            # 延迟显示首次登录提示对话框
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, self._show_first_login_dialog)
+            
+        except Exception as e:
+            logger.error(f"打开首次登录设置界面时出错: {e}")
+    
+    def _show_first_login_dialog(self):
+        """显示首次登录提示对话框"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                return
+            
+            from PySide6.QtWidgets import QMessageBox
+            from src.utils.translation_manager import tr
+            
+            logger.info("显示首次登录提示对话框")
+            
+            QMessageBox.information(
+                self.app.main_window,
+                tr("ui.login.first_time.title"),
+                tr("ui.login.first_time.message"),
+                QMessageBox.Ok
+            )
+        except Exception as e:
+            logger.error(f"显示首次登录对话框时出错: {e}")
+    
+    def _show_session_failed_dialog(self):
+        """显示会话失败对话框"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                return
+            
+            from PySide6.QtWidgets import QMessageBox
+            from src.utils.translation_manager import tr
+            
+            logger.info("显示会话失败对话框")
+            
+            QMessageBox.information(
+                self.app.main_window,
+                tr("ui.login.session_failed.title"),
+                tr("ui.login.session_failed.message"),
+                QMessageBox.Ok
+            )
+        except Exception as e:
+            logger.error(f"显示会话失败对话框时出错: {e}")
+    
+    def _show_login_dialog(self):
+        """显示登录对话框"""
+        try:
+            if not self.app or not hasattr(self.app, 'main_window'):
+                return
+            
+            from PySide6.QtWidgets import QMessageBox
+            from src.utils.translation_manager import tr
+            
+            logger.info("显示登录对话框")
+            
+            QMessageBox.information(
+                self.app.main_window,
+                tr("ui.login.session_failed.title"),
+                tr("ui.login.session_failed.message"),
+                QMessageBox.Ok
+            )
+        except Exception as e:
+            logger.error(f"显示登录对话框时出错: {e}")
+    
+    async def _initialize_core_components(self):
+        """初始化核心组件"""
+        logger.info("开始初始化核心组件...")
+        
+        # 用于追踪组件初始化状态
+        initialized_components = []
+        failed_components = []
+        
+        # 1. 初始化频道解析器
+        logger.info("正在初始化频道解析器...")
+        try:
+            from src.utils.channel_resolver import ChannelResolver
+            self.app.channel_resolver = ChannelResolver(self.app.client)
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(self.app.channel_resolver)
+            logger.info("已初始化频道解析器")
+            initialized_components.append('channel_resolver')
+        except Exception as e:
+            logger.error(f"初始化频道解析器时出错: {e}")
+            failed_components.append('channel_resolver')
+        
+        # 2. 初始化历史管理器
+        logger.info("正在初始化历史管理器...")
+        try:
+            from src.utils.database_manager import DatabaseManager
+            self.app.history_manager = DatabaseManager()
+            logger.info("已初始化历史管理器")
+            initialized_components.append('history_manager')
+        except Exception as e:
+            logger.error(f"初始化历史管理器时出错: {e}")
+            failed_components.append('history_manager')
+        
+        # 3. 初始化下载模块
+        logger.info("正在初始化下载模块...")
+        try:
+            from src.modules.downloader import Downloader
+            original_downloader = Downloader(self.app.client, self.app.ui_config_manager, 
+                                        self.app.channel_resolver, self.app.history_manager)
+                                        
+            # 使用事件发射器包装下载器
+            from src.modules.event_emitter_downloader import EventEmitterDownloader
+            self.app.downloader = EventEmitterDownloader(original_downloader)
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(original_downloader)
+            logger.info("已初始化下载模块并添加信号支持")
+            initialized_components.append('downloader')
+        except Exception as e:
+            logger.error(f"初始化下载模块时出错: {e}")
+            failed_components.append('downloader')
+        
+        # 4. 初始化串行下载模块
+        logger.info("正在初始化串行下载模块...")
+        try:
+            from src.modules.downloader_serial import DownloaderSerial
+            original_downloader_serial = DownloaderSerial(self.app.client, self.app.ui_config_manager, 
+                                                      self.app.channel_resolver, self.app.history_manager, self.app)
+            
+            # 使用事件发射器包装串行下载器
+            from src.modules.event_emitter_downloader_serial import EventEmitterDownloaderSerial
+            self.app.downloader_serial = EventEmitterDownloaderSerial(original_downloader_serial)
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(original_downloader_serial)
+            logger.info("已初始化串行下载模块并添加信号支持")
+            initialized_components.append('downloader_serial')
+        except Exception as e:
+            logger.error(f"初始化串行下载模块时出错: {e}")
+            failed_components.append('downloader_serial')
+        
+        # 5. 初始化上传模块
+        logger.info("正在初始化上传模块...")
+        try:
+            from src.modules.uploader import Uploader
+            original_uploader = Uploader(self.app.client, self.app.ui_config_manager, 
+                                    self.app.channel_resolver, self.app.history_manager, self.app)
+                                
+            # 使用事件发射器包装上传器
+            from src.modules.event_emitter_uploader import EventEmitterUploader
+            self.app.uploader = EventEmitterUploader(original_uploader)
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(original_uploader)
+            logger.info("已初始化上传模块并添加信号支持")
+            initialized_components.append('uploader')
+        except Exception as e:
+            logger.error(f"初始化上传模块时出错: {e}")
+            failed_components.append('uploader')
+        
+        # 6. 初始化转发模块
+        logger.info("正在初始化转发模块...")
+        try:
+            # 检查依赖组件
+            logger.debug(f"检查转发器依赖组件:")
+            logger.debug(f"  - client: {hasattr(self.app, 'client')}")
+            logger.debug(f"  - ui_config_manager: {hasattr(self.app, 'ui_config_manager')}")
+            logger.debug(f"  - channel_resolver: {hasattr(self.app, 'channel_resolver')}")
+            logger.debug(f"  - history_manager: {hasattr(self.app, 'history_manager')}")
+            logger.debug(f"  - downloader: {hasattr(self.app, 'downloader')}")
+            logger.debug(f"  - uploader: {hasattr(self.app, 'uploader')}")
+            
+            # 导入转发器类
+            logger.debug("导入Forwarder类...")
+            from src.modules.forward.forwarder import Forwarder
+            
+            # 创建原始转发器实例
+            logger.debug("创建原始转发器实例...")
+            original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
+                                          self.app.channel_resolver, self.app.history_manager, 
+                                          self.app.downloader, self.app.uploader, self.app)
+            logger.debug("原始转发器实例创建成功")
+            
+            # 导入事件发射器包装类
+            logger.debug("导入EventEmitterForwarder类...")
+            from src.modules.event_emitter_forwarder import EventEmitterForwarder
+            
+            # 使用事件发射器包装转发器
+            logger.debug("创建事件发射器包装转发器...")
+            self.app.forwarder = EventEmitterForwarder(original_forwarder)
+            logger.debug("事件发射器包装转发器创建成功")
+            
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(original_forwarder)
+            
+            logger.info("已初始化转发模块并添加信号支持")
+            initialized_components.append('forwarder')
+        except Exception as e:
+            logger.error(f"初始化转发模块时出错: {e}")
+            failed_components.append('forwarder')
+        
+        # 7. 初始化监听模块
+        logger.info("正在初始化监听模块...")
+        try:
+            from src.modules.monitor.core import Monitor  # 使用新的监听器架构
+            original_monitor = Monitor(self.app.client, self.app.ui_config_manager, 
+                                    self.app.channel_resolver, self.app)
+                                
+            # 使用事件发射器包装监听器
+            from src.modules.event_emitter_monitor import EventEmitterMonitor
+            self.app.monitor = EventEmitterMonitor(original_monitor)
+            # 注册为客户端使用者
+            self.app.client_manager.register_client_user(original_monitor)
+            logger.info("已初始化监听模块并添加信号支持")
+            initialized_components.append('monitor')
+        except Exception as e:
+            logger.error(f"初始化监听模块时出错: {e}")
+            failed_components.append('monitor')
+        
+        # 检查必需组件是否全部初始化
+        required_components = ['client', 'channel_resolver', 'history_manager', 
+                              'downloader', 'downloader_serial',
+                              'uploader', 'forwarder', 'monitor']
+        
+        missing_components = [comp for comp in required_components 
+                            if not any(comp in init_comp for init_comp in initialized_components)]
+        
+        if missing_components:
+            logger.warning(f"以下必需组件未初始化: {', '.join(missing_components)}")
+        
+        if failed_components:
+            logger.error(f"以下组件初始化失败: {', '.join(failed_components)}")
+            
+        # 组件初始化总结
+        logger.info(f"核心组件初始化总结: 成功={len(initialized_components)}, 失败={len(failed_components)}, 缺失={len(missing_components)}")
+        logger.info(f"已初始化的组件: {', '.join(initialized_components)}")
 
     def initialize_views(self):
         """初始化所有视图组件，传递功能模块实例

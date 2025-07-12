@@ -5,7 +5,7 @@
 import os
 import asyncio
 import time
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 from PySide6.QtCore import QObject, Signal
 
 from pyrogram import Client
@@ -34,10 +34,12 @@ class ClientManager(QObject):
     """
     Pyrogram客户端管理器
     负责创建、初始化和管理Telegram客户端连接
+    提供统一的客户端实例管理，确保所有模块使用同一个客户端实例
     """
     
     # 添加信号
     connection_status_changed = Signal(bool, object)  # 连接状态，用户信息
+    client_updated = Signal(object)  # 客户端更新信号
     
     def __init__(self, ui_config_manager: UIConfigManager, session_name: str = "tg_manager"):
         """
@@ -59,6 +61,9 @@ class ClientManager(QObject):
         self.recent_errors = []
         self.max_error_history = 10
         
+        # 客户端实例使用者列表，用于在客户端更新时通知所有使用者
+        self.client_users: List[Any] = []
+        
         # 从配置管理器加载API凭据
         logger.info("从配置管理器加载API凭据")
         # 获取UI配置并转换为字典
@@ -78,36 +83,100 @@ class ClientManager(QObject):
         
         # 输出API凭据信息(注意不要输出完整信息，保护安全)
         logger.info(f"从配置中读取到API ID: {self.api_id}")
-        if self.api_hash:
-            # 只显示API Hash的前4位和后4位
-            api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
-            logger.info(f"从配置中读取到API Hash: {api_hash_masked}")
-        else:
-            logger.warning("未能从配置中读取到API Hash")
-        
-        if self.phone_number:
-            # 只显示电话号码的前4位和后2位
-            masked_phone = self.phone_number[:4] + '****' + self.phone_number[-2:] if len(self.phone_number) > 6 else "***"
-            logger.info(f"从配置中读取到电话号码: {masked_phone}")
-        else:
-            logger.warning("未能从配置中读取到电话号码")
-        
-        # 输出会话名称信息
         logger.info(f"从配置中读取到会话名称: {self.session_name}")
-        
-        # 检查API凭据是否有效
-        if not self.api_id or not self.api_hash:
-            error_msg = "配置中的API凭据无效或缺失，请在设置中配置有效的API凭据"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
         
         # 获取代理设置
         self.proxy_settings = get_proxy_settings_from_config(self.config)
-        logger.debug(f"代理设置: {self.proxy_settings}")
         
-        # 初始化FloodWait处理器状态
+        # 获取代理信息用于日志
+        if self.proxy_settings and 'proxy' in self.proxy_settings and 'hostname' in self.proxy_settings['proxy']:
+            proxy_info = f"{self.proxy_settings['proxy'].get('scheme', '')}://{self.proxy_settings['proxy'].get('hostname', '')}:{self.proxy_settings['proxy'].get('port', '')}"
+            logger.info(f"从配置中读取到代理设置: {proxy_info}")
+        else:
+            logger.info("从配置中读取到代理设置: 未配置代理")
+        
+        # FloodWait处理相关
         self._flood_wait_handler_enabled = False
         self._check_flood_wait_handlers()
+        
+        logger.info("客户端管理器初始化完成")
+    
+    def register_client_user(self, user: Any) -> None:
+        """
+        注册客户端使用者
+        
+        Args:
+            user: 需要使用客户端实例的对象
+        """
+        if user not in self.client_users:
+            self.client_users.append(user)
+            logger.debug(f"注册客户端使用者: {type(user).__name__}")
+            
+            # 如果客户端已存在，立即更新使用者的客户端引用
+            if self.client:
+                self._update_user_client(user)
+    
+    def unregister_client_user(self, user: Any) -> None:
+        """
+        注销客户端使用者
+        
+        Args:
+            user: 需要注销的对象
+        """
+        if user in self.client_users:
+            self.client_users.remove(user)
+            logger.debug(f"注销客户端使用者: {type(user).__name__}")
+    
+    def _update_user_client(self, user: Any) -> None:
+        """
+        更新使用者的客户端引用
+        
+        Args:
+            user: 需要更新客户端引用的对象
+        """
+        try:
+            if hasattr(user, 'client'):
+                user.client = self.client
+                logger.debug(f"已更新 {type(user).__name__} 的客户端引用")
+            
+            # 特殊处理某些组件
+            if hasattr(user, 'channel_resolver') and hasattr(user.channel_resolver, 'client'):
+                user.channel_resolver.client = self.client
+                logger.debug(f"已更新 {type(user).__name__}.channel_resolver 的客户端引用")
+                
+        except Exception as e:
+            logger.warning(f"更新 {type(user).__name__} 的客户端引用时出错: {e}")
+    
+    def _update_all_users_client(self) -> None:
+        """
+        更新所有使用者的客户端引用
+        """
+        logger.info(f"开始更新 {len(self.client_users)} 个使用者的客户端引用")
+        
+        for user in self.client_users:
+            self._update_user_client(user)
+        
+        # 发送客户端更新信号
+        self.client_updated.emit(self.client)
+        logger.info("所有使用者的客户端引用更新完成")
+    
+    def get_client(self) -> Optional[Client]:
+        """
+        获取当前客户端实例
+        
+        Returns:
+            Optional[Client]: 客户端实例，如果未创建则返回None
+        """
+        return self.client
+    
+    def is_client_ready(self) -> bool:
+        """
+        检查客户端是否已准备就绪
+        
+        Returns:
+            bool: 客户端是否已准备就绪
+        """
+        return self.client is not None and self.is_authorized and self.connection_active
     
     def _check_flood_wait_handlers(self):
         """检查可用的FloodWait处理器"""
@@ -179,6 +248,10 @@ class ClientManager(QObject):
         """
         创建Pyrogram客户端实例
         
+        根据会话文件是否存在，使用不同的创建方式：
+        - 如果会话文件存在：使用官方推荐方式，只提供会话名称
+        - 如果会话文件不存在：提供完整的API凭据
+        
         Returns:
             Client: Pyrogram客户端实例
         """
@@ -188,12 +261,53 @@ class ClientManager(QObject):
         # 创建工作目录
         os.makedirs("sessions", exist_ok=True)
         
+        # 重新加载最新配置，确保使用最新的API凭据和会话名称
+        logger.info("重新加载最新配置以获取最新的API凭据和会话名称")
+        ui_config = self.ui_config_manager.get_ui_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        
+        # 获取通用配置
+        general_config = self.config.get('GENERAL', {})
+        
+        # 更新API凭据
+        self.api_id = general_config.get('api_id')
+        self.api_hash = general_config.get('api_hash')
+        self.phone_number = general_config.get('phone_number')
+        
+        # 更新会话名称
+        self.session_name = general_config.get('session_name', "tg_manager")
+        
+        # 输出最新的API凭据信息(注意不要输出完整信息，保护安全)
+        logger.info(f"从最新配置中读取到API ID: {self.api_id}")
+        if self.api_hash:
+            # 只显示API Hash的前4位和后4位
+            api_hash_masked = self.api_hash[:4] + '*****' + self.api_hash[-4:] if len(self.api_hash) > 8 else '****'
+            logger.info(f"从最新配置中读取到API Hash: {api_hash_masked}")
+        else:
+            logger.warning("未能从最新配置中读取到API Hash")
+        
+        if self.phone_number:
+            # 只显示电话号码的前4位和后2位
+            masked_phone = self.phone_number[:4] + '****' + self.phone_number[-2:] if len(self.phone_number) > 6 else "***"
+            logger.info(f"从最新配置中读取到电话号码: {masked_phone}")
+        else:
+            logger.warning("未能从最新配置中读取到电话号码")
+        
+        # 输出最新的会话名称信息
+        logger.info(f"从最新配置中读取到会话名称: {self.session_name}")
+        
+        # 检查API凭据是否有效
+        if not self.api_id or not self.api_hash:
+            error_msg = "配置中的API凭据无效或缺失，请在设置中配置有效的API凭据"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # 检查会话文件是否存在
+        session_path = f"sessions/{self.session_name}.session"
+        session_exists = os.path.exists(session_path)
+        
         # 获取最新的代理设置
-        if not hasattr(self, 'proxy_settings') or self.proxy_settings is None:
-            # 如果没有代理设置或需要刷新，重新加载配置
-            ui_config = self.ui_config_manager.get_ui_config()
-            self.config = convert_ui_config_to_dict(ui_config)
-            self.proxy_settings = get_proxy_settings_from_config(self.config)
+        self.proxy_settings = get_proxy_settings_from_config(self.config)
         
         # 设置代理参数
         proxy_args = {}
@@ -205,27 +319,43 @@ class ClientManager(QObject):
             else:
                 logger.debug(f"代理设置: {proxy_args}")
         
-        # 再次检查API凭据
-        if not self.api_id or not self.api_hash:
-            logger.error("API凭据缺失，无法创建客户端")
-            raise ValueError("API凭据(api_id和api_hash)是必需的，无法创建客户端")
-        
-        logger.info(f"创建Pyrogram客户端 (api_id: {self.api_id})")
+        logger.info(f"创建Pyrogram客户端 (session_name: {self.session_name}, 会话文件存在: {session_exists})")
         
         # 创建客户端
         try:
-            self.client = Client(
-                name=f"sessions/{self.session_name}",
-                api_id=self.api_id,
-                api_hash=self.api_hash,
-                phone_number=self.phone_number,
-                **proxy_args,
-                sleep_threshold=0  # 完全禁用Pyrogram内置FloodWait处理，全部交给我们的处理器
-            )
+            if session_exists:
+                # 会话文件存在，使用官方推荐方式：只提供会话名称
+                logger.info("检测到会话文件存在，使用官方推荐方式创建客户端")
+                self.client = Client(
+                    name=f"sessions/{self.session_name}",
+                    **proxy_args,
+                    sleep_threshold=0  # 完全禁用Pyrogram内置FloodWait处理，全部交给我们的处理器
+                )
+            else:
+                # 会话文件不存在，需要提供完整的API凭据
+                logger.info("会话文件不存在，使用完整API凭据创建客户端")
+                
+                # 检查API凭据
+                if not self.api_id or not self.api_hash:
+                    logger.error("API凭据缺失，无法创建客户端")
+                    raise ValueError("API凭据(api_id和api_hash)是必需的，无法创建客户端")
+                
+                self.client = Client(
+                    name=f"sessions/{self.session_name}",
+                    api_id=self.api_id,
+                    api_hash=self.api_hash,
+                    phone_number=self.phone_number,
+                    **proxy_args,
+                    sleep_threshold=0  # 完全禁用Pyrogram内置FloodWait处理，全部交给我们的处理器
+                )
+            
             logger.info("客户端创建成功")
             
             # 启用FloodWait处理
             self._enable_flood_wait_handling(self.client)
+            
+            # 更新所有使用者的客户端引用
+            self._update_all_users_client()
             
             return self.client
         except Exception as e:
@@ -402,6 +532,9 @@ class ClientManager(QObject):
                 # 发出信号
                 self.connection_status_changed.emit(False, None)
                 
+                # 更新所有使用者的客户端引用
+                self._update_all_users_client()
+                
                 return True
             except Exception as e:
                 logger.error(f"停止客户端时出错: {e}")
@@ -423,6 +556,9 @@ class ClientManager(QObject):
                         
                         # 发出信号
                         self.connection_status_changed.emit(False, None)
+                        
+                        # 更新所有使用者的客户端引用
+                        self._update_all_users_client()
                 except Exception as forced_stop_error:
                     logger.error(f"强制停止客户端时出错: {forced_stop_error}")
                 return False
@@ -554,6 +690,18 @@ class ClientManager(QObject):
             self.phone_number = phone_number
             # 更新客户端设置
             self.client.phone_number = phone_number
+        else:
+            # 如果没有提供新号码，重新加载配置以确保使用最新的电话号码
+            logger.info("重新加载配置以确保使用最新的电话号码")
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            general_config = self.config.get('GENERAL', {})
+            self.phone_number = general_config.get('phone_number')
+            
+            if self.phone_number:
+                logger.info(f"从最新配置中读取到电话号码: {self.phone_number[:4]}****{self.phone_number[-2:]}")
+            else:
+                logger.warning("未能从最新配置中读取到电话号码")
         
         try:
             # 确保客户端已经启动
@@ -601,6 +749,18 @@ class ClientManager(QObject):
                 logger.info("登录前确保客户端已连接")
                 await self.client.connect()
                 logger.info("客户端已连接，准备登录")
+            
+            # 重新加载配置以确保使用最新的电话号码
+            logger.info("登录前重新加载配置以确保使用最新的电话号码")
+            ui_config = self.ui_config_manager.get_ui_config()
+            self.config = convert_ui_config_to_dict(ui_config)
+            general_config = self.config.get('GENERAL', {})
+            self.phone_number = general_config.get('phone_number')
+            
+            if self.phone_number:
+                logger.info(f"登录时使用最新配置中的电话号码: {self.phone_number[:4]}****{self.phone_number[-2:]}")
+            else:
+                logger.warning("登录时未能从最新配置中读取到电话号码")
             
             # 检查是否有phone_code_hash
             if not hasattr(self, 'phone_code_hash') or not self.phone_code_hash:

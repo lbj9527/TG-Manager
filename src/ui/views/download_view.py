@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QCursor
 from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType
 from src.utils.translation_manager import tr
+from src.utils.error_handler import get_error_handler
 
 import os
 import time
@@ -734,8 +735,11 @@ class DownloadView(QWidget):
         
         # 检查下载器是否已设置
         if not hasattr(self, 'downloader') or self.downloader is None:
-            QMessageBox.warning(self, tr("ui.common.error"), tr("ui.download.error_downloader_not_init"))
+            error_msg = tr("ui.download.error_downloader_not_init")
             logger.error("尝试开始下载，但下载器未初始化")
+            # 使用错误处理器显示错误
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, Exception(error_msg), "下载", "请检查客户端连接状态")
             return
             
         # 检查下载目录大小是否超过限制
@@ -805,8 +809,18 @@ class DownloadView(QWidget):
             # 确保下载完成后恢复按钮状态
             # 这部分依赖下载器的信号系统
             # 在_on_all_downloads_complete方法中已经处理了按钮状态的恢复
+        except ValueError as e:
+            # 频道验证错误
+            logger.error(f"频道验证失败: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "下载", "请检查频道配置是否正确")
+            # 恢复按钮状态
+            self.start_button.setText(tr("ui.download.start_download"))
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
         except Exception as e:
-            # 处理启动下载任务时的错误
+            # 其他错误
             logger.error(f"启动下载任务失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
@@ -816,8 +830,9 @@ class DownloadView(QWidget):
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
             
-            # 显示错误消息
-            QMessageBox.critical(self, tr("ui.common.error"), tr("ui.download.error_start_failed", error=str(e)))
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "下载", "启动下载时发生错误")
     
     def _save_config(self):
         """保存当前配置"""
@@ -1161,8 +1176,9 @@ class DownloadView(QWidget):
             self.start_button.setText(tr("ui.download.start_download"))
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
-            # 显示错误对话框
-            self._show_error_dialog(tr("ui.common.error"), error_msg)
+            # 使用新的错误处理器显示友好的错误对话框
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, error, "下载", message)
             logger.error(f"下载错误: {error}")
             if message:
                 logger.debug(f"错误详情: {message}")

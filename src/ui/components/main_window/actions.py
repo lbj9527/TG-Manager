@@ -144,17 +144,36 @@ class ActionsMixin:
             api_hash_label = QLabel()
             phone_label = QLabel()
             
-            # 从配置中加载API ID、Hash和手机号码（如果存在）
-            if 'GENERAL' in self.config:
-                if 'api_id' in self.config['GENERAL']:
-                    api_id_label.setText(str(self.config['GENERAL']['api_id']))
-                if 'api_hash' in self.config['GENERAL']:
-                    # 只显示API Hash的一部分，保护隐私
-                    api_hash = self.config['GENERAL']['api_hash']
-                    masked_hash = api_hash[:6] + "..." + api_hash[-6:] if len(api_hash) > 12 else api_hash
-                    api_hash_label.setText(masked_hash)
-                if 'phone_number' in self.config['GENERAL'] and self.config['GENERAL']['phone_number']:
-                    phone_label.setText(self.config['GENERAL']['phone_number'])
+            # 从最新配置中加载API ID、Hash和手机号码（如果存在）
+            try:
+                # 从UI配置管理器获取最新配置
+                ui_config = self.app.ui_config_manager.get_ui_config()
+                from src.utils.config_utils import convert_ui_config_to_dict
+                latest_config = convert_ui_config_to_dict(ui_config)
+                
+                if 'GENERAL' in latest_config:
+                    if 'api_id' in latest_config['GENERAL']:
+                        api_id_label.setText(str(latest_config['GENERAL']['api_id']))
+                    if 'api_hash' in latest_config['GENERAL']:
+                        # 只显示API Hash的一部分，保护隐私
+                        api_hash = latest_config['GENERAL']['api_hash']
+                        masked_hash = api_hash[:6] + "..." + api_hash[-6:] if len(api_hash) > 12 else api_hash
+                        api_hash_label.setText(masked_hash)
+                    if 'phone_number' in latest_config['GENERAL'] and latest_config['GENERAL']['phone_number']:
+                        phone_label.setText(latest_config['GENERAL']['phone_number'])
+            except Exception as config_error:
+                logger.error(f"加载最新配置显示失败: {config_error}")
+                # 如果加载最新配置失败，使用当前配置
+                if 'GENERAL' in self.config:
+                    if 'api_id' in self.config['GENERAL']:
+                        api_id_label.setText(str(self.config['GENERAL']['api_id']))
+                    if 'api_hash' in self.config['GENERAL']:
+                        # 只显示API Hash的一部分，保护隐私
+                        api_hash = self.config['GENERAL']['api_hash']
+                        masked_hash = api_hash[:6] + "..." + api_hash[-6:] if len(api_hash) > 12 else api_hash
+                        api_hash_label.setText(masked_hash)
+                    if 'phone_number' in self.config['GENERAL'] and self.config['GENERAL']['phone_number']:
+                        phone_label.setText(self.config['GENERAL']['phone_number'])
             
             # 添加表单字段
             form_layout.addRow(tr("ui.login.dialog.api_id"), api_id_label)
@@ -175,22 +194,50 @@ class ActionsMixin:
             
             # 如果用户点击了"确定"
             if result == QDialog.Accepted:
-                # 检查配置中是否存在所需信息
-                if 'GENERAL' not in self.config or 'api_id' not in self.config['GENERAL'] or \
-                   'api_hash' not in self.config['GENERAL'] or 'phone_number' not in self.config['GENERAL'] or \
-                   not self.config['GENERAL']['api_id'] or not self.config['GENERAL']['api_hash'] or \
-                   not self.config['GENERAL']['phone_number']:
-                    QMessageBox.warning(
-                        self,
-                        tr("ui.login.errors.incomplete_config_title"),
-                        tr("ui.login.errors.incomplete_config_msg"),
-                        QMessageBox.Ok
-                    )
-                    # 打开设置界面
-                    self._open_settings()
-                    return
-                
-                phone = self.config['GENERAL']['phone_number']
+                # 重新加载最新配置，确保使用最新的API凭据
+                logger.info("登录前重新加载最新配置")
+                try:
+                    # 从UI配置管理器获取最新配置
+                    ui_config = self.app.ui_config_manager.get_ui_config()
+                    from src.utils.config_utils import convert_ui_config_to_dict
+                    latest_config = convert_ui_config_to_dict(ui_config)
+                    
+                    # 检查最新配置中是否存在所需信息
+                    if 'GENERAL' not in latest_config or 'api_id' not in latest_config['GENERAL'] or \
+                       'api_hash' not in latest_config['GENERAL'] or 'phone_number' not in latest_config['GENERAL'] or \
+                       not latest_config['GENERAL']['api_id'] or not latest_config['GENERAL']['api_hash'] or \
+                       not latest_config['GENERAL']['phone_number']:
+                        QMessageBox.warning(
+                            self,
+                            tr("ui.login.errors.incomplete_config_title"),
+                            tr("ui.login.errors.incomplete_config_msg"),
+                            QMessageBox.Ok
+                        )
+                        # 打开设置界面
+                        self._open_settings()
+                        return
+                    
+                    phone = latest_config['GENERAL']['phone_number']
+                    logger.info(f"使用最新配置中的电话号码: {phone[:4]}****{phone[-2:]}")
+                    
+                except Exception as config_error:
+                    logger.error(f"重新加载配置失败: {config_error}")
+                    # 如果重新加载失败，使用当前配置
+                    if 'GENERAL' not in self.config or 'api_id' not in self.config['GENERAL'] or \
+                       'api_hash' not in self.config['GENERAL'] or 'phone_number' not in self.config['GENERAL'] or \
+                       not self.config['GENERAL']['api_id'] or not self.config['GENERAL']['api_hash'] or \
+                       not self.config['GENERAL']['phone_number']:
+                        QMessageBox.warning(
+                            self,
+                            tr("ui.login.errors.incomplete_config_title"),
+                            tr("ui.login.errors.incomplete_config_msg"),
+                            QMessageBox.Ok
+                        )
+                        # 打开设置界面
+                        self._open_settings()
+                        return
+                    
+                    phone = self.config['GENERAL']['phone_number']
                 
                 # 显示登录进行中的消息
                 self.statusBar().showMessage(tr("ui.login.status.logging_in").format(phone=phone))

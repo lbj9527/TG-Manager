@@ -691,7 +691,62 @@
         "login_error_title": "登录错误",
         "login_error_msg": "登录过程中出错: {error}",
         "module_load_failed_title": "模块加载失败",
-        "module_load_failed_msg": "无法加载设置模块。\n错误: {error}"
+        "module_load_failed_msg": "无法加载设置模块。\n错误: {error}",
+        "channel_invalid": {
+          "title": "频道无效",
+          "message": "无法访问指定的频道，频道ID或用户名可能不正确。",
+          "suggestion": "请检查频道名称是否正确，确保频道存在且格式正确。"
+        },
+        "channel_private": {
+          "title": "私有频道",
+          "message": "无法访问私有频道，您可能没有加入该频道。",
+          "suggestion": "请先加入该私有频道，或联系频道管理员获取访问权限。"
+        },
+        "channel_not_joined": {
+          "title": "未加入频道",
+          "message": "您尚未加入该频道，无法访问其内容。",
+          "suggestion": "请先加入该频道，或使用公开频道的链接。"
+        },
+        "channel_not_found": {
+          "title": "频道不存在",
+          "message": "指定的频道不存在或已被删除。",
+          "suggestion": "请检查频道名称是否正确，或尝试使用其他频道。"
+        },
+        "permission_denied": {
+          "title": "权限不足",
+          "message": "您没有足够的权限执行此操作。",
+          "suggestion": "请检查您在该频道中的权限，确保有发送消息的权限。"
+        },
+        "media_error": {
+          "title": "媒体文件错误",
+          "message": "媒体文件处理失败，文件可能已损坏或无法访问。",
+          "suggestion": "请检查媒体文件是否完整，或尝试重新下载。"
+        },
+        "network_error": {
+          "title": "网络连接错误",
+          "message": "网络连接出现问题，无法与Telegram服务器通信。",
+          "suggestion": "请检查网络连接，或稍后重试。如果使用代理，请检查代理设置。"
+        },
+        "rate_limit": {
+          "title": "请求过于频繁",
+          "message": "请求过于频繁，已被Telegram限制。",
+          "suggestion": "请稍后重试，或减少操作频率。"
+        },
+        "auth_error": {
+          "title": "认证错误",
+          "message": "认证失败，请检查您的登录状态。",
+          "suggestion": "请重新登录，或检查API凭据是否正确。"
+        },
+        "system_error": {
+          "title": "系统错误",
+          "message": "系统内部出现错误。",
+          "suggestion": "请重启应用程序，或检查系统资源是否充足。"
+        },
+        "unknown_error": {
+          "title": "未知错误",
+          "message": "发生未知错误，无法确定具体原因。",
+          "suggestion": "请查看详细错误信息，或联系技术支持。"
+        }
       },
       "status": {
         "logging_in": "登录中: {phone}",
@@ -703,6 +758,10 @@
       "first_time": {
         "title": "首次使用提示",
         "message": "欢迎使用TG-Manager！\n\n检测到这是您首次使用本程序，请在API设置中填写您的Telegram API凭据并点击登录按钮完成登录。\n\n如果您还没有API ID和API Hash，请访问 https://my.telegram.org 申请。\n\n填写完成后，请点击登录按钮完成账号验证。"
+      },
+      "session_failed": {
+        "title": "会话登录失败",
+        "message": "检测到会话文件，但登录失败。\n\n已自动删除损坏的会话文件，现在将使用API凭据重新登录。\n\n可能的原因：\n• 会话已过期\n• 网络连接问题\n• API 凭据已更改\n• 账号被限制\n\n请确认您的API凭据和手机号码，然后点击登录按钮重新登录。"
       }
     },
     "dialogs": {

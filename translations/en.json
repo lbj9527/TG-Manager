@@ -729,6 +729,10 @@
       "first_time": {
         "title": "First Time Setup",
         "message": "Welcome to TG-Manager!\n\nThis appears to be your first time using this program. Please fill in your Telegram API credentials in the API settings and click the login button to complete the login.\n\nIf you don't have API ID and API Hash yet, please visit https://my.telegram.org to apply.\n\nAfter completing the configuration, please click the \"Login\" button to complete account verification."
+      },
+      "session_failed": {
+        "title": "Session Login Failed",
+        "message": "Session file detected, but login failed.\n\nThe corrupted session file has been automatically deleted. Now using API credentials to login.\n\nPossible reasons:\n• Session has expired\n• Network connection issues\n• API credentials have changed\n• Account is restricted\n\nPlease confirm your API credentials and phone number, then click the login button to login again."
       }
     },
     "option_remove_captions": "Remove Captions",

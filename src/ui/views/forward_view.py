@@ -26,6 +26,7 @@ from src.utils.logger import get_logger
 from src.utils.ui_config_models import MediaType, UIChannelPair, UIForwardConfig
 from src.utils.async_utils import run_async_task
 from src.utils.translation_manager import get_translation_manager, tr
+from src.utils.error_handler import get_error_handler
 
 logger = get_logger()
 
@@ -1403,7 +1404,9 @@ class ForwardView(QWidget):
             if not self.forwarder:
                 error_msg = tr("ui.forward.messages.forwarder_not_initialized_start")
                 logger.error(error_msg)
-                self._add_status_message(error_msg)
+                # 使用错误处理器显示错误
+                error_handler = get_error_handler()
+                error_handler.show_error_dialog(self, Exception(error_msg), "转发", "请检查客户端连接状态")
                 # 恢复按钮状态
                 self.start_forward_button.setEnabled(True)
                 self.stop_forward_button.setEnabled(False)
@@ -1422,9 +1425,21 @@ class ForwardView(QWidget):
             self._add_status_message(tr("ui.forward.messages.starting_forwarder"))
             await self.forwarder.forward_messages()
             self._add_status_message(tr("ui.forward.messages.forward_completed"))
+        except ValueError as e:
+            # 频道验证错误
+            logger.error(f"频道验证失败: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "转发", "请检查频道配置是否正确")
+            # 恢复按钮状态
+            self.start_forward_button.setEnabled(True)
+            self.stop_forward_button.setEnabled(False)
         except Exception as e:
+            # 其他错误
             logger.error(f"异步启动转发失败: {e}")
-            self._add_status_message(f"启动转发失败: {e}")
+            # 使用错误处理器显示友好的错误弹窗
+            error_handler = get_error_handler()
+            error_handler.show_error_dialog(self, e, "转发", "启动转发时发生错误")
             # 恢复按钮状态
             self.start_forward_button.setEnabled(True)
             self.stop_forward_button.setEnabled(False)
@@ -2070,8 +2085,9 @@ class ForwardView(QWidget):
         self.start_forward_button.setEnabled(True)
         self.stop_forward_button.setEnabled(False)
         
-        # 显示错误对话框
-        self._show_error_dialog("转发错误", error_msg)
+        # 使用新的错误处理器显示友好的错误对话框
+        error_handler = get_error_handler()
+        error_handler.show_error_dialog(self, error, "转发", message)
         
         logger.error(f"转发错误: {error}")
         if message:
