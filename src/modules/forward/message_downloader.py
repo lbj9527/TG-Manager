@@ -12,29 +12,19 @@ from pyrogram.errors import FloodWait
 
 from src.utils.logger import get_logger
 
-# 导入pyropatch FloodWait处理器
-try:
-    from src.utils.pyropatch_flood_handler import (
-        execute_with_pyropatch_flood_wait,
-        is_pyropatch_available
-    )
-    PYROPATCH_AVAILABLE = True
-except ImportError:
-    PYROPATCH_AVAILABLE = False
-
-# 导入原有FloodWait处理器作为备选
+# 导入原生的 FloodWait 处理器
 try:
     from src.utils.flood_wait_handler import FloodWaitHandler, execute_with_flood_wait
-    FALLBACK_HANDLER_AVAILABLE = True
+    FLOOD_WAIT_HANDLER_AVAILABLE = True
 except ImportError:
-    FALLBACK_HANDLER_AVAILABLE = False
+    FLOOD_WAIT_HANDLER_AVAILABLE = False
 
 _logger = get_logger()
 
 class MessageDownloader:
     """
     消息下载器，负责下载消息中的媒体文件
-    集成pyropatch和内置FloodWait处理器，提供智能限流处理
+    集成原生FloodWait处理器，提供智能限流处理
     """
     
     def __init__(self, client: Client):
@@ -47,13 +37,10 @@ class MessageDownloader:
         self.client = client
         
         # 选择最佳可用的FloodWait处理器
-        if PYROPATCH_AVAILABLE and is_pyropatch_available():
-            self._flood_wait_method = "pyropatch"
-            _logger.info("MessageDownloader: 使用pyropatch FloodWait处理器")
-        elif FALLBACK_HANDLER_AVAILABLE:
-            self._flood_wait_method = "fallback"
+        if FLOOD_WAIT_HANDLER_AVAILABLE:
+            self._flood_wait_method = "native"
             self.flood_wait_handler = FloodWaitHandler(max_retries=3, base_delay=1.0)
-            _logger.info("MessageDownloader: 使用内置FloodWait处理器")
+            _logger.info("MessageDownloader: 使用原生FloodWait处理器")
         else:
             self._flood_wait_method = "none"
             _logger.warning("MessageDownloader: 未找到可用的FloodWait处理器")
@@ -100,9 +87,7 @@ class MessageDownloader:
         Returns:
             函数执行结果
         """
-        if self._flood_wait_method == "pyropatch":
-            return await execute_with_pyropatch_flood_wait(func, *args, max_retries=3, **kwargs)
-        elif self._flood_wait_method == "fallback":
+        if self._flood_wait_method == "native":
             return await self.flood_wait_handler.handle_flood_wait(func, *args, **kwargs)
         else:
             # 没有FloodWait处理器，直接执行

@@ -21,24 +21,12 @@ from src.utils.ui_config_manager import UIConfigManager
 from src.utils.config_utils import convert_ui_config_to_dict, get_proxy_settings_from_config
 from src.utils.logger import get_logger
 
-# 导入pyropatch FloodWait处理器
-try:
-    from src.utils.pyropatch_flood_handler import (
-        setup_pyropatch_for_client, 
-        cleanup_pyropatch_for_client,
-        is_pyropatch_available,
-        get_pyropatch_status
-    )
-    PYROPATCH_HANDLER_AVAILABLE = True
-except ImportError as e:
-    PYROPATCH_HANDLER_AVAILABLE = False
-    
-# 导入原有的FloodWait处理器作为备选
+# 导入原生的 FloodWait 处理器
 try:
     from src.utils.flood_wait_handler import enable_global_flood_wait_handling
-    FALLBACK_HANDLER_AVAILABLE = True
+    FLOOD_WAIT_HANDLER_AVAILABLE = True
 except ImportError:
-    FALLBACK_HANDLER_AVAILABLE = False
+    FLOOD_WAIT_HANDLER_AVAILABLE = False
 
 logger = get_logger()
 
@@ -117,10 +105,8 @@ class ClientManager(QObject):
     
     def _check_flood_wait_handlers(self):
         """检查可用的FloodWait处理器"""
-        if PYROPATCH_HANDLER_AVAILABLE and is_pyropatch_available():
-            logger.info("检测到pyropatch FloodWait处理器可用，将优先使用")
-        elif FALLBACK_HANDLER_AVAILABLE:
-            logger.info("使用内置FloodWait处理器作为备选方案")
+        if FLOOD_WAIT_HANDLER_AVAILABLE:
+            logger.info("使用原生FloodWait处理器")
         else:
             logger.warning("未检测到任何FloodWait处理器，可能影响限流处理能力")
     
@@ -141,8 +127,6 @@ class ClientManager(QObject):
         # 记录到日志
         logger.debug(f"错误已记录到历史: {error}")
     
-
-    
     def _enable_flood_wait_handling(self, client: Client) -> bool:
         """
         为客户端启用FloodWait处理
@@ -155,35 +139,18 @@ class ClientManager(QObject):
         """
         success = False
         
-        # 首先尝试pyropatch处理器
-        if PYROPATCH_HANDLER_AVAILABLE:
-            try:
-                success = setup_pyropatch_for_client(client, max_retries=5, base_delay=0.5)
-                if success:
-                    logger.success("已启用pyropatch FloodWait处理器")
-                    self._flood_wait_handler_enabled = True
-                    
-                    # 输出pyropatch状态信息
-                    status = get_pyropatch_status()
-                    logger.info(f"Pyropatch状态: {status}")
-                    return True
-                else:
-                    logger.warning("pyropatch FloodWait处理器启用失败，尝试备选方案")
-            except Exception as e:
-                logger.error(f"启用pyropatch FloodWait处理器时出错: {e}")
-        
-        # 如果pyropatch不可用或失败，使用原有处理器
-        if not success and FALLBACK_HANDLER_AVAILABLE:
+        # 使用原生FloodWait处理器
+        if FLOOD_WAIT_HANDLER_AVAILABLE:
             try:
                 enable_global_flood_wait_handling(client, max_retries=5, base_delay=0.5)
-                logger.info("已启用内置FloodWait处理器")
+                logger.info("已启用原生FloodWait处理器")
                 self._flood_wait_handler_enabled = True
                 success = True
             except Exception as e:
-                logger.error(f"启用内置FloodWait处理器失败: {e}")
+                logger.error(f"启用原生FloodWait处理器失败: {e}")
         
         if not success:
-            logger.warning("未能启用任何FloodWait处理器，API调用可能受到限流影响")
+            logger.warning("未能启用FloodWait处理器，API调用可能受到限流影响")
         
         return success
     
@@ -196,12 +163,11 @@ class ClientManager(QObject):
         """
         if self._flood_wait_handler_enabled:
             try:
-                if PYROPATCH_HANDLER_AVAILABLE:
-                    cleanup_pyropatch_for_client(client)
-                    logger.info("已禁用pyropatch FloodWait处理器")
+                # 原生处理器暂时没有禁用方法，记录日志即可
+                logger.info("原生FloodWait处理器已禁用")
                 self._flood_wait_handler_enabled = False
             except Exception as e:
-                logger.error(f"禁用FloodWait处理器时出错: {e}")
+                logger.error(f"禁用FloodWait处理器失败: {e}")
 
     async def create_client(self):
         """

@@ -186,7 +186,6 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 **重要依赖说明**：
-- **pyropatch**: 专业级FloodWait处理器（推荐）
 - **pyrogram**: Telegram客户端核心库
 - **PySide6**: 现代化UI框架
 
@@ -214,8 +213,7 @@ TG-Manager/
 │   │   ├── views/        # 各种视图页面
 │   │   └── components/   # UI组件
 │   ├── utils/            # 工具模块
-│   │   ├── pyropatch_flood_handler.py    # Pyropatch FloodWait处理器
-│   │   ├── flood_wait_handler.py         # 内置FloodWait处理器
+│   │   ├── flood_wait_handler.py         # 原生FloodWait处理器
 │   │   ├── client_manager.py             # 客户端管理
 │   │   └── config_utils.py               # 配置管理
 │   └── config/           # 配置文件
@@ -226,20 +224,14 @@ TG-Manager/
 
 ## 🔧 核心模块说明
 
-### Pyropatch FloodWait处理器 (`src/utils/pyropatch_flood_handler.py`)
-- **PyropatchFloodWaitManager**: 基于pyropatch的专业级FloodWait管理器
-- **setup_pyropatch_for_client**: 为客户端启用pyropatch FloodWait处理
-- **execute_with_pyropatch_flood_wait**: 便捷的执行函数
-- **智能回退机制**: pyropatch不可用时自动使用内置处理器
-
-### 内置FloodWait处理器 (`src/utils/flood_wait_handler.py`)
+### 原生FloodWait处理器 (`src/utils/flood_wait_handler.py`)
 - **FloodWaitHandler类**：核心处理器，提供智能等待和重试机制
 - **execute_with_flood_wait**：便捷函数，适用于大多数场景
 - **handle_flood_wait装饰器**：装饰器方式，适用于函数定义
 - **GlobalFloodWaitPatcher**：全局补丁器，为所有API调用提供保护
 
 ### 转发模块 (`src/modules/forward/`)
-- **MessageDownloader**：消息下载器，集成pyropatch FloodWait处理
+- **MessageDownloader**：消息下载器，集成原生FloodWait处理
 - **MediaUploader**：媒体上传器，支持批量上传和格式转换
 - **ParallelProcessor**：并行处理器，实现真正的并行下载上传
 
@@ -325,39 +317,41 @@ TG-Manager/
 ## 🛠️ FloodWait处理使用指南
 
 ### 自动启用（推荐）
-程序启动时自动检测并启用最佳FloodWait处理器：
+程序启动时自动检测并启用原生FloodWait处理器：
 ```python
 # 无需额外配置，系统自动处理
 client = await client_manager.create_client()
-# 自动启用pyropatch或内置处理器
+# 自动启用原生FloodWait处理器
 ```
 
-### 手动选择处理器
+### 手动使用处理器
 ```python
-# 1. 优先使用pyropatch处理器
-from src.utils.pyropatch_flood_handler import setup_pyropatch_for_client
-success = setup_pyropatch_for_client(client, max_retries=5)
-
-# 2. 使用内置全局处理器
+# 1. 使用全局处理器
 from src.utils.flood_wait_handler import enable_global_flood_wait_handling  
 enable_global_flood_wait_handling(client, max_retries=5)
 
-# 3. 使用便捷函数
-from src.utils.pyropatch_flood_handler import execute_with_pyropatch_flood_wait
-result = await execute_with_pyropatch_flood_wait(
+# 2. 使用便捷函数
+from src.utils.flood_wait_handler import execute_with_flood_wait
+result = await execute_with_flood_wait(
     client.get_messages, "channel", limit=100
 )
+
+# 3. 使用装饰器
+from src.utils.flood_wait_handler import handle_flood_wait
+@handle_flood_wait(max_retries=5)
+async def my_api_call():
+    return await client.get_messages("channel", limit=100)
 ```
 
-### FloodWait处理器对比
+### FloodWait处理器特性
 
-| 特性 | Pyropatch处理器 | 内置处理器 | 方法级包装器 |
-|------|-----------------|------------|--------------|
-| 成熟度 | 社区成熟方案 | 自研方案 | 基础方案 |
-| 兼容性 | 优秀 | 良好 | 良好 |
-| 性能 | 最佳 | 良好 | 一般 |
-| 自动化程度 | 全自动 | 全自动 | 手动 |
-| 维护成本 | 最低 | 中等 | 较高 |
+| 特性 | 原生处理器 | 方法级包装器 |
+|------|------------|--------------|
+| 成熟度 | 稳定可靠 | 基础方案 |
+| 兼容性 | 良好 | 良好 |
+| 性能 | 良好 | 一般 |
+| 自动化程度 | 全自动 | 手动 |
+| 维护成本 | 中等 | 较高 |
 
 ## 📝 开发指南
 
@@ -372,7 +366,7 @@ result = await execute_with_pyropatch_flood_wait(
 pytest tests/
 
 # 运行FloodWait处理器测试
-pytest tests/test_pyropatch_flood_handler.py
+pytest tests/test_flood_wait_handler.py
 ```
 
 ### 贡献
@@ -395,7 +389,6 @@ pytest tests/test_pyropatch_flood_handler.py
 
 感谢以下开源项目的贡献：
 - [Pyrogram](https://github.com/pyrogram/pyrogram) - Telegram客户端库
-- [Pyropatch](https://github.com/rahulps1000/pyropatch) - 专业级Pyrogram monkey-patch库
 - [PySide6](https://doc.qt.io/qtforpython/) - 跨平台GUI框架
 - [loguru](https://github.com/Delgan/loguru) - 现代化日志库
 
@@ -429,9 +422,9 @@ rm sessions/tg_manager.session*
 ```
 
 #### ⚡ **v2.1.9增强保护**
-- **Pyropatch专业处理**：使用社区成熟的FloodWait处理方案
-- **智能回退机制**：多重处理器保障，确保FloodWait始终被正确处理
-- **自动检测启用**：无需手动配置，系统自动选择最佳处理器
+- **原生FloodWait处理**：使用内置的稳定可靠的FloodWait处理方案
+- **智能处理机制**：确保FloodWait始终被正确处理
+- **自动检测启用**：无需手动配置，系统自动启用处理器
 
 ---
 
