@@ -14,6 +14,7 @@
 6. **功能一致性**：保证下载、上传、转发、监听等所有本项目的原有功能不变
 7. **UI界面一致性**：UI界面保持和原项目一致
 8. **测试驱动**：每重构一部分，编写测试，保证与原功能一致
+9. **简化下载系统**：重构后舍弃并行下载功能，只保留顺序下载器，简化系统复杂度
 
 ## 目录结构
 
@@ -406,9 +407,9 @@ class EventBus:
 #### 1.1 功能特性分析
 基于对原代码的深入分析，下载模块具有以下核心特性：
 
-**双模式下载系统**
-- **并行下载器（Downloader）**：支持高并发下载，使用asyncio.Semaphore控制并发数
+**顺序下载系统**
 - **顺序下载器（DownloaderSerial）**：适合稳定网络环境，提供详细的进度跟踪
+- **舍弃并行下载**：重构后不再支持并行下载功能，简化系统架构
 
 **智能过滤系统**
 - **关键词过滤**：支持多关键词匹配，按关键词组织下载目录
@@ -421,12 +422,6 @@ class EventBus:
 - **按关键词组织**：`{channel_title}-{channel_id}/{keyword}/` 目录结构
 - **媒体组处理**：`{media_group_id}/` 或 `single_{message_id}/` 目录
 - **文件名安全化**：自动处理特殊字符，避免文件系统冲突
-
-**并发控制机制**
-- **下载并发控制**：可配置的max_concurrent_downloads（默认10）
-- **文件写入线程池**：CPU核心数×2的写入线程池（最大32）
-- **内存队列管理**：200容量的下载队列，避免内存溢出
-- **FloodWait处理**：集成原生FloodWait处理器，智能重试
 
 **进度监控系统**
 - **实时进度跟踪**：当前文件/总文件数，当前字节/总字节数
@@ -441,31 +436,6 @@ class EventBus:
 - **FloodWait处理**：智能等待，进度显示
 
 #### 1.2 核心组件设计
-
-**Downloader类（并行下载器）**
-```python
-class Downloader:
-    """并行下载器，支持高并发下载"""
-    
-    def __init__(self, client, ui_config_manager, channel_resolver, history_manager):
-        # 并发控制
-        self.max_concurrent_downloads = 10
-        self.download_semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
-        self.active_downloads = 0
-        
-        # 文件写入系统
-        self.download_queue = queue.Queue(maxsize=200)
-        self.writer_pool_size = min(32, os.cpu_count() * 2)
-        self.file_writer_thread = None
-        
-        # 进度跟踪
-        self.download_count = 0
-        self.total_downloaded_bytes = 0
-        
-        # FloodWait处理
-        self.flood_wait_lock = asyncio.Lock()
-        self.adaptive_delay = 0.5
-```
 
 **DownloaderSerial类（顺序下载器）**
 ```python
@@ -484,27 +454,12 @@ class DownloaderSerial:
         self._is_stopped = False
 ```
 
-**文件写入系统**
-```python
-def _file_writer_worker(self):
-    """文件写入线程，从队列中取出内存中的媒体数据并写入文件"""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=self.writer_pool_size) as executor:
-        futures = []
-        while self.is_running or not self.download_queue.empty():
-            # 从队列获取数据
-            file_path, data, message_id, channel_id, media_type = item
-            # 提交写入任务到线程池
-            future = executor.submit(self._write_file, file_path, data, message_id, channel_id, media_type)
-            futures.append(future)
-```
-
 #### 1.3 配置系统设计
 
 **下载配置结构**
 ```python
 DOWNLOAD = {
     "download_path": "downloads",  # 下载根目录
-    "max_concurrent_downloads": 10,  # 最大并行下载数
     "downloadSetting": [  # 下载设置数组
         {
             "source_channels": "channel_name",  # 源频道
@@ -572,7 +527,6 @@ class BaseDownloadPlugin(Plugin):
     def __init__(self, client, config):
         super().__init__(client, config)
         self.download_path = Path(config.get('download_path', 'downloads'))
-        self.max_concurrent_downloads = config.get('max_concurrent_downloads', 10)
     
     async def download_media(self, message, save_path):
         """下载媒体文件"""
@@ -585,32 +539,6 @@ class BaseDownloadPlugin(Plugin):
     async def get_media_info(self, message):
         """获取媒体信息"""
         raise NotImplementedError
-```
-
-**并行下载插件**
-```python
-class ParallelDownloadPlugin(BaseDownloadPlugin):
-    """并行下载插件"""
-    
-    def __init__(self, client, config):
-        super().__init__(client, config)
-        self.download_semaphore = asyncio.Semaphore(self.max_concurrent_downloads)
-        self.download_queue = queue.Queue(maxsize=200)
-        self.writer_pool_size = min(32, os.cpu_count() * 2)
-    
-    async def download_media_from_channels(self):
-        """从配置的源频道下载媒体文件"""
-        # 启动文件写入线程
-        self._start_file_writer()
-        
-        # 创建工作协程
-        workers = []
-        for i in range(self.max_concurrent_downloads):
-            worker = asyncio.create_task(self._download_worker(i, work_queue))
-            workers.append(worker)
-        
-        # 等待所有工作协程完成
-        await asyncio.gather(*workers)
 ```
 
 **顺序下载插件**
@@ -659,11 +587,30 @@ class SerialDownloadPlugin(BaseDownloadPlugin):
 - **媒体组识别**：自动识别和分组媒体文件
 - **标题处理**：支持使用文件夹名称或读取title.txt作为标题
 - **批量上传**：媒体组作为整体上传，保持顺序
+- **媒体组分块**：超过10个文件时自动分块上传
 
 **上传历史管理**
 - **哈希记录**：使用文件哈希值记录上传历史
 - **频道隔离**：不同频道的上传历史独立管理
 - **重复跳过**：自动跳过已上传的文件
+
+**最终消息系统**
+- **HTML消息支持**：支持发送自定义HTML格式的最终消息
+- **网页预览控制**：可配置是否启用网页预览
+- **多频道发送**：最终消息发送到所有目标频道
+- **重试机制**：最终消息发送失败时自动重试
+
+**网络错误处理**
+- **连接状态检查**：网络错误时自动检查连接状态
+- **重试机制**：上传失败时自动重试，支持指数退避
+- **错误分类**：区分不同类型的错误（网络、媒体、配置等）
+
+**事件系统集成**
+- **进度事件**：实时上传进度更新
+- **完成事件**：上传完成通知
+- **错误事件**：错误状态通知
+- **文件事件**：单个文件上传状态
+- **最终消息事件**：最终消息发送状态
 
 #### 2.2 核心组件设计
 
@@ -682,6 +629,9 @@ class Uploader:
         # 上传配置
         self.upload_config = self.config.get('UPLOAD', {})
         self.general_config = self.config.get('GENERAL', {})
+        
+        # 事件发射器
+        self._listeners = {}
 ```
 
 **多目标上传优化**
@@ -740,6 +690,64 @@ async def _upload_media_group_chunk(self, files, chat_id, caption=None):
     return True, True
 ```
 
+**最终消息发送**
+```python
+async def _send_final_message(self, valid_targets, files_uploaded=False):
+    """发送最终消息到所有目标频道"""
+    options = self.upload_config.get('options', {})
+    send_final_message = bool(options.get('send_final_message', False))
+    
+    if not send_final_message or not files_uploaded:
+        return
+    
+    # 读取HTML文件
+    html_file_path = options.get('final_message_html_file', '')
+    if not html_file_path or not os.path.exists(html_file_path):
+        return
+    
+    with open(html_file_path, 'r', encoding='utf-8') as f:
+        html_content = f.read().strip()
+    
+    # 发送到所有目标频道
+    for target, target_id, target_info in valid_targets:
+        try:
+            enable_web_page_preview = bool(options.get('enable_web_page_preview', False))
+            message = await self.client.send_message(
+                chat_id=target_id,
+                text=html_content,
+                parse_mode=enums.ParseMode.HTML,
+                disable_web_page_preview=not enable_web_page_preview
+            )
+            
+            # 发送成功事件
+            self.emit("final_message_sent", {
+                "chat_id": target_id,
+                "chat_info": target_info,
+                "message_id": message.id
+            })
+        except Exception as e:
+            # 发送失败事件
+            self.emit("final_message_error", {
+                "chat_id": target_id,
+                "chat_info": target_info,
+                "error": str(e)
+            })
+```
+
+**网络错误处理**
+```python
+async def _handle_network_error(self, error):
+    """处理网络相关错误"""
+    logger.error(f"检测到网络错误: {type(error).__name__}: {error}")
+    
+    # 通知应用程序立即检查连接状态
+    if self.app and hasattr(self.app, 'check_connection_status_now'):
+        try:
+            asyncio.create_task(self.app.check_connection_status_now())
+        except Exception as e:
+            logger.error(f"触发连接状态检查失败: {e}")
+```
+
 #### 2.3 配置系统设计
 
 **上传配置结构**
@@ -751,12 +759,53 @@ UPLOAD = {
         "use_folder_name": True,  # 使用文件夹名称作为标题
         "read_title_txt": False,  # 读取title.txt作为标题
         "send_final_message": False,  # 发送最终消息
-        "auto_thumbnail": True  # 自动生成缩略图
+        "auto_thumbnail": True,  # 自动生成缩略图
+        "enable_web_page_preview": False,  # 启用网页预览
+        "final_message_html_file": ""  # 最终消息HTML文件路径
     }
 }
 ```
 
-#### 2.4 重构后的插件化设计
+#### 2.4 事件系统集成
+
+**事件发射器包装**
+```python
+class EventEmitterUploader(BaseEventEmitter):
+    """基于Qt Signal的上传器包装类"""
+    
+    # 上传器特有的信号定义
+    progress_updated = Signal(int, int, int)  # 进度更新信号
+    upload_completed = Signal(object)  # 上传完成信号
+    media_uploaded = Signal(object)  # 媒体上传信号
+    all_uploads_completed = Signal()  # 所有上传完成信号
+    file_already_uploaded = Signal(object)  # 文件已上传信号
+    final_message_sent = Signal(object)  # 最终消息发送成功信号
+    final_message_error = Signal(object)  # 最终消息发送失败信号
+    
+    def _emit_qt_signal(self, event_type, *args, **kwargs):
+        """根据事件类型发射对应的Qt信号"""
+        if event_type == "progress":
+            progress, idx, total = args[0], args[1], args[2]
+            self.progress_updated.emit(progress, idx, total)
+        elif event_type == "complete":
+            result_data = args[1]
+            self.upload_completed.emit(result_data)
+            self.all_uploads_completed.emit()
+        elif event_type == "media_upload":
+            media_data = args[0]
+            self.media_uploaded.emit(media_data)
+        elif event_type == "file_already_uploaded":
+            file_data = args[0]
+            self.file_already_uploaded.emit(file_data)
+        elif event_type == "final_message_sent":
+            message_data = args[0]
+            self.final_message_sent.emit(message_data)
+        elif event_type == "final_message_error":
+            error_data = args[0]
+            self.final_message_error.emit(error_data)
+```
+
+#### 2.5 重构后的插件化设计
 
 **上传插件基类**
 ```python
@@ -780,12 +829,16 @@ class BaseUploadPlugin(Plugin):
     async def copy_message(self, from_chat_id, message_id, to_chat_id):
         """复制消息"""
         raise NotImplementedError
+    
+    async def send_final_message(self, valid_targets, files_uploaded=False):
+        """发送最终消息"""
+        raise NotImplementedError
 ```
 
 **智能上传插件**
 ```python
 class SmartUploadPlugin(BaseUploadPlugin):
-    """智能上传插件，支持多目标优化"""
+    """智能上传插件，支持多目标优化和最终消息"""
     
     def __init__(self, client, config):
         super().__init__(client, config)
@@ -807,7 +860,1767 @@ class SmartUploadPlugin(BaseUploadPlugin):
             else:
                 # 多个文件，作为媒体组上传
                 await self._upload_media_group(media_files, target_id, caption)
+        
+        # 发送最终消息
+        await self.send_final_message(valid_targets, files_uploaded=True)
 ```
+
+### 3. 转发模块重构
+
+#### 3.1 功能特性分析
+基于对原代码的深入分析，转发模块具有以下核心特性：
+
+**智能转发策略**
+- **直接转发优化**：源频道允许转发时，优先使用Telegram原生转发功能
+- **下载重传策略**：源频道禁止转发时，自动切换到下载-上传模式
+- **媒体组处理**：智能识别和重组媒体组，支持部分过滤后的媒体组重组
+- **纯文本消息处理**：支持纯文本消息的直接转发和复制转发
+
+**高级过滤系统**
+- **关键词过滤**：支持媒体组级别的关键词过滤，媒体组中任何消息包含关键词则整个组通过
+- **媒体类型过滤**：支持消息级别的精确过滤，可排除特定媒体类型
+- **文本替换功能**：支持批量文本替换，可修改消息标题和文本内容
+- **链接过滤**：可配置排除包含链接的消息
+- **标题移除**：支持移除媒体说明文字
+
+**消息范围控制**
+- **消息ID范围**：支持start_id和end_id范围转发
+- **历史记录检查**：自动跳过已转发的消息，避免重复转发
+- **优化获取**：预过滤已转发消息ID，减少API调用
+
+**并行处理系统**
+- **生产者-消费者模式**：并行下载和上传媒体组
+- **队列管理**：使用asyncio.Queue管理媒体组队列
+- **任务协调**：下载和上传任务独立运行，提高效率
+- **错误恢复**：单个媒体组失败不影响其他媒体组处理
+
+**事件系统集成**
+- **进度事件**：实时转发进度更新
+- **完成事件**：转发完成通知
+- **错误事件**：错误状态通知
+- **过滤事件**：消息过滤状态通知
+- **媒体组事件**：媒体组处理状态通知
+- **文本替换事件**：文本替换操作通知
+- **FloodWait事件**：限流检测和处理通知
+
+**网络错误处理**
+- **连接状态检查**：网络错误时自动检查连接状态
+- **FloodWait处理**：智能等待，进度显示
+- **重试机制**：转发失败时自动重试，支持指数退避
+- **错误分类**：区分不同类型的错误（网络、权限、媒体等）
+
+**最终消息系统**
+- **HTML消息支持**：支持发送自定义HTML格式的最终消息
+- **网页预览控制**：可配置是否启用网页预览
+- **多频道发送**：最终消息发送到所有目标频道
+- **重试机制**：最终消息发送失败时自动重试
+
+#### 3.2 核心组件设计
+
+**Forwarder类（主转发器）**
+```python
+class Forwarder:
+    """转发模块，负责将消息从源频道转发到目标频道"""
+    
+    def __init__(self, client, ui_config_manager, channel_resolver, history_manager, downloader, uploader, app=None):
+        # 消息迭代器，用于获取消息
+        self.message_iterator = MessageIterator(self.client, self.channel_resolver, self)
+        
+        # 消息过滤器，用于筛选需要转发的消息
+        self.message_filter = MessageFilter(self.config, self._emit_event)
+        
+        # 媒体组收集器，用于分组和优化消息获取
+        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter, self._emit_event)
+        
+        # 直接转发器，用于直接转发消息
+        self.direct_forwarder = DirectForwarder(client, history_manager, self.general_config, self._emit_event)
+        
+        # 并行处理器，用于并行下载和上传
+        self.parallel_processor = ParallelProcessor(client, history_manager, self.general_config, self.config, self._emit_event)
+```
+
+**DirectForwarder类（直接转发器）**
+```python
+class DirectForwarder:
+    """直接转发器，使用Telegram原生转发功能"""
+    
+    async def forward_media_group_directly(self, messages, source_channel, source_id, target_channels, hide_author, pair_config):
+        """直接转发媒体组到目标频道"""
+        # 应用过滤规则
+        filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(messages, pair_config)
+        
+        # 检查是否需要文本替换或重组
+        need_text_replacement = bool(text_replacements)
+        force_copy_mode = (need_text_replacement or 
+                         pair_config.get('remove_captions', False) or 
+                         is_regrouped_media)
+        
+        # 根据条件选择转发方式
+        if force_copy_mode:
+            # 使用copy_message方式
+            await self._forward_with_copy(filtered_messages, target_channels, hide_author, pair_config)
+        else:
+            # 使用原生转发方式
+            await self._forward_natively(filtered_messages, source_id, target_channels, hide_author)
+```
+
+**MessageFilter类（消息过滤器）**
+```python
+class MessageFilter:
+    """统一的消息过滤器，支持多种过滤功能"""
+    
+    def apply_keyword_filter(self, messages, keywords):
+        """应用关键词过滤，支持媒体组级别的过滤"""
+        # 按媒体组分组
+        media_groups = self._group_messages_by_media_group(messages)
+        
+        # 媒体组中任何一条消息包含关键词，则整个媒体组都通过过滤
+        for group_messages in media_groups:
+            group_has_keyword = False
+            for message in group_messages:
+                text_content = message.caption or message.text or ""
+                for keyword in keywords:
+                    if keyword.lower() in text_content.lower():
+                        group_has_keyword = True
+                        break
+    
+    def apply_media_type_filter(self, messages, allowed_media_types):
+        """应用媒体类型过滤，支持消息级别的精确过滤"""
+        # 对媒体组中的每条消息单独进行媒体类型检查
+        for group_messages in media_groups:
+            for message in group_messages:
+                message_media_type = self._get_message_media_type(message)
+                if message_media_type and self._is_media_type_allowed(message_media_type, allowed_media_types):
+                    group_passed.append(message)
+                else:
+                    group_filtered.append(message)
+    
+    def apply_text_replacements(self, text, text_replacements):
+        """应用文本替换规则到文本内容"""
+        result_text = text
+        has_replacement = False
+        
+        for find_text, replace_text in text_replacements.items():
+            if find_text in result_text:
+                result_text = result_text.replace(find_text, replace_text)
+                has_replacement = True
+                
+                # 发射文本替换事件
+                if self.emit:
+                    self.emit("text_replacement_applied", f"消息文本", find_text, replace_text)
+        
+        return result_text, has_replacement
+    
+    def apply_all_filters(self, messages, pair_config):
+        """应用所有过滤规则"""
+        # 应用关键词过滤
+        if pair_config.get('keywords'):
+            messages, _ = self.apply_keyword_filter(messages, pair_config['keywords'])
+        
+        # 应用媒体类型过滤
+        if pair_config.get('media_types'):
+            messages, _ = self.apply_media_type_filter(messages, pair_config['media_types'])
+        
+        # 应用链接过滤
+        if pair_config.get('exclude_links', False):
+            messages, _ = self.apply_link_filter(messages)
+        
+        # 提取媒体组文本
+        media_group_texts = self._extract_media_group_texts(messages)
+        
+        return messages, [], {
+            'media_group_texts': media_group_texts,
+            'filter_stats': {
+                'keyword_filtered': len(messages),
+                'media_type_filtered': len(messages),
+                'link_filtered': len(messages)
+            }
+        }
+```
+
+**MessageIterator类（消息迭代器）**
+```python
+class MessageIterator:
+    """消息迭代器，用于高效获取消息"""
+    
+    def __init__(self, client, channel_resolver, forwarder=None):
+        self.client = client
+        self.channel_resolver = channel_resolver
+        self.forwarder = forwarder  # 用于停止检查
+    
+    async def iter_messages_by_ids(self, chat_id, message_ids):
+        """按消息ID列表迭代获取消息"""
+        for message_id in message_ids:
+            # 检查停止信号
+            if self.forwarder and self.forwarder.should_stop:
+                break
+            
+            try:
+                message = await self._get_message_with_flood_wait(chat_id, message_id)
+                if message:
+                    yield message
+            except Exception as e:
+                logger.error(f"获取消息 {message_id} 失败: {e}")
+    
+    async def _get_message_with_flood_wait(self, chat_id, message_id):
+        """使用FloodWait处理器获取消息"""
+        async def get_message():
+            return await self.client.get_messages(chat_id, message_id)
+        
+        return await execute_with_flood_wait(get_message, max_retries=3)
+```
+
+**MediaGroupCollector类（媒体组收集器）**
+```python
+class MediaGroupCollector:
+    """媒体组收集器，用于收集媒体组消息"""
+    
+    def __init__(self, message_iterator, message_filter, emit=None):
+        self.message_iterator = message_iterator
+        self.message_filter = message_filter
+        self.emit = emit
+    
+    def _filter_unforwarded_ids(self, start_id, end_id, source_channel, target_channels, history_manager):
+        """根据转发历史预过滤未转发的消息ID"""
+        unforwarded_ids = []
+        
+        for msg_id in range(start_id, end_id + 1):
+            is_fully_forwarded = True
+            
+            # 检查是否已转发到所有目标频道
+            for target_channel in target_channels:
+                if not history_manager.is_message_forwarded(source_channel, msg_id, target_channel):
+                    is_fully_forwarded = False
+                    break
+            
+            if not is_fully_forwarded:
+                unforwarded_ids.append(msg_id)
+        
+        return unforwarded_ids
+    
+    async def get_media_groups_optimized(self, source_id, source_channel, target_channels, pair, history_manager):
+        """优化的获取源频道媒体组方法"""
+        # 解析消息范围
+        start_id, end_id, is_valid = await self._resolve_message_range(source_id, pair)
+        
+        # 预过滤已转发的消息ID
+        unforwarded_ids = self._filter_unforwarded_ids(start_id, end_id, source_channel, target_channels, history_manager)
+        
+        # 按指定ID列表获取消息
+        all_messages = []
+        async for message in self.message_iterator.iter_messages_by_ids(source_id, unforwarded_ids):
+            all_messages.append(message)
+        
+        # 应用过滤规则
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            media_group_texts = filter_stats.get('media_group_texts', {})
+        else:
+            filtered_messages = all_messages
+            media_group_texts = {}
+        
+        # 将过滤后的消息按媒体组分组
+        media_groups = {}
+        for message in filtered_messages:
+            group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
+            if group_id not in media_groups:
+                media_groups[group_id] = []
+            media_groups[group_id].append(message)
+        
+        return media_groups, media_group_texts
+    
+    async def get_media_groups_info_optimized(self, source_id, source_channel, target_channels, pair, history_manager):
+        """优化的获取媒体组信息方法（仅获取ID，不下载内容）"""
+        # 解析消息范围
+        start_id, end_id, is_valid = await self._resolve_message_range(source_id, pair)
+        
+        # 预过滤已转发的消息ID
+        unforwarded_ids = self._filter_unforwarded_ids(start_id, end_id, source_channel, target_channels, history_manager)
+        
+        # 按指定ID列表获取消息（仅获取基本信息）
+        all_messages = []
+        async for message in self.message_iterator.iter_messages_by_ids(source_id, unforwarded_ids):
+            all_messages.append(message)
+        
+        # 应用过滤规则
+        if pair and all_messages:
+            filtered_messages, _, filter_stats = self.message_filter.apply_all_filters(all_messages, pair)
+            media_group_texts = filter_stats.get('media_group_texts', {})
+        else:
+            filtered_messages = all_messages
+            media_group_texts = {}
+        
+        # 将过滤后的消息按媒体组分组（仅ID）
+        media_groups_info = []
+        current_group = []
+        current_group_id = None
+        
+        for message in filtered_messages:
+            group_id = str(message.media_group_id) if message.media_group_id else f"single_{message.id}"
+            
+            if group_id != current_group_id:
+                if current_group:
+                    media_groups_info.append((current_group_id, current_group))
+                current_group = [message.id]
+                current_group_id = group_id
+            else:
+                current_group.append(message.id)
+        
+        if current_group:
+            media_groups_info.append((current_group_id, current_group))
+        
+        return media_groups_info, media_group_texts
+```
+
+**ParallelProcessor类（并行处理器）**
+```python
+class ParallelProcessor:
+    """并行处理器，负责并行下载和上传媒体组"""
+    
+    def __init__(self, client, history_manager, general_config, config, emit=None):
+        self.client = client
+        self.history_manager = history_manager
+        self.general_config = general_config
+        self.emit = emit
+        
+        # 创建媒体组队列
+        self.media_group_queue = asyncio.Queue()
+        
+        # 生产者-消费者控制
+        self.download_running = False
+        self.upload_running = False
+        self.should_stop = False
+        
+        # 初始化组件
+        self.message_downloader = MessageDownloader(client)
+        self.media_uploader = MediaUploader(client, history_manager, general_config)
+        self.flood_wait_handler = FloodWaitHandler(max_retries=3, base_delay=1.0)
+    
+    async def process_parallel_download_upload(self, source_channel, source_id, media_groups_info, temp_dir, target_channels, pair_config):
+        """并行处理媒体组下载和上传"""
+        try:
+            # 设置下载和上传标志
+            self.download_running = True
+            self.upload_running = True
+            
+            # 创建生产者和消费者任务
+            producer_task = asyncio.create_task(
+                self._producer_download_media_groups_parallel(source_channel, source_id, media_groups_info, temp_dir, target_channels, pair_config)
+            )
+            consumer_task = asyncio.create_task(
+                self._consumer_upload_media_groups(target_channels)
+            )
+            
+            # 等待生产者和消费者任务完成
+            producer_result = await producer_task
+            await self.media_group_queue.put(None)  # 发送结束信号
+            consumer_result = await consumer_task
+            
+            return producer_result
+            
+        except Exception as e:
+            logger.error(f"并行处理失败: {e}")
+            raise
+    
+    async def _producer_download_media_groups_parallel(self, source_channel, source_id, media_groups_info, temp_dir, target_channels, pair_config):
+        """生产者：并行下载媒体组"""
+        forward_count = 0
+        
+        for group_id, message_ids in media_groups_info:
+            # 检查是否收到停止信号
+            if self.should_stop:
+                break
+            
+            # 检查是否已转发到所有目标频道
+            all_forwarded = True
+            for target_channel, _, _ in target_channels:
+                if not self.history_manager.is_message_forwarded(source_channel, message_ids[0], target_channel):
+                    all_forwarded = False
+                    break
+            
+            if all_forwarded:
+                continue
+            
+            # 下载媒体组
+            group_dir = temp_dir / self._get_safe_path_name(group_id)
+            success = await self._download_media_group(source_id, message_ids, group_dir)
+            
+            if success:
+                # 将下载完成的媒体组放入队列
+                await self.media_group_queue.put((group_id, message_ids, group_dir))
+                forward_count += 1
+                
+                # 发射下载完成事件
+                if self.emit:
+                    self.emit("media_group_downloaded", group_id, len(message_ids), len(list(group_dir.iterdir())))
+        
+        return forward_count
+    
+    async def _consumer_upload_media_groups(self, target_channels):
+        """消费者：上传媒体组"""
+        while True:
+            try:
+                # 从队列获取媒体组
+                item = await self.media_group_queue.get()
+                if item is None:  # 结束信号
+                    break
+                
+                group_id, message_ids, group_dir = item
+                
+                # 上传媒体组到所有目标频道
+                uploaded_targets, remaining_targets = await self.media_uploader.upload_media_group_to_channels(
+                    group_dir, target_channels, group_id
+                )
+                
+                # 发射上传完成事件
+                if self.emit:
+                    self.emit("media_group_uploaded", group_id, message_ids, uploaded_targets, remaining_targets)
+                
+                # 清理临时文件
+                if group_dir.exists():
+                    shutil.rmtree(group_dir)
+                
+            except Exception as e:
+                logger.error(f"上传媒体组失败: {e}")
+            finally:
+                self.media_group_queue.task_done()
+```
+
+**MediaUploader类（媒体上传器）**
+```python
+class MediaUploader:
+    """媒体上传器，负责上传媒体组到目标频道"""
+    
+    def __init__(self, client, history_manager, general_config):
+        self.client = client
+        self.history_manager = history_manager
+        self.general_config = general_config
+    
+    async def upload_media_group_to_channels(self, group_dir, target_channels, group_id):
+        """上传媒体组到多个目标频道"""
+        uploaded_targets = []
+        remaining_targets = []
+        
+        # 获取媒体组中的文件
+        media_files = [f for f in group_dir.iterdir() if f.is_file() and self._is_valid_media_file(f)]
+        
+        if not media_files:
+            return uploaded_targets, target_channels
+        
+        # 构建媒体组
+        media_group = []
+        for file in media_files:
+            media_type = self._get_media_type(file)
+            if media_type == "photo":
+                media_group.append(InputMediaPhoto(str(file)))
+            elif media_type == "video":
+                media_group.append(InputMediaVideo(str(file)))
+            elif media_type == "document":
+                media_group.append(InputMediaDocument(str(file)))
+            elif media_type == "audio":
+                media_group.append(InputMediaAudio(str(file)))
+            elif media_type == "animation":
+                media_group.append(InputMediaAnimation(str(file)))
+        
+        # 上传到每个目标频道
+        for target_channel, target_id, target_info in target_channels:
+            try:
+                # 检查是否已上传
+                if self.history_manager and self.history_manager.is_media_group_uploaded(group_id, target_channel):
+                    continue
+                
+                # 上传媒体组
+                result = await self.client.send_media_group(target_id, media_group)
+                
+                # 记录上传历史
+                if self.history_manager:
+                    for message in result:
+                        self.history_manager.add_upload_record(group_id, target_channel, message.id)
+                
+                uploaded_targets.append(target_info)
+                
+            except Exception as e:
+                logger.error(f"上传媒体组到 {target_info} 失败: {e}")
+                remaining_targets.append(target_info)
+        
+        return uploaded_targets, remaining_targets
+```
+
+#### 3.3 配置系统设计
+
+**转发配置结构**
+```python
+FORWARD = {
+    "forward_channel_pairs": [  # 转发频道对列表
+        {
+            "source_channel": "channel_name",  # 源频道
+            "target_channels": ["target1", "target2"],  # 目标频道列表
+            "media_types": ["photo", "video", "document"],  # 媒体类型
+            "start_id": 0,  # 起始消息ID
+            "end_id": 0,    # 结束消息ID
+            "enabled": True,  # 是否启用
+            "remove_captions": False,  # 是否移除媒体说明文字
+            "hide_author": False,  # 是否隐藏原作者
+            "send_final_message": False,  # 是否发送最终消息
+            "final_message_html_file": "",  # 最终消息HTML文件路径
+            "enable_web_page_preview": False,  # 是否启用网页预览
+            "text_filter": [  # 文本替换规则
+                {"original_text": "原文", "target_text": "替换文本"}
+            ],
+            "keywords": ["keyword1", "keyword2"],  # 关键词列表
+            "exclude_links": False  # 是否排除含链接的消息
+        }
+    ],
+    "forward_delay": 0.1,  # 转发间隔时间(秒)
+    "tmp_path": "tmp"  # 临时文件路径
+}
+```
+
+#### 3.4 事件系统集成
+
+**事件发射器包装**
+```python
+class EventEmitterForwarder(BaseEventEmitter):
+    """基于Qt Signal的转发器包装类"""
+    
+    # 转发器特有的信号定义
+    progress_updated = Signal(int, int, int, str)  # 进度更新信号
+    info_updated = Signal(str)  # 信息更新信号
+    warning_updated = Signal(str)  # 警告信号
+    debug_updated = Signal(str)  # 调试信息信号
+    forward_completed = Signal(int)  # 转发完成信号
+    all_forwards_completed = Signal()  # 所有转发完成信号
+    message_forwarded = Signal(int, str)  # 消息转发信号
+    media_group_forwarded = Signal(List, str, int)  # 媒体组转发信号
+    media_group_downloaded = Signal(str, int, int)  # 媒体组下载信号
+    media_group_uploaded = Signal(str, List, List, List)  # 媒体组上传信号
+    message_filtered = Signal(int, str, str)  # 消息过滤信号
+    collection_started = Signal(int)  # 收集开始信号
+    collection_progress = Signal(int, int)  # 收集进度信号
+    collection_completed = Signal(int, int)  # 收集完成信号
+    collection_error = Signal(str)  # 收集错误信号
+    text_replacement_applied = Signal(str, str, str)  # 文本替换信号
+    flood_wait_detected = Signal(int, str)  # 限流检测信号
+    
+    def _emit_qt_signal(self, event_type, *args, **kwargs):
+        """根据事件类型发射对应的Qt信号"""
+        if event_type == "progress":
+            progress, current, total, operation_type = args[0], args[1], args[2], args[3]
+            self.progress_updated.emit(progress, current, total, operation_type)
+        elif event_type == "message_forwarded":
+            message_id, target_info = args[0], args[1]
+            self.message_forwarded.emit(message_id, target_info)
+        elif event_type == "media_group_forwarded":
+            message_ids, target_info, count = args[0], args[1], args[2]
+            self.media_group_forwarded.emit(message_ids, target_info, count)
+        elif event_type == "message_filtered":
+            message_id, message_type, filter_reason = args[0], args[1], args[2]
+            self.message_filtered.emit(message_id, message_type, filter_reason)
+        elif event_type == "text_replacement_applied":
+            message_desc, original_text, replaced_text = args[0], args[1], args[2]
+            self.text_replacement_applied.emit(message_desc, original_text, replaced_text)
+        elif event_type == "flood_wait_detected":
+            wait_time, operation_desc = args[0], args[1]
+            self.flood_wait_detected.emit(wait_time, operation_desc)
+        elif event_type == "collection_started":
+            total_count = args[0]
+            self.collection_started.emit(total_count)
+        elif event_type == "collection_progress":
+            current_count, total_count = args[0], args[1]
+            self.collection_progress.emit(current_count, total_count)
+        elif event_type == "collection_completed":
+            collected_count, total_count = args[0], args[1]
+            self.collection_completed.emit(collected_count, total_count)
+        elif event_type == "collection_error":
+            error_message = args[0]
+            self.collection_error.emit(error_message)
+```
+
+#### 3.5 重构后的插件化设计
+
+**转发插件基类**
+```python
+class BaseForwardPlugin(Plugin):
+    """转发插件基类"""
+    
+    def __init__(self, client, config):
+        super().__init__(client, config)
+        self.forward_config = config.get('FORWARD', {})
+        self.general_config = config.get('GENERAL', {})
+    
+    async def forward_messages(self):
+        """转发消息"""
+        raise NotImplementedError
+    
+    async def stop_forward(self):
+        """停止转发"""
+        raise NotImplementedError
+```
+
+**智能转发插件**
+```python
+class SmartForwardPlugin(BaseForwardPlugin):
+    """智能转发插件，支持多种转发策略"""
+    
+    def __init__(self, client, config):
+        super().__init__(client, config)
+        self.message_filter = MessageFilter(config)
+        self.media_group_collector = MediaGroupCollector(self.message_iterator, self.message_filter, self.emit)
+        self.direct_forwarder = DirectForwarder(client, self.history_manager, self.general_config, self.emit)
+        self.parallel_processor = ParallelProcessor(client, self.history_manager, self.general_config, config, self.emit)
+    
+    async def forward_messages(self):
+        """从源频道转发消息到目标频道"""
+        # 获取频道对列表
+        channel_pairs = self.forward_config.get('forward_channel_pairs', [])
+        
+        for pair in channel_pairs:
+            # 检查是否启用
+            if not pair.get('enabled', True):
+                continue
+            
+            source_channel = pair.get('source_channel', '')
+            target_channels = pair.get('target_channels', [])
+            
+            # 解析频道ID
+            source_id = await self.channel_resolver.get_channel_id(source_channel)
+            source_can_forward = await self.channel_resolver.check_forward_permission(source_id)
+            
+            if source_can_forward:
+                # 直接转发模式
+                await self._forward_directly(source_id, source_channel, target_channels, pair)
+            else:
+                # 下载重传模式
+                await self._forward_with_download_upload(source_id, source_channel, target_channels, pair)
+        
+        # 发送最终消息
+        await self._send_final_messages(channel_pairs)
+    
+    async def _forward_directly(self, source_id, source_channel, target_channels, pair):
+        """直接转发模式"""
+        # 获取媒体组
+        media_groups, media_group_texts = await self.media_group_collector.get_media_groups_optimized(
+            source_id, source_channel, target_channels, pair, self.history_manager
+        )
+        
+        # 直接转发每个媒体组
+        for group_id, messages in media_groups.items():
+            await self.direct_forwarder.forward_media_group_directly(
+                messages, source_channel, source_id, target_channels, 
+                pair.get('hide_author', False), pair
+            )
+    
+    async def _forward_with_download_upload(self, source_id, source_channel, target_channels, pair):
+        """下载重传模式"""
+        # 获取媒体组信息
+        media_groups_info, media_group_texts = await self.media_group_collector.get_media_groups_info_optimized(
+            source_id, source_channel, target_channels, pair, self.history_manager
+        )
+        
+        # 创建临时目录
+        temp_dir = self._ensure_temp_dir()
+        
+        # 并行处理下载和上传
+        await self.parallel_processor.process_parallel_download_upload(
+            source_channel, source_id, media_groups_info, temp_dir, target_channels, pair
+        )
+    
+    async def _send_final_messages(self, channel_pairs):
+        """发送最终消息"""
+        for pair in channel_pairs:
+            if not pair.get('send_final_message', False):
+                continue
+            
+            html_file_path = pair.get('final_message_html_file', '')
+            if not html_file_path or not os.path.exists(html_file_path):
+                continue
+            
+            # 读取HTML内容
+            with open(html_file_path, 'r', encoding='utf-8') as f:
+                html_content = f.read().strip()
+            
+            # 发送到所有目标频道
+            target_channels = pair.get('target_channels', [])
+            for target_channel in target_channels:
+                try:
+                    target_id = await self.channel_resolver.get_channel_id(target_channel)
+                    enable_web_page_preview = pair.get('enable_web_page_preview', False)
+                    
+                    await self.client.send_message(
+                        chat_id=target_id,
+                        text=html_content,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_web_page_preview=not enable_web_page_preview
+                    )
+                except Exception as e:
+                    logger.error(f"发送最终消息到 {target_channel} 失败: {e}")
+```
+
+### 4. 监听模块重构
+
+#### 4.1 功能特性分析
+基于对原代码的深入分析，监听模块具有以下核心特性：
+
+**实时监听与转发**
+- **实时监听**：实时监听多个源频道的新消息，自动转发到目标频道
+- **媒体组处理**：支持媒体组的完整收集、缓存、补全与原子性转发，保证媒体组消息的完整性
+- **转发限制处理**：支持单条消息和媒体组的转发限制处理（如禁止转发频道的特殊处理）
+
+**高级过滤系统**
+- **关键词过滤**：支持关键词过滤，只转发包含指定关键词的消息
+- **媒体类型过滤**：支持媒体类型过滤，可排除特定媒体类型
+- **文本替换功能**：支持批量文本替换，可修改消息标题和文本内容
+- **排除选项**：支持排除转发消息、回复消息、纯文本消息、含链接消息等
+- **标题移除**：支持移除媒体说明文字（caption）
+
+**性能与资源管理**
+- **性能监控**：内置性能监控（内存占用、处理耗时、消息速率等）
+- **消息ID缓冲区**：使用高效的消息ID缓冲区，防止重复处理
+- **媒体组缓存**：支持媒体组缓存，定期清理，优化内存使用
+- **定期清理**：定期清理已处理消息ID和媒体组缓存
+
+**事件系统集成**
+- **监听状态事件**：监听开始/停止、状态更新等事件
+- **消息处理事件**：消息接收、消息过滤、关键词命中、消息处理完成等
+- **转发状态事件**：转发状态更新、转发成功/失败等
+- **文本处理事件**：文本替换、文本过滤等
+- **性能监控事件**：内存使用、处理速率、错误统计等
+- **历史进度事件**：历史消息获取进度、完成状态等
+
+**配置与动态更新**
+- **动态热更新**：支持监听配置的动态热更新，运行时自动应用新配置
+- **独立配置**：每个监听频道对可独立配置过滤、文本替换、目标频道等参数
+- **配置验证**：完善的配置验证和错误处理
+
+**错误处理与网络管理**
+- **网络错误处理**：网络错误、FloodWait、API异常等自动处理与重试
+- **错误分级**：详细的错误分级与日志记录
+- **连接状态检查**：网络错误时自动检查连接状态
+
+#### 4.2 核心组件设计
+
+**Monitor类（监听主控）**
+```python
+class Monitor:
+    """监听模块，监听源频道的新消息，并实时转发到目标频道"""
+    
+    def __init__(self, client, ui_config_manager, channel_resolver, app=None):
+        # 初始化性能监控器
+        self.performance_monitor = PerformanceMonitor()
+        
+        # 初始化增强缓存（替换原来的简单字典缓存）
+        self.channel_info_cache = ChannelInfoCache(max_size=500, default_ttl=1800)  # 30分钟TTL
+        
+        # 初始化消息ID缓冲区（替换原来的简单集合）
+        self.processed_messages = MessageIdBuffer(max_size=50000)
+        
+        # 初始化消息处理器和媒体组处理器
+        self.message_processor = MessageProcessor(self.client, self.channel_resolver, self._handle_network_error)
+        self.media_group_handler = MediaGroupHandler(self.client, self.channel_resolver, self.message_processor)
+        
+        # 存储所有监听的频道ID
+        self.monitored_channels = set()
+        
+        # 定期清理任务
+        self.cleanup_task = None
+        self.memory_monitor_task = None
+    
+    async def start_monitoring(self):
+        """开始监听所有配置的频道"""
+        # 重新从配置文件读取最新配置
+        ui_config = self.ui_config_manager.reload_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.monitor_config = self.config.get('MONITOR', {})
+        
+        # 解析所有源频道及其目标频道
+        channel_pairs = {}
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            source_channel = pair.get('source_channel', '')
+            if source_channel:
+                source_id = await self.channel_resolver.get_channel_id(source_channel)
+                self.monitored_channels.add(source_id)
+                channel_pairs[source_id] = pair
+        
+        # 注册消息处理器
+        handler = MessageHandler(self._handle_new_message, filters.chat(list(self.monitored_channels)))
+        self.client.add_handler(handler)
+        
+        # 启动清理任务
+        self.cleanup_task = asyncio.create_task(self._cleanup_processed_messages())
+        self.memory_monitor_task = asyncio.create_task(self._monitor_memory_usage())
+        
+        # 启动媒体组清理任务
+        self.media_group_handler.start_cleanup_task()
+```
+
+**MediaGroupHandler类（媒体组处理器）**
+```python
+class MediaGroupHandler:
+    """媒体组处理器，负责处理和转发媒体组消息"""
+    
+    def __init__(self, client, channel_resolver, message_processor):
+        self.client = client
+        self.channel_resolver = channel_resolver
+        self.message_processor = message_processor
+        
+        # 媒体组缓存
+        self.media_group_cache = {}
+        self.cleanup_task = None
+    
+    async def handle_media_group_message(self, message, pair_config):
+        """处理媒体组消息"""
+        media_group_id = message.media_group_id
+        
+        if media_group_id:
+            # 添加到媒体组缓存
+            if media_group_id not in self.media_group_cache:
+                self.media_group_cache[media_group_id] = {
+                    'messages': [],
+                    'timestamp': time.time(),
+                    'config': pair_config
+                }
+            
+            self.media_group_cache[media_group_id]['messages'].append(message)
+            
+            # 检查媒体组是否完整
+            if await self._is_media_group_complete(media_group_id):
+                await self._forward_media_group(media_group_id)
+        else:
+            # 单条消息，直接处理
+            await self.message_processor.forward_message(message, pair_config)
+    
+    async def _is_media_group_complete(self, media_group_id):
+        """检查媒体组是否完整"""
+        # 实现媒体组完整性检查逻辑
+        pass
+    
+    async def _forward_media_group(self, media_group_id):
+        """转发完整的媒体组"""
+        group_data = self.media_group_cache.get(media_group_id)
+        if not group_data:
+            return
+        
+        messages = group_data['messages']
+        config = group_data['config']
+        
+        # 转发媒体组
+        await self.message_processor.forward_media_group(messages, config)
+        
+        # 清理缓存
+        del self.media_group_cache[media_group_id]
+```
+
+**MessageProcessor类（消息处理器）**
+```python
+class MessageProcessor:
+    """消息处理器，负责处理和转发单条消息"""
+    
+    def __init__(self, client, channel_resolver, network_error_handler=None):
+        self.client = client
+        self.channel_resolver = channel_resolver
+        self.network_error_handler = network_error_handler
+        
+        # 创建禁止转发处理器
+        self.restricted_handler = RestrictedForwardHandler(self.client, self.channel_resolver)
+    
+    async def forward_message(self, message, pair_config):
+        """转发消息到多个目标频道"""
+        # 应用过滤规则
+        if not self._should_forward_message(message, pair_config):
+            return False
+        
+        # 获取目标频道
+        target_channels = await self._get_target_channels(pair_config)
+        
+        # 检查源频道转发权限
+        source_can_forward = await self.channel_resolver.check_forward_permission(message.chat.id)
+        
+        if source_can_forward:
+            # 直接转发
+            await self._forward_directly(message, target_channels, pair_config)
+        else:
+            # 使用禁止转发处理器
+            await self.restricted_handler.handle_restricted_forward(message, target_channels, pair_config)
+    
+    def _should_forward_message(self, message, pair_config):
+        """检查是否应该转发消息"""
+        # 检查关键词过滤
+        if pair_config.get('keywords'):
+            if not self._contains_keywords(message, pair_config['keywords']):
+                return False
+        
+        # 检查媒体类型过滤
+        if pair_config.get('media_types'):
+            if not self._is_media_type_allowed(message, pair_config['media_types']):
+                return False
+        
+        # 检查排除选项
+        if pair_config.get('exclude_forwards') and message.forward_from:
+            return False
+        
+        if pair_config.get('exclude_replies') and message.reply_to_message:
+            return False
+        
+        if pair_config.get('exclude_text') and not message.media:
+            return False
+        
+        if pair_config.get('exclude_links') and self._contains_links(message):
+            return False
+        
+        return True
+```
+
+**TextFilter类（文本过滤器）**
+```python
+class TextFilter:
+    """文本过滤器，处理关键词过滤和文本替换"""
+    
+    def __init__(self, monitor_config):
+        self.monitor_config = monitor_config
+    
+    def apply_text_replacements(self, text, text_filter):
+        """应用文本替换规则"""
+        if not text or not text_filter:
+            return text
+        
+        result_text = text
+        for rule in text_filter:
+            original_text = rule.get('original_text', '')
+            target_text = rule.get('target_text', '')
+            
+            if original_text and original_text in result_text:
+                result_text = result_text.replace(original_text, target_text)
+        
+        return result_text
+    
+    def contains_keywords(self, text, keywords):
+        """检查文本是否包含关键词"""
+        if not text or not keywords:
+            return False
+        
+        text_lower = text.lower()
+        for keyword in keywords:
+            if keyword.lower() in text_lower:
+                return True
+        
+        return False
+```
+
+**性能监控与资源管理**
+```python
+class PerformanceMonitor:
+    """性能监控器"""
+    
+    def __init__(self):
+        self.memory_usage = []
+        self.processing_times = []
+        self.error_counts = {'network': 0, 'api': 0, 'other': 0}
+    
+    def record_memory_usage(self, usage_mb):
+        """记录内存使用情况"""
+        self.memory_usage.append((time.time(), usage_mb))
+        
+        # 保持最近1000条记录
+        if len(self.memory_usage) > 1000:
+            self.memory_usage = self.memory_usage[-1000:]
+    
+    def record_processing_time(self, duration):
+        """记录处理耗时"""
+        self.processing_times.append(duration)
+        
+        # 保持最近1000条记录
+        if len(self.processing_times) > 1000:
+            self.processing_times = self.processing_times[-1000:]
+    
+    def record_error(self, error_type):
+        """记录错误"""
+        if error_type in self.error_counts:
+            self.error_counts[error_type] += 1
+
+class ChannelInfoCache:
+    """频道信息缓存"""
+    
+    def __init__(self, max_size=500, default_ttl=1800):
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self.cache = {}
+    
+    def get(self, channel_id):
+        """获取频道信息"""
+        if channel_id in self.cache:
+            info, timestamp = self.cache[channel_id]
+            if time.time() - timestamp < self.default_ttl:
+                return info
+            else:
+                del self.cache[channel_id]
+        return None
+    
+    def set(self, channel_id, info):
+        """设置频道信息"""
+        if len(self.cache) >= self.max_size:
+            # 删除最旧的条目
+            oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
+            del self.cache[oldest_key]
+        
+        self.cache[channel_id] = (info, time.time())
+
+class MessageIdBuffer:
+    """消息ID缓冲区"""
+    
+    def __init__(self, max_size=50000):
+        self.max_size = max_size
+        self.processed_ids = set()
+    
+    def add(self, message_id):
+        """添加已处理的消息ID"""
+        if len(self.processed_ids) >= self.max_size:
+            # 清空缓冲区
+            self.processed_ids.clear()
+        
+        self.processed_ids.add(message_id)
+    
+    def contains(self, message_id):
+        """检查消息ID是否已处理"""
+        return message_id in self.processed_ids
+```
+
+#### 4.3 配置系统设计
+
+**监听配置结构**
+```python
+MONITOR = {
+    "monitor_channel_pairs": [  # 监听频道对列表
+        {
+            "source_channel": "source_channel_id",  # 源频道
+            "target_channels": ["target1", "target2"],  # 目标频道列表
+            "media_types": ["photo", "video", "document", "audio", "animation", "sticker", "voice", "video_note"],  # 媒体类型
+            "keywords": ["keyword1", "keyword2"],  # 关键词列表
+            "text_filter": [  # 文本替换规则
+                {"original_text": "A", "target_text": "B"}
+            ],
+            "exclude_forwards": False,  # 是否排除转发消息
+            "exclude_replies": False,   # 是否排除回复消息
+            "exclude_text": False,      # 是否排除纯文本消息
+            "exclude_links": False,     # 是否排除包含链接的消息
+            "remove_captions": False,   # 是否移除媒体说明
+            "enabled": True             # 是否启用此频道对监听
+        }
+    ],
+    "duration": "2024-12-31"  # 监听截止日期 (格式: YYYY-MM-DD)
+}
+```
+
+#### 4.4 事件系统集成
+
+**事件发射器包装**
+```python
+class EventEmitterMonitor(BaseEventEmitter):
+    """基于Qt Signal的监听器包装类"""
+    
+    # 监听器特有的信号定义
+    monitoring_started = Signal()  # 监听开始信号
+    monitoring_stopped = Signal()  # 监听停止信号
+    new_message_updated = Signal(int, str)  # 新消息更新信号 (消息ID, 来源信息)
+    message_received = Signal(int, str)  # 消息接收信号 (消息ID, 来源信息)
+    message_filtered = Signal(int, str, str)  # 消息过滤信号 (消息ID, 来源信息, 过滤原因)
+    keyword_matched = Signal(int, str)  # 关键词匹配信号 (消息ID, 关键词)
+    message_processed = Signal(int)  # 消息处理完成信号 (消息ID)
+    forward_updated = Signal(str, str, str, bool, bool)  # 转发状态更新信号 (源消息ID或媒体组显示ID, 源频道显示名, 目标频道显示名, 成功标志, 修改标志)
+    text_replaced = Signal(str, str, List)  # 文本替换信号 (原文本, 修改后文本, 替换规则)
+    history_progress = Signal(int, int)  # 历史消息获取进度信号 (已获取消息数, 限制数)
+    history_complete = Signal(int)  # 历史消息获取完成信号 (总消息数)
+    status_updated = Signal(str)  # 状态更新信号
+    error_occurred = Signal(str, str)  # 错误信号
+    
+    def _emit_qt_signal(self, event_type, *args, **kwargs):
+        """根据事件类型发射对应的Qt信号"""
+        if event_type == "monitoring_started":
+            self.monitoring_started.emit()
+        elif event_type == "monitoring_stopped":
+            self.monitoring_stopped.emit()
+        elif event_type == "new_message_updated":
+            message_id, source_info = args[0], args[1]
+            self.new_message_updated.emit(message_id, source_info)
+        elif event_type == "message_received":
+            message_id, source_info = args[0], args[1]
+            self.message_received.emit(message_id, source_info)
+        elif event_type == "message_filtered":
+            message_id, source_info, filter_reason = args[0], args[1], args[2]
+            self.message_filtered.emit(message_id, source_info, filter_reason)
+        elif event_type == "keyword_matched":
+            message_id, keyword = args[0], args[1]
+            self.keyword_matched.emit(message_id, keyword)
+        elif event_type == "message_processed":
+            message_id = args[0]
+            self.message_processed.emit(message_id)
+        elif event_type == "forward_updated":
+            source_id, source_name, target_name, success, modified = args[0], args[1], args[2], args[3], args[4]
+            self.forward_updated.emit(source_id, source_name, target_name, success, modified)
+        elif event_type == "text_replaced":
+            original_text, replaced_text, rules = args[0], args[1], args[2]
+            self.text_replaced.emit(original_text, replaced_text, rules)
+        elif event_type == "history_progress":
+            current_count, total_count = args[0], args[1]
+            self.history_progress.emit(current_count, total_count)
+        elif event_type == "history_complete":
+            total_count = args[0]
+            self.history_complete.emit(total_count)
+        elif event_type == "status_updated":
+            status = args[0]
+            self.status_updated.emit(status)
+        elif event_type == "error_occurred":
+            error_message, error_type = args[0], args[1]
+            self.error_occurred.emit(error_message, error_type)
+```
+
+#### 4.5 错误与性能管理
+
+**网络错误处理**
+```python
+async def _handle_network_error(self, error):
+    """处理网络相关错误"""
+    logger.error(f"检测到网络错误: {type(error).__name__}: {error}")
+    
+    # 记录错误统计
+    if self.performance_monitor:
+        error_name = type(error).__name__.lower()
+        if any(net_err in error_name for net_err in ['network', 'connection', 'timeout', 'socket']):
+            self.performance_monitor.record_error('network')
+        elif 'api' in error_name or 'telegram' in error_name:
+            self.performance_monitor.record_error('api')
+        else:
+            self.performance_monitor.record_error('other')
+    
+    # 通知应用程序立即检查连接状态
+    if self.app and hasattr(self.app, 'check_connection_status_now'):
+        try:
+            asyncio.create_task(self.app.check_connection_status_now())
+        except Exception as e:
+            logger.error(f"触发连接状态检查失败: {e}")
+```
+
+**性能监控任务**
+```python
+async def _monitor_memory_usage(self):
+    """监控内存使用情况"""
+    while not self.should_stop:
+        try:
+            # 获取当前内存使用情况
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            # 记录内存使用
+            if self.performance_monitor:
+                self.performance_monitor.record_memory_usage(memory_mb)
+            
+            # 发射内存使用事件
+            if self.emit:
+                self.emit("memory_usage", memory_mb)
+            
+            await asyncio.sleep(60)  # 每分钟检查一次
+            
+        except Exception as e:
+            logger.error(f"内存监控失败: {e}")
+            await asyncio.sleep(60)
+
+async def _cleanup_processed_messages(self):
+    """清理已处理的消息ID"""
+    while not self.should_stop:
+        try:
+            # 清理过期的消息ID
+            if hasattr(self.processed_messages, 'cleanup'):
+                self.processed_messages.cleanup()
+            
+            # 清理过期的媒体组缓存
+            if hasattr(self.media_group_handler, 'cleanup_expired_groups'):
+                await self.media_group_handler.cleanup_expired_groups()
+            
+            await asyncio.sleep(300)  # 每5分钟清理一次
+            
+        except Exception as e:
+            logger.error(f"清理任务失败: {e}")
+            await asyncio.sleep(300)
+```
+
+#### 4.6 重构后的插件化设计
+
+**监听插件基类**
+```python
+class BaseMonitorPlugin(Plugin):
+    """监听插件基类"""
+    
+    def __init__(self, client, config):
+        super().__init__(client, config)
+        self.monitor_config = config.get('MONITOR', {})
+        self.general_config = config.get('GENERAL', {})
+    
+    async def start_monitoring(self):
+        """开始监听"""
+        raise NotImplementedError
+    
+    async def stop_monitoring(self):
+        """停止监听"""
+        raise NotImplementedError
+```
+
+**智能监听插件**
+```python
+class SmartMonitorPlugin(BaseMonitorPlugin):
+    """智能监听插件，支持多种监听策略"""
+    
+    def __init__(self, client, config):
+        super().__init__(client, config)
+        
+        # 初始化性能监控器
+        self.performance_monitor = PerformanceMonitor()
+        
+        # 初始化缓存和缓冲区
+        self.channel_info_cache = ChannelInfoCache(max_size=500, default_ttl=1800)
+        self.processed_messages = MessageIdBuffer(max_size=50000)
+        
+        # 初始化处理器
+        self.message_processor = MessageProcessor(client, self.channel_resolver, self._handle_network_error)
+        self.media_group_handler = MediaGroupHandler(client, self.channel_resolver, self.message_processor)
+        self.text_filter = TextFilter(self.monitor_config)
+        
+        # 设置事件发射器
+        self.media_group_handler.emit = self.emit
+        self.message_processor.emit = self.emit
+    
+    async def start_monitoring(self):
+        """开始监听所有配置的频道"""
+        # 重新从配置文件读取最新配置
+        ui_config = self.ui_config_manager.reload_config()
+        self.config = convert_ui_config_to_dict(ui_config)
+        self.monitor_config = self.config.get('MONITOR', {})
+        
+        # 解析所有源频道
+        monitored_channels = set()
+        channel_pairs = {}
+        
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            if not pair.get('enabled', True):
+                continue
+            
+            source_channel = pair.get('source_channel', '')
+            if source_channel:
+                source_id = await self.channel_resolver.get_channel_id(source_channel)
+                monitored_channels.add(source_id)
+                channel_pairs[source_id] = pair
+        
+        # 注册消息处理器
+        handler = MessageHandler(self._handle_new_message, filters.chat(list(monitored_channels)))
+        self.client.add_handler(handler)
+        
+        # 启动监控任务
+        self.cleanup_task = asyncio.create_task(self._cleanup_processed_messages())
+        self.memory_monitor_task = asyncio.create_task(self._monitor_memory_usage())
+        self.media_group_handler.start_cleanup_task()
+        
+        # 发射监听开始事件
+        if self.emit:
+            self.emit("monitoring_started")
+    
+    async def _handle_new_message(self, client, message):
+        """处理新消息"""
+        try:
+            # 检查是否已处理
+            if self.processed_messages.contains(message.id):
+                return
+            
+            # 标记为已处理
+            self.processed_messages.add(message.id)
+            
+            # 获取频道对配置
+            pair_config = self._get_pair_config(message.chat.id)
+            if not pair_config:
+                return
+            
+            # 检查是否应该转发
+            if not self._should_forward_message(message, pair_config):
+                return
+            
+            # 处理消息
+            if message.media_group_id:
+                # 媒体组消息
+                await self.media_group_handler.handle_media_group_message(message, pair_config)
+            else:
+                # 单条消息
+                await self.message_processor.forward_message(message, pair_config)
+            
+            # 发射消息处理完成事件
+            if self.emit:
+                self.emit("message_processed", message.id)
+                
+        except Exception as e:
+            logger.error(f"处理消息失败: {e}")
+            if self.emit:
+                self.emit("error_occurred", str(e), "message_processing")
+    
+    def _should_forward_message(self, message, pair_config):
+        """检查是否应该转发消息"""
+        # 应用所有过滤规则
+        if not self.text_filter.should_forward_message(message, pair_config):
+            return False
+        
+        return True
+    
+    def _get_pair_config(self, chat_id):
+        """获取频道对配置"""
+        # 根据chat_id查找对应的配置
+        for pair in self.monitor_config.get('monitor_channel_pairs', []):
+            if pair.get('enabled', True):
+                source_channel = pair.get('source_channel', '')
+                if source_channel:
+                    # 这里需要实现频道ID匹配逻辑
+                    pass
+        return None
+```
+
+### 4. 消息处理抽象层重构
+
+#### 4.1 功能特性分析
+基于对原代码的深入分析，转发模块和监听模块在消息处理方面具有大量相似功能：
+
+**共同功能识别**
+- **文本替换系统**：两个模块都有完全相同的文本替换逻辑
+- **过滤规则系统**：关键词过滤、媒体类型过滤、链接过滤等规则完全一致
+- **消息处理流程**：消息接收、过滤、处理、转发的流程高度相似
+- **配置结构**：频道对配置、过滤选项、文本替换规则等配置项相同
+- **事件系统**：过滤事件、文本替换事件、处理状态事件等事件类型相同
+
+**重复代码问题**
+- **TextFilter类**：监听模块有独立的TextFilter类，转发模块有MessageFilter类，功能重复
+- **过滤逻辑**：两个模块的过滤逻辑几乎完全相同，但实现分散
+- **文本替换**：文本替换逻辑在两个模块中重复实现
+- **配置处理**：频道对配置的处理逻辑重复
+
+#### 4.2 抽象层设计
+
+**消息处理抽象基类 (BaseMessageProcessor)**
+```python
+class BaseMessageProcessor:
+    """消息处理抽象基类，提供通用的消息处理功能"""
+    
+    def __init__(self, client, channel_resolver, emit=None):
+        self.client = client
+        self.channel_resolver = channel_resolver
+        self.emit = emit
+        
+        # 初始化通用组件
+        self.text_processor = TextProcessor()
+        self.message_filter = MessageFilter()
+        self.media_group_processor = MediaGroupProcessor()
+    
+    async def process_message(self, message, pair_config):
+        """处理单条消息的通用流程"""
+        # 1. 应用通用过滤规则
+        should_filter, filter_reason = self.message_filter.apply_universal_filters(message, pair_config)
+        if should_filter:
+            if self.emit:
+                self.emit("message_filtered", message.id, "通用过滤", filter_reason)
+            return False
+        
+        # 2. 应用关键词过滤
+        if not self.message_filter.apply_keyword_filter(message, pair_config):
+            if self.emit:
+                self.emit("message_filtered", message.id, "关键词过滤", "不包含关键词")
+            return False
+        
+        # 3. 应用媒体类型过滤
+        if not self.message_filter.apply_media_type_filter(message, pair_config):
+            if self.emit:
+                self.emit("message_filtered", message.id, "媒体类型过滤", "媒体类型不匹配")
+            return False
+        
+        # 4. 处理文本替换
+        processed_text, has_replacement = self.text_processor.process_message_text(message, pair_config)
+        if has_replacement and self.emit:
+            self.emit("text_replacement_applied", "消息文本", message.text, processed_text)
+        
+        # 5. 子类实现具体的转发逻辑
+        return await self._forward_message(message, pair_config, processed_text)
+    
+    async def _forward_message(self, message, pair_config, processed_text):
+        """子类需要实现的转发逻辑"""
+        raise NotImplementedError
+```
+
+**文本处理器 (TextProcessor)**
+```python
+class TextProcessor:
+    """统一的文本处理器，处理文本替换和文本相关操作"""
+    
+    def __init__(self):
+        self.logger = get_logger()
+    
+    def process_message_text(self, message, pair_config):
+        """处理消息文本，包括文本替换和标题移除"""
+        # 获取原始文本
+        text = self._extract_text_from_message(message)
+        if not text:
+            return None, False
+        
+        # 应用文本替换
+        text_replacements = self._build_text_replacements(pair_config)
+        processed_text, has_replacement = self.apply_text_replacements(text, text_replacements)
+        
+        # 处理标题移除
+        should_remove_caption = pair_config.get('remove_captions', False)
+        if should_remove_caption and self._is_media_message(message):
+            processed_text = None
+            has_replacement = True
+        
+        return processed_text, has_replacement
+    
+    def apply_text_replacements(self, text, text_replacements):
+        """应用文本替换规则"""
+        if not text or not text_replacements:
+            return text, False
+        
+        result_text = text
+        has_replacement = False
+        
+        for find_text, replace_text in text_replacements.items():
+            if find_text and find_text in result_text:
+                result_text = result_text.replace(find_text, replace_text)
+                has_replacement = True
+                self.logger.debug(f"文本替换: '{find_text}' -> '{replace_text}'")
+        
+        return result_text, has_replacement
+    
+    def _extract_text_from_message(self, message):
+        """从消息中提取文本内容"""
+        return message.text or message.caption or ""
+    
+    def _build_text_replacements(self, pair_config):
+        """构建文本替换规则字典"""
+        text_replacements = {}
+        text_filter_list = pair_config.get('text_filter', [])
+        
+        for rule in text_filter_list:
+            if isinstance(rule, dict):
+                original_text = rule.get('original_text', '')
+                target_text = rule.get('target_text', '')
+                if original_text:  # 只添加非空的原文
+                    text_replacements[original_text] = target_text
+        
+        return text_replacements
+    
+    def _is_media_message(self, message):
+        """检查是否为媒体消息"""
+        return bool(message.media)
+```
+
+**统一消息过滤器 (MessageFilter)**
+```python
+class MessageFilter:
+    """统一的消息过滤器，提供所有过滤功能"""
+    
+    def __init__(self):
+        self.logger = get_logger()
+    
+    def apply_universal_filters(self, message, pair_config):
+        """应用通用过滤规则（最高优先级）"""
+        # 排除转发消息
+        if pair_config.get('exclude_forwards', False) and (message.forward_from or message.forward_from_chat):
+            return True, "转发消息"
+        
+        # 排除回复消息
+        if pair_config.get('exclude_replies', False) and message.reply_to_message:
+            return True, "回复消息"
+        
+        # 排除纯文本消息
+        if pair_config.get('exclude_text', False) and not message.media:
+            return True, "纯文本消息"
+        
+        # 排除包含链接的消息
+        if pair_config.get('exclude_links', False) and self._contains_links(message):
+            return True, "包含链接"
+        
+        return False, ""
+    
+    def apply_keyword_filter(self, message, pair_config):
+        """应用关键词过滤"""
+        keywords = pair_config.get('keywords', [])
+        if not keywords:
+            return True
+        
+        text = message.text or message.caption or ""
+        if not text:
+            return False
+        
+        # 检查是否包含关键词
+        for keyword in keywords:
+            if keyword.lower() in text.lower():
+                self.logger.info(f"消息 [ID: {message.id}] 匹配关键词: {keyword}")
+                return True
+        
+        return False
+    
+    def apply_media_type_filter(self, message, pair_config):
+        """应用媒体类型过滤"""
+        allowed_media_types = pair_config.get('media_types', [])
+        if not allowed_media_types:
+            return True
+        
+        message_media_type = self._get_message_media_type(message)
+        if not message_media_type:
+            return True  # 纯文本消息，如果没有明确排除则通过
+        
+        return message_media_type in allowed_media_types
+    
+    def _contains_links(self, message):
+        """检查消息是否包含链接"""
+        text = message.text or message.caption or ""
+        if not text:
+            return False
+        
+        # 检查文本中的链接模式
+        link_patterns = [
+            r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+            r'www\.(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+            r't\.me/[a-zA-Z0-9_]+',
+            r'telegram\.me/[a-zA-Z0-9_]+'
+        ]
+        
+        for pattern in link_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        # 检查消息实体中的链接
+        entities = getattr(message, 'entities', []) or []
+        for entity in entities:
+            if entity.type in ['url', 'text_link']:
+                return True
+        
+        return False
+    
+    def _get_message_media_type(self, message):
+        """获取消息的媒体类型"""
+        if not message.media:
+            return None
+        
+        media_type_map = {
+            'photo': 'photo',
+            'video': 'video',
+            'document': 'document',
+            'audio': 'audio',
+            'animation': 'animation',
+            'sticker': 'sticker',
+            'voice': 'voice',
+            'video_note': 'video_note'
+        }
+        
+        return media_type_map.get(message.media.value, None)
+```
+
+**媒体组处理器 (MediaGroupProcessor)**
+```python
+class MediaGroupProcessor:
+    """统一的媒体组处理器，处理媒体组相关操作"""
+    
+    def __init__(self):
+        self.logger = get_logger()
+        self.media_group_cache = {}
+    
+    def process_media_group_message(self, message, pair_config):
+        """处理媒体组消息"""
+        media_group_id = message.media_group_id
+        
+        if media_group_id:
+            # 添加到媒体组缓存
+            if media_group_id not in self.media_group_cache:
+                self.media_group_cache[media_group_id] = {
+                    'messages': [],
+                    'timestamp': time.time(),
+                    'config': pair_config
+                }
+            
+            self.media_group_cache[media_group_id]['messages'].append(message)
+            
+            # 检查媒体组是否完整
+            if self._is_media_group_complete(media_group_id):
+                return self._get_complete_media_group(media_group_id)
+        
+        return None  # 单条消息或媒体组不完整
+    
+    def _is_media_group_complete(self, media_group_id):
+        """检查媒体组是否完整"""
+        # 实现媒体组完整性检查逻辑
+        # 这里可以根据实际需求实现更复杂的检查
+        return True
+    
+    def _get_complete_media_group(self, media_group_id):
+        """获取完整的媒体组"""
+        group_data = self.media_group_cache.get(media_group_id)
+        if not group_data:
+            return None
+        
+        messages = group_data['messages']
+        config = group_data['config']
+        
+        # 清理缓存
+        del self.media_group_cache[media_group_id]
+        
+        return messages, config
+```
+
+#### 4.3 重构后的插件化设计
+
+**转发插件重构**
+```python
+class SmartForwardPlugin(BaseForwardPlugin):
+    """智能转发插件，使用消息处理抽象层"""
+    
+    def __init__(self, client, config):
+        super().__init__(client, config)
+        
+        # 使用抽象层的消息处理器
+        self.message_processor = BaseMessageProcessor(client, self.channel_resolver, self.emit)
+        
+        # 重写消息处理器以适配转发逻辑
+        self.message_processor._forward_message = self._forward_message_implementation
+    
+    async def _forward_message_implementation(self, message, pair_config, processed_text):
+        """实现转发逻辑"""
+        # 获取目标频道
+        target_channels = await self._get_target_channels(pair_config)
+        
+        # 检查源频道转发权限
+        source_can_forward = await self.channel_resolver.check_forward_permission(message.chat.id)
+        
+        if source_can_forward:
+            # 直接转发
+            await self._forward_directly(message, target_channels, pair_config, processed_text)
+        else:
+            # 使用禁止转发处理器
+            await self.restricted_handler.handle_restricted_forward(message, target_channels, pair_config, processed_text)
+        
+        return True
+```
+
+**监听插件重构**
+```python
+class SmartMonitorPlugin(BaseMonitorPlugin):
+    """智能监听插件，使用消息处理抽象层"""
+    
+    def __init__(self, client, config):
+        super().__init__(self, client, config)
+        
+        # 使用抽象层的消息处理器
+        self.message_processor = BaseMessageProcessor(client, self.channel_resolver, self.emit)
+        
+        # 重写消息处理器以适配监听逻辑
+        self.message_processor._forward_message = self._forward_message_implementation
+    
+    async def _forward_message_implementation(self, message, pair_config, processed_text):
+        """实现监听转发逻辑"""
+        # 获取目标频道
+        target_channels = await self._get_target_channels(pair_config)
+        
+        # 检查源频道转发权限
+        source_can_forward = await self.channel_resolver.check_forward_permission(message.chat.id)
+        
+        if source_can_forward:
+            # 直接转发
+            await self._forward_directly(message, target_channels, pair_config, processed_text)
+        else:
+            # 使用禁止转发处理器
+            await self.restricted_handler.handle_restricted_forward(message, target_channels, pair_config, processed_text)
+        
+        return True
+```
+
+#### 4.4 配置系统统一
+
+**统一配置模型**
+```python
+class UnifiedChannelPairConfig:
+    """统一的频道对配置模型"""
+    
+    def __init__(self, config_dict):
+        self.source_channel = config_dict.get('source_channel', '')
+        self.target_channels = config_dict.get('target_channels', [])
+        self.media_types = config_dict.get('media_types', [])
+        self.keywords = config_dict.get('keywords', [])
+        self.text_filter = config_dict.get('text_filter', [])
+        self.exclude_forwards = config_dict.get('exclude_forwards', False)
+        self.exclude_replies = config_dict.get('exclude_replies', False)
+        self.exclude_text = config_dict.get('exclude_text', False)
+        self.exclude_links = config_dict.get('exclude_links', False)
+        self.remove_captions = config_dict.get('remove_captions', False)
+        self.enabled = config_dict.get('enabled', True)
+    
+    def to_dict(self):
+        """转换为字典格式"""
+        return {
+            'source_channel': self.source_channel,
+            'target_channels': self.target_channels,
+            'media_types': self.media_types,
+            'keywords': self.keywords,
+            'text_filter': self.text_filter,
+            'exclude_forwards': self.exclude_forwards,
+            'exclude_replies': self.exclude_replies,
+            'exclude_text': self.exclude_text,
+            'exclude_links': self.exclude_links,
+            'remove_captions': self.remove_captions,
+            'enabled': self.enabled
+        }
+```
+
+#### 4.5 事件系统统一
+
+**统一事件发射器**
+```python
+class UnifiedEventEmitter:
+    """统一的事件发射器，提供标准的事件接口"""
+    
+    def __init__(self, emit_function=None):
+        self.emit = emit_function
+    
+    def emit_message_filtered(self, message_id, filter_type, filter_reason):
+        """发射消息过滤事件"""
+        if self.emit:
+            self.emit("message_filtered", message_id, filter_type, filter_reason)
+    
+    def emit_text_replacement_applied(self, message_desc, original_text, replaced_text):
+        """发射文本替换事件"""
+        if self.emit:
+            self.emit("text_replacement_applied", message_desc, original_text, replaced_text)
+    
+    def emit_message_processed(self, message_id):
+        """发射消息处理完成事件"""
+        if self.emit:
+            self.emit("message_processed", message_id)
+    
+    def emit_forward_completed(self, message_id, target_info, success):
+        """发射转发完成事件"""
+        if self.emit:
+            self.emit("forward_completed", message_id, target_info, success)
+```
+
+#### 4.6 重构收益
+
+**代码重复减少**
+- **文本替换逻辑**：从2个独立实现减少到1个统一实现
+- **过滤规则逻辑**：从2个独立实现减少到1个统一实现
+- **配置处理逻辑**：从2个独立实现减少到1个统一实现
+- **事件处理逻辑**：从2个独立实现减少到1个统一实现
+
+**维护性提升**
+- **单一职责**：每个抽象类只负责一个特定功能
+- **易于测试**：抽象层可以独立测试，提高测试覆盖率
+- **易于扩展**：新功能可以通过继承抽象类实现
+- **配置统一**：统一的配置模型减少配置错误
+
+**功能一致性**
+- **过滤行为一致**：转发和监听的过滤行为完全一致
+- **文本替换一致**：文本替换逻辑和行为完全一致
+- **事件格式一致**：事件格式和内容完全一致
+- **错误处理一致**：错误处理和日志记录完全一致
+
+### 5. 监听模块重构
 
 ## 实施计划
 
@@ -862,6 +2675,12 @@ class SmartUploadPlugin(BaseUploadPlugin):
 - [ ] 实现媒体组上传（保持原有功能）
 - [ ] 实现上传进度跟踪
 - [ ] 实现文件哈希检查和重复文件跳过
+- [ ] 实现多目标上传优化（消息复制策略）
+- [ ] 实现最终消息发送功能（HTML支持）
+- [ ] 实现网络错误处理和重试机制
+- [ ] 实现事件系统集成（进度、完成、错误事件）
+- [ ] 实现视频缩略图自动生成
+- [ ] 实现媒体组分块上传（超过10个文件）
 - [ ] 编写上传插件测试，对比原有功能
 
 #### 2.4 转发插件
@@ -987,6 +2806,7 @@ class SmartUploadPlugin(BaseUploadPlugin):
 - [ ] 关键词过滤
 - [ ] 媒体类型过滤
 - [ ] 目录组织方式
+- [ ] 顺序下载（舍弃并行下载）
 
 #### 上传功能
 - [ ] 本地文件上传
@@ -996,6 +2816,14 @@ class SmartUploadPlugin(BaseUploadPlugin):
 - [ ] 重复文件跳过
 - [ ] 缩略图生成
 - [ ] 最终消息发送
+- [ ] 多目标上传优化（消息复制策略）
+- [ ] 网络错误处理和重试机制
+- [ ] 事件系统集成（进度、完成、错误事件）
+- [ ] 媒体组分块上传（超过10个文件）
+- [ ] HTML最终消息支持
+- [ ] 网页预览控制
+- [ ] 文件类型自动识别
+- [ ] 上传历史管理
 
 #### 转发功能
 - [ ] 直接转发
@@ -1070,6 +2898,8 @@ class SmartUploadPlugin(BaseUploadPlugin):
 - 所有输出结果一致
 - 错误处理行为一致
 - UI界面和原项目完全一致
+- **下载功能简化**：只保留顺序下载，舍弃并行下载功能
+- **上传功能完善**：保持所有上传功能，包括多目标优化、最终消息、事件系统等
 
 ### 2. 性能标准
 - 启动时间不超过原有系统的120%
