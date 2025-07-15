@@ -40,7 +40,7 @@ class ChannelValidator:
         self.flood_wait_handler.set_event_bus(event_bus)
         self.error_handler.set_event_bus(event_bus)
     
-    async def validate_channel(self, channel_id: Union[int, str]) -> Tuple[bool, Optional[str]]:
+    async def validate_channel(self, channel_id: Union[int, str]) -> bool:
         """
         验证频道是否有效
         
@@ -48,7 +48,7 @@ class ChannelValidator:
             channel_id: 频道ID或用户名
             
         Returns:
-            (是否有效, 错误信息)
+            是否有效
         """
         try:
             logger.info(f"验证频道: {channel_id}")
@@ -60,31 +60,29 @@ class ChannelValidator:
                     cache_data = self.channel_cache[cache_key]
                     if not self._is_cache_expired(cache_data):
                         logger.debug(f"从缓存获取频道验证结果: {channel_id}")
-                        return cache_data['valid'], cache_data.get('error')
+                        return cache_data['valid']
             
             # 获取频道信息
             chat = await self._get_chat_info(channel_id)
             
             if chat:
                 # 验证成功
-                result = (True, None)
                 if self.cache_enabled:
                     self._add_to_channel_cache(str(channel_id), {
                         'valid': True,
                         'chat_info': self._extract_chat_info(chat),
                         'timestamp': self._get_current_timestamp()
                     })
-                return result
+                return True
             else:
                 # 验证失败
-                result = (False, "无法获取频道信息")
                 if self.cache_enabled:
                     self._add_to_channel_cache(str(channel_id), {
                         'valid': False,
-                        'error': result[1],
+                        'error': "无法获取频道信息",
                         'timestamp': self._get_current_timestamp()
                     })
-                return result
+                return False
                 
         except Exception as e:
             error_info = self.error_handler.handle_error(e, {
@@ -92,7 +90,7 @@ class ChannelValidator:
                 'channel_id': channel_id
             })
             logger.error(f"验证频道失败: {error_info}")
-            return False, str(error_info)
+            return False
     
     async def get_channel_info(self, channel_id: Union[int, str]) -> Optional[Dict[str, Any]]:
         """
@@ -143,7 +141,7 @@ class ChannelValidator:
             return None
     
     async def check_permissions(self, channel_id: Union[int, str], 
-                               required_permissions: Optional[List[str]] = None) -> Dict[str, Any]:
+                               required_permissions: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         """
         检查频道权限
         
@@ -173,31 +171,31 @@ class ChannelValidator:
             member = await self._get_chat_member(channel_id, me.id)
             
             if not member:
-                result = {
+                return {
                     'can_access': False,
                     'reason': '无法获取成员信息',
                     'permissions': {}
                 }
-            else:
-                # 分析权限
-                permissions = self._analyze_permissions(member)
-                
-                # 检查所需权限
-                can_access = True
-                missing_permissions = []
-                
-                if required_permissions:
-                    for perm in required_permissions:
-                        if not permissions.get(perm, False):
-                            can_access = False
-                            missing_permissions.append(perm)
-                
-                result = {
-                    'can_access': can_access,
-                    'member_type': member.status.value,
-                    'permissions': permissions,
-                    'missing_permissions': missing_permissions
-                }
+            
+            # 分析权限
+            permissions = self._analyze_permissions(member)
+            
+            # 检查所需权限
+            can_access = True
+            missing_permissions = []
+            
+            if required_permissions:
+                for perm in required_permissions:
+                    if not permissions.get(perm, False):
+                        can_access = False
+                        missing_permissions.append(perm)
+            
+            result = {
+                'can_access': can_access,
+                'member_type': member.status.value if hasattr(member.status, 'value') else str(member.status),
+                'permissions': permissions,
+                'missing_permissions': missing_permissions
+            }
             
             # 更新缓存
             if self.cache_enabled:
@@ -372,10 +370,7 @@ class ChannelValidator:
     async def _get_chat_member(self, chat_id: Union[int, str], user_id: int) -> Optional[ChatMember]:
         """获取聊天成员信息"""
         try:
-            async def get_member():
-                return await self.client.get_chat_member(chat_id, user_id)
-            
-            return await self.flood_wait_handler.execute_with_flood_wait(get_member)
+            return await self.client.get_chat_member(chat_id, user_id)
             
         except Exception as e:
             error_info = self.error_handler.handle_error(e, {
@@ -390,17 +385,17 @@ class ChannelValidator:
         """提取聊天信息"""
         return {
             'id': chat.id,
-            'type': chat.type.value,
-            'title': chat.title,
-            'username': chat.username,
-            'first_name': chat.first_name,
-            'last_name': chat.last_name,
-            'members_count': chat.members_count,
-            'description': chat.description,
-            'is_verified': chat.is_verified,
-            'is_restricted': chat.is_restricted,
-            'is_scam': chat.is_scam,
-            'is_fake': chat.is_fake
+            'type': chat.type.value if hasattr(chat.type, 'value') else str(chat.type),
+            'title': getattr(chat, 'title', None),
+            'username': getattr(chat, 'username', None),
+            'first_name': getattr(chat, 'first_name', None),
+            'last_name': getattr(chat, 'last_name', None),
+            'members_count': getattr(chat, 'members_count', None),
+            'description': getattr(chat, 'description', None),
+            'is_verified': getattr(chat, 'is_verified', False),
+            'is_restricted': getattr(chat, 'is_restricted', False),
+            'is_scam': getattr(chat, 'is_scam', False),
+            'is_fake': getattr(chat, 'is_fake', False)
         }
     
     def _analyze_permissions(self, member: ChatMember) -> Dict[str, bool]:
@@ -411,19 +406,36 @@ class ChannelValidator:
             # 管理员权限
             privileges = member.privileges
             permissions.update({
-                'can_manage_chat': privileges.can_manage_chat,
-                'can_delete_messages': privileges.can_delete_messages,
-                'can_manage_video_chats': privileges.can_manage_video_chats,
-                'can_restrict_members': privileges.can_restrict_members,
-                'can_promote_members': privileges.can_promote_members,
-                'can_change_info': privileges.can_change_info,
-                'can_invite_users': privileges.can_invite_users,
-                'can_post_messages': privileges.can_post_messages,
-                'can_edit_messages': privileges.can_edit_messages,
-                'can_pin_messages': privileges.can_pin_messages,
-                'can_post_stories': privileges.can_post_stories,
-                'can_edit_stories': privileges.can_edit_stories,
-                'can_delete_stories': privileges.can_delete_stories
+                'can_manage_chat': getattr(privileges, 'can_manage_chat', False),
+                'can_delete_messages': getattr(privileges, 'can_delete_messages', False),
+                'can_manage_video_chats': getattr(privileges, 'can_manage_video_chats', False),
+                'can_restrict_members': getattr(privileges, 'can_restrict_members', False),
+                'can_promote_members': getattr(privileges, 'can_promote_members', False),
+                'can_change_info': getattr(privileges, 'can_change_info', False),
+                'can_invite_users': getattr(privileges, 'can_invite_users', False),
+                'can_post_messages': getattr(privileges, 'can_post_messages', False),
+                'can_edit_messages': getattr(privileges, 'can_edit_messages', False),
+                'can_pin_messages': getattr(privileges, 'can_pin_messages', False),
+                'can_post_stories': getattr(privileges, 'can_post_stories', False),
+                'can_edit_stories': getattr(privileges, 'can_edit_stories', False),
+                'can_delete_stories': getattr(privileges, 'can_delete_stories', False)
+            })
+        else:
+            # 普通成员权限
+            permissions.update({
+                'can_manage_chat': False,
+                'can_delete_messages': False,
+                'can_manage_video_chats': False,
+                'can_restrict_members': False,
+                'can_promote_members': False,
+                'can_change_info': False,
+                'can_invite_users': False,
+                'can_post_messages': True,
+                'can_edit_messages': False,
+                'can_pin_messages': False,
+                'can_post_stories': False,
+                'can_edit_stories': False,
+                'can_delete_stories': False
             })
         
         # 基本权限
@@ -502,4 +514,77 @@ class ChannelValidator:
             'size': self.cache_size,
             'channel_cache_count': len(self.channel_cache),
             'permission_cache_count': len(self.permission_cache)
-        } 
+        }
+    
+    async def is_channel_public(self, channel_id: Union[int, str]) -> Optional[bool]:
+        """
+        检查频道是否公开
+        
+        Args:
+            channel_id: 频道ID或用户名
+            
+        Returns:
+            是否公开，失败时返回None
+        """
+        try:
+            # 获取频道信息
+            chat = await self._get_chat_info(channel_id)
+            
+            if chat:
+                # 有用户名表示是公开频道
+                return bool(chat.username)
+            
+            return None
+            
+        except Exception as e:
+            error_info = self.error_handler.handle_error(e, {
+                'operation': 'is_channel_public',
+                'channel_id': channel_id
+            })
+            logger.error(f"检查频道公开性失败: {error_info}")
+            return None
+    
+    async def validate_multiple_channels(self, channel_ids: List[Union[int, str]]) -> Dict[str, bool]:
+        """
+        验证多个频道
+        
+        Args:
+            channel_ids: 频道ID列表
+            
+        Returns:
+            验证结果字典 {channel_id: is_valid}
+        """
+        results = {}
+        
+        for channel_id in channel_ids:
+            result = await self.validate_channel(channel_id)
+            results[str(channel_id)] = result
+        
+        return results
+    
+    async def get_channels_info_batch(self, channel_ids: List[Union[int, str]]) -> Dict[str, Optional[Dict[str, Any]]]:
+        """
+        批量获取频道信息
+        
+        Args:
+            channel_ids: 频道ID列表
+            
+        Returns:
+            频道信息字典
+        """
+        results = {}
+        
+        for channel_id in channel_ids:
+            info = await self.get_channel_info(channel_id)
+            results[str(channel_id)] = info
+        
+        return results
+    
+    def set_cache_ttl(self, ttl: int) -> None:
+        """
+        设置缓存TTL
+        
+        Args:
+            ttl: TTL时间（秒）
+        """
+        self.cache_ttl = ttl 
