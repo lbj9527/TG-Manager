@@ -15,18 +15,365 @@
 支持多客户端池，动态分配和管理Telegram客户端，绕开Telegram的限制（如速率限制）。普通用户支持3个客户端，Premium用户支持4个客户端。  
 
 **详细需求**：
-- 系统支持用户登录多个Telegram账户（普通用户最多3个，Premium用户最多4个）。
-- 客户端池动态调度：根据任务需求（如消息监听、上传、下载等）自动选择可用客户端，优化性能并避免触发Telegram的限制。
-- 提供客户端状态监控，显示每个客户端的连接状态、速率限制情况及错误日志。
-- 支持客户端自动重连机制，处理网络中断或Telegram限制导致的断连。
-- 客户端池支持手动切换，允许用户手动选择特定客户端执行任务。
-- 客户端数据隔离：确保不同客户端的会话数据（如消息、文件）独立存储，防止交叉污染。
+
+#### 1.1 客户端配置界面
+- **账户类型选择**：
+  - 提供账户类型选择界面，用户需选择自己的Telegram账户类型（普通账户或Premium账户）。
+  - 根据账户类型动态显示客户端配置窗口数量：普通账户显示3个客户端配置窗口，Premium账户显示4个客户端配置窗口。
+  
+- **客户端配置内容**：
+  - 每个客户端配置窗口包含以下字段：
+    - **API ID**：Telegram应用API ID（必填）
+    - **API Hash**：Telegram应用API Hash（必填）
+    - **电话号码**：Telegram账户绑定的手机号码（必填）
+    - **会话名称**：客户端会话的唯一标识名称（必填）
+  
+- **配置验证规则**：
+  - **API ID**：必须为纯数字，长度在5-10位之间
+  - **API Hash**：必须为32位十六进制字符串（包含字母a-f和数字0-9）
+  - **电话号码**：支持国际格式，必须包含国家代码（如+86、+1等）
+  - **会话名称**：必须为2-50个字符，支持中文、英文、数字和下划线，不能为空
+  - **共享配置**：API ID、API Hash、电话号码可以在多个客户端之间共用
+  - **唯一性约束**：会话名称必须在所有客户端中保持唯一，不能重复
+
+#### 1.2 客户端登录流程
+- **顺序登录机制**：
+  - 用户必须按照配置顺序逐个登录客户端，不能同时登录多个客户端
+  - 只有当前客户端登录成功后，下一个客户端的登录按钮才会被激活
+  - 登录过程中，其他客户端的登录按钮保持禁用状态，防止误操作
+  
+- **登录状态管理**：
+  - 每个客户端显示独立的登录状态（未登录、登录中、已登录、登录失败）
+  - 登录失败时显示具体错误信息，并提供重试选项
+  - 已登录的客户端显示连接状态和最后活跃时间
+
+#### 1.3 客户端池管理
+- **客户端启用/禁用**：
+  - 支持用户手动启用或禁用任意客户端
+  - 系统强制要求至少保持一个客户端处于启用状态
+  - 当用户尝试禁用最后一个启用状态的客户端时，系统应阻止操作并提示用户
+  - 禁用的客户端不参与任何任务执行，但仍保留配置信息
+
+- **自动负载均衡**：
+  - 程序内部自动分配客户端执行各种操作（下载、上传、转发、监听等）
+  - **核心目标**：最大化下载和上传速度，确保转发和监听功能稳定运行
+  - 实现智能负载均衡算法，根据以下因素自动选择最优客户端：
+    - 客户端当前负载情况（正在执行的任务数量）
+    - 客户端历史成功率
+    - 客户端当前速率限制状态
+    - 任务类型优先级（下载/上传任务优先分配）
+    - 客户端响应时间和网络状况
+  - 避免单个客户端过载，确保任务合理分配
+
+- **任务分配策略**：
+  - **单一功能模式**：当用户同时只使用一种功能时，将所有可用客户端分配给该任务，最大化执行效率
+  - **下载任务**：优先分配给所有可用客户端，充分利用多客户端带宽，提高下载速度
+  - **上传任务**：优先分配给所有可用客户端，并行上传，最大化上传速度
+  - **转发任务**：转发间隔控制在2秒以内即可，主要确保消息不遗漏，不追求极致速度
+  - **监听任务**：
+  - **普通频道监听**：监听后转发消息间隔控制在2秒以内，主要确保消息不遗漏，不追求极致速度
+  - **禁止转发频道监听**：当监听禁止转发的频道时，监听到媒体消息需要先下载后上传，此时不规定转发间隔，但需要确保不遗漏消息，尽量提高下载和上传速度，充分利用多客户端并行处理
+  - **混合任务模式**：当同时执行多种任务时，优先保证下载和上传任务获得更多客户端资源
+
+- **限流防护机制**：
+  - 实时监控每个客户端的API调用频率
+  - 当检测到即将触发Telegram限制或已经触发限流时，自动切换到其他可用客户端
+  - 实现指数退避算法，智能调整任务执行间隔
+  - **批量任务优化**：当用户执行大批量任务（如转发5000条消息）时，如果收集消息频率过高，自动使用多个客户端轮流收集，避免单个客户端触发限流
+  - 提供客户端使用统计，帮助用户了解各客户端使用情况和限流状态
+
+- **状态监控**：提供客户端状态监控，显示每个客户端的连接状态、速率限制情况、当前负载及错误日志。
+- **自动重连**：支持客户端自动重连机制，处理网络中断或Telegram限制导致的断连。
+- **数据隔离**：确保不同客户端的会话数据（如消息、文件）独立存储，防止交叉污染。
+
+#### 1.4 Pyrogram多客户端技术实现
+基于[Pyrogram官方文档](https://docs.pyrogram.org/api/client)和最佳实践，实现多客户端池管理：
+
+##### 1.4.1 客户端初始化参数
+`Client`类的构造函数用于创建客户端实例，支持用户账号的授权与操作：
+
+```python
+Client(
+    name=session_name,                    # 会话名称，用于生成会话文件（如name.session）
+    api_id=api_id,                        # Telegram API ID (整数或字符串)
+    api_hash=api_hash,                    # Telegram API Hash (32位十六进制字符串)
+    session_string=session_string,        # 会话字符串，用于无文件存储的授权（可选）
+    in_memory=False,                      # 是否使用内存存储（可选）
+    phone_number=phone_number,            # 用户授权的电话号码（含国家代码）
+    phone_code=phone_code,                # 验证码，用于新会话授权（可选）
+    password=password,                    # 双重验证密码（可选）
+    app_version="TG-Manager 1.0",         # 应用版本标识
+    device_model="Desktop",               # 设备型号
+    system_version="Windows 10",          # 操作系统版本
+    lang_code="zh",                       # 客户端语言代码（ISO 639-1标准）
+    ipv6=False,                           # 是否使用IPv6连接
+    proxy=proxy_settings,                 # 代理设置（可选）
+    workers=min(32, os.cpu_count() + 4), # 并发工作线程数
+    workdir="sessions",                   # 会话文件存储目录
+    plugins=None,                         # 智能插件设置（可选）
+    takeout=False,                        # 是否使用takeout会话（用于数据导出）
+    sleep_threshold=10,                   # FloodWait自动重试的睡眠阈值（秒）
+    hide_password=True,                   # 是否隐藏密码输入
+    max_concurrent_transmissions=1        # 最大并发传输数
+)
+```
+
+**最佳实践**：
+- 为每个客户端设置唯一`name`，避免会话文件冲突
+- 使用`session_string`或`in_memory=True`在无持久存储环境中运行
+- 配置`proxy`和`ipv6`根据网络环境优化连接
+- 使用`takeout=True`进行数据导出任务，减少限流风险
+
+##### 1.4.2 核心方法
+以下是`Client`类的主要方法，基于[Pyrogram官方文档](https://docs.pyrogram.org/api/methods)：
+
+- **start()**: 启动客户端，连接Telegram服务器并处理新会话的授权流程
+- **stop()**: 停止客户端，断开与Telegram服务器的连接
+- **run()**: 便捷方法，依次调用`start()`、`idle()`和`stop()`，适合单客户端运行
+- **restart()**: 重启客户端，重新连接Telegram服务器
+- **get_messages(chat_id, limit, offset)**: 获取消息历史
+- **get_chat_history(chat_id, limit)**: 获取聊天历史
+- **get_me()**: 获取当前用户信息
+- **invoke(function)**: 调用底层的Telegram原始API函数
+
+**最佳实践**：
+- 使用异步语法（`async/await`）充分利用Pyrogram的异步特性
+- 结合`try-except`处理`FloodWait`等异常，设置`sleep_threshold`自动重试短时间的限流
+- 合理设置消息获取的`limit`参数，避免一次性获取过多消息导致性能问题
+- 使用`get_me()`验证客户端授权状态
+
+##### 1.4.3 多客户端管理
+Pyrogram支持通过`compose()`方法同时运行多个客户端，适合需要管理多个用户账号的场景：
+
+```python
+from pyrogram import Client, compose
+
+async def main():
+    apps = [
+        Client("account1", api_id=12345, api_hash="hash1", phone_number="+1234567890"),
+        Client("account2", api_id=12345, api_hash="hash2", phone_number="+1234567891"),
+        Client("account3", api_id=12345, api_hash="hash3", phone_number="+1234567892")
+    ]
+    await compose(apps)
+```
+
+**compose()方法参数**：
+- `clients` (`List[Client]`): 要运行的客户端列表
+- `sequential` (`bool`, 可选): 是否顺序运行客户端，默认`False`（并发运行）
+
+**多客户端管理注意事项**：
+- **会话管理**: 每个客户端生成独立的`.session`文件，存储在`workdir`或内存中
+- **资源分配**: 调整`workers`参数以平衡并发性能和资源消耗
+- **错误处理**: 多客户端运行可能触发`FloodWait`或`ConnectionError`，需为每个客户端单独处理异常
+- **并发与异步**: 使用`asyncio.gather`或`compose()`实现并发操作，确保事件循环高效运行
+
+##### 1.4.4 存储引擎
+Pyrogram提供两种存储引擎，影响多客户端程序的会话管理：
+
+- **File Storage**: 默认引擎，使用SQLite存储会话数据到磁盘（`name.session`）
+  ```python
+  app = Client("my_account", workdir="/path/to/sessions")
+  ```
+- **Memory Storage**: 使用`in_memory=True`，会话数据仅存在于内存
+  ```python
+  app = Client("my_account", in_memory=True)
+  ```
+- **Session String**: 使用`session_string`传递会话数据，适合无文件存储的平台
+  ```python
+  async with Client("my_account", session_string="...ZnUIFD8jsj...") as app:
+      print(await app.get_me())
+  ```
+
+**最佳实践**：
+- 对于多客户端程序，推荐使用File Storage并为每个客户端设置独立的`workdir`
+- 在云端或临时环境中，使用`session_string`或`in_memory=True`避免文件管理问题
+- 定期备份会话文件，防止意外删除导致需要重新授权
+
+##### 1.4.5 多客户端程序开发最佳实践
+
+1. **初始化与授权**:
+   - 为每个客户端分配唯一的`name`和`workdir`，避免会话冲突
+   - 使用`session_string`或`in_memory=True`简化云端部署
+   - 用户客户端使用`phone_number`和`api_id/api_hash`进行授权
+
+2. **事件循环优化**:
+   - **Linux系统**：自动启用uvloop事件循环，提升异步性能2-4倍
+   - **跨平台兼容**：Windows和macOS使用标准asyncio事件循环
+   - **自动检测**：程序启动时检测操作系统，Linux下自动导入并使用uvloop
+   - **回退机制**：uvloop不可用时自动回退到标准事件循环
+
+3. **并发运行**:
+   - 使用`compose()`并发运行多个客户端，设置`sequential=True`在资源受限时降低负载
+   - 结合`asyncio.gather`管理多个异步任务，提高效率
+
+3. **错误处理**:
+   - 使用`try-except`捕获`FloodWait`、`ConnectionError`和`BadRequest`异常
+   - 设置合理的`sleep_threshold`（如10秒）自动处理短时间限流
+   - 避免多个客户端同时使用同一会话文件（导致`406 - NotAcceptable`）
+
+4. **资源管理**:
+   - 调整`workers`参数以优化性能，建议不超过CPU核心数的两倍
+   - 使用`stop()`或上下文管理器（`async with`）确保资源释放
+
+5. **消息获取**:
+   - 使用`get_messages`和`get_chat_history`获取消息历史
+   - 合理设置消息获取的`limit`参数，避免一次性获取过多消息
+   - 使用`get_me()`验证客户端授权状态
+
+6. **监控与日志**:
+   - 使用`get_me()`验证每个客户端的授权状态
+   - 记录每个客户端的操作日志，便于调试和错误追踪
+
+##### 1.4.6 示例代码：多客户端程序
+以下是一个多客户端程序示例，展示如何并发运行多个用户客户端：
+
+```python
+import asyncio
+import platform
+from pyrogram import Client, compose
+
+# Linux系统下自动启用uvloop提升性能
+if platform.system() == "Linux":
+    try:
+        import uvloop
+        uvloop.install()
+        print("uvloop enabled for Linux performance optimization")
+    except ImportError:
+        print("uvloop not available, using standard asyncio event loop")
+
+async def main():
+    # 定义多个用户客户端
+    clients = [
+        Client(
+            "user_account1",
+            api_id=12345,
+            api_hash="your_api_hash",
+            phone_number="+1234567890"
+        ),
+        Client(
+            "user_account2",
+            api_id=12345,
+            api_hash="your_api_hash",
+            phone_number="+1234567891"
+        ),
+        Client(
+            "user_account3",
+            api_id=12345,
+            api_hash="your_api_hash",
+            phone_number="+1234567892"
+        )
+    ]
+
+    # 并发运行客户端
+    async def handle_client(app):
+        try:
+            await app.start()
+            me = await app.get_me()
+            print(f"Client {app.name} logged in as {me.username or me.phone_number}")
+            # 客户端启动成功，可以进行消息获取等操作
+        except Exception as e:
+            print(f"Error in {app.name}: {e}")
+        finally:
+            await app.stop()
+
+    # 使用compose并发运行
+    await compose(clients)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**说明**：
+- 上述代码创建了三个用户客户端，用于多客户端管理
+- 使用`try-except`处理潜在错误，确保每个客户端独立运行
+- 通过`compose()`实现并发，适合扩展到更多客户端
+- 适用于Windows桌面程序的多客户端管理场景
+
+##### 1.4.7 性能优化与安全考虑
+- **性能优化配置**：
+  - **事件循环优化**：Linux系统下自动启用uvloop，性能提升2-4倍
+  - 并发传输：合理设置`max_concurrent_transmissions`避免网络拥塞
+  - 工作线程：根据CPU核心数调整`workers`参数
+  - 内存管理：使用`in_memory=False`避免内存泄漏
+  - 连接复用：保持客户端连接，减少重连开销
+
+##### 1.4.8 uvloop事件循环优化
+**技术背景**：
+uvloop是基于libuv的高性能事件循环实现，专为Linux系统优化，相比Python标准asyncio事件循环性能提升2-4倍。
+
+**实现机制**：
+- **自动检测**：程序启动时检测操作系统类型，Linux系统自动启用uvloop
+- **条件导入**：仅在Linux系统下导入uvloop，避免跨平台兼容性问题
+- **性能提升**：在Linux环境下，多客户端并发处理能力显著提升
+- **回退机制**：uvloop不可用时自动回退到标准asyncio事件循环
+
+**使用示例**：
+```python
+import platform
+import asyncio
+
+# Linux系统下自动启用uvloop
+if platform.system() == "Linux":
+    try:
+        import uvloop
+        uvloop.install()
+        print("uvloop enabled for Linux performance optimization")
+    except ImportError:
+        print("uvloop not available, using standard asyncio event loop")
+
+# 后续的asyncio代码自动使用优化后的事件循环
+async def main():
+    # 多客户端并发处理
+    pass
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**性能对比**：
+- **标准asyncio**：适合Windows和macOS，兼容性好
+- **uvloop**：Linux系统下性能提升2-4倍，特别适合高并发场景
+- **多客户端场景**：在Linux系统下，uvloop能显著提升多客户端并发处理能力
+
+- **安全与隐私保护**：
+  - 会话加密：会话文件包含加密的认证数据
+  - 密码保护：`hide_password=True`保护密码输入
+  - 代理支持：支持SOCKS5、HTTP等代理类型
+  - 数据清理：定期清理临时文件和会话数据
+
+- **FloodWait处理策略**：
+  - 自动处理：`sleep_threshold`参数设置自动处理阈值（默认10秒）
+  - 手动处理：超过阈值的FloodWait异常需要手动处理
+  - 多客户端轮换：检测到FloodWait时自动切换到其他可用客户端
+  - 指数退避：实现智能重试算法，避免频繁触发限制
+
+- **错误处理与重试机制**：
+  - 认证错误：`AuthKeyUnregistered`、`Unauthorized`等需要重新登录
+  - 网络错误：连接超时、网络中断等自动重试
+  - 用户状态错误：`UserDeactivated`等需要用户干预
+  - API限制错误：`FloodWait`、`TooManyRequests`等需要等待
 
 **验收标准**：
-- 普通用户可登录并管理3个Telegram账户，Premium用户可登录并管理4个账户。
-- 客户端池能在高负载下（例如同时监听100个频道）稳定运行，自动切换客户端。
+- 普通用户可配置并登录3个Telegram客户端，Premium用户可配置并登录4个客户端。
+- 配置验证准确率100%，能正确识别和提示配置错误。
+- 客户端登录顺序控制有效，防止同时登录触发Telegram限制。
+- 客户端启用/禁用功能正常，系统强制保持至少一个客户端启用状态。
+- 自动负载均衡算法能有效分配任务，优先保证下载和上传速度最大化。
+- 单一功能模式下，所有可用客户端能正确分配给当前任务。
+- 任务分配策略合理，下载和上传任务优先获得更多客户端资源。
+- 非禁止转发频道的监听后转发任务间隔控制在2秒以内，确保消息不遗漏。
+- 禁止转发频道的监听后转发能正确处理媒体消息的下载和上传，充分利用多客户端并行处理。
+- 限流防护机制有效，能自动检测并避免触发Telegram API限制。
+- 大批量任务时能自动使用多客户端轮流收集，避免单个客户端限流。
+- 客户端池能在高负载下（例如同时监听20个频道）稳定运行，监听后转发消息间隔控制在2秒以内即可，自动切换客户端。
 - 客户端状态界面实时更新，延迟不超过1秒。
 - 自动重连成功率≥99%，错误日志清晰记录断连原因。
+- Pyrogram多客户端技术实现符合官方最佳实践，客户端初始化、核心方法、多客户端管理等功能正常。
+- 多客户端程序开发最佳实践得到遵循，包括初始化授权、并发运行、错误处理等。
+- 性能优化与安全考虑措施到位，FloodWait处理、错误重试、安全保护等功能有效。
+- Linux系统下uvloop自动启用，异步性能显著提升，相比标准事件循环性能提升2-4倍。
+- 跨平台兼容性良好，Windows和macOS使用标准事件循环，Linux使用uvloop。
+- 示例代码能够正常运行，多客户端并发处理能力符合设计要求。
 
 ---
 
@@ -189,19 +536,22 @@
 
 ### 9. 现代UI设计
 **功能描述**：  
-提供漂亮、风格化的现代化UI，提升用户体验。
+提供漂亮、风格化的现代化桌面UI，提升用户体验。
 
 **详细需求**：
-- 使用现代前端框架（如React）开发，集成Tailwind CSS。
-- 响应式设计，适配桌面（Windows、macOS、Linux）和移动端（iOS、Android）。
+- 使用PySide6 (Qt6)框架开发，集成Material Design风格主题。
+- 跨平台响应式设计，适配桌面（Windows、macOS、Linux）。
 - 主题支持：提供浅色、深色主题，自动适配系统设置。
 - 界面元素风格统一，动画流畅（如页面切换、按钮点击）。
 - 提供可视化数据仪表盘，展示客户端状态、下载进度、消息统计等。
+- 支持系统托盘、通知中心集成，提供原生桌面体验。
+- 支持键盘快捷键、右键菜单等桌面应用标准功能。
 
 **验收标准**：
 - UI响应时间≤0.3秒，动画帧率≥60fps。
-- 响应式设计支持≥90%的主流设备分辨率。
+- 跨平台兼容性支持Windows 10/11、macOS 12+、Linux (Ubuntu 20.04+)。
 - 主题切换无闪烁，仪表盘数据刷新延迟≤1秒。
+- 系统集成功能正常工作，通知、托盘等功能符合各平台标准。
 
 ---
 
@@ -228,29 +578,75 @@
 
 ## 非功能需求
 - **性能**：
-  - 系统支持同时处理100个频道/群组的消息监听。
-  - 单次任务处理消息量≥1000条/分钟。
+  - 系统支持同时处理20个频道/群组的消息监听。
 - **安全性**：
   - 用户数据加密存储（AES-256）。
   - Telegram API密钥及用户凭证安全管理。
   - 防止SQL注入、XSS等常见攻击。
 - **可扩展性**：
-  - 系统支持至少1000个并发用户。
   - 插件框架支持动态加载/卸载插件。
 - **兼容性**：
   - 支持Windows 10/11、macOS 12+、Linux（Ubuntu 20.04+）。
-  - 移动端支持iOS 15+、Android 10+。
+  - 跨平台桌面应用，提供原生桌面体验。
 
 ---
 
+## 技术栈详细说明
+
+### 核心技术栈
+- **开发语言**：Python 3.8+ (跨平台桌面应用开发)
+- **Telegram API**：Pyrogram 2.0+ (官方推荐的多平台客户端库，支持MTProto协议)
+- **UI框架**：PySide6 (Qt6的Python绑定，提供原生跨平台桌面UI)
+- **异步处理**：asyncio + aiohttp (高性能异步网络处理，支持并发操作)
+- **Linux性能优化**：uvloop (Linux系统下的高性能事件循环替代方案)
+
+### 数据存储与配置
+- **本地数据库**：SQLite (轻量级、无需服务器，适合桌面应用)
+- **配置文件**：JSON格式 (易于读写和版本控制)
+- **会话管理**：Pyrogram内置会话存储 (支持文件存储和内存存储)
+
+### 性能与安全
+- **加密加速**：TgCrypto (Telegram官方加密库，提升MTProto协议性能)
+- **日志系统**：loguru (结构化日志记录，支持多级别和文件轮转)
+- **配置验证**：pydantic (数据验证和配置管理，确保配置正确性)
+
+### 媒体处理
+- **视频处理**：moviepy (视频编辑、格式转换、水印添加)
+- **图像处理**：Pillow (图像编辑、格式转换、水印处理)
+- **计算机视觉**：opencv-python (高级图像和视频处理)
+
+### 用户体验
+- **UI主题**：qt-material (Material Design风格主题)
+- **国际化**：内置翻译系统 (JSON格式语言包，支持多语言切换)
+- **系统集成**：系统托盘、通知中心、文件关联等原生功能
+
+### 开发与测试
+- **测试框架**：pytest + pytest-asyncio + pytest-qt (单元测试、异步测试、UI测试)
+- **类型检查**：mypy (静态类型检查，提高代码质量)
+- **代码质量**：black (代码格式化) + flake8 (代码检查) + isort (import排序)
+
+### 插件与扩展
+- **插件系统**：Python插件框架 (动态加载/卸载，支持热插拔)
+- **插件管理**：importlib-metadata + entrypoints (插件发现和管理)
+
+### 打包与分发
+- **打包工具**：PyInstaller (跨平台可执行文件打包)
+- **依赖管理**：requirements.txt (明确的依赖版本管理)
+
+### 跨平台支持
+- **Windows**：Windows 10/11 (x64)
+- **macOS**：macOS 12+ (Intel/Apple Silicon)
+- **Linux**：Ubuntu 20.04+ (主流发行版)，集成uvloop提升异步性能
+
+### Linux性能优化
+- **uvloop集成**：在Linux系统下自动使用uvloop替代默认事件循环，提升异步性能
+- **性能提升**：uvloop相比默认asyncio事件循环，性能提升2-4倍
+- **兼容性**：仅在Linux系统下启用，Windows和macOS保持默认事件循环
+- **自动检测**：程序启动时自动检测操作系统，Linux下自动启用uvloop
+- **回退机制**：如果uvloop不可用，自动回退到标准asyncio事件循环
+
 ## 项目约束
 - **开发周期**：6个月（可分阶段交付）。
-- **技术栈**：
-  - 前端：React + Tailwind CSS。
-  - 后端：Node.js + Express（或Python + FastAPI）。
-  - 数据库：PostgreSQL（支持高并发）。
-  - Telegram API：基于Telethon或Pyrogram。
-  - 插件框架：支持JavaScript或Python插件。
 - **预算**：待定，需根据开发规模进一步评估。
 
 ---
