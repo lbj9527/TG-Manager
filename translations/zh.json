@@ -602,6 +602,7 @@
         "phone_number": "手机号码:",
         "login": "登录",
         "logged_in": "已登录",
+        "logging_in": "登录中...",
         "login_tip": "请填写您的Telegram API ID、API Hash和手机号码后点击登录按钮。\n如未申请API凭据，请访问 <a href='https://my.telegram.org'>https://my.telegram.org</a> 申请。\n手机号码格式应为国际格式，例如：+86 12345678901",
         "session": {
           "title": "会话设置",
@@ -659,7 +660,8 @@
       "tooltips": {
         "login_current_user": "当前登录用户: {user}",
         "login_logged_in": "当前已登录",
-        "login_click_to_login": "点击登录到Telegram账号"
+        "login_click_to_login": "点击登录到Telegram账号",
+        "login_in_progress": "正在登录中，请稍候..."
       },
       "dialogs": {
         "language_changed_restart": {
@@ -707,6 +709,10 @@
       "first_time": {
         "title": "首次使用提示",
         "message": "欢迎使用TG-Manager！\n\n检测到这是您首次使用本程序，请在API设置中填写您的Telegram API凭据并点击登录按钮完成登录。\n\n如果您还没有API ID和API Hash，请访问 https://my.telegram.org 申请。\n\n填写完成后，请点击登录按钮完成账号验证。"
+      },
+      "success": {
+        "title": "首次登录成功",
+        "message": "首次登录成功，请重启程序，以使用完整功能。"
       }
     },
     "dialogs": {

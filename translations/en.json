@@ -592,6 +592,7 @@
         "phone_number": "Phone Number:",
         "login": "Login",
         "logged_in": "Logged In",
+        "logging_in": "Logging in...",
         "login_tip": "Please fill in your Telegram API ID, API Hash and phone number, then click the login button.\nIf you haven't applied for API credentials, please visit <a href='https://my.telegram.org'>https://my.telegram.org</a> to apply.\nPhone number format should be international format, e.g.: +86 12345678901",
         "session": {
           "title": "Session Settings",
@@ -649,7 +650,8 @@
       "tooltips": {
         "login_current_user": "Current logged in user: {user}",
         "login_logged_in": "Currently logged in",
-        "login_click_to_login": "Click to login to Telegram account"
+        "login_click_to_login": "Click to login to Telegram account",
+        "login_in_progress": "Logging in, please wait..."
       },
       "dialogs": {
         "language_changed_restart": {
@@ -733,6 +735,10 @@
       "first_time": {
         "title": "First Time Setup",
         "message": "Welcome to TG-Manager!\n\nThis appears to be your first time using this program. Please fill in your Telegram API credentials in the API settings and click the login button to complete the login.\n\nIf you don't have API ID and API Hash yet, please visit https://my.telegram.org to apply.\n\nAfter completing the configuration, please click the \"Login\" button to complete account verification."
+      },
+      "success": {
+        "title": "First Login Successful",
+        "message": "First login successful, please restart the program to use full functionality."
       }
     },
     "option_remove_captions": "Remove Captions",

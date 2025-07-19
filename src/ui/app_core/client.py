@@ -91,16 +91,24 @@ class ClientHandler:
         """
         # 检查是否已存在网络检查任务
         if hasattr(self.app, 'task_manager') and self.app.task_manager.is_task_running("network_connection_check"):
-
+            logger.debug("网络连接检查任务已存在，跳过启动")
             return
             
         # 等待短暂延迟，确保登录过程完全结束
         await safe_sleep(2)
         
+        # 再次检查，避免在等待期间其他任务已启动
+        if hasattr(self.app, 'task_manager') and self.app.task_manager.is_task_running("network_connection_check"):
+            logger.debug("等待后网络连接检查任务已存在，跳过启动")
+            return
+        
         # 启动网络连接检查任务
         if hasattr(self.app, 'task_manager'):
-            self.app.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
-            logger.info("已启动网络连接状态检查定时任务")
+            try:
+                self.app.task_manager.add_task("network_connection_check", self._check_network_connection_periodically())
+                logger.info("已启动网络连接状态检查定时任务")
+            except Exception as e:
+                logger.error(f"启动网络连接检查任务失败: {e}")
         else:
             logger.warning("任务管理器不存在，无法启动网络连接检查")
 

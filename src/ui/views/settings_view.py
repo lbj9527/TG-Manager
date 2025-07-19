@@ -903,17 +903,25 @@ class SettingsView(QWidget):
             if "notification_sound" in ui:
                 self.notification_sound.setChecked(ui["notification_sound"])
     
-    def update_login_button(self, is_logged_in, user_info=None):
+    def update_login_button(self, is_logged_in, user_info=None, is_logging_in=False):
         """更新登录按钮状态
         
         Args:
             is_logged_in: 是否已登录
             user_info: 用户信息（可选）
+            is_logging_in: 是否正在登录中
         """
         if not hasattr(self, 'login_button'):
             return
             
-        if is_logged_in:
+        if is_logging_in:
+            # 登录中状态：黄色背景，显示"登录中..."
+            self.login_button.setText(tr("ui.settings.api.logging_in"))
+            self.login_button.setStyleSheet("background-color: #FFC107; color: white; border: none; border-radius: 3px;")  # 黄色背景，无边框
+            self.login_button.setEnabled(False)  # 禁用按钮
+            self.login_button.setToolTip(tr("ui.settings.tooltips.login_in_progress"))
+        elif is_logged_in:
+            # 已登录状态：红色背景
             self.login_button.setText(tr("ui.settings.api.logged_in"))
             self.login_button.setStyleSheet("background-color: #F44336; color: white; border: none; border-radius: 3px;")  # 红色背景，无边框
             self.login_button.setEnabled(False)  # 禁用按钮
@@ -923,6 +931,7 @@ class SettingsView(QWidget):
             else:
                 self.login_button.setToolTip(tr("ui.settings.tooltips.login_logged_in"))
         else:
+            # 未登录状态：蓝色背景
             self.login_button.setText(tr("ui.settings.api.login"))
             self.login_button.setStyleSheet("background-color: #2196F3; color: white; border: none; border-radius: 3px;")  # 蓝色背景，无边框
             self.login_button.setEnabled(True)  # 启用按钮

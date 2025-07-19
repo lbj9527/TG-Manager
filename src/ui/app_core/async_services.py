@@ -283,14 +283,9 @@ class AsyncServicesInitializer:
         try:
             logger.info("开始初始化剩余的核心组件...")
             
-            # 4. 初始化event_emitter
-            from src.utils.event_emitter import EventEmitter
-            self.app.event_emitter = EventEmitter()
-            logger.info("已创建事件发射器")
-            
-            # 5. 初始化task_manager
-            from src.utils.async_utils import TaskManager
-            self.app.task_manager = TaskManager()
+            # 4. 初始化task_manager
+            from src.utils.async_utils import AsyncTaskManager
+            self.app.task_manager = AsyncTaskManager()
             logger.info("已创建任务管理器")
             
             # 6. 初始化resource_manager

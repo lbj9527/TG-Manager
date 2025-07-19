@@ -228,6 +228,10 @@ class ActionsMixin:
             # 显示登录进行中的消息
             self.statusBar().showMessage(tr("ui.login.status.logging_in").format(phone=phone_number))
             
+            # 更新登录按钮为登录中状态
+            if hasattr(settings_view, 'update_login_button'):
+                settings_view.update_login_button(False, None, True)
+            
             # 获取app实例和client_manager
             if not hasattr(self, 'app') or not hasattr(self.app, 'client_manager'):
                 QMessageBox.warning(
@@ -236,6 +240,9 @@ class ActionsMixin:
                     tr("ui.login.errors.login_failed_msg"),
                     QMessageBox.Ok
                 )
+                # 恢复登录按钮状态
+                if hasattr(settings_view, 'update_login_button'):
+                    settings_view.update_login_button(False, None, False)
                 return
             
             # 创建异步任务执行登录过程
@@ -297,9 +304,9 @@ class ActionsMixin:
                         
                         self.statusBar().showMessage(tr("ui.login.status.logged_in").format(user=user_info), 5000)
                         
-                        # 更新设置视图中的登录按钮
+                        # 更新设置视图中的登录按钮为已登录状态
                         if hasattr(settings_view, 'update_login_button'):
-                            settings_view.update_login_button(True, user_info)
+                            settings_view.update_login_button(True, user_info, False)
                         
                         # 首次登录成功后，自动保存配置
                         logger.info("首次登录成功，自动保存配置")
@@ -311,14 +318,48 @@ class ActionsMixin:
                         
                         # 初始化剩余的核心组件
                         if hasattr(self.app, 'async_services_initializer'):
+                            logger.info("开始初始化剩余核心组件...")
                             await self.app.async_services_initializer.init_remaining_components()
+                            logger.info("剩余核心组件初始化完成")
+                        
+                        # 首次登录成功后弹出提示对话框
+                        logger.info("准备显示首次登录成功对话框...")
+                        def show_success_dialog():
+                            try:
+                                logger.info("正在显示首次登录成功对话框...")
+                                QMessageBox.information(
+                                    self,
+                                    tr("ui.login.success.title"),
+                                    tr("ui.login.success.message"),
+                                    QMessageBox.Ok
+                                )
+                                logger.info("首次登录成功对话框已显示")
+                            except Exception as dialog_error:
+                                logger.error(f"显示首次登录成功对话框时出错: {dialog_error}")
+                        
+                        # 使用单次计时器在主线程中显示对话框
+                        from PySide6.QtCore import QTimer
+                        timer = QTimer()
+                        timer.setSingleShot(True)
+                        timer.timeout.connect(show_success_dialog)
+                        timer.start(1000)  # 延迟1秒显示，确保其他初始化完成
+                        logger.info("已设置首次登录成功对话框定时器，将在1秒后显示")
+                        
+                        # 保存定时器引用，防止被垃圾回收
+                        self._success_dialog_timer = timer
                     else:
                         self.statusBar().showMessage(tr("ui.login.status.failed"), 5000)
+                        # 恢复登录按钮状态
+                        if hasattr(settings_view, 'update_login_button'):
+                            settings_view.update_login_button(False, None, False)
                 
                 except Exception as e:
                     logger.error(f"首次登录过程中出错: {e}")
                     error_msg = str(e)
                     self.statusBar().showMessage(tr("ui.login.status.error").format(error=error_msg), 5000)
+                    # 恢复登录按钮状态
+                    if hasattr(settings_view, 'update_login_button'):
+                        settings_view.update_login_button(False, None, False)
             
             # 启动登录任务
             if hasattr(self.app, 'task_manager'):
