@@ -691,7 +691,11 @@
         "login_error_title": "登录错误",
         "login_error_msg": "登录过程中出错: {error}",
         "module_load_failed_title": "模块加载失败",
-        "module_load_failed_msg": "无法加载设置模块。\n错误: {error}"
+        "module_load_failed_msg": "无法加载设置模块。\n错误: {error}",
+        "settings_not_open_title": "设置界面未打开",
+        "settings_not_open_msg": "请先打开设置界面并填写API凭据后再尝试登录。",
+        "invalid_api_id_title": "API ID格式错误",
+        "invalid_api_id_msg": "API ID必须是有效的数字。"
       },
       "status": {
         "logging_in": "登录中: {phone}",

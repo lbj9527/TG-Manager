@@ -123,6 +123,222 @@ class ActionsMixin:
     def _handle_login(self):
         """处理用户登录"""
         try:
+            # 检查是否为首次登录模式
+            is_first_login = hasattr(self.app, 'is_first_login') and self.app.is_first_login
+            
+            if is_first_login:
+                # 首次登录模式：从设置界面读取配置
+                logger.info("首次登录模式：从设置界面读取配置")
+                self._handle_first_login()
+            else:
+                # 非首次登录模式：从配置文件读取配置
+                logger.info("非首次登录模式：从配置文件读取配置")
+                self._handle_normal_login()
+        
+        except Exception as e:
+            logger.error(f"登录处理时出错: {e}")
+            QMessageBox.critical(
+                self,
+                tr("ui.login.errors.login_error_title"),
+                tr("ui.login.errors.login_error_msg").format(error=str(e)),
+                QMessageBox.Ok
+            )
+    
+    def _handle_first_login(self):
+        """处理首次登录：从设置界面读取配置"""
+        try:
+            # 检查设置界面是否已打开
+            if "settings_view" not in self.opened_views:
+                QMessageBox.warning(
+                    self,
+                    tr("ui.login.errors.settings_not_open_title"),
+                    tr("ui.login.errors.settings_not_open_msg"),
+                    QMessageBox.Ok
+                )
+                return
+            
+            settings_view = self.opened_views["settings_view"]
+            
+            # 从设置界面读取API凭据
+            api_id = settings_view.api_id.text().strip()
+            api_hash = settings_view.api_hash.text().strip()
+            phone_number = settings_view.phone_number.text().strip()
+            
+            # 验证必填字段
+            if not api_id or not api_hash or not phone_number:
+                QMessageBox.warning(
+                    self,
+                    tr("ui.login.errors.incomplete_config_title"),
+                    tr("ui.login.errors.incomplete_config_msg"),
+                    QMessageBox.Ok
+                )
+                return
+            
+            # 验证API ID是否为数字
+            try:
+                api_id_int = int(api_id)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    tr("ui.login.errors.invalid_api_id_title"),
+                    tr("ui.login.errors.invalid_api_id_msg"),
+                    QMessageBox.Ok
+                )
+                return
+            
+            # 从设置界面读取代理配置
+            proxy_enabled = settings_view.use_proxy.isChecked()
+            proxy_settings = {}
+            
+            if proxy_enabled:
+                proxy_type = settings_view.proxy_type.currentText()
+                proxy_host = settings_view.proxy_host.text().strip()
+                proxy_port = settings_view.proxy_port.value()
+                proxy_username = settings_view.proxy_username.text().strip() or None
+                proxy_password = settings_view.proxy_password.text().strip() or None
+                
+                # 验证代理配置
+                if not proxy_host:
+                    QMessageBox.warning(
+                        self,
+                        tr("errors.validation.proxy_addr_required"),
+                        tr("errors.validation.proxy_addr_required"),
+                        QMessageBox.Ok
+                    )
+                    return
+                
+                # 构建代理设置
+                proxy_settings = {
+                    "proxy": {
+                        "scheme": proxy_type.lower(),
+                        "hostname": proxy_host,
+                        "port": proxy_port
+                    }
+                }
+                
+                # 如果有用户名和密码，添加到代理设置中
+                if proxy_username and proxy_password:
+                    proxy_settings["proxy"]["username"] = proxy_username
+                    proxy_settings["proxy"]["password"] = proxy_password
+                
+                logger.info(f"首次登录使用代理: {proxy_type}://{proxy_host}:{proxy_port}")
+            else:
+                logger.info("首次登录不使用代理")
+            
+            # 显示登录进行中的消息
+            self.statusBar().showMessage(tr("ui.login.status.logging_in").format(phone=phone_number))
+            
+            # 获取app实例和client_manager
+            if not hasattr(self, 'app') or not hasattr(self.app, 'client_manager'):
+                QMessageBox.warning(
+                    self,
+                    tr("ui.login.errors.login_failed_title"),
+                    tr("ui.login.errors.login_failed_msg"),
+                    QMessageBox.Ok
+                )
+                return
+            
+            # 创建异步任务执行登录过程
+            async def first_login_process():
+                try:
+                    import asyncio
+                    
+                    # 更新客户端管理器的API凭据
+                    self.app.client_manager.api_id = api_id_int
+                    self.app.client_manager.api_hash = api_hash
+                    self.app.client_manager.phone_number = phone_number
+                    
+                    # 更新客户端管理器的代理设置
+                    self.app.client_manager.proxy_settings = proxy_settings
+                    
+                    # 发送验证码
+                    await self.app.client_manager.send_code(phone_number)
+                    
+                    # 在主线程中显示验证码输入对话框
+                    code_result = [None]
+                    
+                    def show_dialog_in_main_thread():
+                        try:
+                            result = self._show_verification_code_dialog()
+                            code_result[0] = result
+                            logger.debug(f"验证码输入结果: {result}")
+                        except Exception as dialog_error:
+                            logger.error(f"显示验证码对话框时出错: {dialog_error}")
+                    
+                    # 使用单次计时器在主线程中执行
+                    from PySide6.QtCore import QTimer
+                    timer = QTimer()
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(show_dialog_in_main_thread)
+                    timer.start(100)
+                    
+                    # 等待用户输入验证码
+                    max_wait_time = 180
+                    wait_time = 0
+                    while code_result[0] is None and wait_time < max_wait_time:
+                        await asyncio.sleep(0.5)
+                        wait_time += 0.5
+                    
+                    code = code_result[0]
+                    if not code:
+                        self.statusBar().showMessage(tr("ui.login.status.cancelled"))
+                        return
+                    
+                    # 使用验证码登录
+                    user = await self.app.client_manager.sign_in(code)
+                    
+                    # 登录成功后更新状态栏
+                    if user:
+                        user_info = f"{user.first_name}"
+                        if user.last_name:
+                            user_info += f" {user.last_name}"
+                        if user.username:
+                            user_info += f" (@{user.username})"
+                        
+                        self.statusBar().showMessage(tr("ui.login.status.logged_in").format(user=user_info), 5000)
+                        
+                        # 更新设置视图中的登录按钮
+                        if hasattr(settings_view, 'update_login_button'):
+                            settings_view.update_login_button(True, user_info)
+                        
+                        # 首次登录成功后，自动保存配置
+                        logger.info("首次登录成功，自动保存配置")
+                        settings_view._save_settings(silent=True)
+                        
+                        # 标记首次登录完成
+                        if hasattr(self.app, 'is_first_login'):
+                            self.app.is_first_login = False
+                        
+                        # 初始化剩余的核心组件
+                        if hasattr(self.app, 'async_services_initializer'):
+                            await self.app.async_services_initializer.init_remaining_components()
+                    else:
+                        self.statusBar().showMessage(tr("ui.login.status.failed"), 5000)
+                
+                except Exception as e:
+                    logger.error(f"首次登录过程中出错: {e}")
+                    error_msg = str(e)
+                    self.statusBar().showMessage(tr("ui.login.status.error").format(error=error_msg), 5000)
+            
+            # 启动登录任务
+            if hasattr(self.app, 'task_manager'):
+                self.app.task_manager.add_task("user_login", first_login_process())
+            else:
+                import asyncio
+                asyncio.create_task(first_login_process())
+        
+        except Exception as e:
+            logger.error(f"首次登录处理时出错: {e}")
+            QMessageBox.critical(
+                self,
+                tr("ui.login.errors.login_error_title"),
+                tr("ui.login.errors.login_error_msg").format(error=str(e)),
+                QMessageBox.Ok
+            )
+    
+    def _handle_normal_login(self):
+        """处理正常登录：从配置文件读取配置"""
+        try:
             # 创建登录表单对话框
             login_dialog = QDialog(self)
             login_dialog.setWindowTitle(tr("ui.login.dialog.title"))
@@ -206,25 +422,16 @@ class ActionsMixin:
                     return
                 
                 # 创建异步任务执行登录过程
-                # 提前导入需要的模块，避免在异步函数中导入
-                from PySide6.QtCore import QMetaObject, Qt
-                from PySide6.QtWidgets import QMessageBox
-                
-                async def login_process():
+                async def normal_login_process():
                     try:
-                        # 导入需要的模块，确保在异步函数中可以使用
                         import asyncio
                         
                         # 发送验证码
                         await self.app.client_manager.send_code(phone)
                         
                         # 在主线程中显示验证码输入对话框
-                        code_result = [None]  # 使用列表存储结果，以便在嵌套函数中修改
+                        code_result = [None]
                         
-                        # 改为使用Qt信号在主线程显示对话框，更可靠
-                        from PySide6.QtCore import Signal, QTimer
-                        
-                        # 使用计时器在主线程中执行代码获取
                         def show_dialog_in_main_thread():
                             try:
                                 result = self._show_verification_code_dialog()
@@ -234,13 +441,14 @@ class ActionsMixin:
                                 logger.error(f"显示验证码对话框时出错: {dialog_error}")
                         
                         # 使用单次计时器在主线程中执行
+                        from PySide6.QtCore import QTimer
                         timer = QTimer()
                         timer.setSingleShot(True)
                         timer.timeout.connect(show_dialog_in_main_thread)
-                        timer.start(100)  # 100毫秒后执行
+                        timer.start(100)
                         
                         # 等待用户输入验证码
-                        max_wait_time = 180  # 最多等待3分钟
+                        max_wait_time = 180
                         wait_time = 0
                         while code_result[0] is None and wait_time < max_wait_time:
                             await asyncio.sleep(0.5)
@@ -273,20 +481,19 @@ class ActionsMixin:
                             self.statusBar().showMessage(tr("ui.login.status.failed"), 5000)
                     
                     except Exception as e:
-                        logger.error(f"登录过程中出错: {e}")
-                        # 在主线程中显示错误消息
+                        logger.error(f"正常登录过程中出错: {e}")
                         error_msg = str(e)
                         self.statusBar().showMessage(tr("ui.login.status.error").format(error=error_msg), 5000)
                 
                 # 启动登录任务
                 if hasattr(self.app, 'task_manager'):
-                    self.app.task_manager.add_task("user_login", login_process())
+                    self.app.task_manager.add_task("user_login", normal_login_process())
                 else:
                     import asyncio
-                    asyncio.create_task(login_process())
+                    asyncio.create_task(normal_login_process())
         
         except Exception as e:
-            logger.error(f"登录处理时出错: {e}")
+            logger.error(f"正常登录处理时出错: {e}")
             QMessageBox.critical(
                 self,
                 tr("ui.login.errors.login_error_title"),

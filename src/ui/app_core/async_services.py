@@ -75,6 +75,7 @@ class AsyncServicesInitializer:
             
             if self.app.is_first_login:
                 # 首次登录不自动启动客户端，等待用户点击登录按钮
+                logger.info("首次登录模式，跳过客户端自动启动")
                 
                 # 2. 创建channel_resolver (仍然需要创建，但设置client为None)
                 from src.utils.channel_resolver import ChannelResolver
@@ -88,9 +89,13 @@ class AsyncServicesInitializer:
                 
                 # 4-8. 不初始化其他核心组件，等待用户登录后再初始化
                 logger.info("首次登录模式，核心组件将在用户登录后初始化")
+                
+                # 保存首次登录处理器引用，以便后续使用
+                self.first_login_handler = first_login_handler
+                return True  # 首次登录模式成功完成初始化
             else:
                 # 非首次登录，正常启动客户端和初始化所有组件
-                logger.info("正在启动Telegram客户端...")
+                logger.info("非首次登录模式，正在启动Telegram客户端...")
                 # 用于追踪组件初始化状态
                 initialized_components = []
                 failed_components = []
@@ -140,7 +145,8 @@ class AsyncServicesInitializer:
                             settings_view = self.app.main_window.opened_views['settings_view']
                             if hasattr(settings_view, 'update_login_button'):
                                 settings_view.update_login_button(False)
-                    return False  # 如果客户端启动失败，提前返回
+                    # 不要提前返回，继续执行后续的组件初始化
+                    # 这样即使客户端启动失败，首次登录流程仍然可以正常执行
                 
                 # 2. 创建channel_resolver
                 logger.info("正在创建频道解析器...")
@@ -201,7 +207,7 @@ class AsyncServicesInitializer:
                 try:
                     from src.modules.uploader import Uploader
                     original_uploader = Uploader(self.app.client, self.app.ui_config_manager, 
-                                                self.app.channel_resolver, self.app.history_manager, self.app)
+                                               self.app.channel_resolver, self.app.history_manager, self.app)
                     
                     # 使用事件发射器包装上传器
                     from src.modules.event_emitter_uploader import EventEmitterUploader
@@ -215,42 +221,18 @@ class AsyncServicesInitializer:
                 # 7. 初始化转发模块
                 logger.info("正在初始化转发模块...")
                 try:
-                    # 检查依赖组件
-                    logger.debug(f"检查转发器依赖组件:")
-                    logger.debug(f"  - client: {hasattr(self.app, 'client')}")
-                    logger.debug(f"  - ui_config_manager: {hasattr(self.app, 'ui_config_manager')}")
-                    logger.debug(f"  - channel_resolver: {hasattr(self.app, 'channel_resolver')}")
-                    logger.debug(f"  - history_manager: {hasattr(self.app, 'history_manager')}")
-                    logger.debug(f"  - downloader: {hasattr(self.app, 'downloader')}")
-                    logger.debug(f"  - uploader: {hasattr(self.app, 'uploader')}")
-                    
-                    # 导入转发器类
-                    logger.debug("导入Forwarder类...")
                     from src.modules.forward.forwarder import Forwarder
-                    
-                    # 创建原始转发器实例
-                    logger.debug("创建原始转发器实例...")
                     original_forwarder = Forwarder(self.app.client, self.app.ui_config_manager, 
-                                                  self.app.channel_resolver, self.app.history_manager, 
-                                                  self.app.downloader, self.app.uploader, self.app)
-                    logger.debug("原始转发器实例创建成功")
-                    
-                    # 导入事件发射器包装类
-                    logger.debug("导入EventEmitterForwarder类...")
-                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
+                                                 self.app.channel_resolver, self.app.history_manager, 
+                                                 self.app.downloader, self.app.uploader, self.app)
                     
                     # 使用事件发射器包装转发器
-                    logger.debug("创建事件发射器包装转发器...")
+                    from src.modules.event_emitter_forwarder import EventEmitterForwarder
                     self.app.forwarder = EventEmitterForwarder(original_forwarder)
-                    logger.debug("事件发射器包装转发器创建成功")
-                    
                     logger.info("已初始化转发模块并添加信号支持")
                     initialized_components.append('forwarder')
                 except Exception as e:
                     logger.error(f"初始化转发模块时出错: {e}")
-                    logger.error(f"错误类型: {type(e).__name__}")
-                    import traceback
-                    logger.error(f"完整错误堆栈:\n{traceback.format_exc()}")
                     failed_components.append('forwarder')
                 
                 # 8. 初始化监听模块
@@ -289,11 +271,76 @@ class AsyncServicesInitializer:
             
             logger.info("异步服务初始化完成")
             return True
+            
         except Exception as e:
             logger.error(f"初始化异步服务时出错: {e}")
             import traceback
             logger.error(f"错误详情:\n{traceback.format_exc()}")
             return False
+    
+    async def init_remaining_components(self):
+        """初始化剩余的核心组件（首次登录成功后调用）"""
+        try:
+            logger.info("开始初始化剩余的核心组件...")
+            
+            # 4. 初始化event_emitter
+            from src.utils.event_emitter import EventEmitter
+            self.app.event_emitter = EventEmitter()
+            logger.info("已创建事件发射器")
+            
+            # 5. 初始化task_manager
+            from src.utils.async_utils import TaskManager
+            self.app.task_manager = TaskManager()
+            logger.info("已创建任务管理器")
+            
+            # 6. 初始化resource_manager
+            from src.utils.resource_manager import ResourceManager
+            self.app.resource_manager = ResourceManager()
+            logger.info("已创建资源管理器")
+            
+            # 7. 初始化client_handler
+            from src.ui.app_core.client import ClientHandler
+            self.app.client_handler = ClientHandler(self.app)
+            logger.info("已创建客户端处理器")
+            
+            # 8. 连接客户端状态变化信号
+            if hasattr(self.app, 'client_manager') and hasattr(self.app.client_manager, 'connection_status_changed'):
+                self.app.client_manager.connection_status_changed.connect(
+                    lambda connected, user_obj: self.app.client_handler.on_client_connection_status_changed(
+                        connected, user_obj, self.app.main_window
+                    )
+                )
+                logger.info("已连接客户端状态变化信号")
+            
+            # 9. 更新频道解析器的客户端引用
+            if hasattr(self.app, 'channel_resolver') and hasattr(self.app, 'client_manager'):
+                self.app.channel_resolver.client = self.app.client_manager.client
+                logger.info("已更新频道解析器的客户端引用")
+            
+            # 10. 如果主窗口已初始化，更新状态栏
+            if hasattr(self.app, 'main_window') and self.app.client_manager.me:
+                # 获取用户信息并格式化
+                me = self.app.client_manager.me
+                user_info = f"{me.first_name}"
+                if me.last_name:
+                    user_info += f" {me.last_name}"
+                user_info += f" (@{me.username})" if me.username else ""
+                
+                # 更新主窗口状态栏
+                self.app.main_window._update_client_status(True, user_info)
+                
+                # 更新设置界面中的登录按钮状态
+                if hasattr(self.app.main_window, 'opened_views') and 'settings_view' in self.app.main_window.opened_views:
+                    settings_view = self.app.main_window.opened_views['settings_view']
+                    if hasattr(settings_view, 'update_login_button'):
+                        settings_view.update_login_button(True, user_info)
+            
+            logger.info("剩余核心组件初始化完成")
+            
+        except Exception as e:
+            logger.error(f"初始化剩余核心组件时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def initialize_views(self):
         """初始化所有视图组件，传递功能模块实例
@@ -351,7 +398,6 @@ class AsyncServicesInitializer:
         try:
             # 检查日志查看器是否已经加载
             if "log_viewer" in self.app.main_window.opened_views:
-
                 return
             
             logger.info("正在自动加载日志查看器视图...")

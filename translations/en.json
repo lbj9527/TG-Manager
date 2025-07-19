@@ -717,7 +717,11 @@
         "login_error_title": "Login Error",
         "login_error_msg": "Error occurred during login: {error}",
         "module_load_failed_title": "Module Load Failed",
-        "module_load_failed_msg": "Unable to load settings module.\nError: {error}"
+        "module_load_failed_msg": "Unable to load settings module.\nError: {error}",
+        "settings_not_open_title": "Settings Not Open",
+        "settings_not_open_msg": "Please open the settings interface and fill in API credentials before attempting to login.",
+        "invalid_api_id_title": "Invalid API ID Format",
+        "invalid_api_id_msg": "API ID must be a valid number."
       },
       "status": {
         "logging_in": "Logging in: {phone}",
